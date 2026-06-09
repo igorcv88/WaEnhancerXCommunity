@@ -120,30 +120,56 @@ public class ProListPreference extends ListPreference {
         }
         String titleStr = title != null ? title.toString() : "";
 
-        BottomSheetHelper.showSingleChoice(
-                getContext(),
-                titleStr,
-                entries,
-                entryValues,
-                currentValue,
-                (index, selectedValue) -> {
-                    // Check if this value requires Pro
-                    if (mProValues.contains(selectedValue) && !isProActive()) {
-                        if (ProHelper.isProEnabled()) {
-                            refreshConfigAndApply(selectedValue);
-                        } else {
-                            openLicenseActivity();
+        if ("floating_bottom_bar_pill_design".equals(getKey())) {
+            BottomSheetHelper.showPillDesignChoice(
+                    getContext(),
+                    titleStr,
+                    entries,
+                    entryValues,
+                    currentValue,
+                    (index, selectedValue) -> {
+                        // Check if this value requires Pro
+                        if (mProValues.contains(selectedValue) && !isProActive()) {
+                            if (ProHelper.isProEnabled()) {
+                                refreshConfigAndApply(selectedValue);
+                            } else {
+                                openLicenseActivity();
+                            }
+                            return;
                         }
-                        return;
-                    }
 
-                    // Valid selection — persist and close
-                    if (callChangeListener(selectedValue)) {
-                        setValue(selectedValue);
+                        // Valid selection — persist and close
+                        if (callChangeListener(selectedValue)) {
+                            setValue(selectedValue);
+                        }
                     }
-                }
-        );
-     }
+            );
+        } else {
+            BottomSheetHelper.showSingleChoice(
+                    getContext(),
+                    titleStr,
+                    entries,
+                    entryValues,
+                    currentValue,
+                    (index, selectedValue) -> {
+                        // Check if this value requires Pro
+                        if (mProValues.contains(selectedValue) && !isProActive()) {
+                            if (ProHelper.isProEnabled()) {
+                                refreshConfigAndApply(selectedValue);
+                            } else {
+                                openLicenseActivity();
+                            }
+                            return;
+                        }
+
+                        // Valid selection — persist and close
+                        if (callChangeListener(selectedValue)) {
+                            setValue(selectedValue);
+                        }
+                    }
+            );
+        }
+    }
 
     private void refreshConfigAndApply(final String selectedValue) {
         Context context = getContext();

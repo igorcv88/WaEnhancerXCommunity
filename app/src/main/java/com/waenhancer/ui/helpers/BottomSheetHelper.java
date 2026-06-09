@@ -2,6 +2,11 @@ package com.waenhancer.ui.helpers;
 
 import android.content.Context;
 import android.content.DialogInterface;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.LinearLayout;
@@ -627,5 +632,136 @@ public class BottomSheetHelper {
                     .show();
             bottomSheet.dismiss();
         }
+    }
+
+    public static void showPillDesignChoice(Context context, String title, CharSequence[] entries,
+            CharSequence[] entryValues, String currentValue, OnSingleChoiceListener listener) {
+        BottomSheetDialog dialog = createDialog(context);
+        View view = LayoutInflater.from(context).inflate(R.layout.bottom_sheet_options, null);
+        dialog.setContentView(view);
+
+        ((MaterialTextView) view.findViewById(R.id.bs_title)).setText(title);
+        LinearLayout container = view.findViewById(R.id.bs_options_container);
+
+        view.findViewById(R.id.bs_buttons_container).setVisibility(View.GONE);
+
+        float density = context.getResources().getDisplayMetrics().density;
+
+        LinearLayout previewContainer = new LinearLayout(context);
+        previewContainer.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams containerLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        int margin16 = (int) (16 * density);
+        containerLp.setMargins(margin16, 0, margin16, margin16);
+        previewContainer.setLayoutParams(containerLp);
+
+        LinearLayout classicCard = createPreviewCard(context, "Classic", false, density, currentValue.equals("regular"));
+        LinearLayout refinedCard = createPreviewCard(context, "Refined (Pro)", true, density, currentValue.equals("pro"));
+
+        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+        cardLp.setMargins((int)(4*density), 0, (int)(4*density), 0);
+        classicCard.setLayoutParams(cardLp);
+        refinedCard.setLayoutParams(cardLp);
+
+        previewContainer.addView(classicCard);
+        previewContainer.addView(refinedCard);
+
+        container.addView(previewContainer);
+
+        List<MaterialRadioButton> radioButtons = new ArrayList<>();
+        LayoutInflater inflater = LayoutInflater.from(context);
+
+        for (int i = 0; i < entries.length; i++) {
+            MaterialRadioButton rb = (MaterialRadioButton) inflater.inflate(R.layout.item_bs_single_choice, container,
+                    false);
+            rb.setText(entries[i]);
+            String val = entryValues[i].toString();
+            if (val.equals(currentValue)) {
+                rb.setChecked(true);
+            }
+            final int index = i;
+            rb.setOnClickListener(v -> {
+                for (MaterialRadioButton btn : radioButtons) {
+                    btn.setChecked(false);
+                }
+                rb.setChecked(true);
+                dialog.dismiss();
+                listener.onChoice(index, val);
+            });
+            radioButtons.add(rb);
+            container.addView(rb);
+        }
+
+        classicCard.setOnClickListener(v -> {
+            dialog.dismiss();
+            listener.onChoice(0, "regular");
+        });
+        refinedCard.setOnClickListener(v -> {
+            dialog.dismiss();
+            listener.onChoice(1, "pro");
+        });
+
+        dialog.show();
+    }
+
+    private static LinearLayout createPreviewCard(Context context, String label, boolean isPro, float density, boolean isSelected) {
+        LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
+        
+        GradientDrawable gd = new GradientDrawable();
+        gd.setCornerRadius(12 * density);
+        
+        boolean isNight = (context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) 
+                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+                
+        int strokeColor = isSelected ? 0xFF8B5CF6 : (isNight ? 0x22FFFFFF : 0x15000000);
+        int strokeWidth = isSelected ? (int)(2 * density) : (int)(1 * density);
+        int bgColor = isNight ? 0xFF2D2D30 : 0xFFFFFFFF;
+        
+        gd.setColor(bgColor);
+        gd.setStroke(strokeWidth, strokeColor);
+        card.setBackground(gd);
+        
+        int pad = (int) (8 * density);
+        card.setPadding(pad, pad, pad, pad);
+        
+        MaterialTextView title = new MaterialTextView(context);
+        title.setText(label);
+        title.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        title.setTextColor(isNight ? 0xFFFFFFFF : 0xFF000000);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        titleLp.setMargins(0, (int)(4*density), 0, (int)(8 * density));
+        title.setLayoutParams(titleLp);
+        card.addView(title);
+        
+        android.widget.ImageView gifView = new android.widget.ImageView(context);
+        gifView.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        gifView.setAdjustViewBounds(true);
+        LinearLayout.LayoutParams gifLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (int)(110 * density)
+        );
+        gifView.setLayoutParams(gifLp);
+        card.addView(gifView);
+        
+        String url = isPro
+                ? "https://raw.githubusercontent.com/mubashardev/WaEnhancerX/beta/demo/pill_pro.gif"
+                : "https://raw.githubusercontent.com/mubashardev/WaEnhancerX/beta/demo/pill_regular.gif";
+                
+        com.bumptech.glide.Glide.with(context)
+                .asGif()
+                .load(url)
+                .placeholder(R.drawable.ic_image)
+                .error(android.R.drawable.stat_notify_error)
+                .into(gifView);
+        
+        return card;
     }
 }
