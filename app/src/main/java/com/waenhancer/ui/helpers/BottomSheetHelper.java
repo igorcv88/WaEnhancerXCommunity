@@ -717,7 +717,13 @@ public class BottomSheetHelper {
         boolean isNight = (context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) 
                 == android.content.res.Configuration.UI_MODE_NIGHT_YES;
                 
-        int strokeColor = isSelected ? 0xFF8B5CF6 : (isNight ? 0x22FFFFFF : 0x15000000);
+        int strokeColor;
+        if (isSelected) {
+            int resolved = com.waenhancer.xposed.utils.DesignUtils.resolveColorAttr(context, android.R.attr.colorPrimary);
+            strokeColor = resolved != 0 ? resolved : (isNight ? 0xFF25D366 : 0xFF008069);
+        } else {
+            strokeColor = isNight ? 0x22FFFFFF : 0x15000000;
+        }
         int strokeWidth = isSelected ? (int)(2 * density) : (int)(1 * density);
         int bgColor = isNight ? 0xFF2D2D30 : 0xFFFFFFFF;
         
