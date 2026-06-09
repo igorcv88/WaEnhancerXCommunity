@@ -44,10 +44,10 @@ public abstract class Feature {
 
     public void logError(Object object) {
         if (object instanceof Throwable) {
-            XposedBridge.log(String.format("[%s] CRITICAL ERROR:", this.getPluginName()));
-            XposedBridge.log((Throwable) object);
+            // XposedBridge.log(String.format("[%s] CRITICAL ERROR:", this.getPluginName()));
+            // XposedBridge.log((Throwable) object);
         } else {
-            XposedBridge.log(String.format("[%s] CRITICAL ERROR: %s", this.getPluginName(), object));
+            // XposedBridge.log(String.format("[%s] CRITICAL ERROR: %s", this.getPluginName(), object));
         }
     }
 

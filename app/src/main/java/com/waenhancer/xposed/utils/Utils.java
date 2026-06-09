@@ -325,7 +325,7 @@ public class Utils {
 
     public static void logError(String message) {
         try {
-            XposedBridge.log("[WAEX_ERROR] " + message);
+            // XposedBridge.log("[WAEX_ERROR] " + message);
         } catch (NoClassDefFoundError | NoSuchMethodError e) {
         }
     }

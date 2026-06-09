@@ -1125,7 +1125,7 @@ public class FeatureLoader {
             }
             for (String col : columns) {
                 if (!existingColumns.contains(col)) {
-                    XposedBridge.log("[WAEX-DB] Column '" + col + "' not found in table '" + tableName + "'");
+                    // XposedBridge.log("[WAEX-DB] Column '" + col + "' not found in table '" + tableName + "'");
                     return false;
                 }
             }
@@ -1165,7 +1165,7 @@ public class FeatureLoader {
                     }
 
                     if (needChatIndex || needMessageIndex) {
-                        XposedBridge.log("[WAEX-DB] Displaying optimization dialog...");
+                        // XposedBridge.log("[WAEX-DB] Displaying optimization dialog...");
                         final android.app.Dialog[] dialogRef = new android.app.Dialog[1];
                         java.util.concurrent.CountDownLatch dialogLatch = new java.util.concurrent.CountDownLatch(1);
                         
@@ -1257,7 +1257,7 @@ public class FeatureLoader {
                         if (needChatIndex) {
                             try {
                                 db.execSQL("CREATE INDEX IF NOT EXISTS waex_chat_unseen_idx ON chat (unseen_message_count, jid_row_id)");
-                                XposedBridge.log("[WAEX-DB] Index waex_chat_unseen_idx created successfully");
+                                // XposedBridge.log("[WAEX-DB] Index waex_chat_unseen_idx created successfully");
                             } catch (Throwable t) {
                                 XposedBridge.log("[WAEX-DB] Error creating waex_chat_unseen_idx: " + t.getMessage());
                             }
@@ -1265,12 +1265,12 @@ public class FeatureLoader {
                         if (needMessageIndex) {
                             try {
                                 db.execSQL("CREATE INDEX IF NOT EXISTS waex_message_key_id_idx ON message (key_id)");
-                                XposedBridge.log("[WAEX-DB] Index waex_message_key_id_idx created successfully");
+                                // XposedBridge.log("[WAEX-DB] Index waex_message_key_id_idx created successfully");
                             } catch (Throwable t) {
                                 XposedBridge.log("[WAEX-DB] Error creating waex_message_key_id_idx: " + t.getMessage());
                             }
                         }
-                        XposedBridge.log("[WAEX-DB] Database indexes optimization completed in " + (System.currentTimeMillis() - startTime) + " ms");
+                        // XposedBridge.log("[WAEX-DB] Database indexes optimization completed in " + (System.currentTimeMillis() - startTime) + " ms");
 
                         new Handler(Looper.getMainLooper()).postDelayed(() -> {
                             try {
@@ -1280,7 +1280,7 @@ public class FeatureLoader {
                             } catch (Throwable ignored) {}
                         }, 2000);
                     } else {
-                        XposedBridge.log("[WAEX-DB] Indexes already exist or tables not compatible, skipping optimization");
+                        // XposedBridge.log("[WAEX-DB] Indexes already exist or tables not compatible, skipping optimization");
                     }
                 }
             } catch (Throwable t) {

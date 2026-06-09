@@ -49,7 +49,7 @@ public class SettingsInjector extends Feature {
             Class<?> directClass = XposedHelpers.findClassIfExists(SETTINGS_TAB_ACTIVITY, classLoader);
             settingsActivityClass = directClass != null ? directClass : Unobfuscator.loadSettingsActivityClass(classLoader);
         } catch (Throwable t) {
-            XposedBridge.log("[WaEnhancerX] SettingsInjector disabled: unable to resolve settings activity");
+            // XposedBridge.log("[WaEnhancerX] SettingsInjector disabled: unable to resolve settings activity");
             return;
         }
         if (settingsActivityClass == null) return;

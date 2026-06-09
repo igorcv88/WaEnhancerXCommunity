@@ -193,7 +193,7 @@ public class MessageStore {
         try {
             if (sqLiteDatabase == null) return;
             if (sqLiteDatabase.isReadOnly()) {
-                XposedBridge.log("Cannot execute SQL because database is opened in read-only mode: " + sql);
+                // XposedBridge.log("Cannot execute SQL because database is opened in read-only mode: " + sql);
                 return;
             }
             sqLiteDatabase.execSQL(sql);

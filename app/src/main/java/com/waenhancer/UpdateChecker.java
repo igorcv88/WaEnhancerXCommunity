@@ -225,7 +225,7 @@ public class UpdateChecker implements Runnable {
             }
         } catch (Exception e) {
             String errMsg = "[UpdateChecker] Exception: " + e.getMessage();
-            XposedBridge.log("[" + TAG + "] " + errMsg);
+            // XposedBridge.log("[" + TAG + "] " + errMsg);
             writeDebugLog(errMsg);
         }
     }

@@ -144,7 +144,7 @@ public class AlertDialogWpp {
             try {
                 mAlertDialogWpp = getAlertDialog.invoke(null, context);
             } catch (Exception e) {
-                XposedBridge.log("[WAEX] AlertDialogWpp instance failed, using system fallback");
+                // XposedBridge.log("[WAEX] AlertDialogWpp instance failed, using system fallback");
                 mIsUsingSystem = true;
             }
         } else {
@@ -311,7 +311,7 @@ public class AlertDialogWpp {
                     XposedHelpers.callMethod(mAlertDialogWpp, methodName, listener, text);
                     success = true;
                 } catch (Throwable t2) {
-                    XposedBridge.log("[WAEX] AlertDialogWpp button failed: " + methodName + ", falling back to system");
+                    // XposedBridge.log("[WAEX] AlertDialogWpp button failed: " + methodName + ", falling back to system");
                     mIsUsingSystem = true;
                     // Apply to system builder so it's ready if we switch
                     if (methodName.equals("setPositiveButton")) mAlertDialog.setPositiveButton(text, listener);
@@ -945,7 +945,7 @@ public class AlertDialogWpp {
             try {
                 mCreate = (Dialog) XposedHelpers.callMethod(mAlertDialogWpp, "create");
             } catch (Throwable t) {
-                XposedBridge.log("[WAEX] AlertDialogWpp.create() failed, using system fallback");
+                // XposedBridge.log("[WAEX] AlertDialogWpp.create() failed, using system fallback");
                 mCreate = mAlertDialog.create();
             }
         }

@@ -37,13 +37,11 @@ public class ProHelper {
      */
     public static boolean isPillDesignProEnabled() {
         if (!BuildConfig.HAS_PRO_FEATURES) {
-            android.util.Log.d("WaeX-Helper", "isPillDesignProEnabled: HAS_PRO_FEATURES is false");
             return false;
         }
         try {
             Class<?> configClass = Class.forName("com.waenhancer.pro.utils.ProConfig");
             Boolean result = (Boolean) configClass.getMethod("isPillDesignProEnabled").invoke(null);
-            android.util.Log.d("WaeX-Helper", "isPillDesignProEnabled: ProConfig returned = " + result);
             return result != null && result;
         } catch (Throwable t) {
             android.util.Log.e("WaeX-Helper", "isPillDesignProEnabled failed", t);

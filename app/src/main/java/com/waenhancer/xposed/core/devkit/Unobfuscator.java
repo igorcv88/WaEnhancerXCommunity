@@ -3550,7 +3550,7 @@ public class Unobfuscator {
 
             // Verbose logging if all search strategies fail for easy future troubleshooting
             try {
-                XposedBridge.log("[WAEX] WaContactDisplayName method lookup failed. Listing all methods of " + waContactClass.getName() + ":");
+                // XposedBridge.log("[WAEX] WaContactDisplayName method lookup failed. Listing all methods of " + waContactClass.getName() + ":");
                 for (var m : waContactClass.getDeclaredMethods()) {
                     ;
                 }

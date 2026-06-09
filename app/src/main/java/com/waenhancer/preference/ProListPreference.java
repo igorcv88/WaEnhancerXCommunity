@@ -197,13 +197,10 @@ public class ProListPreference extends ListPreference {
 
     private boolean isProActive() {
         if (!BuildConfig.HAS_PRO_FEATURES) {
-            android.util.Log.d("WaeX-Pref", "isProActive: HAS_PRO_FEATURES is false");
             return false;
         }
         try {
-            boolean enabled = ProHelper.isPillDesignProEnabled();
-            android.util.Log.d("WaeX-Pref", "isProActive: ProHelper.isPillDesignProEnabled() = " + enabled);
-            return enabled;
+            return ProHelper.isPillDesignProEnabled();
         } catch (Throwable t) {
             android.util.Log.e("WaeX-Pref", "isProActive: exception", t);
             return false;
