@@ -1,9 +1,5 @@
 [Added]
-- Added WhatsApp Floating Bottom Navigation
 - Floating Bottom Navigation Regular and Pro Style
-
-[Improvements]
-- Module's ui Improvements
 
 
 [Fixes]
