@@ -74,6 +74,7 @@ import com.waenhancer.xposed.features.listeners.MenuStatusListener;
 
 import com.waenhancer.xposed.features.media.DownloadProfile;
 import com.waenhancer.xposed.features.media.DownloadViewOnce;
+import com.waenhancer.xposed.features.media.DownloadVideoNote;
 import com.waenhancer.xposed.features.media.CallRecording;
 import com.waenhancer.xposed.features.media.AutoStatusForward;
 import com.waenhancer.xposed.features.media.MediaPreview;
@@ -768,6 +769,9 @@ public class FeatureLoader {
         FeatureRegistry.registerLazyFeature("Video Note Attachment", VideoNoteAttachment.class,
                 FeatureRegistry.TriggerType.CONVERSATION_OPENED, null, true);
 
+        FeatureRegistry.registerLazyFeature("Download Video Note", DownloadVideoNote.class,
+                FeatureRegistry.TriggerType.CONVERSATION_OPENED, null, true);
+
         // Settings screen injection is only relevant after home is available.
         FeatureRegistry.registerLazyFeature("Settings Injector", SettingsInjector.class,
                 FeatureRegistry.TriggerType.ACTIVITY_RESUMED, "HomeActivity", false);
@@ -880,6 +884,7 @@ public class FeatureLoader {
                 Tasker.class,
                 DeleteStatus.class,
                 DownloadViewOnce.class,
+                DownloadVideoNote.class,
                 Channels.class,
                 DownloadProfile.class,
                 GroupAdmin.class,

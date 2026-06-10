@@ -69,6 +69,8 @@
     <string name="imagequality_sum">Send images in HD quality, by default</string>
     <string name="downloadviewonce">Download View Once</string>
     <string name="downloadviewonce_sum">Show button to download view once media</string>
+    <string name="download_video_note">Save Video Notes</string>
+    <string name="download_video_note_sum">Enable long press on video note to save it to the gallery</string>
     <string name="separate_groups">Separate Groups</string>
     <string name="separate_groups_sum">Separate your chats by: Groups, Private Chats, Status, Calls, Communities</string>
     <string name="separate_groups_counter_title">Separate Groups Counter</string>

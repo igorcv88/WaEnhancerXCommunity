@@ -405,6 +405,11 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
         if (downloadviewonce != null) {
             downloadviewonce.setOnPreferenceChangeListener((preference, newValue) -> checkStoragePermission(newValue));
         }
+
+        var download_video_note = (MaterialSwitchPreference) findPreference("download_video_note");
+        if (download_video_note != null) {
+            download_video_note.setOnPreferenceChangeListener((preference, newValue) -> checkStoragePermission(newValue));
+        }
     }
 
     private boolean checkStoragePermission(Object newValue) {

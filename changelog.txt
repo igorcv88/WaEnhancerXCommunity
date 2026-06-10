@@ -1,5 +1,6 @@
 [Added]
 - [Pro] Advanced Filter items by id options
+- Added Save Video Note to Gallery feature
 
 
 [Improvements]

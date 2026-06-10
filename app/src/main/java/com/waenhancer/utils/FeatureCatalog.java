@@ -951,6 +951,14 @@ public class FeatureCatalog {
                                 null,
                                 Arrays.asList("download", "view", "once")));
 
+                catalog.add(new SearchableFeature("download_video_note",
+                                context.getString(R.string.download_video_note),
+                                context.getString(R.string.download_video_note_sum),
+                                SearchableFeature.Category.MEDIA,
+                                SearchableFeature.FragmentType.MEDIA,
+                                null,
+                                Arrays.asList("download", "video", "note", "ptv", "gallery")));
+
                 catalog.add(new SearchableFeature("video_limit_size",
                                 context.getString(R.string.increase_video_size_limit),
                                 null,

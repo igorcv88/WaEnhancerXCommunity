@@ -27,6 +27,11 @@
             app:summary="@string/downloadviewonce_sum"
             app:title="@string/downloadviewonce" />
 
+        <rikka.material.preference.MaterialSwitchPreference
+            app:key="download_video_note"
+            app:summary="@string/download_video_note_sum"
+            app:title="@string/download_video_note" />
+
         <com.waenhancer.preference.FloatSeekBarPreference
             android:defaultValue="60"
             app:key="video_limit_size"
