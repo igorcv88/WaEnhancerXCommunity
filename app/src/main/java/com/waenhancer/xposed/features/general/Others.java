@@ -32,6 +32,7 @@ import com.waenhancer.xposed.utils.ReflectionUtils;
 import com.waenhancer.xposed.core.components.AlertDialogWpp;
 import com.waenhancer.R;
 import com.waenhancer.xposed.utils.Utils;
+import com.waenhancer.model.FilterItem;
 
 
 import org.json.JSONObject;
@@ -689,24 +690,87 @@ public class Others extends Feature {
      * on any invalidated view whose ID is listed in the filter config.
      */
     private void filterItems(String filterItems) {
-        var items = filterItems.split("\n");
-        var idsFilter = new ArrayList<Integer>();
-        for (String item : items) {
-            var id = Utils.getID(item.trim(), "id");
-            if (id > 0) {
-                idsFilter.add(id);
+        String currentPkg = null;
+        if (com.waenhancer.xposed.core.FeatureLoader.mApp != null) {
+            currentPkg = com.waenhancer.xposed.core.FeatureLoader.mApp.getPackageName();
+        }
+        if (currentPkg == null) {
+            try {
+                Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
+                currentPkg = (String) activityThreadClass.getMethod("currentPackageName").invoke(null);
+            } catch (Throwable ignored) {}
+        }
+        if ("com.waenhancer".equals(currentPkg)) {
+            return;
+        }
+
+        var itemsList = new ArrayList<FilterItem>();
+        if (filterItems.trim().startsWith("[")) {
+            try {
+                org.json.JSONArray arr = new org.json.JSONArray(filterItems);
+                for (int i = 0; i < arr.length(); i++) {
+                    org.json.JSONObject obj = arr.getJSONObject(i);
+                    String idStr = obj.optString("id", "").trim();
+                    if (!idStr.isEmpty()) {
+                        String behavior = obj.optString("behavior", FilterItem.BEHAVIOR_GONE);
+                        int color = obj.optInt("color", 0xFFFF0000);
+                        int opacity = obj.optInt("opacity", 100);
+                        double scale = obj.optDouble("scale", 1.0);
+                        itemsList.add(new FilterItem(idStr, behavior, color, opacity, (float) scale));
+                    }
+                }
+            } catch (Exception e) {
+                XposedBridge.log("[WAEX] Failed to parse JSON filter_items: " + e.toString());
+            }
+        } else {
+            // Fallback to old format
+            var items = filterItems.split("\n");
+            for (String item : items) {
+                String idStr = item.trim();
+                if (!idStr.isEmpty()) {
+                    itemsList.add(new FilterItem(idStr, FilterItem.BEHAVIOR_GONE, 0xFFFF0000, 100, 1.0f));
+                }
             }
         }
-        if (idsFilter.isEmpty()) return;
+
+        if (itemsList.isEmpty()) return;
+
+        // Build a map of layout ids to FilterItem config
+        var targetMap = new java.util.HashMap<Integer, FilterItem>();
+        for (var item : itemsList) {
+            var id = Utils.getID(item.id, "id");
+            if (id > 0) {
+                targetMap.put(id, item);
+            }
+        }
+        if (targetMap.isEmpty()) return;
 
         try {
             XposedHelpers.findAndHookMethod(View.class, "invalidate", boolean.class, new XC_MethodHook() {
+                private final ThreadLocal<Boolean> inHook = ThreadLocal.withInitial(() -> false);
+
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    var view = (View) param.thisObject;
-                    var id = view.getId();
-                    if (id > 0 && idsFilter.contains(id) && view.getVisibility() == View.VISIBLE) {
-                        view.setVisibility(View.GONE);
+                    if (inHook.get()) return;
+                    inHook.set(true);
+                    try {
+                        var view = (View) param.thisObject;
+                        var id = view.getId();
+                        if (id > 0 && targetMap.containsKey(id)) {
+                            FilterItem item = targetMap.get(id);
+                            if (item == null) return;
+                            switch (item.behavior) {
+                                case FilterItem.BEHAVIOR_GONE:
+                                    if (view.getVisibility() == View.VISIBLE) {
+                                        view.setVisibility(View.GONE);
+                                    }
+                                    break;
+                                default:
+                                    break;
+                            }
+                        }
+                    } finally {
+                        inHook.set(false);
                     }
                 }
             });

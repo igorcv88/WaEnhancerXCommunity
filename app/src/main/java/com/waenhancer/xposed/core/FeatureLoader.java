@@ -930,6 +930,9 @@ public class FeatureLoader {
 
                 Class<?> alwaysTypingClass = Class.forName("com.waenhancer.pro.AlwaysTyping");
                 allFeatureClasses.add(alwaysTypingClass);
+
+                Class<?> filterItemsProClass = Class.forName("com.waenhancer.pro.FilterItemsPro");
+                allFeatureClasses.add(filterItemsProClass);
             } catch (Exception e) {
                 // Fail silently to prevent string leaks in stacktraces/logs
             }

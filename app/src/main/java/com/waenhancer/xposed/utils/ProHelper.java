@@ -50,6 +50,17 @@ public class ProHelper {
     }
 
     /**
+     * Checks if the Filter Items Pro hook is enabled in the decrypted server configuration.
+     */
+    public static boolean isFilterItemsProEnabled() {
+        if (!BuildConfig.HAS_PRO_FEATURES) {
+            return false;
+        }
+        String hookClass = getHookStringSafely("filter_items");
+        return hookClass != null && !hookClass.trim().isEmpty();
+    }
+
+    /**
      * Triggers a silent check/config refresh in the background, invoking the callback upon completion.
      */
     public static void silentCheck(final Context context, final Runnable callback) {

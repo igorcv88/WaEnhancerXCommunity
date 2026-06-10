@@ -43,11 +43,17 @@ public class CustomizationFragment extends BasePreferenceFragment {
             if (rawFilters == null || rawFilters.trim().isEmpty()) {
                 filterItemsPref.setSummary(R.string.filters_summary_empty);
             } else {
-                String[] items = rawFilters.split("\n");
                 int count = 0;
-                for (String item : items) {
-                    if (!item.trim().isEmpty()) {
-                        count++;
+                if (rawFilters.trim().startsWith("[")) {
+                    try {
+                        count = new org.json.JSONArray(rawFilters).length();
+                    } catch (Exception ignored) {}
+                } else {
+                    String[] items = rawFilters.split("\n");
+                    for (String item : items) {
+                        if (!item.trim().isEmpty()) {
+                            count++;
+                        }
                     }
                 }
                 if (count == 0) {

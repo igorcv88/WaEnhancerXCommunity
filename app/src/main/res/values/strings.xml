@@ -249,7 +249,7 @@
     <string name="new_context_menu_ui">New Context Menu UI</string>
     <string name="new_context_menu_ui_sum">The new iOS-style message context menu will be enabled.</string>
     <string name="filter_items_by_id">Filter Items By ID</string>
-    <string name="filter_items_by_id_sum">Filter items by id name</string>
+    <string name="filter_items_by_id_sum">Custom Behaviours:-\n- Change Color\n- Change Opacity\n- Resize</string>
     <string name="add_filter">Add Filter</string>
     <string name="add_filter_hint">Enter View ID (e.g. status_hd_button)</string>
     <string name="delete_filter">Delete Filter</string>
@@ -258,6 +258,7 @@
     <string name="empty_filter_id_warning">Filter ID cannot be empty</string>
     <string name="filters_summary_empty">No active filters</string>
     <string name="filters_summary_count">%d active filters</string>
+    <string name="resize_warning_note">Note: Resizing view elements dynamically requires extra layout rendering. This may cause screens containing these elements to load with a minor delay.</string>
     <string name="custom_theme_css">Custom Theme CSS</string>
     <string name="custom_theme_css_sum">Customize your WhatsApp using CSS styles</string>
     <string name="antidisappearing">Anti Disappearing Messages</string>

@@ -1115,6 +1115,14 @@ public class FeatureCatalog {
                                 null,
                                 Arrays.asList("custom", "appearance", "filters", "css")));
 
+                catalog.add(new SearchableFeature("filter_items",
+                                context.getString(R.string.filter_items_by_id),
+                                context.getString(R.string.filter_items_by_id_sum),
+                                SearchableFeature.Category.CUSTOMIZATION,
+                                SearchableFeature.FragmentType.CUSTOMIZATION,
+                                "custom_filters",
+                                Arrays.asList("filter", "items", "id", "remove", "behavior", "gone", "color", "opacity", "resize", "pro")));
+
                 catalog.add(new SearchableFeature("animation_list",
                                 context.getString(R.string.list_animations_home_screen),
                                 context.getString(R.string.list_animations_home_screen_sum),

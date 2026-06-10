@@ -20,21 +20,38 @@
         android:paddingVertical="12dp">
 
         <ImageView
-            android:layout_width="20dp"
-            android:layout_height="20dp"
+            android:id="@+id/filter_icon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
             android:layout_marginEnd="12dp"
             android:src="@android:drawable/ic_dialog_info"
             app:tint="?attr/colorOnSurfaceVariant" />
 
-        <TextView
-            android:id="@+id/filter_id_text"
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textAppearance="?attr/textAppearanceTitleMedium"
-            android:textColor="?attr/colorOnSurface"
-            android:singleLine="true"
-            android:ellipsize="end" />
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/filter_id_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="?attr/textAppearanceTitleMedium"
+                android:textColor="?attr/colorOnSurface"
+                android:singleLine="true"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/filter_subtitle_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:singleLine="true"
+                android:ellipsize="end" />
+        </LinearLayout>
 
         <ImageButton
             android:id="@+id/btn_delete_filter"
