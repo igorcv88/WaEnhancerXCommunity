@@ -252,7 +252,7 @@ public class Others extends Feature {
             hideMetaAIFab();
         }
         if (filter_items != null && prefs.getBoolean("custom_filters", true)) {
-            filterItemsInHomeActivity(filter_items);
+            filterItems(filter_items);
         }
 
         if (disable_defemojis) {
@@ -684,41 +684,35 @@ public class Others extends Feature {
     }
 
     /**
-     * Hides custom filter views by resource ID in HomeActivity only.
-     * One-time scan after layout inflation — no global View hooks.
+     * Filters layout elements by their resource ID by hooking View.invalidate(boolean).
+     * This replicates the dev4mod behavior of dynamically forcing visibility to GONE
+     * on any invalidated view whose ID is listed in the filter config.
      */
-    private void filterItemsInHomeActivity(String filterItems) throws Exception {
-        var ids = new ArrayList<Integer>();
-        for (String item : filterItems.split("\n")) {
-            int id = Utils.getID(item.trim(), "id");
-            if (id > 0) ids.add(id);
+    private void filterItems(String filterItems) {
+        var items = filterItems.split("\n");
+        var idsFilter = new ArrayList<Integer>();
+        for (String item : items) {
+            var id = Utils.getID(item.trim(), "id");
+            if (id > 0) {
+                idsFilter.add(id);
+            }
         }
-        if (ids.isEmpty()) return;
+        if (idsFilter.isEmpty()) return;
 
-        Class<?> homeClass = WppCore.getHomeActivityClass(classLoader);
-        XposedBridge.hookAllMethods(homeClass, "setContentView", new XC_MethodHook() {
-            @Override
-            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                hideViewsById((Activity) param.thisObject, ids);
-            }
-        });
-        WppCore.addListenerActivity((activity, state) -> {
-            if (state != WppCore.ActivityChangeState.ChangeType.RESUMED) return;
-            if (!homeClass.isInstance(activity)) return;
-            hideViewsById(activity, ids);
-        });
-    }
-
-    private static void hideViewsById(Activity activity, java.util.List<Integer> ids) {
         try {
-            View root = activity.getWindow().getDecorView();
-            for (int id : ids) {
-                View v = root.findViewById(id);
-                if (v != null && v.getVisibility() != View.GONE) {
-                    v.setVisibility(View.GONE);
+            XposedHelpers.findAndHookMethod(View.class, "invalidate", boolean.class, new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                    var view = (View) param.thisObject;
+                    var id = view.getId();
+                    if (id > 0 && idsFilter.contains(id) && view.getVisibility() == View.VISIBLE) {
+                        view.setVisibility(View.GONE);
+                    }
                 }
-            }
-        } catch (Throwable ignored) {}
+            });
+        } catch (Throwable t) {
+            XposedBridge.log("[WAEX] Failed to hook View.invalidate(boolean) for item filtering: " + t.toString());
+        }
     }
 
     private void disableAds() {

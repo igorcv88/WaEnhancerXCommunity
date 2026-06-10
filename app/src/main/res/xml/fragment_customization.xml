@@ -96,7 +96,7 @@
             app:key="custom_filters"
             app:title="@string/custom_appearance" />
 
-        <EditTextPreference
+        <Preference
             android:summary="@string/filter_items_by_id_sum"
             app:dependency="custom_filters"
             app:key="filter_items"

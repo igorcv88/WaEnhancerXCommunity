@@ -1,6 +1,6 @@
 [Added]
-- Floating Bottom Navigation Regular and Pro Style
+- [Pro] Advanced Filter items by id options
 
-[Fixes]
-- Fixed hide "Forwarded" tag for new WA/WB versions
-- Fixed Hide Floating Bottom Navigation on Scroll
+
+[Improvements]
+- Fixed and improved Filter item by id

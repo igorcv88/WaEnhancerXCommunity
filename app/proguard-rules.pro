@@ -39,24 +39,8 @@
     public <init>(java.lang.ClassLoader, android.content.SharedPreferences);
 }
 
-# Keep dynamic ProFeature stubs and classes loaded via reflection
--keep class com.waenhancer.pro.ProFeature {
-    public <init>(java.lang.ClassLoader, android.content.SharedPreferences);
-    native <methods>;
-    protected void setupNativeHooks(java.lang.String[]);
-}
--keep class com.waenhancer.pro.MessageBomber { *; }
--keep class com.waenhancer.pro.DeleteMessageFile { *; }
--keep class com.waenhancer.pro.StatusSplitter { *; }
-
--keepclassmembers class * extends com.waenhancer.pro.ProFeature {
-    protected void setupNativeHooks(java.lang.String[]);
-}
-
-# Keep Native Security Bridge (JNI signatures must match C++ export names)
--keepclasseswithmembernames class com.waenhancer.pro.utils.SecurityNative {
-    native <methods>;
-}
+# Keep all classes and members in the pro package and its subpackages to prevent reflection and JNI issues in release mode
+-keep class com.waenhancer.pro.** { *; }
 
 # Keep all IPC bridge stub and AIDL classes intact to maintain process stability
 -keep class com.waenhancer.xposed.bridge.** { *; }
@@ -64,17 +48,12 @@
 # =============================================================================
 # 3. LICENSING LAYER REFLECTION SAFETY (GAP CLOSED)
 # =============================================================================
-# Keep the names and reflective entrypoints of LicenseManager, ProStatusManager,
-# and ProConfig to ensure dynamic lookups succeed without throwing ClassNotFoundException.
+# Keep the names and reflective entrypoints of LicenseManager to ensure dynamic lookups succeed.
 -keep class com.waenhancer.xposed.utils.LicenseManager {
     public static void makePrefsWorldReadable(android.content.Context);
     public static void silentCheck(android.content.Context);
     public <init>(...);
 }
-
--keep class com.waenhancer.pro.utils.ProStatusManager { *; }
--keep class com.waenhancer.pro.utils.ProStatusManager$ProStatus { *; }
--keep class com.waenhancer.pro.utils.ProConfig { *; }
 
 # =============================================================================
 # 4. FLAT PACKAGING (REPACKAGING CLASSES TO MATCH COMPETITOR)

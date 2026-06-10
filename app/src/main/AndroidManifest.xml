@@ -140,6 +140,11 @@
             android:parentActivityName=".activities.MainActivity" />
 
         <activity
+            android:name=".activities.FilterItemsActivity"
+            android:theme="@style/NoActionBarTheme"
+            android:parentActivityName=".activities.MainActivity" />
+
+        <activity
             android:name=".activities.SearchActivity"
             android:theme="@style/AppTheme"
             android:parentActivityName=".activities.MainActivity"
