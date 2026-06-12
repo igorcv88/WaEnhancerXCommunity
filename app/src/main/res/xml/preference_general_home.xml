@@ -89,6 +89,11 @@
             android:title="Use Custom keybox.xml file"
             android:summary="No file selected" />
 
+        <Preference
+            android:key="bootloader_spoofer_verify"
+            android:title="Verify Spoofer"
+            android:summary="Check spoofer trust chain, keys, and expiration" />
+
         <rikka.material.preference.MaterialSwitchPreference
             app:key="ampm"
             app:title="@string/ampm" />

@@ -87,6 +87,15 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
                     PreferenceManager.class.getName(), lpparam.classLoader,
                     "getDefaultSharedPreferencesMode",
                     XC_MethodReplacement.returnConstant(worldReadable));
+
+            // Inject Bootloader Spoofer in the manager app itself for live verification
+            if (getPref().getBoolean("bootloader_spoofer", false)) {
+                try {
+                    com.waenhancer.xposed.spoofer.HookBL.hook(lpparam.classLoader, getPref());
+                } catch (Throwable t) {
+                    XposedBridge.log("[WAEX] Failed to hook Bootloader Spoofer in settings app: " + t.getMessage());
+                }
+            }
             return;
         }
 

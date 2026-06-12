@@ -59,7 +59,7 @@ import de.robv.android.xposed.XposedHelpers;
 import okhttp3.OkHttpClient;
 import android.net.Uri;
 import java.io.File;
-import com.waenhancer.xposed.utils.AudioToOpusConverter;
+import com.waenhancer.xposed.utils.ProHelper;
 
 public class Others extends Feature {
     private static final String DEVICE_SOURCE_SUFFIX_FIELD = "wae_device_source_suffix";
@@ -1341,7 +1341,7 @@ public class Others extends Feature {
                     if (originalUri != null) {
                         Context context = Utils.getApplication();
                         if (context != null) {
-                            java.io.File transcodedFile = AudioToOpusConverter.convert(context, originalUri);
+                            java.io.File transcodedFile = ProHelper.convertAudioToOpus(context, originalUri);
                             if (transcodedFile != null && transcodedFile.exists()) {
                                 boolean replacedOnDisk = false;
                                 if (originalFile != null && originalFile.exists()) {

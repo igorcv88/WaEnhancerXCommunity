@@ -483,7 +483,7 @@ public class AlertDialogWpp {
                 
                 final int screenHeight = mContext.getResources().getDisplayMetrics().heightPixels;
                 final int halfScreenHeight = screenHeight / 2;
-                final float capHeight = screenHeight * 0.85f;
+                final float capHeight = screenHeight * 0.95f;
                 
                 final android.widget.RelativeLayout container = new android.widget.RelativeLayout(mContext);
                 container.setLayoutParams(new android.view.ViewGroup.LayoutParams(
@@ -522,10 +522,9 @@ public class AlertDialogWpp {
                 dragHandle.setBackground(handleDrawable);
                 mainLayout.addView(dragHandle);
                 
-                // Implement touch-to-drag downward and upward multi-state height gesture
+                // Implement touch-to-drag downward gesture using GPU-accelerated translation
                 android.view.View.OnTouchListener dragListener = new android.view.View.OnTouchListener() {
                     private float initialY;
-                    private int initialHeight;
                     private float initialTranslationY;
                     private boolean isDragging = false;
                     
@@ -534,43 +533,24 @@ public class AlertDialogWpp {
                         switch (event.getAction()) {
                             case android.view.MotionEvent.ACTION_DOWN:
                                 initialY = event.getRawY();
-                                initialHeight = mainLayout.getHeight();
                                 initialTranslationY = mainLayout.getTranslationY();
                                 isDragging = true;
                                 return true;
                             case android.view.MotionEvent.ACTION_MOVE:
                                 if (!isDragging) return false;
                                 float deltaY = event.getRawY() - initialY;
-                                if (deltaY < 0) { // Dragging UP -> Increase height
-                                    mainLayout.setTranslationY(0);
-                                    int newHeight = (int) (initialHeight - deltaY);
-                                    if (newHeight > capHeight) {
-                                        newHeight = (int) capHeight;
-                                    }
-                                    android.view.ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
-                                    lp.height = newHeight;
-                                    mainLayout.setLayoutParams(lp);
-                                } else { // Dragging DOWN -> Decrease height first, then translate down to dismiss
-                                    if (initialHeight > halfScreenHeight) {
-                                        int newHeight = (int) (initialHeight - deltaY);
-                                        if (newHeight < halfScreenHeight) {
-                                            newHeight = halfScreenHeight;
-                                        }
-                                        android.view.ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
-                                        lp.height = newHeight;
-                                        mainLayout.setLayoutParams(lp);
-                                        mainLayout.setTranslationY(0);
-                                    } else {
-                                        mainLayout.setTranslationY(deltaY);
-                                    }
+                                float targetTranslation = initialTranslationY + deltaY;
+                                if (targetTranslation < 0) {
+                                    targetTranslation = 0;
                                 }
+                                mainLayout.setTranslationY(targetTranslation);
                                 return true;
                             case android.view.MotionEvent.ACTION_UP:
+                            case android.view.MotionEvent.ACTION_CANCEL:
                                 isDragging = false;
                                 float currentTranslationY = mainLayout.getTranslationY();
-                                int currentHeight = mainLayout.getHeight();
-                                
-                                if (currentTranslationY > (halfScreenHeight / 3)) {
+                                int sheetHeight = mainLayout.getHeight();
+                                if (currentTranslationY > (sheetHeight / 4.0f) || currentTranslationY > 150 * density) {
                                     // Dismiss downwards
                                     mainLayout.animate()
                                             .translationY(screenHeight)
@@ -578,23 +558,11 @@ public class AlertDialogWpp {
                                             .withEndAction(dialog::dismiss)
                                             .start();
                                 } else {
-                                    mainLayout.animate().translationY(0).setDuration(200).start();
-                                    
-                                    // Snap height to either collapsed or expanded state
-                                    int targetHeight = halfScreenHeight;
-                                    if (currentHeight > (halfScreenHeight + (capHeight - halfScreenHeight) / 2)) {
-                                        targetHeight = (int) capHeight;
-                                    }
-                                    
-                                    final int finalTargetHeight = targetHeight;
-                                    android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofInt(currentHeight, finalTargetHeight);
-                                    animator.addUpdateListener(animation -> {
-                                        android.view.ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
-                                        lp.height = (int) animation.getAnimatedValue();
-                                        mainLayout.setLayoutParams(lp);
-                                    });
-                                    animator.setDuration(200);
-                                    animator.start();
+                                    // Snap back to fully open
+                                    mainLayout.animate()
+                                            .translationY(0)
+                                            .setDuration(200)
+                                            .start();
                                 }
                                 return true;
                         }

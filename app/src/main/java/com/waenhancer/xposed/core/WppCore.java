@@ -572,6 +572,19 @@ public class WppCore {
         throw new Exception("TextStatusComposerFragmentClass not found");
     }
 
+    public synchronized static Class getVoiceStatusComposerFragmentClass(@NonNull ClassLoader loader) throws Exception {
+        var classes = new String[]{
+                "com.whatsapp.status.composer.VoiceStatusComposerFragment",
+                "com.whatsapp.statuscomposer.composer.VoiceStatusComposerFragment"
+        };
+        Class<?> result = null;
+        for (var clazz : classes) {
+            if ((result = XposedHelpers.findClassIfExists(clazz, loader)) != null)
+                return result;
+        }
+        throw new Exception("VoiceStatusComposerFragmentClass not found");
+    }
+
     public synchronized static Class getVoipManagerClass(@NonNull ClassLoader loader) throws Exception {
         var classes = new String[]{
                 "com.whatsapp.voipcalling.Voip",

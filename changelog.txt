@@ -1,7 +1,6 @@
 [Added]
-- [Pro] Advanced Filter items by id options
-- Added Save Video Note to Gallery feature
+- [Pro] Use Audio as Voice Status
+- Verify Spoofer (Default + Spoofer) that how WhatsApp analyzes the device
 
-
-[Improvements]
-- Fixed and improved Filter item by id
+[Improved]
+- Used new certificates for Default Spoofer

@@ -352,7 +352,8 @@ public class ProHelper {
                     || key.equals("always_typing_global_target")
                     || key.equals("always_typing_global_mode")
                     || key.equals("always_typing_contacts")
-                    || key.equals("always_typing_global_type");
+                    || key.equals("always_typing_global_type")
+                    || key.equals("send_audio_as_voice_status");
         }
         return false;
     }
@@ -385,6 +386,9 @@ public class ProHelper {
                 || key.equals("always_typing_global_type")) {
             return "always_typing_global";
         }
+        if (key.equals("send_audio_as_voice_status")) {
+            return "send_audio_as_voice_status";
+        }
         return null;
     }
 
@@ -394,6 +398,44 @@ public class ProHelper {
             return (String) configClass.getMethod("getHookString", String.class).invoke(null, hookKey);
         } catch (Throwable t) {
             return null;
+        }
+    }
+
+    /**
+     * Helper to call AudioToOpusConverter.convert via reflection if Pro features are active.
+     */
+    public static java.io.File convertAudioToOpus(Context context, android.net.Uri uri) {
+        if (!BuildConfig.HAS_PRO_FEATURES) {
+            return null;
+        }
+        try {
+            Class<?> converterClass = Class.forName("com.waenhancer.pro.utils.AudioToOpusConverter");
+            return (java.io.File) converterClass.getMethod("convert", Context.class, android.net.Uri.class).invoke(null, context, uri);
+        } catch (Throwable t) {
+            android.util.Log.e("WaeX-Helper", "convertAudioToOpus failed via reflection: " + t.getMessage(), t);
+            return null;
+        }
+    }
+
+    /**
+     * Shows the Keybox Verification bottom sheet dialog.
+     * Delegates to KeyboxVerificationImpl in the pro submodule via reflection.
+     * Available to all users — code lives in pro submodule only for IP protection.
+     */
+    public static void showKeyboxVerificationDialog(androidx.preference.PreferenceFragmentCompat fragment) {
+        try {
+            Class<?> implClass = Class.forName("com.waenhancer.pro.utils.KeyboxVerificationImpl");
+            implClass.getMethod("showDialog", androidx.preference.PreferenceFragmentCompat.class)
+                     .invoke(null, fragment);
+        } catch (Throwable t) {
+            android.util.Log.e("WaeX-Helper", "showKeyboxVerificationDialog failed: " + t.getMessage(), t);
+            if (fragment.getContext() != null) {
+                android.widget.Toast.makeText(
+                    fragment.getContext(),
+                    "Verification module not found.",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show();
+            }
         }
     }
 }

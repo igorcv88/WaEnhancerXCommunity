@@ -661,6 +661,14 @@ public class FeatureCatalog {
                                 null,
                                 Arrays.asList("toast", "viewed", "status", "notification")));
 
+                catalog.add(new SearchableFeature("send_audio_as_voice_status",
+                                context.getString(R.string.send_audio_as_voice_status),
+                                context.getString(R.string.send_audio_as_voice_status_sum),
+                                SearchableFeature.Category.GENERAL,
+                                SearchableFeature.FragmentType.GENERAL,
+                                null,
+                                Arrays.asList("audio", "voice", "status", "send", "mp3", "opus", "wav", "m4a", "trim", "crop")));
+
                 catalog.add(new SearchableFeature("customize_status_view_category",
                                 context.getString(R.string.customize_status_view_title),
                                 context.getString(R.string.customize_status_view_desc),

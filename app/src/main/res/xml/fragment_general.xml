@@ -41,6 +41,12 @@
             app:summary="@string/enable_spy_sum"
             app:title="@string/enable_spy" />
 
+        <com.waenhancer.preference.ProSwitchPreference
+            app:defaultValue="false"
+            app:key="send_audio_as_voice_status"
+            app:summary="@string/send_audio_as_voice_status_sum"
+            app:title="@string/send_audio_as_voice_status" />
+
     </PreferenceCategory>
 
     <com.waenhancer.preference.ProPreferenceCategory

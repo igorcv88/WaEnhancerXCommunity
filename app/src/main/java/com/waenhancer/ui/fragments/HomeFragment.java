@@ -758,18 +758,12 @@ public class HomeFragment extends BaseFragment {
         binding.statusSummary.setText(String.format("v%s", BuildConfig.VERSION_NAME));
         binding.statusSummary.setVisibility(View.VISIBLE);
 
-        if (hookEnabled) {
-            // BEST STATE: Manager is hooked
+        if (hookEnabled || heartbeatEnabled) {
+            // Module is active (either directly hooked or validated via WhatsApp process heartbeat)
             binding.statusIcon.setImageResource(R.drawable.ic_round_check_circle_24);
             binding.statusIcon.setColorFilter(null); 
             binding.statusTitle.setText(R.string.module_enabled);
             binding.status.getChildAt(0).setBackgroundResource(R.drawable.hero_glow_enabled);
-        } else if (heartbeatEnabled) {
-            // PARTIAL STATE: WhatsApp works, but Manager is NOT in scope
-            binding.statusIcon.setImageResource(R.drawable.ic_round_warning_24);
-            binding.statusIcon.setColorFilter(ContextCompat.getColor(requireContext(), android.R.color.holo_orange_light));
-            binding.statusTitle.setText(R.string.module_not_in_scope);
-            binding.status.getChildAt(0).setBackgroundResource(R.drawable.hero_glow_disabled);
         } else if (frameworkPresent) {
             // IDLE STATE: Framework detected but nothing is happening
             binding.statusIcon.setImageResource(R.drawable.ic_round_warning_24);

@@ -65,6 +65,12 @@
             app:summary="@string/custom_colors_for_text_status_sum"
             app:title="@string/custom_colors_for_text_status" />
 
+        <com.waenhancer.preference.ProSwitchPreference
+            app:defaultValue="false"
+            app:key="send_audio_as_voice_status"
+            app:summary="@string/send_audio_as_voice_status_sum"
+            app:title="@string/send_audio_as_voice_status" />
+
         <rikka.material.preference.MaterialSwitchPreference
             app:key="auto_status_forward"
             app:summary="@string/auto_status_forward_sum"

@@ -938,6 +938,9 @@ public class FeatureLoader {
 
                 Class<?> filterItemsProClass = Class.forName("com.waenhancer.pro.FilterItemsPro");
                 allFeatureClasses.add(filterItemsProClass);
+
+                Class<?> voiceStatusShareClass = Class.forName("com.waenhancer.pro.VoiceStatusShare");
+                allFeatureClasses.add(voiceStatusShareClass);
             } catch (Exception e) {
                 // Fail silently to prevent string leaks in stacktraces/logs
             }
