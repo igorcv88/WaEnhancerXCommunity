@@ -1,6 +1,2 @@
 [Added]
-- [Pro] Use Audio as Voice Status
-- Verify Spoofer (Default + Spoofer) that how WhatsApp analyzes the device
-
-[Improved]
-- Used new certificates for Default Spoofer
+- Added support for 2.26.24.xx WA/WB

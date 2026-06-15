@@ -728,4 +728,5 @@ You can still try it, but please wait for a stable version — it will be launch
     <string name="send_audio_as_voice_status">Send Audio as Voice Status</string>
     <string name="send_audio_as_voice_status_sum">Enables picking and uploading local audio files as voice statuses</string>
     <string name="pick_audio_file">Pick Audio File</string>
+    <string name="press_back_again_to_exit">Press back again to exit</string>
 </resources>

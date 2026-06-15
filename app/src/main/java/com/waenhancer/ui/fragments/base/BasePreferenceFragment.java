@@ -298,7 +298,7 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
             String channel = mPrefs.getString("release_channel", "stable");
             WppCore.setPrivString("release_channel", channel);
         }
-        if (Objects.equals(s, "bootloader_spoofer_xml") || Objects.equals(s, "bootloader_spoofer_custom")) {
+        if (Objects.equals(s, "bootloader_spoofer_xml") || Objects.equals(s, "bootloader_spoofer_custom") || Objects.equals(s, "bootloader_spoofer")) {
             if (Objects.equals(s, "bootloader_spoofer_xml")) {
                 mPrefs.edit()
                         .remove("keybox_verify_status")
@@ -921,7 +921,34 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
             score = mPrefs.getInt("default_kb_score", -1);
         }
 
+        // Live check for spoofer status
+        boolean hookActive = isBootloaderSpooferActive();
+        boolean attestationSpoofed = isBootloaderAttestationSpoofed();
         android.content.Context context = getContext();
+        if (context != null) {
+            String currentPkg = context.getPackageName();
+            boolean isInWhatsApp = "com.whatsapp".equals(currentPkg) || "com.whatsapp.w4b".equals(currentPkg);
+            if (!isInWhatsApp && hookActive) {
+                attestationSpoofed = true; // Fallback for manager app UI
+            }
+        }
+        boolean bootloaderSpoofEnabled = mPrefs.getBoolean("bootloader_spoofer", false);
+        boolean spooferOk = bootloaderSpoofEnabled && hookActive && attestationSpoofed;
+
+        // Force fail status if spoofer is disabled or inactive
+        if (!spooferOk) {
+            status = "Failed";
+        }
+
+        // Add live spooferScore to cached cert score
+        int spooferScore = 0;
+        if (hookActive) spooferScore += 5;
+        if (attestationSpoofed) spooferScore += 5;
+
+        if (score >= 0) {
+            score += spooferScore;
+        }
+
         if (context != null) {
             if (lastCheckTime == 0L || status == null || status.isEmpty()) {
                 verifyPref.setSummary("Check spoofer trust chain, keys, and expiration");

@@ -55,6 +55,7 @@ public class MainActivity extends BaseActivity {
     private String pendingParentKey = null;
 
     private boolean isBottomBarHidden = false;
+    private long backPressedTime = 0;
 
     private void animateBottomBar(boolean hide) {
         if (isBottomBarHidden == hide) return;
@@ -490,6 +491,31 @@ public class MainActivity extends BaseActivity {
             } catch (Throwable ignored) {}
         }
         return false;
+    }
+
+    @Override
+    public void onBackPressed() {
+        int currentItem = binding.viewPager.getCurrentItem();
+        Fragment fragment = getSupportFragmentManager().findFragmentByTag("f" + currentItem);
+        if (fragment != null && fragment.isAdded()) {
+            FragmentManager childFm = fragment.getChildFragmentManager();
+            if (childFm.getBackStackEntryCount() > 0) {
+                childFm.popBackStack();
+                return;
+            }
+        }
+
+        if (currentItem != 2) {
+            binding.viewPager.setCurrentItem(2, true);
+            return;
+        }
+
+        if (backPressedTime + 2000 > System.currentTimeMillis()) {
+            super.onBackPressed();
+        } else {
+            android.widget.Toast.makeText(this, R.string.press_back_again_to_exit, android.widget.Toast.LENGTH_SHORT).show();
+            backPressedTime = System.currentTimeMillis();
+        }
     }
 
     @Override
