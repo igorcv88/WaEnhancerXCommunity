@@ -286,6 +286,8 @@
     <string name="other">Other</string>
     <string name="enable_media_preview">Enable Media Preview</string>
     <string name="enable_media_preview_sum">Add a button to preview media in a temporary file (without downloading it permanently)</string>
+    <string name="file_size_spoofer">File Size Spoofer</string>
+    <string name="file_size_spoofer_sum">Add a button in the send preview screen to spoof the displayed file size shown to the recipient</string>
     <string name="new_ui_group_filter">New UI Group Filter</string>
     <string name="new_ui_group_filter_sum">Disabled: This feature is currently incompatible with the latest WhatsApp build due to significant internal layout changes. It will be restored in a future update.</string>
     <string name="call_blocking_type">Call blocking type</string>

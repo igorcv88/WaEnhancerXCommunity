@@ -158,6 +158,27 @@ public class ProHelper {
         for (int i = 0; i < group.getPreferenceCount(); i++) {
             Preference pref = group.getPreference(i);
 
+            // Dynamically append [Limited Free] badge if the preference is limited free
+            String prefKey = pref.getKey();
+            if (prefKey != null) {
+                boolean isFree = false;
+                try {
+                    Class<?> lfMgr = Class.forName("com.waenhancer.pro.utils.LimitedFreeManager");
+                    Boolean res = (Boolean) lfMgr.getMethod("isPreferenceEnabled", String.class).invoke(null, prefKey);
+                    if (res != null && res) {
+                        isFree = true;
+                    }
+                } catch (Throwable ignored) {}
+
+                if (isFree) {
+                    CharSequence title = pref.getTitle();
+                    if (title != null && !title.toString().contains("Limited Free")) {
+                        String coloredBadge = " <font color='#02C697'><b>[Limited Free]</b></font>";
+                        pref.setTitle(Html.fromHtml(title.toString() + coloredBadge, Html.FROM_HTML_MODE_LEGACY));
+                    }
+                }
+            }
+
             if (pref instanceof PreferenceGroup) {
                 PreferenceGroup prefGroup = (PreferenceGroup) pref;
                 String activationKey = "pro_activation_link_" + prefGroup.getKey();
@@ -210,14 +231,27 @@ public class ProHelper {
                 }
             } else {
                 if (isProFeature(pref) && !proActive) {
-                    if (pref.getClass().getName().contains("ProSwitchPreference")) {
-                        if (pref instanceof TwoStatePreference) {
-                            ((TwoStatePreference) pref).setChecked(false);
+                    boolean limitedFree = false;
+                    try {
+                        Class<?> lfMgr = Class.forName("com.waenhancer.pro.utils.LimitedFreeManager");
+                        Boolean isFree = (Boolean) lfMgr.getMethod("isPreferenceEnabled", String.class).invoke(null, pref.getKey());
+                        if (isFree != null && isFree) {
+                            limitedFree = true;
                         }
+                    } catch (Throwable ignored) {}
+
+                    if (limitedFree) {
+                        // Skip disabling/unchecking if it's a limited-free feature
                     } else {
-                        pref.setEnabled(false);
-                        if (pref instanceof TwoStatePreference) {
-                            ((TwoStatePreference) pref).setChecked(false);
+                        if (pref.getClass().getName().contains("ProSwitchPreference")) {
+                            if (pref instanceof TwoStatePreference) {
+                                ((TwoStatePreference) pref).setChecked(false);
+                            }
+                        } else {
+                            pref.setEnabled(false);
+                            if (pref instanceof TwoStatePreference) {
+                                ((TwoStatePreference) pref).setChecked(false);
+                            }
                         }
                     }
                 } else if (isProFeature(pref) && proActive) {
@@ -353,7 +387,8 @@ public class ProHelper {
                     || key.equals("always_typing_global_mode")
                     || key.equals("always_typing_contacts")
                     || key.equals("always_typing_global_type")
-                    || key.equals("send_audio_as_voice_status");
+                    || key.equals("send_audio_as_voice_status")
+                    || key.equals("file_size_spoofer");
         }
         return false;
     }
@@ -388,6 +423,9 @@ public class ProHelper {
         }
         if (key.equals("send_audio_as_voice_status")) {
             return "send_audio_as_voice_status";
+        }
+        if (key.equals("file_size_spoofer")) {
+            return "file_size_spoofer";
         }
         return null;
     }

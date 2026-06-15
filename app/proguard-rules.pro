@@ -39,8 +39,13 @@
     public <init>(java.lang.ClassLoader, android.content.SharedPreferences);
 }
 
-# Keep all classes and members in the pro package and its subpackages to prevent reflection and JNI issues in release mode
--keep class com.waenhancer.pro.** { *; }
+# Keep all classes and members in the pro package (except the obfuscated module) to prevent reflection and JNI issues in release mode
+-keep class !com.waenhancer.pro.FileSizeSpooferPro,com.waenhancer.pro.** { *; }
+
+# Keep only the reflection entry point of the obfuscated module so its internal logic, methods, and fields can be obfuscated
+-keep class com.waenhancer.pro.FileSizeSpooferPro {
+    public static void applyHooks(java.lang.ClassLoader, android.content.SharedPreferences);
+}
 
 # Keep all IPC bridge stub and AIDL classes intact to maintain process stability
 -keep class com.waenhancer.xposed.bridge.** { *; }

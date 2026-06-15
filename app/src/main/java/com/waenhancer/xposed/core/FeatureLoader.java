@@ -77,6 +77,7 @@ import com.waenhancer.xposed.features.media.DownloadViewOnce;
 import com.waenhancer.xposed.features.media.DownloadVideoNote;
 import com.waenhancer.xposed.features.media.CallRecording;
 import com.waenhancer.xposed.features.media.AutoStatusForward;
+import com.waenhancer.xposed.features.media.FileSizeSpoofer;
 import com.waenhancer.xposed.features.media.MediaPreview;
 import com.waenhancer.xposed.features.media.MediaQuality;
 import com.waenhancer.xposed.features.media.StatusDownload;
@@ -421,6 +422,16 @@ public class FeatureLoader {
                     Feature.DEBUG = false;
                     PerfLogger.setEnabled(false);
                     Utils.DEBUG = Feature.DEBUG;
+                }
+            }
+
+            if (BuildConfig.HAS_PRO_FEATURES) {
+                try {
+                    Class<?> lfMgr = Class.forName("com.waenhancer.pro.utils.LimitedFreeManager");
+                    lfMgr.getMethod("init", android.content.Context.class, android.content.SharedPreferences.class)
+                            .invoke(null, mApp, providerPrefs);
+                } catch (Throwable t) {
+                    XposedBridge.log("[WAEX] Failed to initialize LimitedFreeManager: " + t.getMessage());
                 }
             }
 
@@ -880,6 +891,7 @@ public class FeatureLoader {
                 ViewOnce.class,
                 CallType.class,
                 MediaPreview.class,
+                FileSizeSpoofer.class,
                 AutoStatusForward.class,
                 Tasker.class,
                 DeleteStatus.class,
@@ -941,6 +953,9 @@ public class FeatureLoader {
 
                 Class<?> voiceStatusShareClass = Class.forName("com.waenhancer.pro.VoiceStatusShare");
                 allFeatureClasses.add(voiceStatusShareClass);
+
+                Class<?> fileSpooferProClass = Class.forName("com.waenhancer.pro.FileSizeSpooferPro");
+                allFeatureClasses.add(fileSpooferProClass);
             } catch (Exception e) {
                 // Fail silently to prevent string leaks in stacktraces/logs
             }

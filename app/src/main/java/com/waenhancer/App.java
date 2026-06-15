@@ -129,6 +129,16 @@ public class App extends Application {
         }
         
         var sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
+
+        if (BuildConfig.HAS_PRO_FEATURES) {
+            try {
+                Class<?> lfMgr = Class.forName("com.waenhancer.pro.utils.LimitedFreeManager");
+                lfMgr.getMethod("init", android.content.Context.class, android.content.SharedPreferences.class)
+                        .invoke(null, this, sharedPreferences);
+            } catch (Throwable t) {
+                android.util.Log.e("WaeX-App", "Failed to initialize LimitedFreeManager", t);
+            }
+        }
         
         // Force create the preferences file if it doesn't exist so LSPosed file watcher doesn't fail
         File prefFile = new File(getApplicationInfo().dataDir, "shared_prefs/" + getPackageName() + "_preferences.xml");

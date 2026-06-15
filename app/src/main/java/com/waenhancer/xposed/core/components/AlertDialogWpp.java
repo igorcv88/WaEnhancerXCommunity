@@ -860,7 +860,7 @@ public class AlertDialogWpp {
                         mainLayout.getViewTreeObserver().removeOnGlobalLayoutListener(this);
                         int measuredHeight = mainLayout.getHeight();
                         int maxAllowedHeight = mIsFullHeight ? (int) capHeight : halfScreenHeight;
-                        if (mIsFullHeight || measuredHeight > maxAllowedHeight) {
+                        if (measuredHeight > maxAllowedHeight) {
                             android.view.ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
                             lp.height = maxAllowedHeight;
                             mainLayout.setLayoutParams(lp);

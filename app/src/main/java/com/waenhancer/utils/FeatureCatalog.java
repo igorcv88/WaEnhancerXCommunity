@@ -1065,6 +1065,14 @@ public class FeatureCatalog {
                                 null,
                                 Arrays.asList("media", "preview", "temporary")));
 
+                catalog.add(new SearchableFeature("file_size_spoofer",
+                                context.getString(R.string.file_size_spoofer),
+                                context.getString(R.string.file_size_spoofer_sum),
+                                SearchableFeature.Category.MEDIA,
+                                SearchableFeature.FragmentType.MEDIA,
+                                null,
+                                Arrays.asList("file", "size", "spoofer", "spoof", "fake", "metadata", "send", "preview", "bubble")));
+
                 catalog.add(new SearchableFeature("pro_status_splitter",
                                 context.getString(R.string.pro_status_splitter),
                                 context.getString(R.string.pro_status_splitter_sum),

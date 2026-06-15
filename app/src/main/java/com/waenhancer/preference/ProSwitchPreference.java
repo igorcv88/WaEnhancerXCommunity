@@ -62,8 +62,19 @@ public class ProSwitchPreference extends rikka.material.preference.MaterialSwitc
         }
 
         boolean isVerified = getSafeSharedPreferences().getBoolean("is_pro_verified", false);
+        boolean limitedFree = false;
+        try {
+            Class<?> lfMgr = Class.forName("com.waenhancer.pro.utils.LimitedFreeManager");
+            Boolean isFree = (Boolean) lfMgr.getMethod("isPreferenceEnabled", String.class).invoke(null, getKey());
+            if (isFree != null && isFree) {
+                limitedFree = true;
+            }
+        } catch (Throwable ignored) {}
+
         if (isVerified) {
             setSummary("Status: Pro Active");
+        } else if (limitedFree) {
+            setSummary("Status: Limited Free Active");
         } else {
             setSummary("Activate Pro First");
         }
@@ -72,7 +83,16 @@ public class ProSwitchPreference extends rikka.material.preference.MaterialSwitc
     @Override
     protected void onClick() {
         boolean isVerified = getSafeSharedPreferences().getBoolean("is_pro_verified", false);
-        if (isVerified) {
+        boolean limitedFree = false;
+        try {
+            Class<?> lfMgr = Class.forName("com.waenhancer.pro.utils.LimitedFreeManager");
+            Boolean isFree = (Boolean) lfMgr.getMethod("isPreferenceEnabled", String.class).invoke(null, getKey());
+            if (isFree != null && isFree) {
+                limitedFree = true;
+            }
+        } catch (Throwable ignored) {}
+
+        if (isVerified || limitedFree) {
             super.onClick();
         } else {
             Context context = getContext();
