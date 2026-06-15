@@ -1,10 +1,2 @@
-[Added]
-- Added support for 2.26.24.xx WA/WB
-- File Size Spoofer (Video/Image message size spoof)
-
-[Improvements]
-- Fixed Floating Bottom Bar for Meta AI tab
-- Performance Improvements
-
-
-Note: Spoofed file size will not change the actual size of media, it will only be visible on message bubble for receiver but when receiver will download media, it will download with the actual size of media
+[Fixes]
+- Fixed GroupAdmin plugin error crash on startup

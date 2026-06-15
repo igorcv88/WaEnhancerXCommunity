@@ -55,7 +55,7 @@ public class ReflectionUtils {
 
     public static Method findMethodUsingFilter(Class<?> clazz, Predicate<Method> predicate) {
         do {
-            var results = Arrays.stream(clazz.getDeclaredMethods()).filter(predicate).findFirst();
+            var results = getCachedDeclaredMethods(clazz).stream().filter(predicate).findFirst();
             if (results.isPresent()) return results.get();
         } while ((clazz = clazz.getSuperclass()) != null);
         throw new RuntimeException("Method not found");
@@ -66,7 +66,7 @@ public class ReflectionUtils {
      */
     public static Method[] findAllMethodsUsingFilter(Class<?> clazz, Predicate<Method> predicate) {
         do {
-            var results = Arrays.stream(clazz.getDeclaredMethods()).filter(predicate).collect(Collectors.toList());
+            var results = getCachedDeclaredMethods(clazz).stream().filter(predicate).collect(Collectors.toList());
             if (!results.isEmpty()) return results.toArray(new Method[0]);
         } while ((clazz = clazz.getSuperclass()) != null);
         throw new RuntimeException("Method not found");
@@ -74,7 +74,7 @@ public class ReflectionUtils {
 
     public static Field findFieldUsingFilter(Class<?> clazz, Predicate<Field> predicate) {
         do {
-            var results = Arrays.stream(clazz.getDeclaredFields()).filter(predicate).findFirst();
+            var results = getCachedDeclaredFields(clazz).stream().filter(predicate).findFirst();
             if (results.isPresent()) return results.get();
         } while ((clazz = clazz.getSuperclass()) != null);
         throw new RuntimeException("Field not found");
@@ -85,7 +85,7 @@ public class ReflectionUtils {
      */
     public static Constructor[] findAllConstructorsUsingFilter(Class<?> clazz, Predicate<Constructor> predicate) {
         do {
-            var results = Arrays.stream(clazz.getDeclaredConstructors()).filter(predicate).collect(Collectors.toList());
+            var results = getCachedDeclaredConstructors(clazz).stream().filter(predicate).collect(Collectors.toList());
             if (!results.isEmpty()) return results.toArray(new Constructor[0]);
         } while ((clazz = clazz.getSuperclass()) != null);
         return new Constructor[0];
@@ -93,7 +93,7 @@ public class ReflectionUtils {
 
     public static Constructor findConstructorUsingFilter(Class<?> clazz, Predicate<Constructor> predicate) {
         do {
-            var results = Arrays.stream(clazz.getDeclaredConstructors()).filter(predicate).findFirst();
+            var results = getCachedDeclaredConstructors(clazz).stream().filter(predicate).findFirst();
             if (results.isPresent()) return results.get();
         } while ((clazz = clazz.getSuperclass()) != null);
         throw new RuntimeException("Constructor not found");
@@ -105,7 +105,7 @@ public class ReflectionUtils {
     @NonNull
     public static Field[] findAllFieldsUsingFilter(Class<?> clazz, @NonNull Predicate<Field> predicate) {
         do {
-            var results = Arrays.stream(clazz.getDeclaredFields()).filter(predicate).collect(Collectors.toList());
+            var results = getCachedDeclaredFields(clazz).stream().filter(predicate).collect(Collectors.toList());
             if (!results.isEmpty()) return results.toArray(new Field[0]);
         } while ((clazz = clazz.getSuperclass()) != null);
         return new Field[0];
@@ -114,7 +114,7 @@ public class ReflectionUtils {
 
     public static Method findMethodUsingFilterIfExists(Class<?> clazz, Predicate<Method> predicate) {
         do {
-            var results = Arrays.stream(clazz.getDeclaredMethods()).filter(predicate).findFirst();
+            var results = getCachedDeclaredMethods(clazz).stream().filter(predicate).findFirst();
             if (results.isPresent()) return results.get();
         } while ((clazz = clazz.getSuperclass()) != null);
         return null;
@@ -122,7 +122,7 @@ public class ReflectionUtils {
 
     public static Field findFieldUsingFilterIfExists(Class<?> clazz, Predicate<Field> predicate) {
         do {
-            var results = Arrays.stream(clazz.getDeclaredFields()).filter(predicate).findFirst();
+            var results = getCachedDeclaredFields(clazz).stream().filter(predicate).findFirst();
             if (results.isPresent()) return results.get();
         } while ((clazz = clazz.getSuperclass()) != null);
         return null;
@@ -145,7 +145,7 @@ public class ReflectionUtils {
         List<Field> fields = new ArrayList<>();
         Class<?> current = cls;
         while (current != null) {
-            for (Field f : current.getDeclaredFields()) {
+            for (Field f : getCachedDeclaredFields(current)) {
                 if (type.isAssignableFrom(f.getType())) {
                     f.setAccessible(true);
                     fields.add(f);
@@ -160,7 +160,7 @@ public class ReflectionUtils {
         List<Field> fields = new ArrayList<>();
         Class<?> current = cls;
         while (current != null) {
-            for (Field f : current.getDeclaredFields()) {
+            for (Field f : getCachedDeclaredFields(current)) {
                 if (type == f.getType()) {
                     f.setAccessible(true);
                     fields.add(f);
@@ -410,7 +410,7 @@ public class ReflectionUtils {
             Object remoteJid = null;
 
             // Find id (String field)
-            for (Field f : keyClass.getDeclaredFields()) {
+            for (Field f : getCachedDeclaredFields(keyClass)) {
                 f.setAccessible(true);
                 if (f.getType() == String.class) {
                     id = (String) f.get(unknownKey);
@@ -419,7 +419,7 @@ public class ReflectionUtils {
             }
 
             // Find fromMe (boolean field)
-            for (Field f : keyClass.getDeclaredFields()) {
+            for (Field f : getCachedDeclaredFields(keyClass)) {
                 f.setAccessible(true);
                 if (f.getType() == boolean.class || f.getType() == Boolean.class) {
                     fromMe = f.getBoolean(unknownKey);
@@ -428,7 +428,7 @@ public class ReflectionUtils {
             }
 
             // Find remoteJid (first non-primitive object field that is not String, preferably status@broadcast)
-            for (Field f : keyClass.getDeclaredFields()) {
+            for (Field f : getCachedDeclaredFields(keyClass)) {
                 f.setAccessible(true);
                 if (!f.getType().isPrimitive() && f.getType() != String.class) {
                     Object val = f.get(unknownKey);
@@ -444,7 +444,7 @@ public class ReflectionUtils {
 
             // Fallback for remoteJid if not exactly status@broadcast
             if (remoteJid == null) {
-                for (Field f : keyClass.getDeclaredFields()) {
+                for (Field f : getCachedDeclaredFields(keyClass)) {
                     f.setAccessible(true);
                     if (!f.getType().isPrimitive() && f.getType() != String.class) {
                         Object val = f.get(unknownKey);
@@ -562,6 +562,32 @@ public class ReflectionUtils {
         return declaredFieldsCache.computeIfAbsent(clazz, c -> {
             try {
                 return Arrays.asList(c.getDeclaredFields());
+            } catch (Throwable t) {
+                return Collections.emptyList();
+            }
+        });
+    }
+
+    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, List<Method>> declaredMethodsCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static List<Method> getCachedDeclaredMethods(Class<?> clazz) {
+        if (clazz == null) return Collections.emptyList();
+        return declaredMethodsCache.computeIfAbsent(clazz, c -> {
+            try {
+                return Arrays.asList(c.getDeclaredMethods());
+            } catch (Throwable t) {
+                return Collections.emptyList();
+            }
+        });
+    }
+
+    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, List<Constructor>> declaredConstructorsCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static List<Constructor> getCachedDeclaredConstructors(Class<?> clazz) {
+        if (clazz == null) return Collections.emptyList();
+        return declaredConstructorsCache.computeIfAbsent(clazz, c -> {
+            try {
+                return Arrays.asList(c.getDeclaredConstructors());
             } catch (Throwable t) {
                 return Collections.emptyList();
             }
