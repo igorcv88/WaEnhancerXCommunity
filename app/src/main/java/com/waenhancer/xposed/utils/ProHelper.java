@@ -737,13 +737,29 @@ public class ProHelper {
             return null;
         }
 
+        String libPath = null;
+        try {
+            var pm = context.getPackageManager();
+            var info = pm.getApplicationInfo("com.waex.pro", 0);
+            if (info.nativeLibraryDir != null && new File(info.nativeLibraryDir).exists()) {
+                libPath = info.nativeLibraryDir;
+            }
+        } catch (Throwable ignored) {}
+
+        if (libPath == null) {
+            try {
+                var pref = PreferenceManager.getDefaultSharedPreferences(context);
+                libPath = pref.getString("pro_plugin_lib_path", null);
+            } catch (Throwable ignored) {}
+        }
+
         try {
             File codeCacheDir = context.getCodeCacheDir();
             ClassLoader hostClassLoader = ProHelper.class.getClassLoader();
             companionPluginClassLoader = new DexClassLoader(
                 apkPath,
                 codeCacheDir.getAbsolutePath(),
-                null,
+                libPath,
                 hostClassLoader
             );
         } catch (Throwable t) {

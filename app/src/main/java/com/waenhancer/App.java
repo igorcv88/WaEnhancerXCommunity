@@ -128,6 +128,21 @@ public class App extends Application {
         
         var sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
 
+        // Resolve and store the Pro plugin APK path so that Xposed hooks can load it
+        try {
+            var pm = getPackageManager();
+            var info = pm.getApplicationInfo("com.waex.pro", 0);
+            if (info.sourceDir != null && new java.io.File(info.sourceDir).exists()) {
+                sharedPreferences.edit()
+                    .putString("pro_plugin_path", info.sourceDir)
+                    .putString("pro_plugin_lib_path", info.nativeLibraryDir)
+                    .apply();
+                try {
+                    com.waenhancer.xposed.utils.LicenseManager.makePrefsWorldReadable(this);
+                } catch (Exception ignored) {}
+            }
+        } catch (Throwable ignored) {}
+
         if (BuildConfig.HAS_PRO_FEATURES) {
             try {
                 com.waenhancer.xposed.utils.ProHelper.initLimitedFree(this, sharedPreferences);

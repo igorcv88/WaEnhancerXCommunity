@@ -23,9 +23,17 @@ public class PluginLoader {
         }
 
         XposedBridge.log("[WAEX] Pro plugin APK found at: " + apkPath + ". Initializing loading...");
+        try {
+            XposedBridge.log("[WAEX] Diagnostic - XposedBridge loader: " + de.robv.android.xposed.XposedBridge.class.getClassLoader());
+            XposedBridge.log("[WAEX] Diagnostic - PluginLoader loader: " + PluginLoader.class.getClassLoader());
+            XposedBridge.log("[WAEX] Diagnostic - HostLoader: " + hostClassLoader);
+            XposedBridge.log("[WAEX] Diagnostic - Thread context loader: " + Thread.currentThread().getContextClassLoader());
+        } catch (Throwable t) {
+            XposedBridge.log("[WAEX] Diagnostic error: " + t.toString());
+        }
 
         try {
-            ClassLoader pluginClassLoader = createClassLoader(apkPath, context, hostClassLoader);
+            ClassLoader pluginClassLoader = createClassLoader(apkPath, context, hostClassLoader, pref);
             loadedPluginClassLoader = pluginClassLoader;
             initAndRunPlugin(pluginClassLoader, hostClassLoader, context, pref);
         } catch (Throwable t) {
@@ -55,13 +63,29 @@ public class PluginLoader {
         return null;
     }
 
-    private static ClassLoader createClassLoader(String apkPath, Context context, ClassLoader hostClassLoader) {
+    private static ClassLoader createClassLoader(String apkPath, Context context, ClassLoader hostClassLoader, SharedPreferences pref) {
         File codeCacheDir = context.getCodeCacheDir();
         ClassLoader isolatedParent = new IsolatedParentClassLoader(hostClassLoader);
+        
+        String libPath = null;
+        try {
+            var pm = context.getPackageManager();
+            var info = pm.getApplicationInfo("com.waex.pro", 0);
+            if (info.nativeLibraryDir != null && new File(info.nativeLibraryDir).exists()) {
+                libPath = info.nativeLibraryDir;
+            }
+        } catch (Throwable ignored) {}
+
+        if (libPath == null && pref != null) {
+            libPath = pref.getString("pro_plugin_lib_path", null);
+        }
+
+        XposedBridge.log("[WAEX] Creating plugin classloader with libPath: " + libPath);
+
         return new DexClassLoader(
             apkPath,
             codeCacheDir.getAbsolutePath(),
-            null,
+            libPath,
             isolatedParent
         );
     }

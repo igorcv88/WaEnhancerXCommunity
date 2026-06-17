@@ -429,6 +429,12 @@ public class FeatureLoader {
 
             initComponents(loader, providerPrefs);
             plugins(loader, providerPrefs, packageInfo.versionName);
+            try {
+                XposedBridge.log("[WAEX] XC_MethodHook classloader: " + de.robv.android.xposed.XC_MethodHook.class.getClassLoader() + " (hash: " + System.identityHashCode(de.robv.android.xposed.XC_MethodHook.class.getClassLoader()) + ")");
+                XposedBridge.log("[WAEX] XposedBridge classloader: " + de.robv.android.xposed.XposedBridge.class.getClassLoader() + " (hash: " + System.identityHashCode(de.robv.android.xposed.XposedBridge.class.getClassLoader()) + ")");
+            } catch (Throwable t) {
+                XposedBridge.log("[WAEX] Failed to inspect Xposed classloaders: " + t.toString());
+            }
             com.waenhancer.xposed.core.plugins.PluginLoader.loadPlugins(mApp, loader, providerPrefs);
 
             // Setup lazy feature loading system
