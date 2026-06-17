@@ -106,8 +106,7 @@ public class App extends Application {
                     com.waenhancer.xposed.utils.Utils.handleSubscriptionDowngrade(App.this, "Your subscription plan has expired.");
                     
                     try {
-                        Class<?> managerClass = Class.forName("com.waenhancer.xposed.utils.LicenseManager");
-                        managerClass.getMethod("makePrefsWorldReadable", Context.class).invoke(null, App.this);
+                        com.waenhancer.xposed.utils.LicenseManager.makePrefsWorldReadable(App.this);
                     } catch (Exception ignored) {}
 
                     try {
@@ -121,8 +120,7 @@ public class App extends Application {
 
             // Perform silent background license re-verification at startup
             try {
-                Class<?> managerClass = Class.forName("com.waenhancer.xposed.utils.LicenseManager");
-                managerClass.getMethod("silentCheck", Context.class).invoke(null, App.this);
+                com.waenhancer.xposed.utils.LicenseManager.silentCheck(App.this);
             } catch (Exception e) {
                 android.util.Log.e("WaeX-App", "Failed to invoke silentCheck", e);
             }
@@ -132,9 +130,7 @@ public class App extends Application {
 
         if (BuildConfig.HAS_PRO_FEATURES) {
             try {
-                Class<?> lfMgr = Class.forName("com.waenhancer.pro.utils.LimitedFreeManager");
-                lfMgr.getMethod("init", android.content.Context.class, android.content.SharedPreferences.class)
-                        .invoke(null, this, sharedPreferences);
+                com.waenhancer.xposed.utils.ProHelper.initLimitedFree(this, sharedPreferences);
             } catch (Throwable t) {
                 android.util.Log.e("WaeX-App", "Failed to initialize LimitedFreeManager", t);
             }

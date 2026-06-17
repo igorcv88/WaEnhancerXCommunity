@@ -34,11 +34,19 @@ public class TypingPrivacy extends Feature {
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 // Safeguard: Check if this was triggered by the AlwaysTyping pro engine
                 try {
-                    Class<?> alwaysTypingCls = Class.forName("com.waenhancer.pro.AlwaysTyping", false, classLoader);
-                    Field isEngineTriggeringField = alwaysTypingCls.getDeclaredField("isEngineTriggering");
-                    isEngineTriggeringField.setAccessible(true);
-                    if (isEngineTriggeringField.getBoolean(null)) {
-                        return; // Let the engine send its simulated composing packets
+                    ClassLoader pluginLoader = null;
+                    try {
+                        pluginLoader = (ClassLoader) Class.forName("com.waenhancer.xposed.core.plugins.PluginLoader")
+                                .getMethod("getPluginClassLoader").invoke(null);
+                    } catch (Throwable ignored) {}
+
+                    if (pluginLoader != null) {
+                        Class<?> alwaysTypingCls = Class.forName("com.waex.pro.AlwaysTyping", false, pluginLoader);
+                        Field isEngineTriggeringField = alwaysTypingCls.getDeclaredField("isEngineTriggering");
+                        isEngineTriggeringField.setAccessible(true);
+                        if (isEngineTriggeringField.getBoolean(null)) {
+                            return; // Let the engine send its simulated composing packets
+                        }
                     }
                 } catch (Throwable ignored) {
                     // AlwaysTyping class not loaded, or not engine-triggered

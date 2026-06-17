@@ -16,7 +16,7 @@ import com.waenhancer.adapter.ProFeatureAdapter;
 import androidx.annotation.Nullable;
 import androidx.appcompat.widget.Toolbar;
 import androidx.preference.PreferenceManager;
-import androidx.appcompat.app.AppCompatActivity;
+import com.waenhancer.activities.base.BaseActivity;
 
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.button.MaterialButton;
@@ -31,7 +31,7 @@ import com.waenhancer.xposed.utils.SafeSharedPreferences;
  * Adheres completely to the application's XML layouts and theme attributes.
  * Integrates with the official Telegram Bot (@waenhancerx_bot) to retrieve license keys.
  */
-public class LicenseActivity extends AppCompatActivity {
+public class LicenseActivity extends BaseActivity {
 
     // State 1: Active Plan Views
     private MaterialCardView activePlanContainer;
@@ -90,42 +90,7 @@ public class LicenseActivity extends AppCompatActivity {
         } catch (Exception ignored) {}
     }
 
-    private void applyThemeAndOverlay() {
-        int appThemeRes = getResId("AppTheme", "style");
-        if (appThemeRes != 0) {
-            setTheme(appThemeRes);
-        }
-        int rikkaThemeRes = getResources().getIdentifier("ThemeOverlay_Rikka_Material3_Preference", "style", "rikka.material.preference");
-        if (rikkaThemeRes != 0) {
-            getTheme().applyStyle(rikkaThemeRes, true);
-        }
-        int themeOverlayRes = getResId("ThemeOverlay", "style");
-        if (themeOverlayRes != 0) {
-            getTheme().applyStyle(themeOverlayRes, true);
-        }
-        
-        try {
-            var prefs = PreferenceManager.getDefaultSharedPreferences(this);
-            var colorMode = prefs.getString("wae_color_mode", "preset");
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && "monet".equals(colorMode)) {
-                return;
-            }
-            var colorPreset = prefs.getString("wae_color_preset", "green");
-            String overlayStyleName = switch (colorPreset != null ? colorPreset : "green") {
-                case "blue" -> "ThemeOverlay_MaterialBlue";
-                case "cyan" -> "ThemeOverlay_MaterialCyan";
-                case "purple" -> "ThemeOverlay_MaterialPurple";
-                case "orange" -> "ThemeOverlay_MaterialOrange";
-                case "red" -> "ThemeOverlay_MaterialRed";
-                case "pink" -> "ThemeOverlay_MaterialPink";
-                default -> "ThemeOverlay_MaterialGreen";
-            };
-            int overlayRes = getResId(overlayStyleName, "style");
-            if (overlayRes != 0) {
-                getTheme().applyStyle(overlayRes, true);
-            }
-        } catch (Exception ignored) {}
-    }
+
 
     private BottomSheetDialog createStyledDialog(android.content.Context context) {
         BottomSheetDialog dialog = new BottomSheetDialog(context);
@@ -163,7 +128,6 @@ public class LicenseActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
-        applyThemeAndOverlay();
         super.onCreate(savedInstanceState);
         setContentView(getResId("activity_license", "layout"));
 
@@ -673,7 +637,7 @@ public class LicenseActivity extends AppCompatActivity {
 
                 boolean isAllowed = true;
                 try {
-                    Class<?> secClazz = Class.forName("com.waenhancer.pro.utils.SecurityNative");
+                    Class<?> secClazz = Class.forName("com.waex.pro.utils.SecurityNative");
                     isAllowed = (Boolean) secClazz.getMethod("isChannelAllowed", String.class, String.class).invoke(null, versionName, whitelist);
                 } catch (Throwable t) {
                     if (!whitelist.isEmpty()) {

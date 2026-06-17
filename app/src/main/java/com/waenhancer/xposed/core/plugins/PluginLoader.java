@@ -9,6 +9,12 @@ import java.io.File;
 
 public class PluginLoader {
 
+    private static volatile ClassLoader loadedPluginClassLoader = null;
+
+    public static ClassLoader getPluginClassLoader() {
+        return loadedPluginClassLoader;
+    }
+
     public static void loadPlugins(Context context, ClassLoader hostClassLoader, SharedPreferences pref) {
         String apkPath = locatePluginApk(context, pref);
         if (apkPath == null) {
@@ -20,6 +26,7 @@ public class PluginLoader {
 
         try {
             ClassLoader pluginClassLoader = createClassLoader(apkPath, context, hostClassLoader);
+            loadedPluginClassLoader = pluginClassLoader;
             initAndRunPlugin(pluginClassLoader, hostClassLoader, context, pref);
         } catch (Throwable t) {
             XposedBridge.log("[WAEX] Failed to load Pro plugin dynamically: " + t.toString());

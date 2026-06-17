@@ -38,9 +38,15 @@ public class KeyboxValidator {
         }
 
         try {
-            Class<?> implClass = Class.forName("com.waenhancer.pro.utils.KeyboxValidatorImpl");
-            java.lang.reflect.Method method = implClass.getMethod("validate", String.class, Object.class);
-            method.invoke(null, xmlContent, result);
+            ClassLoader loader = com.waenhancer.xposed.utils.ProHelper.getCompanionPluginClassLoader(com.waenhancer.App.getInstance());
+            if (loader != null) {
+                Class<?> implClass = Class.forName("com.waex.pro.utils.KeyboxValidatorImpl", true, loader);
+                java.lang.reflect.Method method = implClass.getMethod("validate", String.class, Object.class);
+                method.invoke(null, xmlContent, result);
+            } else {
+                result.parsed = false;
+                result.errorMsg = "Verification submodule not found.";
+            }
         } catch (Exception e) {
             result.parsed = false;
             result.errorMsg = "Failed to load verification submodule: " + e.getMessage();

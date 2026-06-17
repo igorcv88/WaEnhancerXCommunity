@@ -205,8 +205,16 @@ public class FloatingBottomBar extends Feature {
 
                         if (pillDesignPro) {
                             try {
-                                Class<?> pillProClass = Class.forName("com.waenhancer.pro.PillDesignPro");
-                                pillProClass.getMethod("applyProDesign", View.class, float.class).invoke(null, view, density);
+                                ClassLoader pluginLoader = null;
+                                try {
+                                    pluginLoader = (ClassLoader) Class.forName("com.waenhancer.xposed.core.plugins.PluginLoader")
+                                            .getMethod("getPluginClassLoader").invoke(null);
+                                } catch (Throwable ignored) {}
+
+                                if (pluginLoader != null) {
+                                    Class<?> pillProClass = Class.forName("com.waex.pro.PillDesignPro", true, pluginLoader);
+                                    pillProClass.getMethod("applyProDesign", View.class, float.class).invoke(null, view, density);
+                                }
                             } catch (Throwable t) {
                                 XposedBridge.log("Failed to load PillDesignPro: " + t.getMessage());
                             }
