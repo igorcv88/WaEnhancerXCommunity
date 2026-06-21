@@ -132,7 +132,8 @@ public class LicenseManager {
                 if (versionName == null) versionName = "";
                 String encryptedVn = "";
                 try {
-                    Class<?> secClazz = Class.forName("com.waex.pro.utils.SecurityNative");
+                    ClassLoader loader = ProHelper.getPluginClassLoader(context);
+                    Class<?> secClazz = loader != null ? Class.forName("com.waex.pro.utils.SecurityNative", true, loader) : Class.forName("com.waex.pro.utils.SecurityNative");
                     encryptedVn = (String) secClazz.getMethod("encryptVersionName", String.class).invoke(null, versionName);
                 } catch (Throwable t) {
                     try {
@@ -247,7 +248,8 @@ public class LicenseManager {
 
                     if (encryptedConfig != null) {
                         try {
-                            Class<?> proConfigClass = Class.forName("com.waex.pro.utils.ProConfig");
+                            ClassLoader loader = ProHelper.getPluginClassLoader(context);
+                            Class<?> proConfigClass = loader != null ? Class.forName("com.waex.pro.utils.ProConfig", true, loader) : Class.forName("com.waex.pro.utils.ProConfig");
                             java.lang.reflect.Method loadConfigMethod = proConfigClass.getMethod("loadConfig", String.class);
                             loadConfigMethod.invoke(null, encryptedConfig);
                         } catch (Exception ignored) {}
@@ -401,7 +403,8 @@ public class LicenseManager {
 
                 String encryptedVn = "";
                 try {
-                    Class<?> secClazz = Class.forName("com.waex.pro.utils.SecurityNative");
+                    ClassLoader loader = ProHelper.getPluginClassLoader(context);
+                    Class<?> secClazz = loader != null ? Class.forName("com.waex.pro.utils.SecurityNative", true, loader) : Class.forName("com.waex.pro.utils.SecurityNative");
                     encryptedVn = (String) secClazz.getMethod("encryptVersionName", String.class).invoke(null, versionName);
                 } catch (Throwable t) {
                     try {
@@ -483,7 +486,8 @@ public class LicenseManager {
 
                     if (encryptedConfig != null) {
                         try {
-                            Class<?> proConfigClass = Class.forName("com.waex.pro.utils.ProConfig");
+                            ClassLoader loader = ProHelper.getPluginClassLoader(context);
+                            Class<?> proConfigClass = loader != null ? Class.forName("com.waex.pro.utils.ProConfig", true, loader) : Class.forName("com.waex.pro.utils.ProConfig");
                             java.lang.reflect.Method loadConfigMethod = proConfigClass.getMethod("loadConfig", String.class);
                             loadConfigMethod.invoke(null, encryptedConfig);
                         } catch (Exception ignored) {}

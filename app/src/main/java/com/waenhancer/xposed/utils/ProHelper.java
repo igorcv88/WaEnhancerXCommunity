@@ -52,6 +52,26 @@ public class ProHelper {
 
     private static ClassLoader companionPluginClassLoader = null;
 
+    public static synchronized ClassLoader getPluginClassLoader(Context context) {
+        if (companionPluginClassLoader != null) {
+            return companionPluginClassLoader;
+        }
+        if (context == null) {
+            context = App.getInstance();
+        }
+        if (context == null) {
+            return null;
+        }
+        try {
+            android.content.pm.ApplicationInfo appInfo = context.getPackageManager().getApplicationInfo("com.waex.pro", 0);
+            companionPluginClassLoader = new dalvik.system.PathClassLoader(appInfo.sourceDir, ProHelper.class.getClassLoader());
+            return companionPluginClassLoader;
+        } catch (Throwable t) {
+            android.util.Log.e("WaeX-Helper", "Failed to resolve companionPluginClassLoader", t);
+        }
+        return null;
+    }
+
     public static void setForceFree(boolean force) {
         forceFree = force;
     }
@@ -269,38 +289,7 @@ public class ProHelper {
      * Checks if the Pro licensing status is currently active.
      */
     public static boolean isProEnabled() {
-        // Note: HAS_PRO_FEATURES is a compile-time flag for builds that bundle pro sources directly.
-        // In the new modular architecture, the pro plugin is a separate APK — we check license
-        // status from prefs regardless of the build flag.
-        if (!"ACTIVE".equalsIgnoreCase(getProStatus())) {
-            return false;
-        }
-        SharedPreferences prefs = getPrefs();
-        if (prefs == null) {
-            return true;
-        }
-        String whitelist = prefs.getString("whitelist_channels", "");
-        if (whitelist.isEmpty()) {
-            return true;
-        }
-        String versionName = com.waenhancer.BuildConfig.VERSION_NAME;
-        if (versionName == null) {
-            versionName = "";
-        }
-        
-        String channelName = "";
-        if (versionName.contains("-")) {
-            String[] parts = versionName.split("-");
-            if (parts.length >= 2) {
-                channelName = parts[1].trim().toLowerCase();
-            }
-        }
-        for (String ch : whitelist.split(",", -1)) {
-            if (ch.trim().toLowerCase().equals(channelName)) {
-                return true;
-            }
-        }
-        return false;
+        return "ACTIVE".equalsIgnoreCase(getProStatus());
     }
 
     /**
@@ -743,37 +732,88 @@ public class ProHelper {
     public static void checkRootAndInstallPlugin(final Activity activity, final Runnable onConsentAgreed) {
         if (activity == null) return;
         
-        new com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
-            .setTitle(com.waenhancer.R.string.pro_download_consent_title)
-            .setMessage(com.waenhancer.R.string.pro_download_consent_msg)
-            .setPositiveButton(com.waenhancer.R.string.agree_and_download, (dialog, which) -> {
-                if (onConsentAgreed != null) {
-                    onConsentAgreed.run();
+        android.app.ProgressDialog progressDialog = new android.app.ProgressDialog(activity);
+        progressDialog.setMessage("Requesting root permissions...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+        
+        new Thread(() -> {
+            boolean hasRoot = com.waenhancer.utils.RootUtils.hasRootAccess();
+            activity.runOnUiThread(() -> {
+                progressDialog.dismiss();
+                if (hasRoot) {
+                    if (onConsentAgreed != null) {
+                        onConsentAgreed.run();
+                    }
+                    Toast.makeText(activity, "Root access granted. Downloading latest plugin...", Toast.LENGTH_SHORT).show();
+                    startProDownloadAndInstallSilent(activity);
+                } else {
+                    new com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+                        .setTitle("Root Required")
+                        .setMessage("Root access is required to download and install the plugin silently. Please grant root permission.")
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show();
                 }
-                
-                android.app.ProgressDialog progressDialog = new android.app.ProgressDialog(activity);
-                progressDialog.setMessage(activity.getString(com.waenhancer.R.string.checking_root_access));
-                progressDialog.setCancelable(false);
-                progressDialog.show();
-                
-                new Thread(() -> {
-                    boolean hasRoot = com.waenhancer.utils.RootUtils.hasRootAccess();
+            });
+        }).start();
+    }
+
+    public static void startProDownloadAndInstallSilent(final Activity activity) {
+        if (activity == null) return;
+
+        String url = Config.getBaseUrl() + "/api/v1/plugin/latest";
+        File cacheDir = activity.getCacheDir();
+        File apkFile = new File(cacheDir, "pro.apk");
+
+        okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
+        okhttp3.Request request = new okhttp3.Request.Builder()
+                .url(url)
+                .build();
+
+        client.newCall(request).enqueue(new okhttp3.Callback() {
+            @Override
+            public void onFailure(@NonNull okhttp3.Call call, @NonNull IOException e) {
+                activity.runOnUiThread(() -> {
+                    Toast.makeText(activity, "Plugin download failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                });
+            }
+
+            @Override
+            public void onResponse(@NonNull okhttp3.Call call, @NonNull okhttp3.Response response) throws IOException {
+                if (!response.isSuccessful()) {
                     activity.runOnUiThread(() -> {
-                        progressDialog.dismiss();
-                        if (hasRoot) {
-                            startProDownloadAndInstall(activity);
-                        } else {
-                            new com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
-                                .setTitle(android.R.string.dialog_alert_title)
-                                .setMessage(com.waenhancer.R.string.root_required_error)
-                                .setPositiveButton(android.R.string.ok, null)
-                                .show();
-                        }
+                        Toast.makeText(activity, "Plugin download failed: HTTP " + response.code(), Toast.LENGTH_LONG).show();
                     });
-                }).start();
-            })
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
+                    return;
+                }
+
+                File tmpFile = new File(cacheDir, "pro.apk.tmp");
+                try (InputStream is = response.body().byteStream();
+                     FileOutputStream fos = new FileOutputStream(tmpFile)) {
+
+                    byte[] buffer = new byte[8192];
+                    int read;
+                    while ((read = is.read(buffer)) != -1) {
+                        fos.write(buffer, 0, read);
+                    }
+                    fos.flush();
+
+                    if (tmpFile.renameTo(apkFile)) {
+                        activity.runOnUiThread(() -> {
+                            Toast.makeText(activity, "Plugin downloaded. Installing silently...", Toast.LENGTH_SHORT).show();
+                            installProApkWithRoot(activity, apkFile);
+                        });
+                    } else {
+                        throw new IOException("Failed to rename temporary file");
+                    }
+                } catch (Exception e) {
+                    if (tmpFile.exists()) tmpFile.delete();
+                    activity.runOnUiThread(() -> {
+                        Toast.makeText(activity, "Plugin download failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    });
+                }
+            }
+        });
     }
 
     public static void startProDownloadAndInstall(final Activity activity) {

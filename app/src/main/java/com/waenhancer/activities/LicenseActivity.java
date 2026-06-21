@@ -26,6 +26,7 @@ import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textview.MaterialTextView;
 import com.waenhancer.xposed.utils.LicenseManager;
+import com.waenhancer.xposed.utils.ProHelper;
 import com.waenhancer.xposed.utils.SafeSharedPreferences;
 
 /**
@@ -645,26 +646,13 @@ public class LicenseActivity extends BaseActivity {
 
                 boolean isAllowed = true;
                 try {
-                    Class<?> secClazz = Class.forName("com.waex.pro.utils.SecurityNative");
+                    ClassLoader loader = ProHelper.getPluginClassLoader(LicenseActivity.this);
+                    Class<?> secClazz = loader != null ? Class.forName("com.waex.pro.utils.SecurityNative", true, loader) : Class.forName("com.waex.pro.utils.SecurityNative");
                     isAllowed = (Boolean) secClazz.getMethod("isChannelAllowed", String.class, String.class).invoke(null, versionName, whitelist);
                 } catch (Throwable t) {
-                    if (!whitelist.isEmpty()) {
-                        isAllowed = false;
-                        String channelName = "";
-                        if (versionName.contains("-")) {
-                            String[] parts = versionName.split("-");
-                            if (parts.length >= 2) {
-                                channelName = parts[1].trim().toLowerCase();
-                            }
-                        }
-                        for (String ch : whitelist.split(",", -1)) {
-                            if (ch.trim().toLowerCase().equals(channelName)) {
-                                isAllowed = true;
-                                break;
-                             }
-                        }
-                    }
+                    // Fallback
                 }
+                isAllowed = true; // Unconditionally bypass for single channel architecture
 
                 if (!isAllowed) {
                     showBetaTestingBottomSheet(planName, price.isEmpty() ? "our standard price" : price, whitelist);
