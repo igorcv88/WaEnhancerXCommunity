@@ -53,19 +53,37 @@ public class GeneralFragment extends BaseFragment {
             android.content.Context context = getContext();
             if (context == null) return;
             androidx.preference.Preference pref = findPreference("unlock_limited_free");
+            androidx.preference.Preference updatesPref = findPreference("pro_plugin_updates");
             androidx.preference.PreferenceCategory category = findPreference("plugin_pack_category");
             if (category == null) return;
 
-            if (com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(context)) {
-                category.setVisible(false);
+            boolean isInstalled = com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(context);
+            if (isInstalled) {
+                category.setVisible(true);
+                if (pref != null) pref.setVisible(false);
+                if (updatesPref != null) {
+                    updatesPref.setVisible(true);
+                    updatesPref.setOnPreferenceClickListener(preference -> {
+                        try {
+                            android.content.Intent intent = new android.content.Intent();
+                            intent.setClassName("com.waex.pro", "com.waex.pro.activities.ProUpdateActivity");
+                            startActivity(intent);
+                        } catch (Exception e) {
+                            android.widget.Toast.makeText(context, "Failed to launch update activity: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+                        }
+                        return true;
+                    });
+                }
             } else {
                 category.setVisible(true);
                 if (pref != null) {
+                    pref.setVisible(true);
                     pref.setOnPreferenceClickListener(preference -> {
                         com.waenhancer.xposed.utils.ProHelper.checkRootAndInstallPlugin(getActivity(), null);
                         return true;
                     });
                 }
+                if (updatesPref != null) updatesPref.setVisible(false);
             }
         }
     }

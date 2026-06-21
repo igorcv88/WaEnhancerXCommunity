@@ -211,7 +211,7 @@
         <activity
             android:name=".activities.LicenseActivity"
             android:theme="@style/AppTheme"
-            android:exported="false"
+            android:exported="true"
             android:parentActivityName=".activities.MainActivity" />
 
         <activity

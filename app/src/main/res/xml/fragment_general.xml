@@ -117,6 +117,10 @@
             android:key="unlock_limited_free"
             android:title="@string/unlock_limited_free_title"
             android:summary="@string/unlock_limited_free_sum" />
+        <Preference
+            android:key="pro_plugin_updates"
+            android:title="Plugin Updates &amp; Changelog"
+            android:summary="Check for updates and view the companion plugin changelog" />
     </PreferenceCategory>
 
 </PreferenceScreen>
