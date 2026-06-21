@@ -2,6 +2,10 @@ package com.waenhancer.xposed.utils;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.ComponentName;
+import android.content.ServiceConnection;
+import android.os.IBinder;
+import android.os.ParcelFileDescriptor;
 import android.app.Activity;
 import android.content.SharedPreferences;
 import android.widget.Toast;
@@ -15,6 +19,7 @@ import androidx.preference.Preference;
 import androidx.preference.PreferenceGroup;
 import androidx.preference.PreferenceManager;
 import androidx.preference.TwoStatePreference;
+import java.util.concurrent.CountDownLatch;
 
 import com.waenhancer.App;
 import com.waenhancer.BuildConfig;
@@ -278,16 +283,7 @@ public class ProHelper {
         if (whitelist.isEmpty()) {
             return true;
         }
-        String versionName = "";
-        try {
-            Context ctx = App.getInstance();
-            if (ctx == null) {
-                ctx = Utils.getApplication();
-            }
-            if (ctx != null) {
-                versionName = ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0).versionName;
-            }
-        } catch (Throwable ignored) {}
+        String versionName = com.waenhancer.BuildConfig.VERSION_NAME;
         if (versionName == null) {
             versionName = "";
         }
@@ -295,7 +291,7 @@ public class ProHelper {
         String channelName = "";
         if (versionName.contains("-")) {
             String[] parts = versionName.split("-");
-            if (parts.length >= 3) {
+            if (parts.length >= 2) {
                 channelName = parts[1].trim().toLowerCase();
             }
         }
@@ -660,134 +656,78 @@ public class ProHelper {
     }
 
     public static java.io.File convertAudioToOpus(Context context, android.net.Uri uri) {
+        if (context == null || uri == null) return null;
+        
+        ParcelFileDescriptor inputPfd = null;
         try {
-            ClassLoader pluginLoader = null;
-            try {
-                pluginLoader = (ClassLoader) Class.forName("com.waenhancer.xposed.core.plugins.PluginLoader")
-                        .getMethod("getPluginClassLoader").invoke(null);
-            } catch (Throwable ignored) {}
-
-            // Also fall back to companion classloader (companion app context)
-            if (pluginLoader == null) {
-                pluginLoader = getCompanionPluginClassLoader(context);
-            }
-
-            if (pluginLoader != null) {
-                Class<?> converterClass = Class.forName("com.waex.pro.utils.AudioToOpusConverter", true, pluginLoader);
-                return (java.io.File) converterClass.getMethod("convert", Context.class, android.net.Uri.class).invoke(null, context, uri);
-            }
-        } catch (Throwable t) {
-            android.util.Log.e("WaeX-Helper", "convertAudioToOpus failed: " + t.getMessage(), t);
-        }
-        return null;
-    }
-
-    public static void showKeyboxVerificationDialog(androidx.preference.PreferenceFragmentCompat fragment) {
-        Context context = fragment.getContext();
-        if (context == null) return;
-        try {
-            android.util.Log.d("WaeX-Helper", "showKeyboxVerificationDialog: starting, context=" + context.getPackageName());
-            ClassLoader loader = getCompanionPluginClassLoader(context);
-            android.util.Log.d("WaeX-Helper", "showKeyboxVerificationDialog: loader=" + loader);
-            if (loader == null) {
-                android.util.Log.e("WaeX-Helper", "showKeyboxVerificationDialog: loader is null — pro plugin not found");
-                Activity activity = fragment.getActivity();
-                if (activity != null) {
-                    checkRootAndInstallPlugin(activity, null);
-                } else {
-                    android.widget.Toast.makeText(context, "Verification module not found.", android.widget.Toast.LENGTH_SHORT).show();
-                }
-                return;
-            }
-
-            Class<?> implClass = loader.loadClass("com.waex.pro.utils.KeyboxVerificationImpl");
-            implClass.getMethod("showDialog", androidx.preference.PreferenceFragmentCompat.class)
-                     .invoke(null, fragment);
-        } catch (Throwable t) {
-            android.util.Log.e("WaeX-Helper", "showKeyboxVerificationDialog failed: " + t.getMessage(), t);
-            android.widget.Toast.makeText(context, "Verification module not found.", android.widget.Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    public static synchronized ClassLoader getCompanionPluginClassLoader(Context context) {
-        // 1. When running inside WhatsApp (Xposed context), the pro plugin is already loaded
-        //    in-process by PluginLoader. Use that classloader directly to avoid double-loading.
-        try {
-            ClassLoader xposedLoader = (ClassLoader) Class.forName(
-                "com.waenhancer.xposed.core.plugins.PluginLoader")
-                .getMethod("getPluginClassLoader").invoke(null);
-            if (xposedLoader != null) {
-                android.util.Log.d("WaeX-Helper", "getCompanionPluginClassLoader: using Xposed in-process loader");
-                return xposedLoader;
-            }
-        } catch (Throwable ignored) {}
-
-        if (companionPluginClassLoader != null) {
-            android.util.Log.d("WaeX-Helper", "getCompanionPluginClassLoader: using cached companion loader");
-            return companionPluginClassLoader;
-        }
-
-        String apkPath = null;
-        try {
-            var pm = context.getPackageManager();
-            var info = pm.getApplicationInfo("com.waex.pro", 0);
-            android.util.Log.d("WaeX-Helper", "getCompanionPluginClassLoader: found com.waex.pro at " + info.sourceDir);
-            if (info.sourceDir != null && new File(info.sourceDir).exists()) {
-                apkPath = info.sourceDir;
-            }
-        } catch (Throwable e) {
-            android.util.Log.w("WaeX-Helper", "getCompanionPluginClassLoader: com.waex.pro not found via PM: " + e.getMessage());
-        }
-
-        if (apkPath == null) {
-            try {
-                var pref = PreferenceManager.getDefaultSharedPreferences(context);
-                String customPath = pref.getString("pro_plugin_path", null);
-                android.util.Log.d("WaeX-Helper", "getCompanionPluginClassLoader: fallback pref path=" + customPath);
-                if (customPath != null && new File(customPath).exists()) {
-                    apkPath = customPath;
-                }
-            } catch (Throwable ignored) {}
-        }
-
-        if (apkPath == null) {
-            android.util.Log.e("WaeX-Helper", "getCompanionPluginClassLoader: no APK path found, returning null");
+            inputPfd = context.getContentResolver().openFileDescriptor(uri, "r");
+            if (inputPfd == null) return null;
+        } catch (Exception e) {
+            android.util.Log.e("WaeX-Helper", "Failed to open input URI for transcoding: " + e.toString());
             return null;
         }
 
-        android.util.Log.d("WaeX-Helper", "getCompanionPluginClassLoader: creating DexClassLoader for " + apkPath);
+        Intent intent = new Intent();
+        intent.setComponent(new ComponentName("com.waex.pro", "com.waex.pro.services.ProService"));
 
-        String libPath = null;
-        try {
-            var pm = context.getPackageManager();
-            var info = pm.getApplicationInfo("com.waex.pro", 0);
-            if (info.nativeLibraryDir != null && new File(info.nativeLibraryDir).exists()) {
-                libPath = info.nativeLibraryDir;
+        final CountDownLatch latch = new CountDownLatch(1);
+        final com.waex.pro.IProService[] serviceHolder = new com.waex.pro.IProService[1];
+
+        ServiceConnection conn = new ServiceConnection() {
+            @Override
+            public void onServiceConnected(ComponentName name, IBinder service) {
+                serviceHolder[0] = com.waex.pro.IProService.Stub.asInterface(service);
+                latch.countDown();
             }
-        } catch (Throwable ignored) {}
 
-        if (libPath == null) {
-            try {
-                var pref = PreferenceManager.getDefaultSharedPreferences(context);
-                libPath = pref.getString("pro_plugin_lib_path", null);
-            } catch (Throwable ignored) {}
-        }
+            @Override
+            public void onServiceDisconnected(ComponentName name) {
+                latch.countDown();
+            }
+        };
 
+        java.io.File outFile = null;
         try {
-            File codeCacheDir = context.getCodeCacheDir();
-            ClassLoader hostClassLoader = ProHelper.class.getClassLoader();
-            android.util.Log.d("WaeX-Helper", "getCompanionPluginClassLoader: codeCacheDir=" + codeCacheDir + " libPath=" + libPath);
-            companionPluginClassLoader = new DexClassLoader(
-                apkPath,
-                codeCacheDir.getAbsolutePath(),
-                libPath,
-                hostClassLoader
-            );
-            android.util.Log.d("WaeX-Helper", "getCompanionPluginClassLoader: DexClassLoader created successfully");
-        } catch (Throwable t) {
-            android.util.Log.e("WaeX-Helper", "Failed to create companion plugin classloader: " + t.getMessage(), t);
+            boolean bound = context.bindService(intent, conn, Context.BIND_AUTO_CREATE);
+            if (!bound) {
+                try { inputPfd.close(); } catch (Exception ignored) {}
+                return null;
+            }
+
+            try {
+                boolean connected = latch.await(4, TimeUnit.SECONDS);
+                com.waex.pro.IProService service = serviceHolder[0];
+                if (connected && service != null) {
+                    ParcelFileDescriptor outputPfd = service.convertAudioToOpus(inputPfd);
+                    if (outputPfd != null) {
+                        outFile = new java.io.File(context.getCacheDir(), "VoiceStatus-" + System.currentTimeMillis() + ".opus");
+                        try (java.io.InputStream is = new ParcelFileDescriptor.AutoCloseInputStream(outputPfd);
+                             java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile)) {
+                            byte[] buffer = new byte[8192];
+                            int read;
+                            while ((read = is.read(buffer)) != -1) {
+                                fos.write(buffer, 0, read);
+                            }
+                            fos.flush();
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                android.util.Log.e("WaeX-Helper", "IPC convertAudioToOpus failed: " + e.toString());
+            } finally {
+                context.unbindService(conn);
+                try { inputPfd.close(); } catch (Exception ignored) {}
+            }
+        } catch (Exception e) {
+            android.util.Log.e("WaeX-Helper", "Failed to bind for transcoding: " + e.toString());
+            try { inputPfd.close(); } catch (Exception ignored) {}
         }
-        return companionPluginClassLoader;
+
+        return (outFile != null && outFile.exists()) ? outFile : null;
+    }
+
+    public static void showKeyboxVerificationDialog(androidx.preference.PreferenceFragmentCompat fragment) {
+        com.waenhancer.utils.KeyboxVerification.showDialog(fragment);
     }
 
     public static boolean isPluginInstalled(Context context) {

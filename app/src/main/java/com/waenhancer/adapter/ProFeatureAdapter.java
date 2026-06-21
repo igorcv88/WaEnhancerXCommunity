@@ -9,6 +9,8 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.waenhancer.model.SearchableFeature;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -18,11 +20,11 @@ import java.util.List;
  */
 public class ProFeatureAdapter extends RecyclerView.Adapter<ProFeatureAdapter.ViewHolder> {
 
-    private final List<Object> features;
+    private final List<SearchableFeature> features;
     private final OnFeatureClickListener listener;
 
     public interface OnFeatureClickListener {
-        void onFeatureClick(Object feature);
+        void onFeatureClick(SearchableFeature feature);
     }
 
     public ProFeatureAdapter(OnFeatureClickListener listener) {
@@ -30,7 +32,7 @@ public class ProFeatureAdapter extends RecyclerView.Adapter<ProFeatureAdapter.Vi
         this.listener = listener;
     }
 
-    public void setFeatures(List<?> newFeatures) {
+    public void setFeatures(List<SearchableFeature> newFeatures) {
         this.features.clear();
         if (newFeatures != null) {
             this.features.addAll(newFeatures);
@@ -74,12 +76,12 @@ public class ProFeatureAdapter extends RecyclerView.Adapter<ProFeatureAdapter.Vi
             summaryView = itemView.findViewById(getResId(context, "pro_feature_summary", "id"));
         }
 
-        public void bind(Object feature, OnFeatureClickListener clickListener) {
+        public void bind(SearchableFeature feature, OnFeatureClickListener clickListener) {
             android.content.Context context = itemView.getContext();
             try {
-                String title = (String) feature.getClass().getMethod("getTitle").invoke(feature);
-                String summary = (String) feature.getClass().getMethod("getSummary").invoke(feature);
-                String key = (String) feature.getClass().getMethod("getKey").invoke(feature);
+                String title = feature.getTitle();
+                String summary = feature.getSummary();
+                String key = feature.getKey();
 
                 titleView.setText(title);
                 summaryView.setText(summary);

@@ -128,10 +128,7 @@ public class LicenseManager {
                 String signature = KeystoreHelper.signData(normalizedKey);
                 payload.put("device_signature", signature != null ? signature : "");
 
-                String versionName = "";
-                try {
-                    versionName = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName;
-                } catch (Exception ignored) {}
+                String versionName = com.waenhancer.BuildConfig.VERSION_NAME;
                 if (versionName == null) versionName = "";
                 String encryptedVn = "";
                 try {
@@ -240,6 +237,14 @@ public class LicenseManager {
                     // Active key successfully validated, clear forced FREE status override
                     ProHelper.setForceFree(false);
 
+                    // Broadcast status change to update UI
+                    try {
+                        android.content.Intent broadcastIntent = new android.content.Intent(
+                                context.getPackageName() + ".ACTION_PRO_STATUS_CHANGED");
+                        broadcastIntent.setPackage(context.getPackageName());
+                        context.sendBroadcast(broadcastIntent);
+                    } catch (Exception ignored) {}
+
                     if (encryptedConfig != null) {
                         try {
                             Class<?> proConfigClass = Class.forName("com.waex.pro.utils.ProConfig");
@@ -299,18 +304,13 @@ public class LicenseManager {
 
         // Reversion / Channel compatibility check
         String whitelist = safePrefs.getString("whitelist_channels", "");
-        String tempVn = "";
-        try {
-            tempVn = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName;
-        } catch (Exception ignored) {}
-        if (tempVn == null) tempVn = "";
-        final String versionName = tempVn;
+        final String versionName = com.waenhancer.BuildConfig.VERSION_NAME != null ? com.waenhancer.BuildConfig.VERSION_NAME : "";
         if (isVerified && !whitelist.isEmpty()) {
             boolean allowed = false;
             String channelName = "";
             if (versionName.contains("-")) {
                 String[] parts = versionName.split("-");
-                if (parts.length >= 3) {
+                if (parts.length >= 2) {
                     channelName = parts[1].trim().toLowerCase();
                 }
             }

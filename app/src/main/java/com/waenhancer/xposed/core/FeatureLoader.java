@@ -445,7 +445,6 @@ public class FeatureLoader {
             } catch (Throwable t) {
                 XposedBridge.log("[WAEX] Failed to inspect Xposed classloaders: " + t.toString());
             }
-            com.waenhancer.xposed.core.plugins.PluginLoader.loadPlugins(mApp, loader, providerPrefs);
 
             // Setup lazy feature loading system
             registerLazyFeatures();

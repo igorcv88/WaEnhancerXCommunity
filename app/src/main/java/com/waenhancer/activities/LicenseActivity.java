@@ -12,6 +12,8 @@ import android.widget.Toast;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.waenhancer.adapter.ProFeatureAdapter;
+import com.waenhancer.model.SearchableFeature;
+import com.waenhancer.utils.FeatureCatalog;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.widget.Toolbar;
@@ -249,13 +251,12 @@ public class LicenseActivity extends BaseActivity {
 
         // Populate the adapter with only Pro features (always show this list)
         if (proFeaturesAdapter != null) {
-            java.util.List<Object> proFeatures = new java.util.ArrayList<>();
+            java.util.List<SearchableFeature> proFeatures = new java.util.ArrayList<>();
             try {
-                Class<?> featureCatalogClass = Class.forName("com.waenhancer.utils.FeatureCatalog");
-                java.util.List<?> allFeatures = (java.util.List<?>) featureCatalogClass.getMethod("getAllFeatures", android.content.Context.class).invoke(null, this);
+                java.util.List<SearchableFeature> allFeatures = FeatureCatalog.getAllFeatures(this);
                 if (allFeatures != null) {
-                    for (Object feature : allFeatures) {
-                        String key = (String) feature.getClass().getMethod("getKey").invoke(feature);
+                    for (SearchableFeature feature : allFeatures) {
+                        String key = feature.getKey();
                         if ("message_bomber".equals(key) 
                                 || "delete_message_file".equals(key) 
                                 || "pro_status_splitter".equals(key)
@@ -622,16 +623,19 @@ public class LicenseActivity extends BaseActivity {
                 // Immediately refresh visual state to present active pro tier card
                 checkStatus();
 
+                // Broadcast status change to update observers immediately
+                try {
+                    Intent broadcastIntent = new Intent(getPackageName() + ".ACTION_PRO_STATUS_CHANGED");
+                    broadcastIntent.setPackage(getPackageName());
+                    sendBroadcast(broadcastIntent);
+                } catch (Exception ignored) {}
+
                 if (!com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(LicenseActivity.this)) {
                     com.waenhancer.xposed.utils.ProHelper.checkRootAndInstallPlugin(LicenseActivity.this, null);
                 }
 
                 // Perform native channel allowance check
-                String versionName = "";
-                try {
-                    versionName = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
-                } catch (Exception ignored) {}
-                if (versionName == null) versionName = "";
+                String versionName = com.waenhancer.BuildConfig.VERSION_NAME != null ? com.waenhancer.BuildConfig.VERSION_NAME : "";
                 
                 SafeSharedPreferences safePrefs = new SafeSharedPreferences(
                         PreferenceManager.getDefaultSharedPreferences(LicenseActivity.this));
@@ -649,7 +653,7 @@ public class LicenseActivity extends BaseActivity {
                         String channelName = "";
                         if (versionName.contains("-")) {
                             String[] parts = versionName.split("-");
-                            if (parts.length >= 3) {
+                            if (parts.length >= 2) {
                                 channelName = parts[1].trim().toLowerCase();
                             }
                         }
@@ -684,12 +688,12 @@ public class LicenseActivity extends BaseActivity {
      * Navigates back to MainActivity and highlights the target preference screen/item,
      * matching the SearchActivity's click behavior exactly.
      */
-    private void navigateAndHighlightFeature(Object feature) {
+    private void navigateAndHighlightFeature(SearchableFeature feature) {
         try {
-            String key = (String) feature.getClass().getMethod("getKey").invoke(feature);
-            Object fragmentTypeObj = feature.getClass().getMethod("getFragmentType").invoke(feature);
-            String typeName = fragmentTypeObj.getClass().getMethod("name").invoke(fragmentTypeObj).toString();
-            int position = (Integer) fragmentTypeObj.getClass().getMethod("getPosition").invoke(fragmentTypeObj);
+            String key = feature.getKey();
+            SearchableFeature.FragmentType fragmentType = feature.getFragmentType();
+            String typeName = fragmentType.name();
+            int position = fragmentType.getPosition();
 
             if ("ACTIVITY".equals(typeName)) {
                 if ("deleted_messages_activity".equals(key)) {
@@ -700,7 +704,7 @@ public class LicenseActivity extends BaseActivity {
                 return;
             }
 
-            String parentKey = (String) feature.getClass().getMethod("getParentKey").invoke(feature);
+            String parentKey = feature.getParentKey();
 
             Intent intent = new Intent();
             intent.setClassName(this, "com.waenhancer.activities.MainActivity");
