@@ -143,12 +143,13 @@ public class App extends Application {
             }
         } catch (Throwable ignored) {}
 
-        if (BuildConfig.HAS_PRO_FEATURES) {
-            try {
-                com.waenhancer.xposed.utils.ProHelper.initLimitedFree(this, sharedPreferences);
-            } catch (Throwable t) {
-                android.util.Log.e("WaeX-App", "Failed to initialize LimitedFreeManager", t);
-            }
+        // Initialize limited-free feature config. Run unconditionally — the pro plugin is now a
+        // separate APK (com.waex.pro), so HAS_PRO_FEATURES may be false even when it is installed.
+        // initLimitedFree() handles the "not available" case gracefully.
+        try {
+            com.waenhancer.xposed.utils.ProHelper.initLimitedFree(this, sharedPreferences);
+        } catch (Throwable t) {
+            android.util.Log.e("WaeX-App", "Failed to initialize LimitedFreeManager", t);
         }
         
         // Force create the preferences file if it doesn't exist so LSPosed file watcher doesn't fail

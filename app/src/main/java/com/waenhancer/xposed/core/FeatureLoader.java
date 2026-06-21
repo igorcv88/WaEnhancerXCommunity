@@ -429,6 +429,16 @@ public class FeatureLoader {
 
             initComponents(loader, providerPrefs);
             plugins(loader, providerPrefs, packageInfo.versionName);
+
+            // Initialize limited-free feature config in the Xposed context.
+            // This mirrors the companion app call in App.java and ensures the config
+            // is available before pro features try to resolve hook strings.
+            try {
+                com.waenhancer.xposed.utils.ProHelper.initLimitedFree(mApp, providerPrefs);
+            } catch (Throwable t) {
+                XposedBridge.log("[WAEX] Failed to initialize LimitedFree in Xposed context: " + t.getMessage());
+            }
+
             try {
                 XposedBridge.log("[WAEX] XC_MethodHook classloader: " + de.robv.android.xposed.XC_MethodHook.class.getClassLoader() + " (hash: " + System.identityHashCode(de.robv.android.xposed.XC_MethodHook.class.getClassLoader()) + ")");
                 XposedBridge.log("[WAEX] XposedBridge classloader: " + de.robv.android.xposed.XposedBridge.class.getClassLoader() + " (hash: " + System.identityHashCode(de.robv.android.xposed.XposedBridge.class.getClassLoader()) + ")");

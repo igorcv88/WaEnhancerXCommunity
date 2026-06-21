@@ -259,9 +259,9 @@ public class ProHelper {
      * Checks if the Pro licensing status is currently active.
      */
     public static boolean isProEnabled() {
-        if (!BuildConfig.HAS_PRO_FEATURES) {
-            return false;
-        }
+        // Note: HAS_PRO_FEATURES is a compile-time flag for builds that bundle pro sources directly.
+        // In the new modular architecture, the pro plugin is a separate APK — we check license
+        // status from prefs regardless of the build flag.
         if (!"ACTIVE".equalsIgnoreCase(getProStatus())) {
             return false;
         }
@@ -320,9 +320,6 @@ public class ProHelper {
      * Checks if the Filter Items Pro hook is enabled in the decrypted server configuration.
      */
     public static boolean isFilterItemsProEnabled() {
-        if (!BuildConfig.HAS_PRO_FEATURES) {
-            return false;
-        }
         String hookClass = getHookStringSafely("filter_items");
         return hookClass != null && !hookClass.trim().isEmpty();
     }
@@ -345,9 +342,6 @@ public class ProHelper {
      * Retrieves the plan name matching active, expired, or free states.
      */
     public static String getProPlanName() {
-        if (!BuildConfig.HAS_PRO_FEATURES) {
-            return "Free";
-        }
         String status = getProStatus();
         if ("ACTIVE".equalsIgnoreCase(status)) {
             SharedPreferences prefs = getPrefs();
@@ -364,9 +358,6 @@ public class ProHelper {
      * Gets the current pro status string ("ACTIVE", "EXPIRED", "FREE").
      */
     public static String getProStatus() {
-        if (!BuildConfig.HAS_PRO_FEATURES) {
-            return "FREE";
-        }
         if (forceFree) {
             return "FREE";
         }
@@ -664,15 +655,17 @@ public class ProHelper {
     }
 
     public static java.io.File convertAudioToOpus(Context context, android.net.Uri uri) {
-        if (!BuildConfig.HAS_PRO_FEATURES) {
-            return null;
-        }
         try {
             ClassLoader pluginLoader = null;
             try {
                 pluginLoader = (ClassLoader) Class.forName("com.waenhancer.xposed.core.plugins.PluginLoader")
                         .getMethod("getPluginClassLoader").invoke(null);
             } catch (Throwable ignored) {}
+
+            // Also fall back to companion classloader (companion app context)
+            if (pluginLoader == null) {
+                pluginLoader = getCompanionPluginClassLoader(context);
+            }
 
             if (pluginLoader != null) {
                 Class<?> converterClass = Class.forName("com.waex.pro.utils.AudioToOpusConverter", true, pluginLoader);
@@ -688,45 +681,86 @@ public class ProHelper {
         Context context = fragment.getContext();
         if (context == null) return;
         try {
+            android.util.Log.d("WaeX-Helper", "showKeyboxVerificationDialog: starting, context=" + context.getPackageName());
             ClassLoader loader = getCompanionPluginClassLoader(context);
-            if (loader != null) {
-                Class<?> implClass = Class.forName("com.waex.pro.utils.KeyboxVerificationImpl", true, loader);
+            android.util.Log.d("WaeX-Helper", "showKeyboxVerificationDialog: loader=" + loader);
+            if (loader == null) {
+                android.util.Log.e("WaeX-Helper", "showKeyboxVerificationDialog: loader is null — pro plugin not found");
+                android.widget.Toast.makeText(context, "Verification module not found.", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Create a Context backed by com.waex.pro so LayoutInflater can resolve
+            // pro-module layouts and drawables (bottom_sheet_keybox_verify, etc.)
+            Context proContext = null;
+            try {
+                proContext = context.createPackageContext(
+                    "com.waex.pro",
+                    Context.CONTEXT_IGNORE_SECURITY | Context.CONTEXT_INCLUDE_CODE
+                );
+            } catch (Throwable e) {
+                android.util.Log.w("WaeX-Helper", "Could not create com.waex.pro package context: " + e.getMessage());
+            }
+
+            Class<?> implClass = loader.loadClass("com.waex.pro.utils.KeyboxVerificationImpl");
+
+            // Try showDialogWithContext(Context, PreferenceFragmentCompat) first — accepts a
+            // pro-package context so resource inflation works in the manager app.
+            boolean invoked = false;
+            try {
+                implClass.getMethod("showDialogWithContext",
+                    Context.class,
+                    androidx.preference.PreferenceFragmentCompat.class)
+                    .invoke(null, proContext != null ? proContext : context, fragment);
+                invoked = true;
+            } catch (NoSuchMethodException ignored) {}
+
+            // Fall back to showDialog(PreferenceFragmentCompat) for older pro versions
+            if (!invoked) {
                 implClass.getMethod("showDialog", androidx.preference.PreferenceFragmentCompat.class)
                          .invoke(null, fragment);
-            } else {
-                android.widget.Toast.makeText(
-                    context,
-                    "Verification module not found.",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show();
             }
         } catch (Throwable t) {
             android.util.Log.e("WaeX-Helper", "showKeyboxVerificationDialog failed: " + t.getMessage(), t);
-            android.widget.Toast.makeText(
-                context,
-                "Verification module not found.",
-                android.widget.Toast.LENGTH_SHORT
-            ).show();
+            android.widget.Toast.makeText(context, "Verification module not found.", android.widget.Toast.LENGTH_SHORT).show();
         }
     }
 
     public static synchronized ClassLoader getCompanionPluginClassLoader(Context context) {
+        // 1. When running inside WhatsApp (Xposed context), the pro plugin is already loaded
+        //    in-process by PluginLoader. Use that classloader directly to avoid double-loading.
+        try {
+            ClassLoader xposedLoader = (ClassLoader) Class.forName(
+                "com.waenhancer.xposed.core.plugins.PluginLoader")
+                .getMethod("getPluginClassLoader").invoke(null);
+            if (xposedLoader != null) {
+                android.util.Log.d("WaeX-Helper", "getCompanionPluginClassLoader: using Xposed in-process loader");
+                return xposedLoader;
+            }
+        } catch (Throwable ignored) {}
+
         if (companionPluginClassLoader != null) {
+            android.util.Log.d("WaeX-Helper", "getCompanionPluginClassLoader: using cached companion loader");
             return companionPluginClassLoader;
         }
+
         String apkPath = null;
         try {
             var pm = context.getPackageManager();
             var info = pm.getApplicationInfo("com.waex.pro", 0);
+            android.util.Log.d("WaeX-Helper", "getCompanionPluginClassLoader: found com.waex.pro at " + info.sourceDir);
             if (info.sourceDir != null && new File(info.sourceDir).exists()) {
                 apkPath = info.sourceDir;
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable e) {
+            android.util.Log.w("WaeX-Helper", "getCompanionPluginClassLoader: com.waex.pro not found via PM: " + e.getMessage());
+        }
 
         if (apkPath == null) {
             try {
                 var pref = PreferenceManager.getDefaultSharedPreferences(context);
                 String customPath = pref.getString("pro_plugin_path", null);
+                android.util.Log.d("WaeX-Helper", "getCompanionPluginClassLoader: fallback pref path=" + customPath);
                 if (customPath != null && new File(customPath).exists()) {
                     apkPath = customPath;
                 }
@@ -734,8 +768,11 @@ public class ProHelper {
         }
 
         if (apkPath == null) {
+            android.util.Log.e("WaeX-Helper", "getCompanionPluginClassLoader: no APK path found, returning null");
             return null;
         }
+
+        android.util.Log.d("WaeX-Helper", "getCompanionPluginClassLoader: creating DexClassLoader for " + apkPath);
 
         String libPath = null;
         try {
@@ -756,14 +793,16 @@ public class ProHelper {
         try {
             File codeCacheDir = context.getCodeCacheDir();
             ClassLoader hostClassLoader = ProHelper.class.getClassLoader();
+            android.util.Log.d("WaeX-Helper", "getCompanionPluginClassLoader: codeCacheDir=" + codeCacheDir + " libPath=" + libPath);
             companionPluginClassLoader = new DexClassLoader(
                 apkPath,
                 codeCacheDir.getAbsolutePath(),
                 libPath,
                 hostClassLoader
             );
+            android.util.Log.d("WaeX-Helper", "getCompanionPluginClassLoader: DexClassLoader created successfully");
         } catch (Throwable t) {
-            android.util.Log.e("WaeX-Helper", "Failed to create companion plugin classloader", t);
+            android.util.Log.e("WaeX-Helper", "Failed to create companion plugin classloader: " + t.getMessage(), t);
         }
         return companionPluginClassLoader;
     }
