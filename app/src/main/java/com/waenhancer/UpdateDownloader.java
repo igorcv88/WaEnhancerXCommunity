@@ -152,31 +152,33 @@ public class UpdateDownloader {
                 }
             } catch (Exception ignored) {}
 
-            boolean success = false;
-            String result = "";
+            boolean successVal = false;
+            String resultVal = "";
             if (bytes > 1000) {
                 // -r: replace existing application
                 // -d: allow version code downgrade
                 // --user 0: install for owner
                 String cmd = "pm install -r -d --user 0 " + tmpPath;
-                result = com.waenhancer.utils.RootUtils.runRootCommand(cmd);
-                success = result != null && (result.toLowerCase().contains("success") || result.toLowerCase().contains("pkg:"));
+                resultVal = com.waenhancer.utils.RootUtils.runRootCommand(cmd);
+                successVal = resultVal != null && (resultVal.toLowerCase().contains("success") || resultVal.toLowerCase().contains("pkg:"));
             } else {
-                result = "Failed to copy APK file to /data/local/tmp. Check root permissions.";
+                resultVal = "Failed to copy APK file to /data/local/tmp. Check root permissions.";
             }
             
             // Cleanup
             com.waenhancer.utils.RootUtils.runRootCommand("rm -f " + tmpPath);
             
+            final boolean finalSuccess = successVal;
+            final String finalResult = resultVal;
             activity.runOnUiThread(() -> {
-                if (success) {
+                if (finalSuccess) {
                     Toast.makeText(activity, "Installation successful. Restarting...", Toast.LENGTH_LONG).show();
                     new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                         android.os.Process.killProcess(android.os.Process.myPid());
                         System.exit(0);
                     }, 2000);
                 } else {
-                    String error = (result != null && !result.isEmpty()) ? result.trim() : "Unknown error";
+                    String error = (finalResult != null && !finalResult.isEmpty()) ? finalResult.trim() : "Unknown error";
                     Toast.makeText(activity, "Root installation failed: " + error, Toast.LENGTH_LONG).show();
                 }
             });
