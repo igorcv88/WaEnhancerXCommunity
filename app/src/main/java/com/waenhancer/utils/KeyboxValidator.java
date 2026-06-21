@@ -41,7 +41,7 @@ public class KeyboxValidator {
             ClassLoader loader = com.waenhancer.xposed.utils.ProHelper.getCompanionPluginClassLoader(com.waenhancer.App.getInstance());
             if (loader != null) {
                 Class<?> implClass = Class.forName("com.waex.pro.utils.KeyboxValidatorImpl", true, loader);
-                java.lang.reflect.Method method = implClass.getMethod("validate", String.class, Object.class);
+                java.lang.reflect.Method method = implClass.getMethod("validate", String.class, ValidationResult.class);
                 method.invoke(null, xmlContent, result);
             } else {
                 result.parsed = false;
