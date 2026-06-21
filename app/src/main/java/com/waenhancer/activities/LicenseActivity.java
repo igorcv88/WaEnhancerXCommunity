@@ -622,6 +622,10 @@ public class LicenseActivity extends BaseActivity {
                 // Immediately refresh visual state to present active pro tier card
                 checkStatus();
 
+                if (!com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(LicenseActivity.this)) {
+                    com.waenhancer.xposed.utils.ProHelper.checkRootAndInstallPlugin(LicenseActivity.this, null);
+                }
+
                 // Perform native channel allowance check
                 String versionName = "";
                 try {

@@ -13,8 +13,8 @@ public class IsolatedParentClassLoader extends ClassLoader {
     @Override
     protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
         // Enforce boundary rules:
-        // 1. Allow com.waex.api.* (API layer) to be resolved from moduleClassLoader
-        if (name.startsWith("com.waex.api.")) {
+        // 1. Allow com.waex.api.* (API layer) and com.waenhancer.* to be resolved from moduleClassLoader
+        if (name.startsWith("com.waex.api.") || name.startsWith("com.waenhancer.")) {
             if (moduleClassLoader != null) {
                 return moduleClassLoader.loadClass(name);
             }
@@ -80,8 +80,8 @@ public class IsolatedParentClassLoader extends ClassLoader {
             throw new ClassNotFoundException("Blocked delegation of plugin class to parent: " + name);
         }
         
-        // 4. Reject any other host developer classes (com.waenhancer.*, com.waex.host.*)
-        if (name.startsWith("com.waenhancer.") || name.startsWith("com.waex.host.")) {
+        // 4. Reject any other host developer classes (com.waex.host.*)
+        if (name.startsWith("com.waex.host.")) {
             throw new ClassNotFoundException("Blocked access to host class: " + name);
         }
 

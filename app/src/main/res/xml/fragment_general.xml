@@ -109,4 +109,14 @@
 
     </com.waenhancer.preference.ProPreferenceCategory>
 
+    <PreferenceCategory
+        android:key="plugin_pack_category"
+        app:title="@string/extended_plugin_pack"
+        app:iconSpaceReserved="false">
+        <Preference
+            android:key="unlock_limited_free"
+            android:title="@string/unlock_limited_free_title"
+            android:summary="@string/unlock_limited_free_sum" />
+    </PreferenceCategory>
+
 </PreferenceScreen>

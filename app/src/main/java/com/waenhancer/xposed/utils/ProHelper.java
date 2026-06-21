@@ -2,7 +2,12 @@ package com.waenhancer.xposed.utils;
 
 import android.content.Context;
 import android.content.Intent;
+import android.app.Activity;
 import android.content.SharedPreferences;
+import android.widget.Toast;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.FileOutputStream;
 import android.text.Html;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -686,7 +691,12 @@ public class ProHelper {
             android.util.Log.d("WaeX-Helper", "showKeyboxVerificationDialog: loader=" + loader);
             if (loader == null) {
                 android.util.Log.e("WaeX-Helper", "showKeyboxVerificationDialog: loader is null — pro plugin not found");
-                android.widget.Toast.makeText(context, "Verification module not found.", android.widget.Toast.LENGTH_SHORT).show();
+                Activity activity = fragment.getActivity();
+                if (activity != null) {
+                    checkRootAndInstallPlugin(activity, null);
+                } else {
+                    android.widget.Toast.makeText(context, "Verification module not found.", android.widget.Toast.LENGTH_SHORT).show();
+                }
                 return;
             }
 
@@ -778,5 +788,220 @@ public class ProHelper {
             android.util.Log.e("WaeX-Helper", "Failed to create companion plugin classloader: " + t.getMessage(), t);
         }
         return companionPluginClassLoader;
+    }
+
+    public static boolean isPluginInstalled(Context context) {
+        if (context == null) return false;
+        try {
+            context.getPackageManager().getApplicationInfo("com.waex.pro", 0);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    public static void checkRootAndInstallPlugin(final Activity activity, final Runnable onConsentAgreed) {
+        if (activity == null) return;
+        
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+            .setTitle(com.waenhancer.R.string.pro_download_consent_title)
+            .setMessage(com.waenhancer.R.string.pro_download_consent_msg)
+            .setPositiveButton(com.waenhancer.R.string.agree_and_download, (dialog, which) -> {
+                if (onConsentAgreed != null) {
+                    onConsentAgreed.run();
+                }
+                
+                android.app.ProgressDialog progressDialog = new android.app.ProgressDialog(activity);
+                progressDialog.setMessage(activity.getString(com.waenhancer.R.string.checking_root_access));
+                progressDialog.setCancelable(false);
+                progressDialog.show();
+                
+                new Thread(() -> {
+                    boolean hasRoot = com.waenhancer.utils.RootUtils.hasRootAccess();
+                    activity.runOnUiThread(() -> {
+                        progressDialog.dismiss();
+                        if (hasRoot) {
+                            startProDownloadAndInstall(activity);
+                        } else {
+                            new com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+                                .setTitle(android.R.string.dialog_alert_title)
+                                .setMessage(com.waenhancer.R.string.root_required_error)
+                                .setPositiveButton(android.R.string.ok, null)
+                                .show();
+                        }
+                    });
+                }).start();
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    public static void startProDownloadAndInstall(final Activity activity) {
+        if (activity == null) return;
+
+        Context modContext = activity;
+        boolean isXposed = !BuildConfig.APPLICATION_ID.equals(activity.getPackageName());
+        
+        if (isXposed) {
+            try {
+                modContext = activity.createPackageContext(BuildConfig.APPLICATION_ID, Context.CONTEXT_IGNORE_SECURITY);
+            } catch (Exception e) {
+                android.util.Log.e("WaeX-Helper", "Error creating package context: " + e.getMessage());
+            }
+        }
+
+        int layoutId = isXposed ? modContext.getResources().getIdentifier("bottom_sheet_update_progress", "layout", BuildConfig.APPLICATION_ID) : com.waenhancer.R.layout.bottom_sheet_update_progress;
+        int bsTitleId = isXposed ? modContext.getResources().getIdentifier("bs_title", "id", BuildConfig.APPLICATION_ID) : com.waenhancer.R.id.bs_title;
+        int progressBarId = isXposed ? modContext.getResources().getIdentifier("update_progress_bar", "id", BuildConfig.APPLICATION_ID) : com.waenhancer.R.id.update_progress_bar;
+        int statusTextId = isXposed ? modContext.getResources().getIdentifier("update_status_text", "id", BuildConfig.APPLICATION_ID) : com.waenhancer.R.id.update_status_text;
+        int cancelBtnId = isXposed ? modContext.getResources().getIdentifier("bs_cancel_btn", "id", BuildConfig.APPLICATION_ID) : com.waenhancer.R.id.bs_cancel_btn;
+
+        if (layoutId == 0) {
+            Toast.makeText(activity, "Error: Could not load progress layout", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        android.view.View dialogView = android.view.LayoutInflater.from(modContext).inflate(layoutId, null);
+        var bsTitle = (com.google.android.material.textview.MaterialTextView) dialogView.findViewById(bsTitleId);
+        var progressBar = (com.google.android.material.progressindicator.LinearProgressIndicator) dialogView.findViewById(progressBarId);
+        var statusText = (com.google.android.material.textview.MaterialTextView) dialogView.findViewById(statusTextId);
+        var cancelBtn = (com.google.android.material.button.MaterialButton) dialogView.findViewById(cancelBtnId);
+
+        if (bsTitle != null) {
+            bsTitle.setText(modContext.getString(com.waenhancer.R.string.downloading_plugin));
+        }
+
+        final okhttp3.Call[] currentCall = {null};
+        final com.google.android.material.bottomsheet.BottomSheetDialog dialog = com.waenhancer.ui.helpers.BottomSheetHelper.createStyledDialog(activity);
+        dialog.setContentView(dialogView);
+        dialog.setCanceledOnTouchOutside(false);
+
+        if (cancelBtn != null) {
+            cancelBtn.setOnClickListener(v -> {
+                if (currentCall[0] != null) currentCall[0].cancel();
+                dialog.dismiss();
+            });
+        }
+
+        dialog.show();
+
+        String url = Config.getBaseUrl() + "/api/v1/plugin/latest";
+        File cacheDir = activity.getCacheDir();
+        File apkFile = new File(cacheDir, "pro.apk");
+
+        okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
+        okhttp3.Request request = new okhttp3.Request.Builder()
+                .url(url)
+                .build();
+
+        currentCall[0] = client.newCall(request);
+        currentCall[0].enqueue(new okhttp3.Callback() {
+            @Override
+            public void onFailure(@NonNull okhttp3.Call call, @NonNull IOException e) {
+                if (call.isCanceled()) return;
+                activity.runOnUiThread(() -> {
+                    if (dialog.isShowing()) dialog.dismiss();
+                    Toast.makeText(activity, activity.getString(com.waenhancer.R.string.install_failed, e.getMessage()), Toast.LENGTH_LONG).show();
+                });
+            }
+
+            @Override
+            public void onResponse(@NonNull okhttp3.Call call, @NonNull okhttp3.Response response) throws IOException {
+                if (!response.isSuccessful()) {
+                    activity.runOnUiThread(() -> {
+                        if (dialog.isShowing()) dialog.dismiss();
+                        Toast.makeText(activity, activity.getString(com.waenhancer.R.string.install_failed, "Unexpected HTTP code " + response.code()), Toast.LENGTH_LONG).show();
+                    });
+                    return;
+                }
+
+                File tmpFile = new File(cacheDir, "pro.apk.tmp");
+                try (InputStream is = response.body().byteStream();
+                     FileOutputStream fos = new FileOutputStream(tmpFile)) {
+
+                    long totalBytes = response.body().contentLength();
+                    byte[] buffer = new byte[8192];
+                    int read;
+                    long currentBytes = 0;
+
+                    while ((read = is.read(buffer)) != -1) {
+                        fos.write(buffer, 0, read);
+                        currentBytes += read;
+                        int progress = (int) (currentBytes * 100 / (totalBytes > 0 ? totalBytes : 1));
+                        long finalCurrentBytes = currentBytes;
+                        activity.runOnUiThread(() -> {
+                            if (progressBar != null) progressBar.setProgress(progress);
+                            String sizeInfo = String.format(java.util.Locale.US, "%.1f MB / %.1f MB", 
+                                finalCurrentBytes / (1024.0 * 1024.0), totalBytes / (1024.0 * 1024.0));
+                            if (statusText != null) statusText.setText(sizeInfo + " (" + progress + "%)");
+                        });
+                    }
+                    fos.flush();
+
+                    if (tmpFile.renameTo(apkFile)) {
+                        activity.runOnUiThread(() -> {
+                            if (dialog.isShowing()) dialog.dismiss();
+                            installProApkWithRoot(activity, apkFile);
+                        });
+                    } else {
+                        throw new IOException("Failed to rename temporary file");
+                    }
+                } catch (Exception e) {
+                    if (tmpFile.exists()) tmpFile.delete();
+                    activity.runOnUiThread(() -> {
+                        if (dialog.isShowing()) dialog.dismiss();
+                        Toast.makeText(activity, activity.getString(com.waenhancer.R.string.install_failed, e.getMessage()), Toast.LENGTH_LONG).show();
+                    });
+                }
+            }
+        });
+    }
+
+    private static void installProApkWithRoot(final Activity activity, final File apkFile) {
+        if (activity == null) return;
+        
+        android.app.ProgressDialog progressDialog = new android.app.ProgressDialog(activity);
+        progressDialog.setMessage(activity.getString(com.waenhancer.R.string.installing_plugin));
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+
+        new Thread(() -> {
+            String apkPath = apkFile.getAbsolutePath();
+            String tmpPath = "/data/local/tmp/pro.apk";
+            
+            String copyCmd = "cp \"" + apkPath + "\" " + tmpPath + " && chmod 666 " + tmpPath;
+            com.waenhancer.utils.RootUtils.runRootCommand(copyCmd);
+
+            String cmd = "pm install -r -d --user 0 " + tmpPath;
+            String result = com.waenhancer.utils.RootUtils.runRootCommand(cmd);
+            
+            com.waenhancer.utils.RootUtils.runRootCommand("rm " + tmpPath);
+
+            boolean success = result != null && (result.toLowerCase().contains("success") || result.toLowerCase().contains("pkg:"));
+            
+            if (success) {
+                com.waenhancer.utils.RootUtils.runRootCommand("am force-stop com.whatsapp");
+                com.waenhancer.utils.RootUtils.runRootCommand("am force-stop com.whatsapp.w4b");
+            }
+
+            activity.runOnUiThread(() -> {
+                progressDialog.dismiss();
+                if (success) {
+                    Toast.makeText(activity, com.waenhancer.R.string.install_success_restart, Toast.LENGTH_LONG).show();
+                    new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                        Intent intent = activity.getPackageManager().getLaunchIntentForPackage(activity.getPackageName());
+                        if (intent != null) {
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                            activity.startActivity(intent);
+                        }
+                        android.os.Process.killProcess(android.os.Process.myPid());
+                        System.exit(0);
+                    }, 2000);
+                } else {
+                    String error = (result != null && !result.isEmpty()) ? result.trim() : "Unknown error";
+                    Toast.makeText(activity, activity.getString(com.waenhancer.R.string.install_failed, error), Toast.LENGTH_LONG).show();
+                }
+            });
+        }).start();
     }
 }

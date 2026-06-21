@@ -39,12 +39,34 @@ public class GeneralFragment extends BaseFragment {
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             super.onCreatePreferences(savedInstanceState, rootKey);
             setPreferencesFromResource(R.xml.fragment_general, rootKey);
+            updatePluginPreference();
         }
 
         @Override
         public void onResume() {
             super.onResume();
             setDisplayHomeAsUpEnabled(false);
+            updatePluginPreference();
+        }
+
+        private void updatePluginPreference() {
+            android.content.Context context = getContext();
+            if (context == null) return;
+            androidx.preference.Preference pref = findPreference("unlock_limited_free");
+            androidx.preference.PreferenceCategory category = findPreference("plugin_pack_category");
+            if (category == null) return;
+
+            if (com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(context)) {
+                category.setVisible(false);
+            } else {
+                category.setVisible(true);
+                if (pref != null) {
+                    pref.setOnPreferenceClickListener(preference -> {
+                        com.waenhancer.xposed.utils.ProHelper.checkRootAndInstallPlugin(getActivity(), null);
+                        return true;
+                    });
+                }
+            }
         }
     }
 
