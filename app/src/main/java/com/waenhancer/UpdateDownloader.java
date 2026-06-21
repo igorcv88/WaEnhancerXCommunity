@@ -136,20 +136,37 @@ public class UpdateDownloader {
             String apkPath = apkFile.getAbsolutePath();
             String tmpPath = "/data/local/tmp/wa_update.apk";
             
-            // Copy to /data/local/tmp first to ensure pm can read it
-            String copyCmd = "cp \"" + apkPath + "\" " + tmpPath + " && chmod 666 " + tmpPath;
+            // Clean up old file first
+            com.waenhancer.utils.RootUtils.runRootCommand("rm -f " + tmpPath);
+
+            // Copy to /data/local/tmp using cat to bypass SELinux read restrictions on /data/data
+            String copyCmd = "cat \"" + apkPath + "\" > " + tmpPath + " && chmod 666 " + tmpPath;
             com.waenhancer.utils.RootUtils.runRootCommand(copyCmd);
 
-            // -r: replace existing application
-            // -d: allow version code downgrade
-            // --user 0: install for owner (common on most devices)
-            String cmd = "pm install -r -d --user 0 " + tmpPath;
-            String result = com.waenhancer.utils.RootUtils.runRootCommand(cmd);
+            // Validate that file exists and is not empty
+            String sizeResult = com.waenhancer.utils.RootUtils.runRootCommand("wc -c < " + tmpPath);
+            long bytes = 0;
+            try {
+                if (sizeResult != null) {
+                    bytes = Long.parseLong(sizeResult.trim());
+                }
+            } catch (Exception ignored) {}
+
+            boolean success = false;
+            String result = "";
+            if (bytes > 1000) {
+                // -r: replace existing application
+                // -d: allow version code downgrade
+                // --user 0: install for owner
+                String cmd = "pm install -r -d --user 0 " + tmpPath;
+                result = com.waenhancer.utils.RootUtils.runRootCommand(cmd);
+                success = result != null && (result.toLowerCase().contains("success") || result.toLowerCase().contains("pkg:"));
+            } else {
+                result = "Failed to copy APK file to /data/local/tmp. Check root permissions.";
+            }
             
             // Cleanup
-            com.waenhancer.utils.RootUtils.runRootCommand("rm " + tmpPath);
-
-            boolean success = result != null && (result.toLowerCase().contains("success") || result.toLowerCase().contains("pkg:"));
+            com.waenhancer.utils.RootUtils.runRootCommand("rm -f " + tmpPath);
             
             activity.runOnUiThread(() -> {
                 if (success) {
