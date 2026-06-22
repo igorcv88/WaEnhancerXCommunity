@@ -974,6 +974,52 @@ public class FeatureLoader {
                 times.add("* Loaded Plugin " + classe.getSimpleName() + " in " + timemillis2 + "ms");
             }, executorService);
         }
+
+        // Load Pro features dynamically if installed
+        try {
+            ClassLoader proLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(mApp, loader, de.robv.android.xposed.XposedBridge.class.getClassLoader());
+            if (proLoader != null) {
+                System.getProperties().put("com.waex.pro.classloader", proLoader);
+                XposedBridge.log("[WAEX] Pro plugin ClassLoader loaded successfully. Injected into System properties.");
+
+                String[] proFeatureClassNames = {
+                        "com.waex.pro.AlwaysTyping",
+                        "com.waex.pro.CustomizeStatusView",
+                        "com.waex.pro.DeleteMessageFile",
+                        "com.waex.pro.FileSizeSpooferPro",
+                        "com.waex.pro.FilterItemsPro",
+                        "com.waex.pro.MessageBomber",
+                        "com.waex.pro.StatusSplitter",
+                        "com.waex.pro.VoiceStatusShare"
+                };
+
+                for (String className : proFeatureClassNames) {
+                    CompletableFuture.runAsync(() -> {
+                        long timemillis = System.currentTimeMillis();
+                        try {
+                            Class<?> clazz = proLoader.loadClass(className);
+                            var constructor = clazz.getConstructor(ClassLoader.class, android.content.SharedPreferences.class);
+                            Object pluginObj = constructor.newInstance(loader, pref);
+                            
+                            var doHookMethod = clazz.getMethod("doHook");
+                            doHookMethod.invoke(pluginObj);
+                            
+                            long timemillis2 = System.currentTimeMillis() - timemillis;
+                            XposedBridge.log("[WAEX] Loaded Pro Plugin " + clazz.getSimpleName() + " in " + timemillis2 + "ms");
+                        } catch (Throwable e) {
+                            XposedBridge.log("[WAEX] Error loading Pro plugin class " + className + ": " + e.toString());
+                            XposedBridge.log(e);
+                        }
+                    }, executorService);
+                }
+            } else {
+                XposedBridge.log("[WAEX] Pro plugin is not installed or failed to load ClassLoader.");
+            }
+        } catch (Throwable t) {
+            XposedBridge.log("[WAEX] Error initializing Pro plugins loader: " + t.toString());
+            XposedBridge.log(t);
+        }
+
         executorService.shutdown();
         try {
             executorService.awaitTermination(15, TimeUnit.SECONDS);

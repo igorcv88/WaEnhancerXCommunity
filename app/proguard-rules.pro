@@ -39,6 +39,31 @@
     public <init>(java.lang.ClassLoader, android.content.SharedPreferences);
 }
 
+# Keep classes referenced by the Pro submodule to prevent NoClassDefFoundError/ClassNotFoundException at runtime
+-keep class com.waenhancer.xposed.core.Feature { *; }
+-keep class com.waenhancer.xposed.core.FeatureLoader { *; }
+-keep class com.waenhancer.xposed.core.WppCore { *; }
+-keep class com.waenhancer.xposed.core.devkit.Unobfuscator { *; }
+-keep class com.waenhancer.xposed.core.components.FMessageWpp { *; }
+-keep class com.waenhancer.xposed.core.components.FMessageWpp$* { *; }
+-keep class com.waenhancer.xposed.features.privacy.CustomPrivacy { *; }
+-keep class com.waenhancer.xposed.utils.Utils { *; }
+-keep class com.waenhancer.xposed.utils.DesignUtils { *; }
+-keep class com.waenhancer.xposed.utils.ReflectionUtils { *; }
+-keep class com.waenhancer.xposed.features.listeners.ConversationItemListener { *; }
+-keep class com.waenhancer.xposed.core.components.AlertDialogWpp { *; }
+-keep class com.waenhancer.R { *; }
+-keep class com.waenhancer.R$* { *; }
+-keep class com.waenhancer.ui.helpers.BottomSheetHelper { *; }
+-keep class com.waenhancer.utils.KeyboxValidator { *; }
+-keep class com.waenhancer.utils.KeyboxValidator$* { *; }
+-keep class com.waenhancer.App { *; }
+-keep class com.waenhancer.BuildConfig { *; }
+-keep class com.waenhancer.preference.SafeSharedPreferences { *; }
+-keep class com.waenhancer.xposed.utils.XPrefManager { *; }
+-keep class com.waenhancer.xposed.utils.XResManager { *; }
+-keep class com.waenhancer.model.FilterItem { *; }
+
 # Keep all classes and members in the pro package (except the obfuscated module) to prevent reflection and JNI issues in release mode
 -keep class !com.waenhancer.pro.FileSizeSpooferPro,com.waenhancer.pro.** { *; }
 

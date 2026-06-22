@@ -52,10 +52,101 @@ public class ProHelper {
 
     private static ClassLoader companionPluginClassLoader = null;
 
+    private static class CompositeClassLoader extends ClassLoader {
+        private final ClassLoader parent1;
+        private final ClassLoader parent2;
+        private final ClassLoader parent3;
+
+        public CompositeClassLoader(ClassLoader parent1, ClassLoader parent2) {
+            this(parent1, parent2, null);
+        }
+
+        public CompositeClassLoader(ClassLoader parent1, ClassLoader parent2, ClassLoader parent3) {
+            super(parent1);
+            this.parent1 = parent1;
+            this.parent2 = parent2;
+            this.parent3 = parent3;
+        }
+
+        @Override
+        protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+            Class<?> c = findLoadedClass(name);
+            if (c != null) {
+                return c;
+            }
+            try {
+                return parent1.loadClass(name);
+            } catch (ClassNotFoundException ignored) {}
+            if (parent2 != null) {
+                try {
+                    return parent2.loadClass(name);
+                } catch (ClassNotFoundException ignored) {}
+            }
+            if (parent3 != null) {
+                try {
+                    return parent3.loadClass(name);
+                } catch (ClassNotFoundException ignored) {}
+            }
+            return super.loadClass(name, resolve);
+        }
+    }
+
     public static synchronized ClassLoader getPluginClassLoader(Context context) {
+        return getPluginClassLoader(context, null, null);
+    }
+
+    public static synchronized ClassLoader getPluginClassLoader(Context context, ClassLoader parentLoader) {
+        return getPluginClassLoader(context, parentLoader, null);
+    }
+
+    public static synchronized ClassLoader getPluginClassLoader(Context context, ClassLoader parentLoader, ClassLoader xposedLoader) {
+        android.util.Log.d("WaeX-Helper", "getPluginClassLoader called with parentLoader: " + parentLoader + ", xposedLoader: " + xposedLoader);
+        android.util.Log.d("WaeX-Helper", "ProHelper classloader: " + ProHelper.class.getClassLoader());
+        try {
+            Class<?> c = ProHelper.class.getClassLoader().loadClass("de.robv.android.xposed.XposedBridge");
+            android.util.Log.d("WaeX-Helper", "SUCCESS: XposedBridge loaded from ProHelper classloader: " + c);
+        } catch (Throwable t) {
+            android.util.Log.e("WaeX-Helper", "FAILED: load XposedBridge from ProHelper classloader", t);
+        }
+        if (parentLoader != null) {
+            try {
+                Class<?> c = parentLoader.loadClass("de.robv.android.xposed.XposedBridge");
+                android.util.Log.d("WaeX-Helper", "SUCCESS: XposedBridge loaded from parentLoader: " + c);
+            } catch (Throwable t) {
+                android.util.Log.e("WaeX-Helper", "FAILED: load XposedBridge from parentLoader", t);
+            }
+        }
+        if (xposedLoader != null) {
+            try {
+                Class<?> c = xposedLoader.loadClass("de.robv.android.xposed.XposedBridge");
+                android.util.Log.d("WaeX-Helper", "SUCCESS: XposedBridge loaded from xposedLoader: " + c);
+            } catch (Throwable t) {
+                android.util.Log.e("WaeX-Helper", "FAILED: load XposedBridge from xposedLoader", t);
+            }
+        }
+
         if (companionPluginClassLoader != null) {
             return companionPluginClassLoader;
         }
+        
+        ClassLoader parent = (parentLoader != null || xposedLoader != null) 
+            ? new CompositeClassLoader(ProHelper.class.getClassLoader(), parentLoader, xposedLoader) 
+            : ProHelper.class.getClassLoader();
+        
+        // Try reading cached path from preferences to bypass package visibility limitations in WhatsApp process
+        try {
+            SharedPreferences prefs = getPrefs();
+            String cachedPath = prefs != null ? prefs.getString("pro_plugin_path", null) : null;
+            String cachedLibPath = prefs != null ? prefs.getString("pro_plugin_lib_path", null) : null;
+            if (cachedPath != null && !cachedPath.trim().isEmpty() && new java.io.File(cachedPath).exists()) {
+                companionPluginClassLoader = new dalvik.system.PathClassLoader(cachedPath, cachedLibPath, parent);
+                android.util.Log.d("WaeX-Helper", "Resolved companionPluginClassLoader using cached preferences path: " + cachedPath + ", libPath: " + cachedLibPath);
+                return companionPluginClassLoader;
+            }
+        } catch (Throwable t) {
+            android.util.Log.e("WaeX-Helper", "Failed to resolve companionPluginClassLoader from cached path", t);
+        }
+
         if (context == null) {
             context = App.getInstance();
         }
@@ -64,10 +155,10 @@ public class ProHelper {
         }
         try {
             android.content.pm.ApplicationInfo appInfo = context.getPackageManager().getApplicationInfo("com.waex.pro", 0);
-            companionPluginClassLoader = new dalvik.system.PathClassLoader(appInfo.sourceDir, ProHelper.class.getClassLoader());
+            companionPluginClassLoader = new dalvik.system.PathClassLoader(appInfo.sourceDir, appInfo.nativeLibraryDir, parent);
             return companionPluginClassLoader;
         } catch (Throwable t) {
-            android.util.Log.e("WaeX-Helper", "Failed to resolve companionPluginClassLoader", t);
+            android.util.Log.e("WaeX-Helper", "Failed to resolve companionPluginClassLoader via PackageManager", t);
         }
         return null;
     }

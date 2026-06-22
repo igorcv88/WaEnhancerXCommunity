@@ -69,28 +69,15 @@ public class LicenseActivity extends BaseActivity {
     }
 
     private static String getProStatus() {
-        try {
-            Class<?> clazz = Class.forName("com.waenhancer.xposed.utils.ProHelper");
-            return (String) clazz.getMethod("getProStatus").invoke(null);
-        } catch (Exception e) {
-            return "FREE";
-        }
+        return ProHelper.getProStatus();
     }
 
     private static String getProPlanName() {
-        try {
-            Class<?> clazz = Class.forName("com.waenhancer.xposed.utils.ProHelper");
-            return (String) clazz.getMethod("getProPlanName").invoke(null);
-        } catch (Exception e) {
-            return "";
-        }
+        return ProHelper.getProPlanName();
     }
 
     private static void setForceFree(boolean forceFree) {
-        try {
-            Class<?> clazz = Class.forName("com.waenhancer.xposed.utils.ProHelper");
-            clazz.getMethod("setForceFree", boolean.class).invoke(null, forceFree);
-        } catch (Exception ignored) {}
+        ProHelper.setForceFree(forceFree);
     }
 
 
@@ -389,14 +376,10 @@ public class LicenseActivity extends BaseActivity {
                 } catch (Exception ignored) {}
 
                 try {
-                    Class<?> appClass = Class.forName("com.waenhancer.App");
-                    Object appInstance = appClass.getMethod("getInstance").invoke(null);
-                    appClass.getMethod("restartApp", String.class).invoke(appInstance, "com.whatsapp");
+                    com.waenhancer.App.getInstance().restartApp("com.whatsapp");
                 } catch (Exception ignored) {}
                 try {
-                    Class<?> appClass = Class.forName("com.waenhancer.App");
-                    Object appInstance = appClass.getMethod("getInstance").invoke(null);
-                    appClass.getMethod("restartApp", String.class).invoke(appInstance, "com.whatsapp.w4b");
+                    com.waenhancer.App.getInstance().restartApp("com.whatsapp.w4b");
                 } catch (Exception ignored) {}
             }
 
@@ -429,14 +412,10 @@ public class LicenseActivity extends BaseActivity {
                 } catch (Exception ignored) {}
 
                 try {
-                    Class<?> appClass = Class.forName("com.waenhancer.App");
-                    Object appInstance = appClass.getMethod("getInstance").invoke(null);
-                    appClass.getMethod("restartApp", String.class).invoke(appInstance, "com.whatsapp");
+                    com.waenhancer.App.getInstance().restartApp("com.whatsapp");
                 } catch (Exception ignored) {}
                 try {
-                    Class<?> appClass = Class.forName("com.waenhancer.App");
-                    Object appInstance = appClass.getMethod("getInstance").invoke(null);
-                    appClass.getMethod("restartApp", String.class).invoke(appInstance, "com.whatsapp.w4b");
+                    com.waenhancer.App.getInstance().restartApp("com.whatsapp.w4b");
                 } catch (Exception ignored) {}
             }
         }
@@ -516,14 +495,10 @@ public class LicenseActivity extends BaseActivity {
 
                         // Restart WhatsApp processes
                         try {
-                            Class<?> appClass = Class.forName("com.waenhancer.App");
-                            Object appInstance = appClass.getMethod("getInstance").invoke(null);
-                            appClass.getMethod("restartApp", String.class).invoke(appInstance, "com.whatsapp");
+                            com.waenhancer.App.getInstance().restartApp("com.whatsapp");
                         } catch (Exception ignored) {}
                         try {
-                            Class<?> appClass = Class.forName("com.waenhancer.App");
-                            Object appInstance = appClass.getMethod("getInstance").invoke(null);
-                            appClass.getMethod("restartApp", String.class).invoke(appInstance, "com.whatsapp.w4b");
+                            com.waenhancer.App.getInstance().restartApp("com.whatsapp.w4b");
                         } catch (Exception ignored) {}
 
                         // Clean self-restart of WaEnhancer after a short delay
