@@ -428,41 +428,56 @@ public class ProHelper {
                         android.util.Log.e("WaeX-ClassDebug", "Failed to update nativeLibraryDirectories Field: " + t);
                     }
 
-                    // Update nativeLibraryPathElements (array of Elements)
+                    // Update nativeLibraryPathElements (array of NativeLibraryElement or Element)
                     try {
                         java.lang.reflect.Field nativeLibraryPathElementsField = pathList.getClass().getDeclaredField("nativeLibraryPathElements");
                         nativeLibraryPathElementsField.setAccessible(true);
                         Object[] originalLibElements = (Object[]) nativeLibraryPathElementsField.get(pathList);
 
-                        // Generate Element objects for native directories
-                        Object[] newLibElements = null;
-                        if (makePathElementsMethod.getName().equals("makePathElements")) {
-                            if (paramTypes.length == 3) {
-                                if (paramTypes[2] == ClassLoader.class) {
-                                    newLibElements = (Object[]) makePathElementsMethod.invoke(null, newDirsList, suppressedExceptions, classLoader);
-                                } else {
-                                    newLibElements = (Object[]) makePathElementsMethod.invoke(null, newDirsList, null, suppressedExceptions);
-                                }
-                            } else if (paramTypes.length == 4) {
-                                newLibElements = (Object[]) makePathElementsMethod.invoke(null, newDirsList, null, suppressedExceptions, classLoader);
-                            } else {
-                                newLibElements = (Object[]) makePathElementsMethod.invoke(null, newDirsList, suppressedExceptions);
+                        Class<?> componentType = originalLibElements.getClass().getComponentType();
+                        java.util.List<Object> newLibElementsList = new java.util.ArrayList<>();
+
+                        for (java.io.File dir : newDirsList) {
+                            Object elementObj = null;
+                            for (java.lang.reflect.Constructor<?> ctor : componentType.getDeclaredConstructors()) {
+                                ctor.setAccessible(true);
+                                Class<?>[] params = ctor.getParameterTypes();
+                                try {
+                                    if (params.length == 1 && params[0] == java.io.File.class) {
+                                        elementObj = ctor.newInstance(dir);
+                                        break;
+                                    } else if (params.length == 2 && params[0] == java.io.File.class && params[1] == boolean.class) {
+                                        elementObj = ctor.newInstance(dir, true);
+                                        break;
+                                    } else if (params.length == 3 && params[0] == java.io.File.class && params[1] == boolean.class && params[2] == java.io.File.class) {
+                                        elementObj = ctor.newInstance(dir, true, null);
+                                        break;
+                                    } else if (params.length == 4 && params[0] == java.io.File.class && params[1] == boolean.class && params[2] == java.io.File.class && params[3] == dalvik.system.DexFile.class) {
+                                        elementObj = ctor.newInstance(dir, true, null, null);
+                                        break;
+                                    }
+                                } catch (Throwable ignored) {}
                             }
-                        } else {
-                            newLibElements = (Object[]) makePathElementsMethod.invoke(null, newDirsList, null, suppressedExceptions, classLoader);
+                            if (elementObj != null) {
+                                newLibElementsList.add(elementObj);
+                            } else {
+                                android.util.Log.w("WaeX-ClassDebug", "Could not instantiate element of type " + componentType.getName() + " for " + dir);
+                            }
                         }
 
-                        if (newLibElements != null && newLibElements.length > 0) {
+                        if (!newLibElementsList.isEmpty()) {
                             Object[] combinedLibElements = (Object[]) java.lang.reflect.Array.newInstance(
-                                originalLibElements.getClass().getComponentType(),
-                                originalLibElements.length + newLibElements.length
+                                componentType,
+                                originalLibElements.length + newLibElementsList.size()
                             );
                             System.arraycopy(originalLibElements, 0, combinedLibElements, 0, originalLibElements.length);
-                            System.arraycopy(newLibElements, 0, combinedLibElements, originalLibElements.length, newLibElements.length);
+                            for (int i = 0; i < newLibElementsList.size(); i++) {
+                                combinedLibElements[originalLibElements.length + i] = newLibElementsList.get(i);
+                            }
                             nativeLibraryPathElementsField.set(pathList, combinedLibElements);
                             android.util.Log.i("WaeX-ClassDebug", "Successfully appended to nativeLibraryPathElements: " + newDirsList);
                         } else {
-                            android.util.Log.e("WaeX-ClassDebug", "Failed to generate native library elements");
+                            android.util.Log.e("WaeX-ClassDebug", "Failed to generate any native library elements using constructors");
                         }
                     } catch (Throwable t) {
                         android.util.Log.e("WaeX-ClassDebug", "Failed to update nativeLibraryPathElements Field: " + t);
