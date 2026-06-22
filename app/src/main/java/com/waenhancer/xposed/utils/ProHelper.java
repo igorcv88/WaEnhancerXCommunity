@@ -276,6 +276,34 @@ public class ProHelper {
             companionPluginClassLoader = proHelperLoader;
             companionPluginPath = cachedPath;
             
+            // Explicitly load the native library using System.load to bypass namespace restrictions
+            try {
+                String soName = "libpro_native.so";
+                java.io.File soFile = null;
+                if (cachedLibPath != null && !cachedLibPath.trim().isEmpty()) {
+                    soFile = new java.io.File(cachedLibPath, soName);
+                }
+                if (soFile == null || !soFile.exists()) {
+                    // Fallback to searching the constructed finalLibPath
+                    for (String path : finalLibPath.split(java.io.File.pathSeparator)) {
+                        java.io.File f = new java.io.File(path, soName);
+                        if (f.exists()) {
+                            soFile = f;
+                            break;
+                        }
+                    }
+                }
+                if (soFile != null && soFile.exists()) {
+                    android.util.Log.i("WaeX-ClassDebug", "Loading pro native library explicitly from: " + soFile.getAbsolutePath());
+                    System.load(soFile.getAbsolutePath());
+                    android.util.Log.i("WaeX-ClassDebug", "Successfully loaded pro native library explicitly!");
+                } else {
+                    android.util.Log.e("WaeX-ClassDebug", "Could not find libpro_native.so in search paths: " + finalLibPath);
+                }
+            } catch (Throwable t) {
+                android.util.Log.e("WaeX-ClassDebug", "Failed to explicitly load pro native library: " + t.toString(), t);
+            }
+            
             try {
                 Class.forName("com.waex.pro.ProFeature", true, companionPluginClassLoader);
                 android.util.Log.i("WaeX-ClassDebug", "Initialized ProFeature with plugin classloader successfully");
