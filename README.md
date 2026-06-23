@@ -124,20 +124,49 @@ WaEnhancerX isn't just a fork; it's a **high-performance, native-first evolution
 8. Open WhatsApp and verify the module is active.
 
 
-
 ---
 
-### ⚖️ Open Source Attribution & Architectural Divergence
+### ⚖️ Architecture, Licensing Boundaries & Open Source Attribution
 
-WaEnhancerX originally started as a direct fork of **WaEnhancer** by **Dev4Mod**. We deeply respect the foundational work and legacy Xposed hooking concepts created by the original author.
+WaEnhancerX is structured to enforce strict legal, compilation, and architectural boundaries between the open-source framework and the proprietary companion features:
+
+#### 1. Modular Architecture & Licensing Boundaries
+The project is structured to enforce strict legal, compilation, and architectural boundaries between the open-source framework and the proprietary companion features:
+
+```
+[ Pro Plugin APK ] (Proprietary / Closed-Source Companion APK)
+        │
+        │ (Compile-Time: Depends ONLY on :api & compileOnly signature stubs)
+        ▼
+[ :api Module ] (Apache-2.0 License - Open Interface & DTO Bridge)
+        ▲
+        │ (Compile-Time: Linked as shared dependency)
+        │
+[ :app Module ] (GPL-3.0 License - Open-Source Host Hooking Framework)
+```
+
+*   **Host Hooking Framework (`:app` Module - GPL-3.0)**: The open-source core application and injection framework. It handles process initialization, Xposed hooks, and base features. It is licensed under the GNU General Public License v3.
+*   **Interface Bridge (`:api` Module - Apache-2.0)**: The open-source contract and DTO layer. Licensed under the permissive Apache License 2.0, it establishes a clean legal and compilation barrier, ensuring no copyleft requirements propagate to external extensions.
+*   **Pro Features (Proprietary Companion APK - Closed-Source)**: The advanced feature set distributed independently as a separate companion APK. To prevent license contamination, the companion APK is compiled with zero binary dependencies on the host (`:app`) and contains no GPL code. Build-time compliance is enforced via automated Gradle static analysis tasks.
+
+#### 2. Runtime Classloader Integration & Compatibility
+At runtime, WaEnhancerX integrates the companion APK using a decoupled, host-driven execution model:
+1.  **Dynamic Discovery**: The open-source host detects the presence of the independent companion APK via Android's Package Manager and a secure local `ContentProvider` (`HookProvider`).
+2.  **Xposed Compatibility Classloading**: To satisfy Android's process security model and LSPosed's hook rewriting requirements, the host resolves the companion APK's path and appends it to the ClassLoader. This is an environment-specific compatibility wrapper that allows the companion APK's hooks to run safely in the target process (WhatsApp) without static linking or architectural coupling.
+3.  **Interface-Driven Execution**: Communication between the host and the companion APK is governed strictly by the `:api` interface boundaries. The host reflectively instantiates the companion entry point (`PluginEntry` implementing `IPlugin` from the `:api` module) and executes its capabilities within isolated error boundaries.
+
+#### 3. Open Source Attribution & Upstream Divergence
+WaEnhancerX originally started as a direct fork of **WaEnhancer** by **Dev4Mod**. We deeply respect the foundational work, architecture, and Xposed hooking concepts created by the original author.
 
 **Why the Repository Was Detached (Architectural Independence):**
-The repository was officially detached from the upstream network to pursue an independent architectural roadmap. At the time, the original project initiated a rapid migration to Kotlin. While Kotlin is an excellent modern standard, staying attached would have caused massive merge conflicts with our ongoing, deep-level Java optimizations.
+The repository was officially detached from the upstream network to pursue an independent architectural roadmap. At the time, the upstream project initiated a rapid migration to Kotlin. While Kotlin is an excellent modern standard, staying attached would have caused massive merge conflicts with our ongoing, deep-level Java optimizations.
 
-Detaching allowed us to first stabilize, refactor, and achieve a zero-lag UI entirely on our own terms, without upstream changes breaking our core architecture. This gives WaEnhancerX the freedom to evolve at its own pace, whether that means perfecting the current foundation or transitioning frameworks in the future.
+Detaching allowed us to stabilize, refactor, and achieve a zero-lag UI entirely on our own terms, without upstream changes breaking our core architecture. This gives WaEnhancerX the freedom to evolve at its own pace, maintaining a highly optimized, tracker-free, and stable ecosystem.
 
-All legacy logic and core methods adapted from Dev4Mod are explicitly attributed here in full compliance with open-source ethics. Today, WaEnhancerX continues to evolve independently as a highly optimized, tracker-free, and stable ecosystem.
+All legacy logic and core methods adapted from Dev4Mod are explicitly attributed here in full compliance with open-source ethics.
 
 *Built for the community.*
 
 *Managed and Optimized by [Mubashar Dev](https://mubashar.dev)*
+
+
