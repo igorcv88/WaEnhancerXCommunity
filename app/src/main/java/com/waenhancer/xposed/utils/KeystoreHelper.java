@@ -28,13 +28,10 @@ public class KeystoreHelper {
      */
     public static void generateRSAKeyPair() {
         try {
-            Log.d(TAG, "generateRSAKeyPair: starting");
             KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
             keyStore.load(null);
             if (keyStore.containsAlias(ALIAS)) {
-                Log.d(TAG, "generateRSAKeyPair: Key already exists under alias " + ALIAS);
                 if (getPublicKeyBase64() != null) {
-                    Log.d(TAG, "generateRSAKeyPair: Existing key is valid");
                     return;
                 } else {
                     Log.w(TAG, "generateRSAKeyPair: Existing key is invalid (public key null). Deleting and regenerating.");
@@ -45,24 +42,19 @@ public class KeystoreHelper {
             }
 
             try {
-                Log.d(TAG, "generateRSAKeyPair: attempting StrongBox generation");
                 generateKeyPairInternal(true);
                 if (getPublicKeyBase64() == null) {
                     throw new Exception("StrongBox generation succeeded but public key is null");
                 }
-                Log.d(TAG, "generateRSAKeyPair: StrongBox generation succeeded and verified");
             } catch (Exception e) {
-                Log.w(TAG, "generateRSAKeyPair: StrongBox generation failed or invalid, deleting alias and falling back to standard TEE: " + e.getMessage(), e);
                 try {
                     keyStore.deleteEntry(ALIAS);
                 } catch (Exception ignored) {}
                 try {
-                    Log.d(TAG, "generateRSAKeyPair: attempting standard TEE generation");
                     generateKeyPairInternal(false);
                     if (getPublicKeyBase64() == null) {
                         throw new Exception("Standard TEE generation succeeded but public key is null");
                     }
-                    Log.d(TAG, "generateRSAKeyPair: standard TEE generation succeeded and verified");
                 } catch (Exception ex) {
                     Log.e(TAG, "generateRSAKeyPair: standard TEE generation failed: " + ex.getMessage(), ex);
                     try {
@@ -96,13 +88,7 @@ public class KeystoreHelper {
         }
 
         kpg.initialize(builder.build());
-        java.security.KeyPair kp = kpg.generateKeyPair();
-        if (kp != null) {
-            Log.d(TAG, "generateKeyPairInternal: kp public=" + kp.getPublic() + ", private=" + kp.getPrivate());
-        } else {
-            Log.w(TAG, "generateKeyPairInternal: kp is null!");
-        }
-        return kp;
+        return kpg.generateKeyPair();
     }
 
     /**
@@ -114,35 +100,17 @@ public class KeystoreHelper {
         try {
             KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
             keyStore.load(null);
-            
-            // List all aliases for diagnostic purposes
-            try {
-                java.util.Enumeration<String> aliases = keyStore.aliases();
-                while (aliases.hasMoreElements()) {
-                    Log.d(TAG, "getPublicKeyBase64: existing alias in Keystore: " + aliases.nextElement());
-                }
-            } catch (Exception ignored) {}
 
-            boolean hasAlias = keyStore.containsAlias(ALIAS);
-            Log.d(TAG, "getPublicKeyBase64: hasAlias=" + hasAlias);
-            if (!hasAlias) {
+            if (!keyStore.containsAlias(ALIAS)) {
                 return null;
             }
 
             java.security.cert.Certificate cert = keyStore.getCertificate(ALIAS);
-            Log.d(TAG, "getPublicKeyBase64: cert=" + cert);
             if (cert == null) {
-                try {
-                    KeyStore.Entry entry = keyStore.getEntry(ALIAS, null);
-                    Log.d(TAG, "getPublicKeyBase64: entry=" + entry + " (class=" + (entry != null ? entry.getClass().getName() : "null") + ")");
-                } catch (Exception ex) {
-                    Log.e(TAG, "getPublicKeyBase64: failed to getEntry: " + ex.getMessage());
-                }
                 return null;
             }
 
             PublicKey publicKey = cert.getPublicKey();
-            Log.d(TAG, "getPublicKeyBase64: publicKey=" + publicKey);
             if (publicKey == null) {
                 return null;
             }
