@@ -8,4 +8,5 @@ public interface IPlugin {
     void onUnload();
     String getName();
     String getVersion();
+    void registerCapabilities(ICapabilityRegistry registry);
 }
