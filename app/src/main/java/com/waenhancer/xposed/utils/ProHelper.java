@@ -140,32 +140,8 @@ public class ProHelper {
 
         ClassLoader proHelperLoader = ProHelper.class.getClassLoader();
         
-        // Try reading cached path from preferences to bypass package visibility limitations in WhatsApp process
-        try {
-            SharedPreferences prefs = getPrefs();
-            cachedPath = prefs != null ? prefs.getString("pro_plugin_path", null) : null;
-            cachedLibPath = prefs != null ? prefs.getString("pro_plugin_lib_path", null) : null;
-        } catch (Throwable t) {
-            // Ignore
-        }
-
-        if (cachedPath == null || cachedPath.trim().isEmpty() || !new java.io.File(cachedPath).exists()) {
-            if (context == null) {
-                context = App.getInstance();
-            }
-            if (context != null) {
-                try {
-                    android.content.pm.ApplicationInfo appInfo = context.getPackageManager().getApplicationInfo("com.waex.pro", 0);
-                    cachedPath = appInfo.sourceDir;
-                    cachedLibPath = appInfo.nativeLibraryDir;
-                } catch (Throwable t) {
-                    // Ignore
-                }
-            }
-        }
-
-        if ((cachedPath == null || cachedPath.trim().isEmpty() || !new java.io.File(cachedPath).exists())
-                && context != null) {
+        // 1. Try querying the HookProvider ContentProvider first to get the most fresh path from package manager.
+        if (context != null) {
             try {
                 android.os.Bundle pluginInfo = context.getContentResolver().call(
                         android.net.Uri.parse("content://" + BuildConfig.APPLICATION_ID + ".hookprovider"),
@@ -183,7 +159,36 @@ public class ProHelper {
                     }
                 }
             } catch (Throwable t) {
-                android.util.Log.e("WaeX-ClassDebug", "Failed to resolve Pro plugin via HookProvider", t);
+                android.util.Log.e("WaeX-ClassDebug", "Failed to query live Pro plugin path from HookProvider", t);
+            }
+        }
+
+        // 2. If HookProvider failed or returned null/invalid, try reading package manager directly
+        if (cachedPath == null || cachedPath.trim().isEmpty() || !new java.io.File(cachedPath).exists()) {
+            if (context == null) {
+                context = App.getInstance();
+            }
+            if (context != null) {
+                try {
+                    android.content.pm.ApplicationInfo appInfo = context.getPackageManager().getApplicationInfo("com.waex.pro", 0);
+                    if (appInfo.sourceDir != null && new java.io.File(appInfo.sourceDir).exists()) {
+                        cachedPath = appInfo.sourceDir;
+                        cachedLibPath = appInfo.nativeLibraryDir;
+                    }
+                } catch (Throwable t) {
+                    // Ignore
+                }
+            }
+        }
+
+        // 3. Fallback to cached path from preferences
+        if (cachedPath == null || cachedPath.trim().isEmpty() || !new java.io.File(cachedPath).exists()) {
+            try {
+                SharedPreferences prefs = getPrefs();
+                cachedPath = prefs != null ? prefs.getString("pro_plugin_path", null) : null;
+                cachedLibPath = prefs != null ? prefs.getString("pro_plugin_lib_path", null) : null;
+            } catch (Throwable t) {
+                // Ignore
             }
         }
 

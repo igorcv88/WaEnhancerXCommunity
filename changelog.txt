@@ -1,2 +1,2 @@
-[Fixes]
-- Fixed GroupAdmin plugin error crash on startup
+[Added]
+- Added support for version 2.26.25.xx WA/WB
