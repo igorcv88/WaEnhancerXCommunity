@@ -113,6 +113,11 @@ import com.waenhancer.xposed.utils.ResId;
 import com.waenhancer.xposed.utils.Utils;
 import com.waenhancer.xposed.utils.XResManager;
 
+import com.waex.api.plugin.IPlugin;
+import com.waex.api.plugin.IPluginContext;
+import com.waex.api.plugin.ICapabilityRegistry;
+import com.waex.api.plugin.IPluginCapability;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -1009,34 +1014,47 @@ public class FeatureLoader {
                     XposedBridge.log("[WAEX] WARNING: Pro native library (pro_native) is NOT loaded. Pro features will be inactive! Check logcat for library loading details.");
                 }
 
-                String[] proFeatureClassNames = {
-                        "com.waex.pro.AlwaysTyping",
-                        "com.waex.pro.CustomizeStatusView",
-                        "com.waex.pro.DeleteMessageFile",
-                        "com.waex.pro.FileSizeSpooferPro",
-                        "com.waex.pro.FilterItemsPro",
-                        "com.waex.pro.MessageBomber",
-                        "com.waex.pro.StatusSplitter",
-                        "com.waex.pro.VoiceStatusShare"
-                };
-
-                for (String className : proFeatureClassNames) {
+                XposedBridge.log("[WAEX] Loading Pro plugin entry point...");
+                Class<?> pluginEntryClass = proLoader.loadClass("com.waex.pro.PluginEntry");
+                IPlugin pluginInstance = (IPlugin) pluginEntryClass.getDeclaredConstructor().newInstance();
+                
+                pluginInstance.load();
+                
+                com.waenhancer.xposed.core.plugins.PluginContextImpl pluginContext = 
+                    new com.waenhancer.xposed.core.plugins.PluginContextImpl(loader, mApp, pref);
+                pluginInstance.attachContext(pluginContext);
+                
+                pluginInstance.init();
+                
+                CapabilityRegistryImpl registry = new CapabilityRegistryImpl();
+                pluginInstance.registerCapabilities(registry);
+                
+                // Invoke execute life-cycle hook (pure capability provider: no-op but standard lifecycle call)
+                pluginInstance.execute();
+                
+                // Execute registered capabilities with error isolation
+                for (IPluginCapability capability : registry.getCapabilities()) {
                     CompletableFuture.runAsync(() -> {
                         long timemillis = System.currentTimeMillis();
+                        String capName = capability.getPluginName();
                         try {
-                            XposedBridge.log("[WAEX] Loading Pro Feature class: " + className);
-                            Class<?> clazz = proLoader.loadClass(className);
-                            var constructor = clazz.getConstructor(ClassLoader.class, android.content.SharedPreferences.class);
-                            Object pluginObj = constructor.newInstance(loader, pref);
-                            
-                            var doHookMethod = clazz.getMethod("doHook");
-                            doHookMethod.invoke(pluginObj);
-                            
+                            XposedBridge.log("[WAEX] Executing capability: " + capName);
+                            capability.doHook();
                             long timemillis2 = System.currentTimeMillis() - timemillis;
-                            XposedBridge.log("[WAEX] Loaded Pro Plugin " + clazz.getSimpleName() + " in " + timemillis2 + "ms");
+                            XposedBridge.log("[WAEX] Executed Pro capability " + capName + " in " + timemillis2 + "ms");
                         } catch (Throwable e) {
-                            XposedBridge.log("[WAEX] Error loading Pro plugin class " + className + ": " + e.toString());
+                            XposedBridge.log("[WAEX] Error executing Pro capability " + capName + ": " + e.toString());
                             XposedBridge.log(e);
+                            
+                            var error = new ErrorItem();
+                            error.setPluginName(capName);
+                            error.setWhatsAppVersion(versionWpp);
+                            error.setModuleVersion(BuildConfig.VERSION_NAME);
+                            error.setMessage(e.getMessage());
+                            error.setError(Arrays.toString(Arrays.stream(e.getStackTrace()).filter(
+                                    s -> !s.getClassName().startsWith("android") && !s.getClassName().startsWith("com.android"))
+                                    .map(StackTraceElement::toString).toArray()));
+                            list.add(error);
                         }
                     }, executorService);
                 }
@@ -1372,6 +1390,21 @@ public class FeatureLoader {
                 XposedBridge.log("[WAEX-DB] Error in index optimization: " + t.getMessage());
             }
         }).start();
+    }
+
+    private static class CapabilityRegistryImpl implements ICapabilityRegistry {
+        private final List<IPluginCapability> capabilities = new ArrayList<>();
+
+        @Override
+        public void register(IPluginCapability capability) {
+            if (capability != null) {
+                capabilities.add(capability);
+            }
+        }
+
+        public List<IPluginCapability> getCapabilities() {
+            return capabilities;
+        }
     }
 
     private static class ErrorItem {
