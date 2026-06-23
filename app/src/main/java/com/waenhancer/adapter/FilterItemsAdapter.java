@@ -96,7 +96,7 @@ public class FilterItemsAdapter extends RecyclerView.Adapter<FilterItemsAdapter.
                     filterIcon.setImageTintList(ColorStateList.valueOf(accentColor));
                     break;
                 case FilterItem.BEHAVIOR_RESIZE:
-                    subtitle = "Behavior: Resize (" + item.scale + "x)";
+                    subtitle = String.format(java.util.Locale.US, "Behavior: Resize (%.1fx)", item.scale);
                     filterIcon.setImageResource(android.R.drawable.ic_menu_crop);
                     filterIcon.setImageTintList(ColorStateList.valueOf(accentColor));
                     break;
