@@ -4123,5 +4123,78 @@ public class Unobfuscator {
         }
         return null;
     }
+
+    // --- PhoneNumberUtil Unobfuscation ---
+
+    public synchronized static Class<?> loadPhoneNumberUtilClass(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getClass(classLoader, () -> {
+            Class<?> cls = findFirstClassUsingStrings(classLoader, StringMatchType.Equals,
+                    "invalid metadata (country calling code was mapped to the non-geo entity as well as specific region(s))");
+            if (cls == null) {
+                cls = findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "PhoneNumberUtil");
+            }
+            if (cls == null) {
+                throw new ClassNotFoundException("PhoneNumberUtil class not found");
+            }
+            return cls;
+        });
+    }
+
+    public synchronized static Method loadPhoneNumberUtilGetInstance(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            Class<?> clazz = loadPhoneNumberUtilClass(classLoader);
+            for (Method m : clazz.getDeclaredMethods()) {
+                if (Modifier.isStatic(m.getModifiers())
+                        && m.getParameterCount() == 0
+                        && m.getReturnType().equals(clazz)) {
+                    return m;
+                }
+            }
+            throw new NoSuchMethodError("PhoneNumberUtil.getInstance method not found");
+        });
+    }
+
+    public synchronized static Method loadPhoneNumberUtilParse(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            Class<?> clazz = loadPhoneNumberUtilClass(classLoader);
+            for (Method m : clazz.getDeclaredMethods()) {
+                if (m.getParameterCount() == 2
+                        && m.getParameterTypes()[0].equals(String.class)
+                        && m.getParameterTypes()[1].equals(String.class)
+                        && !m.getReturnType().equals(void.class)
+                        && !m.getReturnType().getName().startsWith("java.")) {
+                    return m;
+                }
+            }
+            throw new NoSuchMethodError("PhoneNumberUtil.parse method not found");
+        });
+    }
+
+    public synchronized static Method loadPhoneNumberUtilIsValidNumber(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            Class<?> clazz = loadPhoneNumberUtilClass(classLoader);
+            Method parseMethod = loadPhoneNumberUtilParse(classLoader);
+            Class<?> phoneNumberClass = parseMethod.getReturnType();
+            
+            List<Method> boolMethods = new ArrayList<>();
+            for (Method m : clazz.getDeclaredMethods()) {
+                if (m.getParameterCount() == 1
+                        && m.getParameterTypes()[0].equals(phoneNumberClass)
+                        && m.getReturnType().equals(boolean.class)) {
+                    boolMethods.add(m);
+                }
+            }
+            
+            for (Method m : boolMethods) {
+                if (m.getName().equals("A0R") || m.getName().toLowerCase().contains("isvalid")) {
+                    return m;
+                }
+            }
+            if (!boolMethods.isEmpty()) {
+                return boolMethods.get(boolMethods.size() - 1);
+            }
+            throw new NoSuchMethodError("PhoneNumberUtil.isValidNumber method not found");
+        });
+    }
 }
 

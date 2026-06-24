@@ -50,6 +50,12 @@ public class AlertDialogWpp {
     private boolean[] mCheckedItems;
     private DialogInterface.OnMultiChoiceClickListener mMultiChoiceListener;
     private boolean mIsFullHeight = false;
+    private android.widget.TextView mPositiveButtonView = null;
+
+    /** Returns the positive button view after {@link #show()} or {@link #create()} has been called. */
+    public android.widget.TextView getPositiveButton() {
+        return mPositiveButtonView;
+    }
 
     public AlertDialogWpp setFullHeight(boolean fullHeight) {
         mIsFullHeight = fullHeight;
@@ -818,6 +824,7 @@ public class AlertDialogWpp {
                         }
                         dialog.dismiss();
                     });
+                    mPositiveButtonView = posButton;
                     buttonsLayout.addView(posButton);
                 }
                 

@@ -8,7 +8,6 @@ import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -243,7 +242,7 @@ public class NewChat extends Feature {
 
         // Phone Number Input
         final EditText edtPhone = new EditText(activity);
-        edtPhone.setHint("Phone Number");
+        edtPhone.setHint(getCountryHint(activity, defaultCc, activeIso));
         edtPhone.setInputType(InputType.TYPE_CLASS_PHONE);
         edtPhone.setTextColor(0xffffffff);
         edtPhone.setHintTextColor(0xff8696a0);
@@ -296,6 +295,105 @@ public class NewChat extends Feature {
                         tvCountry.setText(flag + "   " + name);
                     }
                 }
+                edtPhone.setHint(getCountryHint(activity, cc, activeIso));
+                edtPhone.setText(edtPhone.getText()); // Trigger real-time validation for the new country code
+            }
+        });
+
+        final TextView[] btnMessageRef = new TextView[1];
+
+        // Real-time validation: watch the phone number field and update button + error state
+        edtPhone.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                String phone = s.toString().replaceAll("[+\\-()/\\s]", "");
+                TextView btn = btnMessageRef[0];
+
+                if (phone.isEmpty()) {
+                    edtPhone.setError(null);
+                    if (btn != null) {
+                        // Keep button disabled while field is empty (if validator is present)
+                        boolean hasValidator = isValidatorLoaded(activity);
+                        btn.setEnabled(!hasValidator);
+                        btn.setAlpha(hasValidator ? 0.5f : 1.0f);
+                    }
+                    return;
+                }
+
+                String cc = edtCc.getText().toString().replaceAll("\\+", "");
+                String fullNumber = cc + phone;
+
+                boolean validatorPresent = false;
+                boolean isValid = true;
+
+                try {
+                    ClassLoader proClassLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(activity);
+                    if (proClassLoader != null) {
+                        Class<?> validatorClass = proClassLoader.loadClass("com.waex.pro.utils.PhoneNumberValidator");
+                        validatorPresent = true;
+
+                        // Find the phone-code regex key that matches the selected country code
+                        java.lang.reflect.Method phoneCodeRegexesMethod = validatorClass.getMethod("phoneCodeRegexes");
+                        java.util.Set<String> keys = (java.util.Set<String>) phoneCodeRegexesMethod.invoke(null);
+
+                        String matchingKey = null;
+                        if (keys != null) {
+                            for (String key : keys) {
+                                try {
+                                    if (java.util.regex.Pattern.compile(key).matcher("+" + cc).matches()) {
+                                        matchingKey = key;
+                                        break;
+                                    }
+                                } catch (Throwable ignored) {}
+                            }
+                        }
+
+                        boolean validated = false;
+                        if (matchingKey != null) {
+                            java.lang.reflect.Method isValidForPhoneCodeRegexMethod = validatorClass.getMethod(
+                                "isValidForPhoneCodeRegex", String.class, String.class
+                            );
+                            isValid = (boolean) isValidForPhoneCodeRegexMethod.invoke(null, fullNumber, matchingKey);
+                            validated = true;
+                        }
+
+                        if (!validated) {
+                            // Fallback: validate by English country name
+                            String englishCountryName = new java.util.Locale("", activeIso).getDisplayCountry(java.util.Locale.ENGLISH);
+                            java.lang.reflect.Method isValidForCountryMethod = validatorClass.getMethod(
+                                "isValidForCountry", String.class, String.class, boolean.class
+                            );
+                            isValid = (boolean) isValidForCountryMethod.invoke(null, fullNumber, englishCountryName, true);
+                        }
+                    }
+                } catch (ClassNotFoundException | java.lang.reflect.InvocationTargetException ignored) {
+                    // Pro validator not installed / not accessible — allow without validation
+                    validatorPresent = false;
+                    isValid = true;
+                } catch (Throwable ignored) {
+                    // Other reflection errors — treat as unknown, don't block the user
+                    isValid = true;
+                }
+
+                // Update error display: always show error immediately for invalid input
+                if (!validatorPresent || isValid) {
+                    edtPhone.setError(null);
+                } else {
+                    edtPhone.setError("Invalid phone number for this country");
+                }
+
+                // Update button state
+                if (btn != null) {
+                    boolean enable = !validatorPresent || isValid;
+                    btn.setEnabled(enable);
+                    btn.setAlpha(enable ? 1.0f : 0.5f);
+                }
             }
         });
 
@@ -305,30 +403,178 @@ public class NewChat extends Feature {
         alert.setBottomSheet(true);
         alert.setFullHeight(true);
         alert.setView(bodyContainer);
-        
-        alert.setPositiveButton("Message", (dialogInterface, which) -> {
-            String cc = edtCc.getText().toString().replaceAll("\\+", "");
-            String phone = edtPhone.getText().toString().replaceAll("[+\\-()/\\s]", "");
 
-            if (phone.isEmpty()) {
-                Utils.showToast("Phone number cannot be empty", android.widget.Toast.LENGTH_SHORT);
-                return;
+        alert.setPositiveButton("Message", null);
+        alert.setNegativeButton("Cancel", (dialogInterface, which) -> dialogInterface.dismiss());
+
+        android.app.Dialog dialog = alert.show();
+        if (dialog != null) {
+            // Use the direct reference exposed by AlertDialogWpp instead of searching by text,
+            // which is unreliable (button text can be uppercased, button can be a non-TextView etc.).
+            TextView btnMessage = alert.getPositiveButton();
+            btnMessageRef[0] = btnMessage;
+
+            if (btnMessage != null) {
+                // Disable immediately while phone field is still empty (validator is present)
+                if (isValidatorLoaded(activity)) {
+                    btnMessage.setEnabled(false);
+                    btnMessage.setAlpha(0.5f);
+                }
+
+                btnMessage.setOnClickListener(v -> {
+                    String cc = edtCc.getText().toString().replaceAll("\\+", "");
+                    String phone = edtPhone.getText().toString().replaceAll("[+\\-()/\\s]", "");
+
+                    if (phone.isEmpty()) {
+                        edtPhone.setError("Phone number cannot be empty");
+                        return;
+                    }
+
+                    String fullNumber = cc + phone;
+                    boolean isValid = true;
+
+                    // Final validation guard before starting the chat
+                    try {
+                        ClassLoader proClassLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(activity);
+                        if (proClassLoader != null) {
+                            Class<?> validatorClass = proClassLoader.loadClass("com.waex.pro.utils.PhoneNumberValidator");
+
+                            java.lang.reflect.Method phoneCodeRegexesMethod = validatorClass.getMethod("phoneCodeRegexes");
+                            java.util.Set<String> keys = (java.util.Set<String>) phoneCodeRegexesMethod.invoke(null);
+
+                            String matchingKey = null;
+                            if (keys != null) {
+                                for (String key : keys) {
+                                    try {
+                                        if (java.util.regex.Pattern.compile(key).matcher("+" + cc).matches()) {
+                                            matchingKey = key;
+                                            break;
+                                        }
+                                    } catch (Throwable ignored) {}
+                                }
+                            }
+
+                            boolean validated = false;
+                            if (matchingKey != null) {
+                                java.lang.reflect.Method isValidForPhoneCodeRegexMethod = validatorClass.getMethod(
+                                    "isValidForPhoneCodeRegex", String.class, String.class
+                                );
+                                isValid = (boolean) isValidForPhoneCodeRegexMethod.invoke(null, fullNumber, matchingKey);
+                                validated = true;
+                            }
+
+                            if (!validated) {
+                                String englishCountryName = new java.util.Locale("", activeIso).getDisplayCountry(java.util.Locale.ENGLISH);
+                                java.lang.reflect.Method isValidForCountryMethod = validatorClass.getMethod(
+                                    "isValidForCountry", String.class, String.class, boolean.class
+                                );
+                                isValid = (boolean) isValidForCountryMethod.invoke(null, fullNumber, englishCountryName, true);
+                            }
+                        }
+                    } catch (Throwable t) {
+                        // Validator not available — allow without validation
+                        isValid = true;
+                    }
+
+                    if (!isValid) {
+                        edtPhone.setError("Invalid phone number for this country");
+                        return;
+                    }
+
+                    // Valid — dismiss and open chat
+                    dialog.dismiss();
+                    Intent intent = new Intent(Intent.ACTION_VIEW);
+                    intent.setData(Uri.parse("https://wa.me/" + fullNumber));
+                    intent.setPackage(Utils.getApplication().getPackageName());
+                    activity.startActivity(intent);
+                });
             }
+        }
+    }
 
-            String fullNumber = cc + phone;
 
-            // Start the chat
-            Intent intent = new Intent(Intent.ACTION_VIEW);
-            intent.setData(Uri.parse("https://wa.me/" + fullNumber));
-            intent.setPackage(Utils.getApplication().getPackageName());
-            activity.startActivity(intent);
-        });
+    private static boolean isValidatorLoaded(Activity activity) {
+        try {
+            ClassLoader proClassLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(activity);
+            if (proClassLoader != null) {
+                proClassLoader.loadClass("com.waex.pro.utils.PhoneNumberValidator");
+                return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
 
-        alert.setNegativeButton("Cancel", (dialogInterface, which) -> {
-            dialogInterface.dismiss();
-        });
+    private static String getCountryHint(Activity activity, String cc, String activeIso) {
+        try {
+            ClassLoader proClassLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(activity);
+            if (proClassLoader != null) {
+                Class<?> validatorClass = proClassLoader.loadClass("com.waex.pro.utils.PhoneNumberValidator");
+                
+                java.lang.reflect.Method phoneCodeRegexesMethod = validatorClass.getMethod("phoneCodeRegexes");
+                java.util.Set<String> keys = (java.util.Set<String>) phoneCodeRegexesMethod.invoke(null);
+                
+                String matchingKey = null;
+                if (keys != null) {
+                    for (String key : keys) {
+                        try {
+                            if (java.util.regex.Pattern.compile(key).matcher("+" + cc).matches()) {
+                                matchingKey = key;
+                                break;
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                }
 
-        alert.show();
+                if (matchingKey != null) {
+                    java.lang.reflect.Method countriesForPhoneCodeRegexMethod = validatorClass.getMethod(
+                        "countriesForPhoneCodeRegex", String.class
+                    );
+                    java.util.List<?> countryPatterns = (java.util.List<?>) countriesForPhoneCodeRegexMethod.invoke(null, matchingKey);
+                    if (countryPatterns != null && !countryPatterns.isEmpty()) {
+                        Object countryPattern = countryPatterns.get(0);
+                        java.lang.reflect.Method getPhonePatternMethod = countryPattern.getClass().getMethod("getPhonePattern");
+                        String phonePattern = (String) getPhonePatternMethod.invoke(countryPattern);
+                        return formatPatternToHint(phonePattern);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return "Phone Number";
+    }
+
+    private static String formatPatternToHint(String pattern) {
+        if (pattern == null || pattern.isEmpty()) return "Phone Number";
+        
+        // Clean up anchors
+        String clean = pattern.replace("^", "").replace("$", "");
+        
+        // Remove optional country prefix groups e.g. ((00|\+)?92|0)?
+        clean = clean.replaceAll("^\\([^)]*\\)\\??", "");
+        clean = clean.replaceAll("^\\?\\([^)]*\\)\\??", "");
+        
+        // Replace character classes inside brackets like [0-6] with a single 'x'
+        clean = clean.replaceAll("\\[.*?\\]", "x");
+        
+        // Convert \d to x
+        clean = clean.replace("\\d", "x");
+        
+        // Convert x{N} to N 'x's
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("x\\{(\\d+)\\}").matcher(clean);
+        StringBuilder sb = new StringBuilder();
+        while (matcher.find()) {
+            int count = Integer.parseInt(matcher.group(1));
+            matcher.appendReplacement(sb, "x".repeat(count));
+        }
+        matcher.appendTail(sb);
+        clean = sb.toString();
+        
+        // Clean up brackets, parentheses and other regex symbols
+        clean = clean.replace("?", "")
+                     .replace("!", "")
+                     .replace("(", "")
+                     .replace(")", "");
+        
+        return clean;
     }
 
     @NonNull
