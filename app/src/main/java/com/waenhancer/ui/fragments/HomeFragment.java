@@ -506,7 +506,10 @@ public class HomeFragment extends BaseFragment {
 
         if (binding.proStatusChip != null) {
             String text;
-            if ("ACTIVE".equalsIgnoreCase(proStatus)) {
+            boolean pluginInstalled = com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(getContext());
+            if (!pluginInstalled) {
+                text = "Plugin Required";
+            } else if ("ACTIVE".equalsIgnoreCase(proStatus)) {
                 text = planName;
             } else if ("EXPIRED".equalsIgnoreCase(proStatus)) {
                 text = "License Expired";
@@ -516,8 +519,8 @@ public class HomeFragment extends BaseFragment {
             binding.proStatusChip.setText(text);
 
             // Dynamically update chip's background tint and text colors based on status
-            if ("EXPIRED".equalsIgnoreCase(proStatus)) {
-                // Light red background with dark red text for Expired Pro
+            if (!pluginInstalled || "EXPIRED".equalsIgnoreCase(proStatus)) {
+                // Light red background with dark red text for Expired Pro / Plugin Required
                 binding.proStatusChip.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFFFEBEE));
                 binding.proStatusChip.setTextColor(0xFFC62828);
             } else {
@@ -1121,6 +1124,10 @@ public class HomeFragment extends BaseFragment {
     }
 
     private void launchLicenseActivity(Context context) {
+        if (!com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(context)) {
+            com.waenhancer.xposed.utils.ProHelper.navigateToPluginPack(context);
+            return;
+        }
         try {
             Class<?> clazz = Class.forName("com.waenhancer.activities.LicenseActivity");
             Intent intent = new Intent(context, clazz);

@@ -235,6 +235,10 @@ public class ProListPreference extends ListPreference {
 
     private void openLicenseActivity() {
         Context ctx = getContext();
+        if (!ProHelper.isPluginInstalled(ctx)) {
+            ProHelper.navigateToPluginPack(ctx);
+            return;
+        }
         try {
             Class<?> clazz = Class.forName("com.waenhancer.activities.LicenseActivity");
             Intent intent = new Intent(ctx, clazz);

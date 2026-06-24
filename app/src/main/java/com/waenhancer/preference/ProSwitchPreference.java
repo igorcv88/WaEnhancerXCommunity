@@ -61,6 +61,11 @@ public class ProSwitchPreference extends rikka.material.preference.MaterialSwitc
             return;
         }
 
+        if (!com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(getContext())) {
+            setSummary("Plugin Required");
+            return;
+        }
+
         boolean isVerified = getSafeSharedPreferences().getBoolean("is_pro_verified", false);
         boolean limitedFree = com.waenhancer.xposed.utils.ProHelper.isLimitedFreePreferenceEnabled(getKey());
 
@@ -75,6 +80,11 @@ public class ProSwitchPreference extends rikka.material.preference.MaterialSwitc
 
     @Override
     protected void onClick() {
+        if (!com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(getContext())) {
+            com.waenhancer.xposed.utils.ProHelper.navigateToPluginPack(getContext());
+            return;
+        }
+
         boolean isVerified = getSafeSharedPreferences().getBoolean("is_pro_verified", false);
         boolean limitedFree = com.waenhancer.xposed.utils.ProHelper.isLimitedFreePreferenceEnabled(getKey());
 

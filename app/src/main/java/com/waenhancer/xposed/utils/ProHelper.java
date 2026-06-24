@@ -42,6 +42,23 @@ import javax.crypto.spec.IvParameterSpec;
 public class ProHelper {
 
     private static volatile boolean forceFree = false;
+    private static java.lang.ref.WeakReference<Context> sContextRef = null;
+
+    private static void saveContext(Context context) {
+        if (context != null) {
+            sContextRef = new java.lang.ref.WeakReference<>(context.getApplicationContext());
+        }
+    }
+
+    private static Context getStaticContext() {
+        if (sContextRef != null) {
+            Context context = sContextRef.get();
+            if (context != null) {
+                return context;
+            }
+        }
+        return App.getInstance();
+    }
 
     private static final Object lfLock = new Object();
     private static JSONObject limitedFreeConfigCache = null;
@@ -130,6 +147,7 @@ public class ProHelper {
     }
 
     public static synchronized ClassLoader getPluginClassLoader(Context context, ClassLoader parentLoader, ClassLoader xposedLoader) {
+        saveContext(context);
         String cachedPath = null;
         String cachedLibPath = null;
         if (companionPluginClassLoader != null
@@ -623,6 +641,7 @@ public class ProHelper {
     }
 
     public static boolean isLimitedFreeHookEnabled(String key) {
+        if (!isPluginInstalled(null)) return false;
         if (key == null) return false;
         JSONObject config = getLimitedFreeConfig();
         if (config == null) return false;
@@ -633,6 +652,7 @@ public class ProHelper {
     }
 
     public static String getLimitedFreeHookString(String key) {
+        if (!isPluginInstalled(null)) return null;
         if (key == null) return null;
         JSONObject config = getLimitedFreeConfig();
         if (config == null) return null;
@@ -642,6 +662,7 @@ public class ProHelper {
     }
 
     public static boolean isLimitedFreePreferenceEnabled(String prefKey) {
+        if (!isPluginInstalled(null)) return false;
         if (prefKey == null) return false;
         String hookKey = null;
         if (prefKey.equals("file_size_spoofer")) {
@@ -678,6 +699,7 @@ public class ProHelper {
     }
 
     public static void initLimitedFree(final Context context, final SharedPreferences prefs) {
+        saveContext(context);
         if (prefs == null) return;
         // Load cached config first
         try {
@@ -739,6 +761,9 @@ public class ProHelper {
      * Checks if the Pro licensing status is currently active.
      */
     public static boolean isProEnabled() {
+        if (!isPluginInstalled(getStaticContext())) {
+            return false;
+        }
         return "ACTIVE".equalsIgnoreCase(getProStatus());
     }
 
@@ -825,12 +850,28 @@ public class ProHelper {
         return "ACTIVE";
     }
 
+    public static void navigateToPluginPack(Context context) {
+        if (context == null) return;
+        try {
+            Intent intent = new Intent();
+            intent.setClassName("com.waenhancer", "com.waenhancer.activities.MainActivity");
+            intent.putExtra("navigate_to_fragment", 0);
+            intent.putExtra("scroll_to_preference", "unlock_limited_free");
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            context.startActivity(intent);
+        } catch (Throwable t) {
+            android.widget.Toast.makeText(context, "Failed to open Extended Plugin Pack settings.", android.widget.Toast.LENGTH_SHORT).show();
+        }
+    }
+
     /**
      * Recursively traverses and locks down Pro features in a preference list if not verified.
      */
     public static void updatePreferences(Context context, PreferenceGroup group) {
         if (group == null) return;
-        boolean proActive = isProEnabled();
+        saveContext(context);
+        boolean pluginInstalled = isPluginInstalled(context);
+        boolean proActive = pluginInstalled && isProEnabled();
 
         for (int i = 0; i < group.getPreferenceCount(); i++) {
             Preference pref = group.getPreference(i);
@@ -861,10 +902,25 @@ public class ProHelper {
                     if (activationPref == null) {
                         activationPref = new Preference(context);
                         activationPref.setKey(activationKey);
+                        activationPref.setOrder(-1);
+                        prefGroup.addPreference(activationPref);
+                    }
+
+                    if (!pluginInstalled) {
+                        String titleHtml = "<b><font color='#D32F2F'>🔑 Plugin Required</font></b>";
+                        activationPref.setTitle(Html.fromHtml(titleHtml, Html.FROM_HTML_MODE_LEGACY));
+                        activationPref.setSummary("Companion plugin is missing. Tap to install Extended Plugin Pack.");
+                        activationPref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                            @Override
+                            public boolean onPreferenceClick(@NonNull Preference preference) {
+                                navigateToPluginPack(context);
+                                return true;
+                            }
+                        });
+                    } else {
                         String titleHtml = "<b><font color='#8B5CF6'>🔑 Tap here to verify license key & unlock</font></b>";
                         activationPref.setTitle(Html.fromHtml(titleHtml, Html.FROM_HTML_MODE_LEGACY));
                         activationPref.setSummary("This category is locked. Verify your WaEnhancerX Pro license to unlock all features.");
-                        activationPref.setOrder(-1);
                         activationPref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
                             @Override
                             public boolean onPreferenceClick(@NonNull Preference preference) {
@@ -879,7 +935,6 @@ public class ProHelper {
                                 return true;
                             }
                         });
-                        prefGroup.addPreference(activationPref);
                     }
                 } else {
                     if (activationPref != null) {
@@ -1183,9 +1238,16 @@ public class ProHelper {
     }
 
     public static boolean isPluginInstalled(Context context) {
-        if (context == null) return false;
+        saveContext(context);
+        Context ctx = context != null ? context : getStaticContext();
+        if (ctx == null) {
+            if (companionPluginPath != null) {
+                return new java.io.File(companionPluginPath).exists();
+            }
+            return false;
+        }
         try {
-            context.getPackageManager().getApplicationInfo("com.waex.pro", 0);
+            ctx.getPackageManager().getApplicationInfo("com.waex.pro", 0);
             return true;
         } catch (Throwable t) {
             return false;

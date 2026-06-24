@@ -46,6 +46,10 @@ public class LicensePreference extends Preference implements Preference.OnPrefer
      * Dynamically updates the summary text based on the active license state.
      */
     private void updateSummary() {
+        if (!com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(getContext())) {
+            setSummary("Plugin Required");
+            return;
+        }
         boolean isVerified = getSafeSharedPreferences().getBoolean("is_pro_verified", false);
         if (isVerified) {
             setSummary("Status: Pro Active");
@@ -57,6 +61,10 @@ public class LicensePreference extends Preference implements Preference.OnPrefer
     @Override
     public boolean onPreferenceClick(@NonNull Preference preference) {
         Context context = getContext();
+        if (!com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(context)) {
+            com.waenhancer.xposed.utils.ProHelper.navigateToPluginPack(context);
+            return true;
+        }
         try {
             Class<?> clazz = Class.forName("com.waenhancer.activities.LicenseActivity");
             Intent intent = new Intent(context, clazz);
