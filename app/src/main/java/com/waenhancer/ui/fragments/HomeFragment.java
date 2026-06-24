@@ -506,9 +506,23 @@ public class HomeFragment extends BaseFragment {
 
         if (binding.proStatusChip != null) {
             String text;
+            boolean packageInstalled = com.waenhancer.xposed.utils.ProHelper.isPluginPackageInstalled(getContext());
             boolean pluginInstalled = com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(getContext());
-            if (!pluginInstalled) {
-                text = "Plugin Required";
+            boolean isRedDotError = false;
+
+            if (packageInstalled && !pluginInstalled) {
+                // Plugin is installed, but unsupported (since pluginInstalled is false)
+                int minVersion = com.waenhancer.xposed.utils.ProHelper.getPluginMinWaexVersion(getContext());
+                String minVersionName = com.waenhancer.xposed.utils.ProHelper.getVersionNameFromCode(minVersion);
+                text = "v" + minVersionName + " Required";
+            } else if (!packageInstalled) {
+                if (!"FREE".equalsIgnoreCase(proStatus)) {
+                    // License activated in module but Pro plugin app is not installed
+                    text = planName;
+                    isRedDotError = true;
+                } else {
+                    text = "Free";
+                }
             } else if ("ACTIVE".equalsIgnoreCase(proStatus)) {
                 text = planName;
             } else if ("EXPIRED".equalsIgnoreCase(proStatus)) {
@@ -519,8 +533,8 @@ public class HomeFragment extends BaseFragment {
             binding.proStatusChip.setText(text);
 
             // Dynamically update chip's background tint and text colors based on status
-            if (!pluginInstalled || "EXPIRED".equalsIgnoreCase(proStatus)) {
-                // Light red background with dark red text for Expired Pro / Plugin Required
+            if ((packageInstalled && !pluginInstalled) || "EXPIRED".equalsIgnoreCase(proStatus) || isRedDotError) {
+                // Light red background with dark red text for Expired Pro / Plugin Required / Red Dot Error
                 binding.proStatusChip.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFFFEBEE));
                 binding.proStatusChip.setTextColor(0xFFC62828);
             } else {
@@ -538,6 +552,13 @@ public class HomeFragment extends BaseFragment {
                     binding.proStatusChip.setTextColor(0xFF000000); // generic fallback
                 }
             }
+
+            if (isRedDotError) {
+                binding.proStatusChip.setCompoundDrawablesWithIntrinsicBounds(R.drawable.status_dot_inactive, 0, R.drawable.ic_chevron_right, 0);
+            } else {
+                binding.proStatusChip.setCompoundDrawablesWithIntrinsicBounds(0, 0, R.drawable.ic_chevron_right, 0);
+            }
+
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
                 binding.proStatusChip.setCompoundDrawableTintList(binding.proStatusChip.getTextColors());
             }
@@ -1124,10 +1145,6 @@ public class HomeFragment extends BaseFragment {
     }
 
     private void launchLicenseActivity(Context context) {
-        if (!com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(context)) {
-            com.waenhancer.xposed.utils.ProHelper.navigateToPluginPack(context);
-            return;
-        }
         try {
             Class<?> clazz = Class.forName("com.waenhancer.activities.LicenseActivity");
             Intent intent = new Intent(context, clazz);

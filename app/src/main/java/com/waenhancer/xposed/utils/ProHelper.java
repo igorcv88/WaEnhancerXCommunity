@@ -912,16 +912,59 @@ public class ProHelper {
                     }
 
                     if (!pluginInstalled) {
-                        String titleHtml = "<b><font color='#D32F2F'>🔑 Plugin Required</font></b>";
-                        activationPref.setTitle(Html.fromHtml(titleHtml, Html.FROM_HTML_MODE_LEGACY));
-                        activationPref.setSummary("Companion plugin is missing. Tap to install Extended Plugin Pack.");
-                        activationPref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
-                            @Override
-                            public boolean onPreferenceClick(@NonNull Preference preference) {
-                                navigateToPluginPack(context);
-                                return true;
+                        if (isPluginPackageInstalled(context)) {
+                            // Plugin is installed, but unsupported (since pluginInstalled is false)
+                            int minVersion = getPluginMinWaexVersion(context);
+                            String minVersionName = getVersionNameFromCode(minVersion);
+                            String titleHtml = "<b><font color='#D32F2F'>🔑 v" + minVersionName + " Required</font></b>";
+                            activationPref.setTitle(Html.fromHtml(titleHtml, Html.FROM_HTML_MODE_LEGACY));
+                            activationPref.setSummary("Plugin requires a newer version of the main app. Tap to view updates.");
+                            activationPref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                                @Override
+                                public boolean onPreferenceClick(@NonNull Preference preference) {
+                                    try {
+                                        Intent intent = new Intent(context, Class.forName("com.waenhancer.activities.ChangelogActivity"));
+                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                        context.startActivity(intent);
+                                    } catch (Exception ignored) {}
+                                    return true;
+                                }
+                            });
+                        } else {
+                            // Plugin package not installed at all
+                            if ("FREE".equalsIgnoreCase(getProStatus())) {
+                                // User is a free user. Show regular verify text, do NOT show plugin required.
+                                String titleHtml = "<b><font color='#8B5CF6'>🔑 Tap here to verify license key & unlock</font></b>";
+                                activationPref.setTitle(Html.fromHtml(titleHtml, Html.FROM_HTML_MODE_LEGACY));
+                                activationPref.setSummary("This category is locked. Verify your WaEnhancerX Pro license to unlock all features.");
+                                activationPref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                                    @Override
+                                    public boolean onPreferenceClick(@NonNull Preference preference) {
+                                        try {
+                                            Class<?> clazz = Class.forName("com.waenhancer.activities.LicenseActivity");
+                                            Intent intent = new Intent(context, clazz);
+                                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                            context.startActivity(intent);
+                                        } catch (Throwable t) {
+                                            android.widget.Toast.makeText(context, "Pro features are not available.", android.widget.Toast.LENGTH_SHORT).show();
+                                        }
+                                        return true;
+                                    }
+                                });
+                            } else {
+                                // Pro license configured (ACTIVE or EXPIRED) but plugin is missing
+                                String titleHtml = "<b><font color='#D32F2F'>🔑 Plugin Required</font></b>";
+                                activationPref.setTitle(Html.fromHtml(titleHtml, Html.FROM_HTML_MODE_LEGACY));
+                                activationPref.setSummary("Companion plugin is missing. Tap to install Extended Plugin Pack.");
+                                activationPref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                                    @Override
+                                    public boolean onPreferenceClick(@NonNull Preference preference) {
+                                        navigateToPluginPack(context);
+                                        return true;
+                                    }
+                                });
                             }
-                        });
+                        }
                     } else {
                         String titleHtml = "<b><font color='#8B5CF6'>🔑 Tap here to verify license key & unlock</font></b>";
                         activationPref.setTitle(Html.fromHtml(titleHtml, Html.FROM_HTML_MODE_LEGACY));
@@ -1242,6 +1285,80 @@ public class ProHelper {
         com.waenhancer.utils.KeyboxVerification.showDialog(fragment);
     }
 
+    public static boolean isPluginPackageInstalled(Context context) {
+        if (context == null) return false;
+        
+        // If we are in the main app, use PackageManager directly
+        if (BuildConfig.APPLICATION_ID.equals(context.getPackageName())) {
+            try {
+                context.getPackageManager().getPackageInfo("com.waex.pro", 0);
+                return true;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+        
+        // Otherwise (we are in WhatsApp/Xposed process), query the HookProvider
+        try {
+            android.os.Bundle pluginInfo = context.getContentResolver().call(
+                    android.net.Uri.parse("content://" + BuildConfig.APPLICATION_ID + ".hookprovider"),
+                    "get_pro_plugin_info",
+                    null,
+                    null
+            );
+            if (pluginInfo != null && pluginInfo.getString("sourceDir") != null) {
+                return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    public static int getPluginMinWaexVersion(Context context) {
+        if (context == null) return 0;
+        boolean isXposed = !BuildConfig.APPLICATION_ID.equals(context.getPackageName());
+        if (isXposed) {
+            try {
+                android.os.Bundle pluginInfo = context.getContentResolver().call(
+                        android.net.Uri.parse("content://" + BuildConfig.APPLICATION_ID + ".hookprovider"),
+                        "get_pro_plugin_info",
+                        null,
+                        null
+                );
+                if (pluginInfo != null) {
+                    return pluginInfo.getInt("min_waex_version", 0);
+                }
+            } catch (Throwable ignored) {}
+            return 0;
+        }
+        try {
+            android.content.pm.ApplicationInfo appInfo = context.getPackageManager().getApplicationInfo(
+                "com.waex.pro", android.content.pm.PackageManager.GET_META_DATA
+            );
+            if (appInfo != null && appInfo.metaData != null) {
+                return appInfo.metaData.getInt("min_waex_version", 0);
+            }
+        } catch (Exception ignored) {}
+        return 0;
+    }
+
+    public static String getVersionNameFromCode(long versionCode) {
+        if (versionCode <= 0) {
+            return "unknown";
+        }
+        long base = versionCode / 100;
+        long tail = versionCode % 100;
+        
+        long patch = base % 10;
+        long minor = (base / 10) % 10;
+        long major = base / 100;
+        
+        if (tail == 99) {
+            return major + "." + minor + "." + patch;
+        } else {
+            return major + "." + minor + "." + patch + "-beta-" + tail;
+        }
+    }
+
     public static boolean isPluginInstalled(Context context) {
         saveContext(context);
         Context ctx = context != null ? context : getStaticContext();
@@ -1251,30 +1368,65 @@ public class ProHelper {
             }
             return false;
         }
-        try {
-            android.content.pm.ApplicationInfo appInfo = ctx.getPackageManager().getApplicationInfo(
-                "com.waex.pro", android.content.pm.PackageManager.GET_META_DATA
-            );
-            if (appInfo != null && appInfo.metaData != null) {
-                int minVersion = appInfo.metaData.getInt("min_waex_version", 0);
-                if (minVersion > 0) {
-                    android.content.pm.PackageInfo myInfo = ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0);
-                    long myVersionCode;
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                        myVersionCode = myInfo.getLongVersionCode();
-                    } else {
-                        myVersionCode = myInfo.versionCode;
-                    }
-                    if (myVersionCode < minVersion) {
-                        android.util.Log.e("WaeX-Helper", "Plugin requires main module version code >= " + minVersion + ", but current version is " + myVersionCode);
-                        return false;
+
+        boolean isXposed = !BuildConfig.APPLICATION_ID.equals(ctx.getPackageName());
+        int minVersion = 0;
+        boolean exists = false;
+
+        if (isXposed) {
+            try {
+                android.os.Bundle pluginInfo = ctx.getContentResolver().call(
+                        android.net.Uri.parse("content://" + BuildConfig.APPLICATION_ID + ".hookprovider"),
+                        "get_pro_plugin_info",
+                        null,
+                        null
+                );
+                if (pluginInfo != null) {
+                    String sourceDir = pluginInfo.getString("sourceDir");
+                    if (sourceDir != null && !sourceDir.trim().isEmpty() && new java.io.File(sourceDir).exists()) {
+                        exists = true;
+                        minVersion = pluginInfo.getInt("min_waex_version", 0);
                     }
                 }
+            } catch (Throwable t) {
+                android.util.Log.e("WaeX-Helper", "Failed to query Pro plugin from HookProvider in isPluginInstalled", t);
             }
-            return true;
-        } catch (Throwable t) {
+        } else {
+            try {
+                android.content.pm.ApplicationInfo appInfo = ctx.getPackageManager().getApplicationInfo(
+                    "com.waex.pro", android.content.pm.PackageManager.GET_META_DATA
+                );
+                if (appInfo != null && appInfo.sourceDir != null && new java.io.File(appInfo.sourceDir).exists()) {
+                    exists = true;
+                    if (appInfo.metaData != null) {
+                        minVersion = appInfo.metaData.getInt("min_waex_version", 0);
+                    }
+                }
+            } catch (Throwable t) {
+                exists = false;
+            }
+        }
+
+        if (!exists) {
             return false;
         }
+
+        if (minVersion > 0) {
+            try {
+                android.content.pm.PackageInfo myInfo = ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0);
+                long myVersionCode;
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    myVersionCode = myInfo.getLongVersionCode();
+                } else {
+                    myVersionCode = myInfo.versionCode;
+                }
+                if (myVersionCode < minVersion) {
+                    android.util.Log.e("WaeX-Helper", "Plugin requires main module version code >= " + minVersion + ", but current version is " + myVersionCode);
+                    return false;
+                }
+            } catch (Throwable ignored) {}
+        }
+        return true;
     }
 
     public static void checkRootAndInstallPlugin(final Activity activity, final Runnable onConsentAgreed) {
@@ -1308,6 +1460,14 @@ public class ProHelper {
 
     public static void startProDownloadAndInstallSilent(final Activity activity) {
         if (activity == null) return;
+
+        File cacheDir = activity.getCacheDir();
+        File apkFile = new File(cacheDir, "pro.apk");
+        if (apkFile.exists() && apkFile.length() > 1024) {
+            Toast.makeText(activity, "Installing plugin...", Toast.LENGTH_SHORT).show();
+            installProApkWithRoot(activity, apkFile);
+            return;
+        }
 
         String url = Config.getBaseUrl() + "/api/v1/plugin/latest";
         okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
@@ -1400,6 +1560,13 @@ public class ProHelper {
 
     public static void startProDownloadAndInstall(final Activity activity) {
         if (activity == null) return;
+
+        File cacheDir = activity.getCacheDir();
+        File apkFile = new File(cacheDir, "pro.apk");
+        if (apkFile.exists() && apkFile.length() > 1024) {
+            installProApkWithRoot(activity, apkFile);
+            return;
+        }
 
         Context modContext = activity;
         boolean isXposed = !BuildConfig.APPLICATION_ID.equals(activity.getPackageName());
@@ -1591,6 +1758,7 @@ public class ProHelper {
             boolean success = result != null && (result.toLowerCase().contains("success") || result.toLowerCase().contains("pkg:"));
             
             if (success) {
+                com.waenhancer.utils.RootUtils.runRootCommand("pm grant com.waex.pro android.permission.POST_NOTIFICATIONS");
                 com.waenhancer.utils.RootUtils.runRootCommand("am force-stop com.whatsapp");
                 com.waenhancer.utils.RootUtils.runRootCommand("am force-stop com.whatsapp.w4b");
             }

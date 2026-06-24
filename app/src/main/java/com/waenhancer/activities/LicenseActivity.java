@@ -45,6 +45,10 @@ public class LicenseActivity extends BaseActivity {
     private MaterialTextView tvLicenseKeyMasked;
     private MaterialButton btnUnlink;
 
+    // State 3: Warning Card
+    private MaterialCardView companionWarningCard;
+    private MaterialTextView tvCompanionWarning;
+
     // State 2: Activation Views
     private LinearLayout activationContainer;
     private com.google.android.material.textfield.TextInputLayout tilLicenseKey;
@@ -139,6 +143,15 @@ public class LicenseActivity extends BaseActivity {
         tvTgUsername = findViewById(getResId("tv_tg_username", "id"));
         tvLicenseKeyMasked = findViewById(getResId("tv_license_key_masked", "id"));
         btnUnlink = findViewById(getResId("btn_unlink", "id"));
+
+        // Bind State 3: Warning Card
+        companionWarningCard = findViewById(getResId("companion_warning_card", "id"));
+        tvCompanionWarning = findViewById(getResId("tv_companion_warning", "id"));
+        if (companionWarningCard != null) {
+            companionWarningCard.setOnClickListener(v -> {
+                ProHelper.navigateToPluginPack(LicenseActivity.this);
+            });
+        }
 
         // Bind State 2: Activation Container Views
         activationContainer = findViewById(getResId("activation_container", "id"));
@@ -272,6 +285,39 @@ public class LicenseActivity extends BaseActivity {
                 tvProFeaturesTitle.setText("Exclusive Pro Features");
             } else {
                 tvProFeaturesTitle.setText("Pro Features you're missing");
+            }
+        }
+
+        boolean packageInstalled = ProHelper.isPluginPackageInstalled(this);
+        boolean pluginInstalled = ProHelper.isPluginInstalled(this);
+        
+        if (companionWarningCard != null) {
+            if ((isPro || "EXPIRED".equalsIgnoreCase(proStatus)) && !pluginInstalled) {
+                companionWarningCard.setVisibility(View.VISIBLE);
+                if (packageInstalled) {
+                    // Installed but min version not satisfying
+                    int minVersion = ProHelper.getPluginMinWaexVersion(this);
+                    String minVersionName = ProHelper.getVersionNameFromCode(minVersion);
+                    if (tvCompanionWarning != null) {
+                        tvCompanionWarning.setText("Plugin requires a newer version of the main app (v" + minVersionName + " required). Tap to view updates.");
+                    }
+                    companionWarningCard.setOnClickListener(v -> {
+                        try {
+                            Intent intent = new Intent(LicenseActivity.this, ChangelogActivity.class);
+                            startActivity(intent);
+                        } catch (Exception ignored) {}
+                    });
+                } else {
+                    // Not installed at all
+                    if (tvCompanionWarning != null) {
+                        tvCompanionWarning.setText("The companion Pro plugin app is required to make the Pro features work. Tap here to download and install the plugin pack.");
+                    }
+                    companionWarningCard.setOnClickListener(v -> {
+                        ProHelper.navigateToPluginPack(LicenseActivity.this);
+                    });
+                }
+            } else {
+                companionWarningCard.setVisibility(View.GONE);
             }
         }
 

@@ -110,13 +110,16 @@ public class HookProvider extends ContentProvider {
                 Bundle result = new Bundle();
                 try {
                     android.content.pm.ApplicationInfo info =
-                            context.getPackageManager().getApplicationInfo("com.waex.pro", 0);
+                            context.getPackageManager().getApplicationInfo("com.waex.pro", android.content.pm.PackageManager.GET_META_DATA);
                     if (info.sourceDir != null && new java.io.File(info.sourceDir).exists()) {
                         result.putString("sourceDir", info.sourceDir);
                         result.putString("nativeLibraryDir", info.nativeLibraryDir);
+                        int minVersion = info.metaData != null ? info.metaData.getInt("min_waex_version", 0) : 0;
+                        result.putInt("min_waex_version", minVersion);
                         prefs.edit()
                                 .putString("pro_plugin_path", info.sourceDir)
                                 .putString("pro_plugin_lib_path", info.nativeLibraryDir)
+                                .putInt("min_waex_version", minVersion)
                                 .commit();
                     }
                 } catch (Throwable t) {
