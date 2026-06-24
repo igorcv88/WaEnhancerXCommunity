@@ -7,6 +7,7 @@
 - Migrated all the pro module code to optional Pro plugin
 - [Pro] Improved audio trimmer for audio to voice status
 - Removed New chat from WaEnhancerX Menu shifted to Long-Press Chat floating button (FAB)
+- Improved New Chat Sheet UI
 
 [Fixes]
 - Fixed ShareLimit plugin Error
