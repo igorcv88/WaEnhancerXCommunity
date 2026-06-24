@@ -1252,7 +1252,25 @@ public class ProHelper {
             return false;
         }
         try {
-            ctx.getPackageManager().getApplicationInfo("com.waex.pro", 0);
+            android.content.pm.ApplicationInfo appInfo = ctx.getPackageManager().getApplicationInfo(
+                "com.waex.pro", android.content.pm.PackageManager.GET_META_DATA
+            );
+            if (appInfo != null && appInfo.metaData != null) {
+                int minVersion = appInfo.metaData.getInt("min_waex_version", 0);
+                if (minVersion > 0) {
+                    android.content.pm.PackageInfo myInfo = ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0);
+                    long myVersionCode;
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                        myVersionCode = myInfo.getLongVersionCode();
+                    } else {
+                        myVersionCode = myInfo.versionCode;
+                    }
+                    if (myVersionCode < minVersion) {
+                        android.util.Log.e("WaeX-Helper", "Plugin requires main module version code >= " + minVersion + ", but current version is " + myVersionCode);
+                        return false;
+                    }
+                }
+            }
             return true;
         } catch (Throwable t) {
             return false;

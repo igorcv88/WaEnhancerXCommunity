@@ -67,6 +67,9 @@ public class GeneralFragment extends BaseFragment {
                         try {
                             android.content.Intent intent = new android.content.Intent();
                             intent.setClassName("com.waex.pro", "com.waex.pro.activities.ProUpdateActivity");
+                            var prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context);
+                            var colorPreset = prefs.getString("wae_color_preset", "green");
+                            intent.putExtra("wae_color_preset", colorPreset);
                             startActivity(intent);
                         } catch (Exception e) {
                             android.widget.Toast.makeText(context, "Failed to launch update activity: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
