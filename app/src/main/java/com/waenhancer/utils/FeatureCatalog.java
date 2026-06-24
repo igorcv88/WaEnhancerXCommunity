@@ -209,7 +209,7 @@ public class FeatureCatalog {
                                 SearchableFeature.Category.GENERAL_HOMESCREEN,
                                 SearchableFeature.FragmentType.GENERAL,
                                 "homescreen",
-                                Arrays.asList("new", "chat", "button")));
+                                Arrays.asList("new", "chat", "button", "fab", "long", "press")));
 
                 catalog.add(new SearchableFeature("restartbutton",
                                 context.getString(R.string.enable_restart_button),

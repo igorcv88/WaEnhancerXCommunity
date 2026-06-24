@@ -107,7 +107,6 @@ public class MenuHome extends Feature {
                 menuItems.add((menu, activity) -> InsertGhostModeOption(menu, activity, "1".equals(homeMenuMode)));
                 menuItems.add((menu, activity) -> InsertDNDOption(menu, activity, "1".equals(homeMenuMode)));
                 menuItems.add((menu, activity) -> InsertFreezeLastSeenOption(menu, activity, "1".equals(homeMenuMode)));
-                menuItems.add(this::InsertNewChat);
                 menuItems.add(this::InsertManageRecordings);
                 menuItems.add((menu, activity) -> InsertRestartButton(menu, activity, false));
                 internalItemsAdded = true;
