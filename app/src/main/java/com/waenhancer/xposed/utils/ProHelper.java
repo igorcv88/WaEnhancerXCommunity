@@ -148,6 +148,11 @@ public class ProHelper {
 
     public static synchronized ClassLoader getPluginClassLoader(Context context, ClassLoader parentLoader, ClassLoader xposedLoader) {
         saveContext(context);
+        if (!isPluginInstalled(context)) {
+            companionPluginClassLoader = null;
+            companionPluginPath = null;
+            return null;
+        }
         String cachedPath = null;
         String cachedLibPath = null;
         if (companionPluginClassLoader != null
