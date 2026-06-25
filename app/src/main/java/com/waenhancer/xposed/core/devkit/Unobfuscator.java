@@ -2490,22 +2490,26 @@ public class Unobfuscator {
                 "android.text.style.DynamicDrawableSpan",
                 "android.text.style.ImageSpan"
             };
+            String[] targetPackages = {"com.whatsapp", "X."};
             for (String superCls : superClasses) {
-                try {
-                    var results = dexkit.findClass(FindClass.create().matcher(
-                            ClassMatcher.create().superClass(superCls)));
-                    for (var data : results) {
-                        try {
-                            var cls = data.getInstance(loader);
-                            String name = cls.getName();
-                            if (name.startsWith("com.whatsapp") || (name.contains(".") && !name.startsWith("android") && !name.startsWith("androidx") && !name.startsWith("java"))) {
-                                if (!list.contains(cls)) {
-                                    list.add(cls);
+                for (String pkg : targetPackages) {
+                    try {
+                        var results = dexkit.findClass(FindClass.create()
+                                .searchPackages(pkg)
+                                .matcher(ClassMatcher.create().superClass(superCls)));
+                        for (var data : results) {
+                            try {
+                                var cls = data.getInstance(loader);
+                                String name = cls.getName();
+                                if (name.startsWith("com.whatsapp") || (name.contains(".") && !name.startsWith("android") && !name.startsWith("androidx") && !name.startsWith("java"))) {
+                                    if (!list.contains(cls)) {
+                                        list.add(cls);
+                                    }
                                 }
-                            }
-                        } catch (Throwable ignored) {}
-                    }
-                } catch (Throwable ignored) {}
+                            } catch (Throwable ignored) {}
+                        }
+                    } catch (Throwable ignored) {}
+                }
             }
             return list.toArray(new Class<?>[0]);
         });

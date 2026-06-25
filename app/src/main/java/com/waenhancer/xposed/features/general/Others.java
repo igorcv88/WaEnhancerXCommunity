@@ -191,7 +191,7 @@ public class Others extends Feature {
         propsBoolean.put(5625, true);  // Enable option to autodelete channels media
 
         propsBoolean.put(8643, true);  // Enable TextStatusComposerActivityV2
-//        propsBoolean.put(3403, true);  // Enable Sticker Suggestion
+       propsBoolean.put(3403, true);  // Enable Sticker Suggestion
         propsBoolean.put(8607, true);  // Enable Dialer keyboard
         propsBoolean.put(9578, true);  // Enable Privacy Checkup
         propsInteger.put(8135, 2);  // Call Filters
@@ -1540,44 +1540,49 @@ public class Others extends Feature {
         var spanClasses = Unobfuscator.loadEmojiSpanClasses(classLoader);
         if (spanClasses == null || spanClasses.length == 0) {
             XposedBridge.log("[WAEX] loadEmojiSpanClasses returned 0 classes");
-            return;
-        }
-        XposedBridge.log("[WAEX] loadEmojiSpanClasses found " + spanClasses.length + " classes");
-        for (var spanClass : spanClasses) {
-            XposedBridge.log("[WAEX] Inspecting class: " + spanClass.getName());
-            try {
-                var methods = ReflectionUtils.findAllMethodsUsingFilter(spanClass, method -> 
-                    method.getName().equals("draw") && method.getParameterCount() == 9
-                );
-                XposedBridge.log("[WAEX] Found " + methods.length + " draw methods in " + spanClass.getName());
-                for (var method : methods) {
-                    XposedBridge.log("[WAEX] Hooking draw method: " + method.toString());
-                    XposedBridge.hookMethod(method, new XC_MethodHook() {
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                            android.graphics.Canvas canvas = (android.graphics.Canvas) param.args[0];
-                            CharSequence text = (CharSequence) param.args[1];
-                            int start = (int) param.args[2];
-                            int end = (int) param.args[3];
-                            float x = (float) param.args[4];
-                            int top = (int) param.args[5];
-                            int y = (int) param.args[6];
-                            int bottom = (int) param.args[7];
-                            android.graphics.Paint paint = (android.graphics.Paint) param.args[8];
+        } else {
+            XposedBridge.log("[WAEX] loadEmojiSpanClasses found " + spanClasses.length + " classes");
+            for (var spanClass : spanClasses) {
+                XposedBridge.log("[WAEX] Inspecting class: " + spanClass.getName());
+                try {
+                    if (java.lang.reflect.Modifier.isAbstract(spanClass.getModifiers())) {
+                        XposedBridge.log("[WAEX] Skipping abstract class: " + spanClass.getName());
+                        continue;
+                    }
+                    var methods = ReflectionUtils.findAllMethodsUsingFilter(spanClass, method -> 
+                        method.getName().equals("draw") && 
+                        method.getParameterCount() == 9 &&
+                        !java.lang.reflect.Modifier.isAbstract(method.getModifiers())
+                    );
+                    XposedBridge.log("[WAEX] Found " + methods.length + " non-abstract draw methods in " + spanClass.getName());
+                    for (var method : methods) {
+                        XposedBridge.log("[WAEX] Hooking draw method: " + method.toString());
+                        XposedBridge.hookMethod(method, new XC_MethodHook() {
+                            @Override
+                            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                                android.graphics.Canvas canvas = (android.graphics.Canvas) param.args[0];
+                                CharSequence text = (CharSequence) param.args[1];
+                                int start = (int) param.args[2];
+                                int end = (int) param.args[3];
+                                float x = (float) param.args[4];
+                                int top = (int) param.args[5];
+                                int y = (int) param.args[6];
+                                int bottom = (int) param.args[7];
+                                android.graphics.Paint paint = (android.graphics.Paint) param.args[8];
 
-                            if (text != null && start >= 0 && end > start && end <= text.length()) {
-                                CharSequence emoji = text.subSequence(start, end);
-                                canvas.drawText(emoji.toString(), x, y, paint);
+                                if (text != null && start >= 0 && end > start && end <= text.length()) {
+                                    CharSequence emoji = text.subSequence(start, end);
+                                    canvas.drawText(emoji.toString(), x, y, paint);
+                                }
+                                param.setResult(null);
                             }
-                            param.setResult(null);
-                        }
-                    });
+                        });
+                    }
+                } catch (Throwable t) {
+                    XposedBridge.log("[WAEX] Error hooking ReplacementSpan draw method for class " + spanClass.getName() + ": " + t.toString());
                 }
-            } catch (Throwable t) {
-                XposedBridge.log("[WAEX] Error hooking ReplacementSpan draw method for class " + spanClass.getName() + ": " + t.toString());
             }
-        }
-    }
+        }    }
 
     private void showOnline(boolean showOnline) throws Exception {
         var checkOnlineMethod = Unobfuscator.loadCheckOnlineMethod(classLoader);

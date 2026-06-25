@@ -8,6 +8,7 @@
 - [Pro] Improved audio trimmer for audio to voice status
 - Removed New chat from WaEnhancerX Menu shifted to Long-Press Chat floating button (FAB)
 - Improved New Chat Sheet UI
+- Improved Emojis loading for system emojis
 
 [Fixes]
 - Fixed ShareLimit plugin Error
