@@ -12,6 +12,7 @@
 [Fixes]
 - Fixed ShareLimit plugin Error
 - Fixed Xposed framework detection for some devices
+- Fixed Disable Default emoji crash for some devices
 
 
-Note: You manually need to turn on the Root access for Pro plugin if it is not enabled by default or not showing runtime permission requests. Usually happens for KSU root users.
+Note: You manually need to turn on the Root access for Helper plugin if it is not enabled by default or not showing runtime permission requests. Usually happens for KSU root users.

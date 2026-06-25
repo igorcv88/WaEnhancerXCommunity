@@ -2482,6 +2482,35 @@ public class Unobfuscator {
         });
     }
 
+    public synchronized static Class<?>[] loadEmojiSpanClasses(ClassLoader loader) throws Exception {
+        return UnobfuscatorCache.getInstance().getClasses(loader, () -> {
+            var list = new ArrayList<Class<?>>();
+            String[] superClasses = {
+                "android.text.style.ReplacementSpan",
+                "android.text.style.DynamicDrawableSpan",
+                "android.text.style.ImageSpan"
+            };
+            for (String superCls : superClasses) {
+                try {
+                    var results = dexkit.findClass(FindClass.create().matcher(
+                            ClassMatcher.create().superClass(superCls)));
+                    for (var data : results) {
+                        try {
+                            var cls = data.getInstance(loader);
+                            String name = cls.getName();
+                            if (name.startsWith("com.whatsapp") || (name.contains(".") && !name.startsWith("android") && !name.startsWith("androidx") && !name.startsWith("java"))) {
+                                if (!list.contains(cls)) {
+                                    list.add(cls);
+                                }
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                } catch (Throwable ignored) {}
+            }
+            return list.toArray(new Class<?>[0]);
+        });
+    }
+
     public synchronized static Class loadVideoViewContainerClass(ClassLoader loader) throws Exception {
         return UnobfuscatorCache.getInstance().getClass(loader, () -> {
             var clazz = findFirstClassUsingStrings(loader, StringMatchType.Contains, "frame_visibility_serial_worker");
