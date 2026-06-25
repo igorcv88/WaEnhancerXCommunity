@@ -128,13 +128,13 @@ WaEnhancerX isn't just a fork; it's a **high-performance, native-first evolution
 
 ### ⚖️ Architecture, Licensing Boundaries & Open Source Attribution
 
-WaEnhancerX is structured to enforce strict legal, compilation, and architectural boundaries between the open-source framework and the proprietary companion features:
+WaEnhancerX is structured to enforce strict legal, compilation, and architectural boundaries between the open-source framework and the proprietary helper features:
 
 #### 1. Modular Architecture & Licensing Boundaries
-The project is structured to enforce strict legal, compilation, and architectural boundaries between the open-source framework and the proprietary companion features:
+The project is structured to enforce strict legal, compilation, and architectural boundaries between the open-source framework and the proprietary helper features:
 
 ```
-[ Pro Plugin APK ] (Proprietary / Closed-Source Companion APK)
+[ Helper Plugin APK ] (Proprietary / Closed-Source Companion APK)
         │
         │ (Compile-Time: Depends ONLY on :api & compileOnly signature stubs)
         ▼
@@ -147,7 +147,7 @@ The project is structured to enforce strict legal, compilation, and architectura
 
 *   **Host Hooking Framework (`:app` Module - GPL-3.0)**: The open-source core application and injection framework. It handles process initialization, Xposed hooks, and base features. It is licensed under the GNU General Public License v3.
 *   **Interface Bridge (`:api` Module - Apache-2.0)**: The open-source contract and DTO layer. Licensed under the permissive Apache License 2.0, it establishes a clean legal and compilation barrier, ensuring no copyleft requirements propagate to external extensions.
-*   **Pro Features (Proprietary Companion APK - Closed-Source)**: The advanced feature set distributed independently as a separate companion APK. To prevent license contamination, the companion APK is compiled with zero binary dependencies on the host (`:app`) and contains no GPL code. Build-time compliance is enforced via automated Gradle static analysis tasks.
+*   **WAEX Helper (Proprietary Helper APK - Closed-Source)**: WAEX Helper is a separate installable plugin APK that provides optional capabilities through the public WAEX API. The GPL host dynamically discovers and loads WAEX Helper at runtime through public interfaces defined in the Apache-2.0 API module. To prevent license contamination, the Helper APK is compiled with zero binary dependencies on the host (`:app`) and contains no GPL code. Build-time compliance is enforced via automated Gradle static analysis tasks.
 
 #### 2. Runtime Classloader Integration & Compatibility
 At runtime, WaEnhancerX integrates the companion APK using a decoupled, host-driven execution model:

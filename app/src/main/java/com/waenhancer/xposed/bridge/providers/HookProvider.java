@@ -110,7 +110,7 @@ public class HookProvider extends ContentProvider {
                 Bundle result = new Bundle();
                 try {
                     android.content.pm.ApplicationInfo info =
-                            context.getPackageManager().getApplicationInfo("com.waex.pro", android.content.pm.PackageManager.GET_META_DATA);
+                            context.getPackageManager().getApplicationInfo("com.waex.helper", android.content.pm.PackageManager.GET_META_DATA);
                     if (info.sourceDir != null && new java.io.File(info.sourceDir).exists()) {
                         result.putString("sourceDir", info.sourceDir);
                         result.putString("nativeLibraryDir", info.nativeLibraryDir);

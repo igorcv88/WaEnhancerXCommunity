@@ -1,4 +1,4 @@
-package com.waex.pro;
+package com.waex.helper;
 
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;

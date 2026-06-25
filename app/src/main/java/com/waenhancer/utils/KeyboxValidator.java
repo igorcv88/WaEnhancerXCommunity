@@ -10,7 +10,7 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.util.Log;
 
-import com.waex.pro.IProService;
+import com.waex.helper.IProService;
 
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -60,12 +60,12 @@ public class KeyboxValidator {
 
         // Verify if Pro plugin is installed first
         if (!isProPluginInstalled(context)) {
-            result.errorMsg = "Verification submodule (Pro APK) is not installed.";
+            result.errorMsg = "Verification submodule (Helper APK) is not installed.";
             return result;
         }
 
         Intent intent = new Intent();
-        intent.setComponent(new ComponentName("com.waex.pro", "com.waex.pro.services.ProService"));
+        intent.setComponent(new ComponentName("com.waex.helper", "com.waex.helper.services.ProService"));
 
         final CountDownLatch latch = new CountDownLatch(1);
         final IProService[] serviceHolder = new IProService[1];
@@ -156,7 +156,7 @@ public class KeyboxValidator {
 
     private static boolean isProPluginInstalled(Context context) {
         try {
-            context.getPackageManager().getApplicationInfo("com.waex.pro", 0);
+            context.getPackageManager().getApplicationInfo("com.waex.helper", 0);
             return true;
         } catch (PackageManager.NameNotFoundException e) {
             return false;

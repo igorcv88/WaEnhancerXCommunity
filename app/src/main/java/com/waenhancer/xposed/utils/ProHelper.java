@@ -85,7 +85,7 @@ public class ProHelper {
 
         @Override
         protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-            if (name.startsWith("com.waex.pro.")) {
+            if (name.startsWith("com.waex.helper.")) {
                 throw new ClassNotFoundException("Plugin class must be resolved from plugin dex: " + name);
             }
 
@@ -193,7 +193,7 @@ public class ProHelper {
             }
             if (context != null) {
                 try {
-                    android.content.pm.ApplicationInfo appInfo = context.getPackageManager().getApplicationInfo("com.waex.pro", 0);
+                    android.content.pm.ApplicationInfo appInfo = context.getPackageManager().getApplicationInfo("com.waex.helper", 0);
                     if (appInfo.sourceDir != null && new java.io.File(appInfo.sourceDir).exists()) {
                         cachedPath = appInfo.sourceDir;
                         cachedLibPath = appInfo.nativeLibraryDir;
@@ -222,7 +222,7 @@ public class ProHelper {
             if (cachedLibPath == null || cachedLibPath.trim().isEmpty()) {
                 if (context != null) {
                     try {
-                        android.content.pm.ApplicationInfo appInfo = context.getPackageManager().getApplicationInfo("com.waex.pro", 0);
+                        android.content.pm.ApplicationInfo appInfo = context.getPackageManager().getApplicationInfo("com.waex.helper", 0);
                         cachedLibPath = appInfo.nativeLibraryDir;
                         android.util.Log.i("WaeX-ClassDebug", "Resolved nativeLibraryDir from PackageInfo: " + cachedLibPath);
                     } catch (Throwable t) {
@@ -333,7 +333,7 @@ public class ProHelper {
             }
             
             try {
-                Class.forName("com.waex.pro.ProFeature", true, companionPluginClassLoader);
+                Class.forName("com.waex.helper.ProFeature", true, companionPluginClassLoader);
                 android.util.Log.i("WaeX-ClassDebug", "Initialized ProFeature with plugin classloader successfully");
             } catch (Throwable t) {
                 android.util.Log.e("WaeX-ClassDebug", "Failed to initialize ProFeature with plugin classloader: " + t.toString(), t);
@@ -936,7 +936,7 @@ public class ProHelper {
                                 // User is a free user. Show regular verify text, do NOT show plugin required.
                                 String titleHtml = "<b><font color='#8B5CF6'>🔑 Tap here to verify license key & unlock</font></b>";
                                 activationPref.setTitle(Html.fromHtml(titleHtml, Html.FROM_HTML_MODE_LEGACY));
-                                activationPref.setSummary("This category is locked. Verify your WaEnhancerX Pro license to unlock all features.");
+                                activationPref.setSummary("This category is locked. Verify your WAEX Helper license to unlock all features.");
                                 activationPref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
                                     @Override
                                     public boolean onPreferenceClick(@NonNull Preference preference) {
@@ -968,7 +968,7 @@ public class ProHelper {
                     } else {
                         String titleHtml = "<b><font color='#8B5CF6'>🔑 Tap here to verify license key & unlock</font></b>";
                         activationPref.setTitle(Html.fromHtml(titleHtml, Html.FROM_HTML_MODE_LEGACY));
-                        activationPref.setSummary("This category is locked. Verify your WaEnhancerX Pro license to unlock all features.");
+                        activationPref.setSummary("This category is locked. Verify your WAEX Helper license to unlock all features.");
                         activationPref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
                             @Override
                             public boolean onPreferenceClick(@NonNull Preference preference) {
@@ -1210,16 +1210,16 @@ public class ProHelper {
         }
 
         Intent intent = new Intent();
-        intent.setComponent(new ComponentName("com.waex.pro", "com.waex.pro.services.ProService"));
+        intent.setComponent(new ComponentName("com.waex.helper", "com.waex.helper.services.ProService"));
 
         final CountDownLatch latch = new CountDownLatch(1);
-        final com.waex.pro.IProService[] serviceHolder = new com.waex.pro.IProService[1];
+        final com.waex.helper.IProService[] serviceHolder = new com.waex.helper.IProService[1];
         java.util.concurrent.ExecutorService connectionExecutor = null;
 
         ServiceConnection conn = new ServiceConnection() {
             @Override
             public void onServiceConnected(ComponentName name, IBinder service) {
-                serviceHolder[0] = com.waex.pro.IProService.Stub.asInterface(service);
+                serviceHolder[0] = com.waex.helper.IProService.Stub.asInterface(service);
                 latch.countDown();
             }
 
@@ -1245,7 +1245,7 @@ public class ProHelper {
 
             try {
                 boolean connected = latch.await(4, TimeUnit.SECONDS);
-                com.waex.pro.IProService service = serviceHolder[0];
+                com.waex.helper.IProService service = serviceHolder[0];
                 if (connected && service != null) {
                     ParcelFileDescriptor outputPfd = service.convertAudioToOpus(inputPfd);
                     if (outputPfd != null) {
@@ -1291,7 +1291,7 @@ public class ProHelper {
         // If we are in the main app, use PackageManager directly
         if (BuildConfig.APPLICATION_ID.equals(context.getPackageName())) {
             try {
-                context.getPackageManager().getPackageInfo("com.waex.pro", 0);
+                context.getPackageManager().getPackageInfo("com.waex.helper", 0);
                 return true;
             } catch (Exception e) {
                 return false;
@@ -1332,7 +1332,7 @@ public class ProHelper {
         }
         try {
             android.content.pm.ApplicationInfo appInfo = context.getPackageManager().getApplicationInfo(
-                "com.waex.pro", android.content.pm.PackageManager.GET_META_DATA
+                "com.waex.helper", android.content.pm.PackageManager.GET_META_DATA
             );
             if (appInfo != null && appInfo.metaData != null) {
                 return appInfo.metaData.getInt("min_waex_version", 0);
@@ -1394,7 +1394,7 @@ public class ProHelper {
         } else {
             try {
                 android.content.pm.ApplicationInfo appInfo = ctx.getPackageManager().getApplicationInfo(
-                    "com.waex.pro", android.content.pm.PackageManager.GET_META_DATA
+                    "com.waex.helper", android.content.pm.PackageManager.GET_META_DATA
                 );
                 if (appInfo != null && appInfo.sourceDir != null && new java.io.File(appInfo.sourceDir).exists()) {
                     exists = true;
@@ -1462,7 +1462,7 @@ public class ProHelper {
         if (activity == null) return;
 
         File cacheDir = activity.getCacheDir();
-        File apkFile = new File(cacheDir, "pro.apk");
+        File apkFile = new File(cacheDir, "helper.apk");
         if (apkFile.exists() && apkFile.length() > 1024) {
             Toast.makeText(activity, "Installing plugin...", Toast.LENGTH_SHORT).show();
             installProApkWithRoot(activity, apkFile);
@@ -1519,8 +1519,8 @@ public class ProHelper {
                             }
 
                             File cacheDir = activity.getCacheDir();
-                            File apkFile = new File(cacheDir, "pro.apk");
-                            File tmpFile = new File(cacheDir, "pro.apk.tmp");
+                            File apkFile = new File(cacheDir, "helper.apk");
+                            File tmpFile = new File(cacheDir, "helper.apk.tmp");
 
                             try (InputStream is = response.body().byteStream();
                                  FileOutputStream fos = new FileOutputStream(tmpFile)) {
@@ -1562,7 +1562,7 @@ public class ProHelper {
         if (activity == null) return;
 
         File cacheDir = activity.getCacheDir();
-        File apkFile = new File(cacheDir, "pro.apk");
+        File apkFile = new File(cacheDir, "helper.apk");
         if (apkFile.exists() && apkFile.length() > 1024) {
             installProApkWithRoot(activity, apkFile);
             return;
@@ -1681,8 +1681,8 @@ public class ProHelper {
                             }
 
                             File cacheDir = activity.getCacheDir();
-                            File apkFile = new File(cacheDir, "pro.apk");
-                            File tmpFile = new File(cacheDir, "pro.apk.tmp");
+                            File apkFile = new File(cacheDir, "helper.apk");
+                            File tmpFile = new File(cacheDir, "helper.apk.tmp");
 
                             try (InputStream is = response.body().byteStream();
                                  FileOutputStream fos = new FileOutputStream(tmpFile)) {
@@ -1745,7 +1745,7 @@ public class ProHelper {
 
         new Thread(() -> {
             String apkPath = apkFile.getAbsolutePath();
-            String tmpPath = "/data/local/tmp/pro.apk";
+            String tmpPath = "/data/local/tmp/helper.apk";
             
             String copyCmd = "cp \"" + apkPath + "\" " + tmpPath + " && chmod 666 " + tmpPath;
             com.waenhancer.utils.RootUtils.runRootCommand(copyCmd);
@@ -1758,7 +1758,7 @@ public class ProHelper {
             boolean success = result != null && (result.toLowerCase().contains("success") || result.toLowerCase().contains("pkg:"));
             
             if (success) {
-                com.waenhancer.utils.RootUtils.runRootCommand("pm grant com.waex.pro android.permission.POST_NOTIFICATIONS");
+                com.waenhancer.utils.RootUtils.runRootCommand("pm grant com.waex.helper android.permission.POST_NOTIFICATIONS");
                 com.waenhancer.utils.RootUtils.runRootCommand("am force-stop com.whatsapp");
                 com.waenhancer.utils.RootUtils.runRootCommand("am force-stop com.whatsapp.w4b");
             }

@@ -75,8 +75,8 @@ public class IsolatedParentClassLoader extends ClassLoader {
             android.util.Log.e("WAEX-Loader", "Failed all attempts to load other Xposed class: " + name);
         }
 
-        // 3. Block com.waex.pro.* from parent delegation
-        if (name.startsWith("com.waex.pro.")) {
+        // 3. Block com.waex.helper.* from parent delegation
+        if (name.startsWith("com.waex.helper.")) {
             throw new ClassNotFoundException("Blocked delegation of plugin class to parent: " + name);
         }
         

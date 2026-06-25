@@ -37,7 +37,7 @@
 
             <!-- STATE 3: Missing Plugin Warning Card -->
             <com.google.android.material.card.MaterialCardView
-                android:id="@+id/companion_warning_card"
+                android:id="@+id/helper_warning_card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
@@ -74,14 +74,14 @@
                         <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Companion Plugin Required"
+                            android:text="Helper Plugin Required"
                             android:textAppearance="?attr/textAppearanceTitleMedium"
                             android:textColor="#C62828"
                             android:textStyle="bold" />
                     </LinearLayout>
 
                     <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/tv_companion_warning"
+                        android:id="@+id/tv_helper_warning"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="The companion Pro plugin app is required to make the Pro features work. Tap here to download and install the plugin pack."
@@ -228,7 +228,7 @@
                         <com.google.android.material.textview.MaterialTextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="WaEnhancerX Pro"
+                            android:text="WAEX Helper"
                             android:textAppearance="?attr/textAppearanceTitleLarge"
                             android:textStyle="bold"
                             android:layout_marginBottom="8dp" />

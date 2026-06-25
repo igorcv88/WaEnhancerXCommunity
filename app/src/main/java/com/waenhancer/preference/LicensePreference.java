@@ -36,7 +36,7 @@ public class LicensePreference extends Preference implements Preference.OnPrefer
         setOnPreferenceClickListener(this);
 
         // Standardize the Pro look and feel to match existing pro switch preferences
-        String titleHtml = "WaEnhancerX Pro <font color='#8B5CF6'><b>[Pro]</b></font>";
+        String titleHtml = "WAEX Helper <font color='#8B5CF6'><b>[Pro]</b></font>";
         setTitle(Html.fromHtml(titleHtml, Html.FROM_HTML_MODE_LEGACY));
 
         updateSummary();

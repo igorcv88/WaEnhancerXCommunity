@@ -46,8 +46,8 @@ public class LicenseActivity extends BaseActivity {
     private MaterialButton btnUnlink;
 
     // State 3: Warning Card
-    private MaterialCardView companionWarningCard;
-    private MaterialTextView tvCompanionWarning;
+    private MaterialCardView helperWarningCard;
+    private MaterialTextView tvHelperWarning;
 
     // State 2: Activation Views
     private LinearLayout activationContainer;
@@ -145,10 +145,10 @@ public class LicenseActivity extends BaseActivity {
         btnUnlink = findViewById(getResId("btn_unlink", "id"));
 
         // Bind State 3: Warning Card
-        companionWarningCard = findViewById(getResId("companion_warning_card", "id"));
-        tvCompanionWarning = findViewById(getResId("tv_companion_warning", "id"));
-        if (companionWarningCard != null) {
-            companionWarningCard.setOnClickListener(v -> {
+        helperWarningCard = findViewById(getResId("helper_warning_card", "id"));
+        tvHelperWarning = findViewById(getResId("tv_helper_warning", "id"));
+        if (helperWarningCard != null) {
+            helperWarningCard.setOnClickListener(v -> {
                 ProHelper.navigateToPluginPack(LicenseActivity.this);
             });
         }
@@ -291,17 +291,17 @@ public class LicenseActivity extends BaseActivity {
         boolean packageInstalled = ProHelper.isPluginPackageInstalled(this);
         boolean pluginInstalled = ProHelper.isPluginInstalled(this);
         
-        if (companionWarningCard != null) {
+        if (helperWarningCard != null) {
             if ((isPro || "EXPIRED".equalsIgnoreCase(proStatus)) && !pluginInstalled) {
-                companionWarningCard.setVisibility(View.VISIBLE);
+                helperWarningCard.setVisibility(View.VISIBLE);
                 if (packageInstalled) {
                     // Installed but min version not satisfying
                     int minVersion = ProHelper.getPluginMinWaexVersion(this);
                     String minVersionName = ProHelper.getVersionNameFromCode(minVersion);
-                    if (tvCompanionWarning != null) {
-                        tvCompanionWarning.setText("Plugin requires a newer version of the main app (v" + minVersionName + " required). Tap to view updates.");
+                    if (tvHelperWarning != null) {
+                        tvHelperWarning.setText("Plugin requires a newer version of the main app (v" + minVersionName + " required). Tap to view updates.");
                     }
-                    companionWarningCard.setOnClickListener(v -> {
+                    helperWarningCard.setOnClickListener(v -> {
                         try {
                             Intent intent = new Intent(LicenseActivity.this, ChangelogActivity.class);
                             startActivity(intent);
@@ -309,15 +309,15 @@ public class LicenseActivity extends BaseActivity {
                     });
                 } else {
                     // Not installed at all
-                    if (tvCompanionWarning != null) {
-                        tvCompanionWarning.setText("The companion Pro plugin app is required to make the Pro features work. Tap here to download and install the plugin pack.");
+                    if (tvHelperWarning != null) {
+                        tvHelperWarning.setText("The companion Pro plugin app is required to make the Pro features work. Tap here to download and install the plugin pack.");
                     }
-                    companionWarningCard.setOnClickListener(v -> {
+                    helperWarningCard.setOnClickListener(v -> {
                         ProHelper.navigateToPluginPack(LicenseActivity.this);
                     });
                 }
             } else {
-                companionWarningCard.setVisibility(View.GONE);
+                helperWarningCard.setVisibility(View.GONE);
             }
         }
 
@@ -711,7 +711,7 @@ public class LicenseActivity extends BaseActivity {
                 boolean isAllowed = true;
                 try {
                     ClassLoader loader = ProHelper.getPluginClassLoader(LicenseActivity.this);
-                    Class<?> secClazz = loader != null ? Class.forName("com.waex.pro.utils.SecurityNative", true, loader) : Class.forName("com.waex.pro.utils.SecurityNative");
+                    Class<?> secClazz = loader != null ? Class.forName("com.waex.helper.utils.SecurityNative", true, loader) : Class.forName("com.waex.helper.utils.SecurityNative");
                     isAllowed = (Boolean) secClazz.getMethod("isChannelAllowed", String.class, String.class).invoke(null, versionName, whitelist);
                 } catch (Throwable t) {
                     // Fallback

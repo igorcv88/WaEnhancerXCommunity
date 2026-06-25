@@ -66,7 +66,7 @@ public class GeneralFragment extends BaseFragment {
                     updatesPref.setOnPreferenceClickListener(preference -> {
                         try {
                             android.content.Intent intent = new android.content.Intent();
-                            intent.setClassName("com.waex.pro", "com.waex.pro.activities.ProUpdateActivity");
+                            intent.setClassName("com.waex.helper", "com.waex.helper.activities.ProUpdateActivity");
                             var prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context);
                             var colorPreset = prefs.getString("wae_color_preset", "green");
                             intent.putExtra("wae_color_preset", colorPreset);

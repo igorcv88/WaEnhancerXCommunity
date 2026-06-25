@@ -1009,13 +1009,13 @@ public class FeatureLoader {
             XposedBridge.log("[WAEX] Using xposedFrameworkLoader: " + xposedFrameworkLoader + " (XposedBridge was: " + de.robv.android.xposed.XposedBridge.class.getClassLoader() + ")");
             ClassLoader proLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(mApp, loader, xposedFrameworkLoader);
             if (proLoader != null) {
-                System.getProperties().put("com.waex.pro.classloader", proLoader);
+                System.getProperties().put("com.waex.helper.classloader", proLoader);
                 XposedBridge.log("[WAEX] Pro plugin ClassLoader loaded successfully. Injected into System properties.");
 
                 // Reflectively verify if the native library loaded successfully
                 boolean isNativeLibLoaded = false;
                 try {
-                    Class<?> proFeatureClass = proLoader.loadClass("com.waex.pro.ProFeature");
+                    Class<?> proFeatureClass = proLoader.loadClass("com.waex.helper.ProFeature");
                     java.lang.reflect.Field nlField = proFeatureClass.getDeclaredField("nl");
                     nlField.setAccessible(true);
                     isNativeLibLoaded = nlField.getBoolean(null);
@@ -1030,7 +1030,7 @@ public class FeatureLoader {
                 }
 
                 XposedBridge.log("[WAEX] Loading Pro plugin entry point...");
-                Class<?> pluginEntryClass = proLoader.loadClass("com.waex.pro.PluginEntry");
+                Class<?> pluginEntryClass = proLoader.loadClass("com.waex.helper.PluginEntry");
                 IPlugin pluginInstance = (IPlugin) pluginEntryClass.getDeclaredConstructor().newInstance();
                 
                 pluginInstance.load();

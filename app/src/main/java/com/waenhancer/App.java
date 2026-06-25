@@ -131,7 +131,7 @@ public class App extends Application {
         // Resolve and store the Pro plugin APK path so that Xposed hooks can load it
         try {
             var pm = getPackageManager();
-            var info = pm.getApplicationInfo("com.waex.pro", 0);
+            var info = pm.getApplicationInfo("com.waex.helper", 0);
             if (info.sourceDir != null && new java.io.File(info.sourceDir).exists()) {
                 sharedPreferences.edit()
                     .putString("pro_plugin_path", info.sourceDir)
@@ -146,7 +146,7 @@ public class App extends Application {
         }
 
         // Initialize limited-free feature config. Run unconditionally — the pro plugin is now a
-        // separate APK (com.waex.pro), so HAS_PRO_FEATURES may be false even when it is installed.
+        // separate APK (com.waex.helper), so HAS_PRO_FEATURES may be false even when it is installed.
         // initLimitedFree() handles the "not available" case gracefully.
         try {
             com.waenhancer.xposed.utils.ProHelper.initLimitedFree(this, sharedPreferences);

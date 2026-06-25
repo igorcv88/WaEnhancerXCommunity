@@ -205,9 +205,9 @@ public class FloatingBottomBar extends Feature {
 
                         if (pillDesignPro) {
                             try {
-                                ClassLoader pluginLoader = (ClassLoader) System.getProperties().get("com.waex.pro.classloader");
+                                ClassLoader pluginLoader = (ClassLoader) System.getProperties().get("com.waex.helper.classloader");
                                 if (pluginLoader != null) {
-                                    Class<?> pillProClass = Class.forName("com.waex.pro.PillDesignPro", true, pluginLoader);
+                                    Class<?> pillProClass = Class.forName("com.waex.helper.PillDesignPro", true, pluginLoader);
                                     pillProClass.getMethod("applyProDesign", View.class, float.class).invoke(null, view, density);
                                 }
                             } catch (Throwable t) {

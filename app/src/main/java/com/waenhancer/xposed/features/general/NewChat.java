@@ -343,7 +343,7 @@ public class NewChat extends Feature {
                     try {
                         ClassLoader proClassLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(activity);
                         if (proClassLoader != null) {
-                            Class<?> validatorClass = proClassLoader.loadClass("com.waex.pro.utils.PhoneNumberValidator");
+                            Class<?> validatorClass = proClassLoader.loadClass("com.waex.helper.utils.PhoneNumberValidator");
 
                             java.lang.reflect.Field instanceField = validatorClass.getDeclaredField("INSTANCE");
                             instanceField.setAccessible(true);
@@ -414,7 +414,7 @@ public class NewChat extends Feature {
         try {
             ClassLoader proClassLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(activity);
             if (proClassLoader != null) {
-                proClassLoader.loadClass("com.waex.pro.utils.PhoneNumberValidator");
+                proClassLoader.loadClass("com.waex.helper.utils.PhoneNumberValidator");
                 return true;
             }
         } catch (Throwable ignored) {}
@@ -429,7 +429,7 @@ public class NewChat extends Feature {
                 android.util.Log.e("NewChat", "proClassLoader is null");
                 return "Phone Number";
             }
-            Class<?> validatorClass = proClassLoader.loadClass("com.waex.pro.utils.PhoneNumberValidator");
+            Class<?> validatorClass = proClassLoader.loadClass("com.waex.helper.utils.PhoneNumberValidator");
 
             // Use the singleton INSTANCE to safely invoke @JvmStatic methods
             java.lang.reflect.Field instanceField = validatorClass.getDeclaredField("INSTANCE");
@@ -496,7 +496,7 @@ public class NewChat extends Feature {
             if (proClassLoader == null) {
                 return -1;
             }
-            Class<?> validatorClass = proClassLoader.loadClass("com.waex.pro.utils.PhoneNumberValidator");
+            Class<?> validatorClass = proClassLoader.loadClass("com.waex.helper.utils.PhoneNumberValidator");
 
             // Use the singleton INSTANCE to safely invoke @JvmStatic methods
             java.lang.reflect.Field instanceField = validatorClass.getDeclaredField("INSTANCE");

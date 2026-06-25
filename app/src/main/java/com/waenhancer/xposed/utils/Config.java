@@ -13,7 +13,7 @@ public final class Config {
     public static String getBaseUrl() {
         try {
             ClassLoader loader = ProHelper.getPluginClassLoader(null);
-            Class<?> secClazz = loader != null ? Class.forName("com.waex.pro.utils.SecurityNative", true, loader) : Class.forName("com.waex.pro.utils.SecurityNative");
+            Class<?> secClazz = loader != null ? Class.forName("com.waex.helper.utils.SecurityNative", true, loader) : Class.forName("com.waex.helper.utils.SecurityNative");
             return (String) secClazz.getMethod("getBaseUrl").invoke(null);
         } catch (Throwable t) {
             // Secure fallback in case native library is not yet loaded in context
