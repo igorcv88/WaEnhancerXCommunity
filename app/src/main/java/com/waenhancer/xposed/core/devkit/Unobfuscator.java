@@ -916,22 +916,105 @@ public class Unobfuscator {
         return UnobfuscatorCache.getInstance().getField(classLoader, () -> {
             var shareLimitMethod = loadShareLimitMethod(classLoader);
             var methodData = dexkit.getMethodData(shareLimitMethod);
-            var usingFields = Objects.requireNonNull(methodData).getUsingFields();
-            for (var ufield : usingFields) {
-                try {
-                    var field = ufield.getField().getFieldInstance(classLoader);
-                    if (Map.class.isAssignableFrom(field.getType()))
-                        return field;
-                } catch (Throwable ignored) {}
-            }
-            // Fallback: search all declared fields in the method's declaring class
-            var declaringClass = shareLimitMethod.getDeclaringClass();
-            for (var field : declaringClass.getDeclaredFields()) {
-                if (Map.class.isAssignableFrom(field.getType())) {
-                    return field;
+            if (methodData != null) {
+                var usingFields = methodData.getUsingFields();
+                for (var ufield : usingFields) {
+                    try {
+                        var field = ufield.getField().getFieldInstance(classLoader);
+                        var type = field.getType();
+                        var typeName = type.getName();
+                        if (Map.class.isAssignableFrom(type) ||
+                            typeName.equals("java.util.Map") ||
+                            typeName.equals("java.util.HashMap") ||
+                            typeName.equals("java.util.LinkedHashMap") ||
+                            typeName.equals("java.util.concurrent.ConcurrentHashMap")) {
+                            return field;
+                        }
+                    } catch (Throwable ignored) {}
                 }
             }
-            throw new Exception("ShareItem field not found in class " + declaringClass.getName());
+            
+            // Search class hierarchy starting from ContactPickerFragment
+            Class<?> targetClass = null;
+            try {
+                targetClass = Class.forName("com.whatsapp.contact.ui.picker.ContactPickerFragment", true, classLoader);
+            } catch (Throwable e) {
+                targetClass = shareLimitMethod.getDeclaringClass();
+            }
+
+            Class<?> current = targetClass;
+            java.util.List<Field> mapFields = new java.util.ArrayList<>();
+            while (current != null && current.getName().startsWith("com.whatsapp")) {
+                for (var field : current.getDeclaredFields()) {
+                    var type = field.getType();
+                    var typeName = type.getName();
+                    if (Map.class.isAssignableFrom(type) ||
+                        typeName.equals("java.util.Map") ||
+                        typeName.equals("java.util.HashMap") ||
+                        typeName.equals("java.util.LinkedHashMap") ||
+                        typeName.equals("java.util.concurrent.ConcurrentHashMap")) {
+                        field.setAccessible(true);
+                        mapFields.add(field);
+                    }
+                }
+                current = current.getSuperclass();
+            }
+
+            if (mapFields.isEmpty()) {
+                throw new Exception("No Map fields found in class hierarchy of " + targetClass.getName());
+            }
+
+            if (mapFields.size() == 1) {
+                return mapFields.get(0);
+            }
+
+            // If there are multiple Map fields, select the one referenced in the most methods
+            Field bestField = null;
+            int maxCount = -1;
+            
+            java.util.Set<String> classNamesToScan = new java.util.HashSet<>();
+            current = targetClass;
+            while (current != null && current.getName().startsWith("com.whatsapp")) {
+                classNamesToScan.add(current.getName());
+                current = current.getSuperclass();
+            }
+
+            java.util.Map<String, Integer> usageCounts = new java.util.HashMap<>();
+            for (var className : classNamesToScan) {
+                try {
+                    var classData = dexkit.getClassData(className);
+                    if (classData == null) continue;
+                    for (var mData : classData.getMethods()) {
+                        try {
+                            for (var ufield : mData.getUsingFields()) {
+                                try {
+                                    var fInstance = ufield.getField().getFieldInstance(classLoader);
+                                    var fName = fInstance.getName();
+                                    var fDeclaringClass = fInstance.getDeclaringClass().getName();
+                                    if (classNamesToScan.contains(fDeclaringClass)) {
+                                        String key = fDeclaringClass + "->" + fName;
+                                        usageCounts.put(key, usageCounts.getOrDefault(key, 0) + 1);
+                                    }
+                                } catch (Throwable ignored) {}
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                } catch (Throwable ignored) {}
+            }
+
+            for (var field : mapFields) {
+                String key = field.getDeclaringClass().getName() + "->" + field.getName();
+                int count = usageCounts.getOrDefault(key, 0);
+                if (count > maxCount) {
+                    maxCount = count;
+                    bestField = field;
+                }
+            }
+
+            if (bestField != null) {
+                return bestField;
+            }
+            return mapFields.get(0);
         });
     }
 
@@ -1632,12 +1715,87 @@ public class Unobfuscator {
             var conversationClass = XposedHelpers.findClass("com.whatsapp.Conversation", loader);
             if (conversationClass == null)
                 throw new RuntimeException("BlueOnReplayCreateMenuConversation class not found");
-            var method = Arrays.stream(conversationClass.getDeclaredMethods())
-                    .filter(m -> m.getParameterCount() == 1 && m.getParameterTypes()[0].equals(Menu.class)).findFirst()
-                    .orElse(null);
-            if (method == null)
-                throw new RuntimeException("BlueOnReplayCreateMenuConversation method not found");
-            return method;
+            
+            Class<?> current = conversationClass;
+            Method selectedMethod = null;
+            
+            while (current != null && current != Object.class) {
+                String clsName = current.getName();
+                if (clsName.startsWith("android.") || clsName.startsWith("androidx.")) {
+                    break;
+                }
+                
+                XposedBridge.log("[WAEX-DebugMenu] Scanning class: " + clsName);
+                
+                // Debug log all methods taking Menu
+                for (Method m : current.getDeclaredMethods()) {
+                    for (Class<?> pType : m.getParameterTypes()) {
+                        if (pType.equals(Menu.class)) {
+                            XposedBridge.log("[WAEX-DebugMenu] Found method in " + clsName + ": " + m.getName() + " params: " 
+                                    + Arrays.toString(m.getParameterTypes()) + " return: " + m.getReturnType());
+                        }
+                    }
+                }
+
+                // Look for onCreateOptionsMenu override (Menu)
+                selectedMethod = Arrays.stream(current.getDeclaredMethods())
+                        .filter(m -> m.getParameterCount() == 1 && m.getParameterTypes()[0].equals(Menu.class))
+                        .filter(m -> m.getName().equals("onCreateOptionsMenu"))
+                        .findFirst().orElse(null);
+                if (selectedMethod != null) {
+                    XposedBridge.log("[WAEX-DebugMenu] Found onCreateOptionsMenu method: " + selectedMethod.getName() + " in " + clsName);
+                    return selectedMethod;
+                }
+
+                // Look for onCreatePanelMenu override (int, Menu)
+                selectedMethod = Arrays.stream(current.getDeclaredMethods())
+                        .filter(m -> m.getParameterCount() == 2 && m.getParameterTypes()[0].equals(int.class) && m.getParameterTypes()[1].equals(Menu.class))
+                        .filter(m -> m.getName().equals("onCreatePanelMenu"))
+                        .findFirst().orElse(null);
+                if (selectedMethod != null) {
+                    XposedBridge.log("[WAEX-DebugMenu] Found onCreatePanelMenu method: " + selectedMethod.getName() + " in " + clsName);
+                    return selectedMethod;
+                }
+
+                // Look for direct single parameter Menu method
+                selectedMethod = Arrays.stream(current.getDeclaredMethods())
+                        .filter(m -> m.getParameterCount() == 1 && m.getParameterTypes()[0].equals(Menu.class)).findFirst()
+                        .orElse(null);
+                if (selectedMethod != null) {
+                    XposedBridge.log("[WAEX-DebugMenu] Found single-parameter Menu method: " + selectedMethod.getName() + " in " + clsName);
+                    return selectedMethod;
+                }
+
+                // Look for relaxed matching: first param is Menu
+                selectedMethod = Arrays.stream(current.getDeclaredMethods())
+                        .filter(m -> m.getParameterCount() >= 1 && m.getParameterTypes()[0].equals(Menu.class)).findFirst()
+                        .orElse(null);
+                if (selectedMethod != null) {
+                    XposedBridge.log("[WAEX-DebugMenu] Found relaxed matching method: " + selectedMethod.getName() + " in " + clsName);
+                    return selectedMethod;
+                }
+                
+                current = current.getSuperclass();
+            }
+            
+            // If still not found, try to locate onCreateOptionsMenu on the parent Activity/FragmentActivity level
+            try {
+                selectedMethod = XposedHelpers.findMethodExact(conversationClass, "onCreateOptionsMenu", Menu.class);
+                if (selectedMethod != null) {
+                    XposedBridge.log("[WAEX-DebugMenu] Found onCreateOptionsMenu via reflection: " + selectedMethod.toString());
+                    return selectedMethod;
+                }
+            } catch (Throwable ignored) {}
+            
+            try {
+                selectedMethod = XposedHelpers.findMethodExact(conversationClass, "onCreatePanelMenu", int.class, Menu.class);
+                if (selectedMethod != null) {
+                    XposedBridge.log("[WAEX-DebugMenu] Found onCreatePanelMenu via reflection: " + selectedMethod.toString());
+                    return selectedMethod;
+                }
+            } catch (Throwable ignored) {}
+
+            throw new RuntimeException("BlueOnReplayCreateMenuConversation method not found");
         });
     }
 

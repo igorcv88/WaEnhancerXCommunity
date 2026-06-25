@@ -379,30 +379,47 @@ public class Others extends Feature {
         }
         try {
             Class<?> conversationClass = XposedHelpers.findClass("com.whatsapp.Conversation", classLoader);
-            XposedHelpers.findAndHookMethod(conversationClass, "onResume", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    Activity activity = (Activity) param.thisObject;
-                    Intent intent = activity.getIntent();
-                    if (intent != null && disableMetaAI) {
-                        String jid = intent.getStringExtra("jid");
-                        boolean isMetaAi = false;
-                        if (jid != null && (jid.contains("1313555") || jid.contains("meta"))) {
-                            isMetaAi = true;
+            Class<?> current = conversationClass;
+            Method onResumeMethod = null;
+            while (current != null && current != Object.class) {
+                try {
+                    onResumeMethod = current.getDeclaredMethod("onResume");
+                    break;
+                } catch (NoSuchMethodException e) {
+                    current = current.getSuperclass();
+                }
+            }
+            if (onResumeMethod != null) {
+                XposedBridge.hookMethod(onResumeMethod, new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        Activity activity = (Activity) param.thisObject;
+                        if (!conversationClass.isInstance(activity)) {
+                            return;
                         }
-                        if (intent.hasExtra("bot_metrics_entrypoint") || intent.hasExtra("extra_presentation_source")) {
-                            isMetaAi = true;
-                        }
+                        Intent intent = activity.getIntent();
+                        if (intent != null && disableMetaAI) {
+                            String jid = intent.getStringExtra("jid");
+                            boolean isMetaAi = false;
+                            if (jid != null && (jid.contains("1313555") || jid.contains("meta"))) {
+                                isMetaAi = true;
+                            }
+                            if (intent.hasExtra("bot_metrics_entrypoint") || intent.hasExtra("extra_presentation_source")) {
+                                isMetaAi = true;
+                            }
 
-                        if (isMetaAi) {
-                            if (!activity.isFinishing()) {
-                                activity.finish();
-                                Toast.makeText(activity, "Meta AI functions are disabled", Toast.LENGTH_SHORT).show();
+                            if (isMetaAi) {
+                                if (!activity.isFinishing()) {
+                                    activity.finish();
+                                    Toast.makeText(activity, "Meta AI functions are disabled", Toast.LENGTH_SHORT).show();
+                                }
                             }
                         }
                     }
-                }
-            });
+                });
+            } else {
+                XposedBridge.log("[WAEX] Could not find onResume method in Conversation hierarchy");
+            }
         } catch (Throwable t) {
             XposedBridge.log("[WAEX] Failed to hook Conversation: " + t.toString());
         }
