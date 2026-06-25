@@ -79,6 +79,9 @@
 # Keep all IPC bridge stub and AIDL classes intact to maintain process stability
 -keep class com.waenhancer.xposed.bridge.** { *; }
 
+# Keep the plugin API interfaces and support classes intact for helper/pro plugins
+-keep class com.waex.api.** { *; }
+
 # =============================================================================
 # 3. LICENSING LAYER REFLECTION SAFETY (GAP CLOSED)
 # =============================================================================
