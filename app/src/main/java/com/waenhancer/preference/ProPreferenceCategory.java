@@ -36,12 +36,13 @@ public class ProPreferenceCategory extends PreferenceCategory {
         if (originalTitle == null) {
             originalTitle = "Pro Category";
         }
-        
-        if (BuildConfig.HAS_PRO_FEATURES) {
+
+        boolean pluginInstalled = com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(context);
+        if (pluginInstalled) {
             String newTitle = originalTitle + " <font color='#8B5CF6'><b>[Pro]</b></font>";
             setTitle(Html.fromHtml(newTitle, Html.FROM_HTML_MODE_LEGACY));
         } else {
-            String newTitle = originalTitle + " <font color='#EF4444'><b>[missing pro module]</b></font>";
+            String newTitle = originalTitle + " <font color='#EF4444'><b>[missing helper plugin]</b></font>";
             setTitle(Html.fromHtml(newTitle, Html.FROM_HTML_MODE_LEGACY));
             setEnabled(false);
         }

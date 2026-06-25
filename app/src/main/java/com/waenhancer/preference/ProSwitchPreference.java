@@ -39,12 +39,13 @@ public class ProSwitchPreference extends rikka.material.preference.MaterialSwitc
         if (originalTitle == null) {
             originalTitle = "Pro Feature";
         }
-        
-        if (BuildConfig.HAS_PRO_FEATURES) {
+
+        boolean pluginInstalled = com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(context);
+        if (pluginInstalled) {
             String newTitle = originalTitle + " <font color='#8B5CF6'><b>[Pro]</b></font>";
             setTitle(Html.fromHtml(newTitle, Html.FROM_HTML_MODE_LEGACY));
         } else {
-            String newTitle = originalTitle + " <font color='#EF4444'><b>[missing pro module]</b></font>";
+            String newTitle = originalTitle + " <font color='#EF4444'><b>[missing helper plugin]</b></font>";
             setTitle(Html.fromHtml(newTitle, Html.FROM_HTML_MODE_LEGACY));
             setEnabled(false);
         }
@@ -56,13 +57,8 @@ public class ProSwitchPreference extends rikka.material.preference.MaterialSwitc
      * Updates the summary text dynamically based on the verified status.
      */
     private void updateSummary() {
-        if (!BuildConfig.HAS_PRO_FEATURES) {
-            setSummary("Pro module not loaded");
-            return;
-        }
-
         if (!com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(getContext())) {
-            setSummary("Plugin Required");
+            setSummary("Helper Plugin Required");
             return;
         }
 
