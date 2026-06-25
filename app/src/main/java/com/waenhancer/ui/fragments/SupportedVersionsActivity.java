@@ -129,7 +129,6 @@ public class SupportedVersionsActivity extends BaseActivity {
             MaterialTextView versionName = row.findViewById(R.id.version_name);
             MaterialTextView badge = row.findViewById(R.id.version_badge);
             ImageButton deleteBtn = row.findViewById(R.id.version_delete);
-            View statusDot = row.findViewById(R.id.version_dot); // may be null on old layout
             View divider = row.findViewById(R.id.version_divider);
 
             versionName.setText(entry.version);

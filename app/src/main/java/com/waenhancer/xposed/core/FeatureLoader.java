@@ -326,6 +326,9 @@ public class FeatureLoader {
                                     throw new Exception(sb);
                                 }
                             } else {
+                                // Version is supported — load normally
+                                load(loader, pref, packageInfo, sourceDir);
+                            }
                         } catch (Throwable e) {
                             XposedBridge.log(e);
                             var error = new ErrorItem();
