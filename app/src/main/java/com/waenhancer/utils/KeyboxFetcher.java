@@ -58,7 +58,7 @@ public class KeyboxFetcher {
             String keyboxXml = json.getString("keybox");
             String lastUpdated = json.optString("last_updated", "");
             if (keyboxXml != null && !keyboxXml.trim().isEmpty()) {
-                SharedPreferences prefs = XPrefManager.getPref(context);
+                SharedPreferences prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context);
                 SharedPreferences.Editor editor = prefs.edit();
                 editor.putString("bootloader_spoofer_default_xml", keyboxXml);
                 if (!lastUpdated.isEmpty()) {

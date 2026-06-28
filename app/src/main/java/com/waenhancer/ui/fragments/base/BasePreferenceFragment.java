@@ -339,11 +339,21 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
             String channel = mPrefs.getString("release_channel", "stable");
             WppCore.setPrivString("release_channel", channel);
         }
-        if (Objects.equals(s, "bootloader_spoofer_xml") || Objects.equals(s, "bootloader_spoofer_custom") || Objects.equals(s, "bootloader_spoofer")) {
+        if (Objects.equals(s, "bootloader_spoofer_xml") 
+                || Objects.equals(s, "bootloader_spoofer_default_xml") 
+                || Objects.equals(s, "bootloader_spoofer_custom") 
+                || Objects.equals(s, "bootloader_spoofer")) {
             if (Objects.equals(s, "bootloader_spoofer_xml")) {
                 mPrefs.edit()
                         .remove("keybox_verify_status")
                         .remove("keybox_verify_time")
+                        .apply();
+            }
+            if (Objects.equals(s, "bootloader_spoofer_default_xml")) {
+                mPrefs.edit()
+                        .remove("default_kb_status")
+                        .remove("default_kb_time")
+                        .remove("default_kb_score")
                         .apply();
             }
             updateKeyboxVerifySummary();
