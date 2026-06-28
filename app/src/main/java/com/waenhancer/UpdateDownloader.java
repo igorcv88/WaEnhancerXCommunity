@@ -41,9 +41,19 @@ public class UpdateDownloader {
     }
 
     public static Call downloadApk(Context context, String url, String versionName, DownloadCallback callback) {
-        String safeVersion = versionName.replaceAll("[^a-zA-Z0-9.-]", "_");
+        String fileName = null;
+        try {
+            android.net.Uri uri = android.net.Uri.parse(url);
+            fileName = uri.getLastPathSegment();
+        } catch (Exception ignored) {}
+
+        if (fileName == null || !fileName.endsWith(".apk")) {
+            String safeVersion = versionName.replaceAll("[^a-zA-Z0-9.-]", "_");
+            fileName = "WaEnhancer X_" + safeVersion + ".apk";
+        }
+
         File cacheDir = context.getCacheDir();
-        File apkFile = new File(cacheDir, "WaEnhancer X_" + safeVersion + ".apk");
+        File apkFile = new File(cacheDir, fileName);
 
         if (apkFile.exists()) {
             callback.onSuccess(apkFile);
