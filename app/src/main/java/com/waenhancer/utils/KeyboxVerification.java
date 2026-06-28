@@ -65,6 +65,16 @@ public class KeyboxVerification {
         long lastCheck = isCustom ? prefs.getLong("kb_hash_" + xmlHash + "_time", 0L) : prefs.getLong("default_kb_time", 0L);
         boolean useCache = lastCheck > 0 && (System.currentTimeMillis() - lastCheck < 3600000);
 
+        if (!isCustom) {
+            String lastSyncStr = prefs.getString("default_kb_last_updated", "");
+            if (!lastSyncStr.isEmpty()) {
+                long lastUpdatedMillis = parseIsoToMillis(lastSyncStr);
+                if (lastUpdatedMillis > lastCheck) {
+                    useCache = false;
+                }
+            }
+        }
+
         // Run verification
         KeyboxValidator.ValidationResult result = KeyboxValidator.validate(targetXml);
 
@@ -537,6 +547,13 @@ public class KeyboxVerification {
             boolean enabled = prefs.getBoolean("bootloader_spoofer", false);
             if (!enabled) return false;
             
+            if (com.waenhancer.utils.ModuleStatus.isModuleActive()) {
+                return true;
+            }
+            if (com.waenhancer.activities.MainActivity.isXposedFrameworkPresent(context)) {
+                return true;
+            }
+            
             boolean hasXposed = false;
             try {
                 Class.forName("de.robv.android.xposed.XposedBridge");
@@ -670,6 +687,16 @@ public class KeyboxVerification {
             return outFmt.format(parsed);
         } catch (Exception e) {
             return rawIso;
+        }
+    }
+
+    private static long parseIsoToMillis(String rawIso) {
+        try {
+            java.text.SimpleDateFormat isoFmt = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US);
+            isoFmt.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+            return isoFmt.parse(rawIso).getTime();
+        } catch (Exception e) {
+            return 0L;
         }
     }
 }
