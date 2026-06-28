@@ -43,7 +43,7 @@
     <string name="changecolor_mode_monet">Automatic (Monet, Android 12+)</string>
     <string name="general">General</string>
     <string name="restart_whatsapp">Restart WhatsApp</string>
-    <string name="conversation">Conversation Screen</string>
+    <string name="conversation">Conversation</string>
     <string name="go_to_first_message">Go to First Message</string>
     <string name="go_to_first_message_sum">Add menu option to scroll to first message in chat</string>
     <string name="primary_color">Primary Color</string>
@@ -192,7 +192,7 @@
     <string name="seentick_screen">Show Button in Screen</string>
     <string name="phone_call">Phone Call</string>
     <string name="whatsapp_call">WhatsApp Call</string>
-    <string name="home_screen">Home Screen</string>
+    <string name="home_screen">Home</string>
     <string name="selection_of_call_type">Enable selection of call type</string>
     <string name="selection_of_call_type_sum">Show an option to select whether you want a call via phone or WhatsApp</string>
     <string name="yes">Yes</string>
@@ -441,6 +441,9 @@
     <string name="ghost_mode_s">Ghost Mode [%s]</string>
     <string name="ghost_mode_title">Show Ghost Mode Button</string>
     <string name="ghost_mode_sum">Show a Ghost Mode button on the home screen toolbar</string>
+    <string name="show_hidereceipt_title">Show Hide Delivered Button</string>
+    <string name="show_hidereceipt_sum">Show a Hide Delivered button on the home screen toolbar</string>
+    <string name="hide_delivered_s">Hide Delivered [%s]</string>
     <string name="grant_permissions">To use WaEnhancer X it is necessary to grant some permissions to use the functions.</string>
     <string name="grant_manage_storage">Grant manage storage</string>
     <string name="grant_media_read">Grant Media Read</string>

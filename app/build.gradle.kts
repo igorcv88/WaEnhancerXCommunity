@@ -17,12 +17,6 @@ kotlin {
     jvmToolchain(17)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Private pro submodule
-// settings.gradle.kts computes this flag by scanning app/src/pro for real files.
-// ─────────────────────────────────────────────────────────────────────────────
-val hasProSources: Boolean = (rootProject.extra.has("hasProSources") && rootProject.extra["hasProSources"] as Boolean) ||
-    (gradle.extra.has("hasProSources") && gradle.extra["hasProSources"] as Boolean)
 
 
 android {
@@ -63,8 +57,6 @@ android {
 
         val noticesUrl = (project.findProperty("NOTICES_URL")?.toString() ?: env.getProperty("NOTICES_URL") ?: "https://waex.mubashar.dev/notices.json").trim()
         buildConfigField("String", "NOTICES_URL", "\"$noticesUrl\"")
-        // Expose pro feature availability to app code
-        buildConfigField("boolean", "HAS_PRO_FEATURES", hasProSources.toString())
         multiDexEnabled = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

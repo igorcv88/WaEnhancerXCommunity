@@ -42,6 +42,7 @@ public class MenuHome extends Feature {
     private static final int MENU_ID_SUBMENU = 9906;
     private static final int MENU_ID_NEW_CHAT = 9907;
     private static final int MENU_ID_RECORDINGS = 9908;
+    private static final int MENU_ID_DELIVERED = 9909;
 
     public static final LinkedHashSet<HomeMenuItem> menuItems = new LinkedHashSet<>();
 
@@ -58,6 +59,8 @@ public class MenuHome extends Feature {
     private static Drawable cachedDndOffIcon = null;
     private static Drawable cachedFreezeOnIcon = null;
     private static Drawable cachedFreezeOffIcon = null;
+    private static Drawable cachedDeliveredOnIcon = null;
+    private static Drawable cachedDeliveredOffIcon = null;
     
     private static Drawable cachedNewChatIcon = null;
     private static Drawable cachedRecordingsIcon = null;
@@ -79,6 +82,8 @@ public class MenuHome extends Feature {
             cachedDndOffIcon = DesignUtils.getDrawable(R.drawable.airplane_disabled);
             cachedFreezeOnIcon = DesignUtils.getDrawable(R.drawable.eye_enabled);
             cachedFreezeOffIcon = DesignUtils.getDrawable(R.drawable.eye_disabled);
+            cachedDeliveredOnIcon = DesignUtils.getDrawable(R.drawable.eye_enabled);
+            cachedDeliveredOffIcon = DesignUtils.getDrawable(R.drawable.eye_disabled);
             
             int iconTint = 0xff8696a0;
             if (cachedGhostOnIcon != null) cachedGhostOnIcon.setTint(iconTint);
@@ -87,6 +92,8 @@ public class MenuHome extends Feature {
             if (cachedDndOffIcon != null) cachedDndOffIcon.setTint(iconTint);
             if (cachedFreezeOnIcon != null) cachedFreezeOnIcon.setTint(iconTint);
             if (cachedFreezeOffIcon != null) cachedFreezeOffIcon.setTint(iconTint);
+            if (cachedDeliveredOnIcon != null) cachedDeliveredOnIcon.setTint(iconTint);
+            if (cachedDeliveredOffIcon != null) cachedDeliveredOffIcon.setTint(iconTint);
             
             cachedNewChatIcon = DesignUtils.getDrawableByName("vec_ic_chat_add");
             if (cachedNewChatIcon == null) cachedNewChatIcon = DesignUtils.getDrawable(R.drawable.ic_contacts);
@@ -107,6 +114,7 @@ public class MenuHome extends Feature {
                 menuItems.add((menu, activity) -> InsertGhostModeOption(menu, activity, "1".equals(homeMenuMode)));
                 menuItems.add((menu, activity) -> InsertDNDOption(menu, activity, "1".equals(homeMenuMode)));
                 menuItems.add((menu, activity) -> InsertFreezeLastSeenOption(menu, activity, "1".equals(homeMenuMode)));
+                menuItems.add((menu, activity) -> InsertHideDeliveredOption(menu, activity, "1".equals(homeMenuMode)));
                 menuItems.add(this::InsertManageRecordings);
                 menuItems.add((menu, activity) -> InsertRestartButton(menu, activity, false));
                 internalItemsAdded = true;
@@ -213,6 +221,34 @@ public class MenuHome extends Feature {
         });
     }
 
+    private void InsertHideDeliveredOption(Menu menu, Activity activity, boolean buttonAction) {
+        boolean hidereceipt = prefs.getBoolean("hidereceipt", false);
+        if (!prefs.getBoolean("show_hidereceipt", true) && !hidereceipt) return;
+        if (menu.findItem(MENU_ID_DELIVERED) != null) return;
+
+        String title = "Hide Delivered (" + (hidereceipt ? "ON" : "OFF") + ")";
+        try {
+            String moduleTitle = com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.hide_delivered_s, "Hide Delivered");
+            if (moduleTitle != null && !moduleTitle.isEmpty()) {
+                title = String.format(moduleTitle, hidereceipt ? "ON" : "OFF");
+            }
+        } catch (Exception ignored) {}
+
+        var itemMenu = menu.add(0, MENU_ID_DELIVERED, 4, title);
+        if (buttonAction && !(menu instanceof SubMenu)) {
+            Drawable icon = hidereceipt ? cachedDeliveredOnIcon : cachedDeliveredOffIcon;
+            if (icon != null) itemMenu.setIcon(icon);
+            itemMenu.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+        }
+
+        final String finalTitle = title;
+        itemMenu.setOnMenuItemClickListener(item -> {
+            boolean current = prefs.getBoolean("hidereceipt", false);
+            showToggleDialog(activity, finalTitle, "hidereceipt", current);
+            return true;
+        });
+    }
+
     private void InsertNewChat(Menu menu, Activity activity) {
         if (!prefs.getBoolean("newchat", true)) return;
         if (menu.findItem(MENU_ID_NEW_CHAT) != null) return;
@@ -282,7 +318,7 @@ public class MenuHome extends Feature {
             .setMessage(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.restart_wpp, 
                 "It is necessary to restart WhatsApp for the changes in WaEnhancer X to take effect.\n\nDo you want to restart?"))
             .setPositiveButton(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, android.R.string.ok, "OK"), (dialog, which) -> {
-                if ("ghostmode_actual".equals(key) || "dndmode_actual".equals(key) || "freeze_last_seen_actual".equals(key)) {
+                if ("ghostmode_actual".equals(key) || "dndmode_actual".equals(key) || "freeze_last_seen_actual".equals(key) || "hidereceipt".equals(key)) {
                     if (prefs instanceof com.waenhancer.xposed.bridge.client.ProviderSharedPreferences) {
                         prefs.edit().putBoolean(key, !current).commit();
                     } else {

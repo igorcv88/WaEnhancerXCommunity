@@ -5,6 +5,7 @@
 
 [Improvements]
 - Long press any quick tile takes you to the preference in WAEX
+- UI Improvements
 
 [Fixes]
 - Fixed unnecessary ClassNotFoundException errors

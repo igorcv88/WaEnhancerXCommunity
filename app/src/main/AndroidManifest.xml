@@ -369,6 +369,17 @@
             </intent-filter>
         </service>
 
+        <service
+            android:name=".services.HideDeliveredTileService"
+            android:icon="@drawable/eye_disabled"
+            android:label="@string/hidereceipt"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
 
         <provider
             android:name="androidx.core.content.FileProvider"

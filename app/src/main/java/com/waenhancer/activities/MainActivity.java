@@ -339,6 +339,9 @@ public class MainActivity extends BaseActivity {
                     fragmentPos = 0;
                     prefKey = "show_toast_on_contact_online";
                     parentKey = "conversation";
+                } else if (className.contains("HideDeliveredTileService")) {
+                    fragmentPos = 1;
+                    prefKey = "hidereceipt";
                 }
 
                 if (fragmentPos >= 0) {
@@ -413,12 +416,28 @@ public class MainActivity extends BaseActivity {
     }
 
     private void navigateToSubFragmentAndScroll(Fragment parentFragment, String parentKey, String childPreferenceKey) {
+        if (parentFragment instanceof GeneralFragment) {
+            GeneralFragment gf = (GeneralFragment) parentFragment;
+            gf.showTab(parentKey);
+            if (gf.getView() != null) {
+                gf.getView().post(() -> {
+                    if (gf.isAdded()) {
+                        Fragment currentChild = gf.getChildFragmentManager().findFragmentById(R.id.general_frag_container);
+                        if (currentChild instanceof BasePreferenceFragment) {
+                            ((BasePreferenceFragment) currentChild).scrollToPreference(childPreferenceKey);
+                        }
+                    }
+                });
+            }
+            return;
+        }
+
         // Check if the target subfragment is already displayed
         Fragment currentChild = parentFragment.getChildFragmentManager().findFragmentById(R.id.frag_container);
         boolean isAlreadyDisplayed = false;
         
         if (currentChild != null) {
-            if ("general_home".equals(parentKey) && currentChild instanceof GeneralFragment.HomeGeneralPreference) {
+            if ("general_home".equals(parentKey) && currentChild instanceof GeneralFragment.GeneralPreferenceFragment) {
                 isAlreadyDisplayed = true;
             } else if ("homescreen".equals(parentKey) && currentChild instanceof GeneralFragment.HomeScreenGeneralPreference) {
                 isAlreadyDisplayed = true;
@@ -439,7 +458,7 @@ public class MainActivity extends BaseActivity {
 
         switch (parentKey) {
             case "general_home":
-                subFragment = new GeneralFragment.HomeGeneralPreference();
+                subFragment = new GeneralFragment.GeneralPreferenceFragment();
                 break;
             case "homescreen":
                 subFragment = new GeneralFragment.HomeScreenGeneralPreference();

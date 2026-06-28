@@ -7,23 +7,72 @@ import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
 
+import com.google.android.material.tabs.TabLayout;
 import com.waenhancer.R;
 import com.waenhancer.ui.fragments.base.BaseFragment;
 import com.waenhancer.ui.fragments.base.BasePreferenceFragment;
 
 public class GeneralFragment extends BaseFragment {
 
+    private TabLayout tabLayout;
+
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
-        var root = super.onCreateView(inflater, container, savedInstanceState);
+        View root = inflater.inflate(R.layout.fragment_general_tabbed, container, false);
+        tabLayout = root.findViewById(R.id.general_tabs);
+
+        tabLayout.addTab(tabLayout.newTab().setText(R.string.general));
+        tabLayout.addTab(tabLayout.newTab().setText(R.string.home_screen));
+        tabLayout.addTab(tabLayout.newTab().setText(R.string.conversation));
+
+        tabLayout.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
+            @Override
+            public void onTabSelected(TabLayout.Tab tab) {
+                switchTab(tab.getPosition());
+            }
+
+            @Override
+            public void onTabUnselected(TabLayout.Tab tab) {}
+
+            @Override
+            public void onTabReselected(TabLayout.Tab tab) {}
+        });
+
         if (savedInstanceState == null) {
-            getChildFragmentManager().beginTransaction().add(R.id.frag_container, new GeneralPreferenceFragment()).commitNow();
+            switchTab(0);
         }
-        
-        
+
         return root;
+    }
+
+    private void switchTab(int position) {
+        Fragment fragment = switch (position) {
+            case 1 -> new HomeScreenGeneralPreference();
+            case 2 -> new ConversationGeneralPreference();
+            default -> new GeneralPreferenceFragment();
+        };
+        getChildFragmentManager().beginTransaction()
+                .replace(R.id.general_frag_container, fragment)
+                .commit();
+    }
+
+    public void showTab(String parentKey) {
+        if (tabLayout == null) return;
+        int tabIndex = 0;
+        if ("general_home".equals(parentKey) || "general".equals(parentKey)) {
+            tabIndex = 0;
+        } else if ("homescreen".equals(parentKey)) {
+            tabIndex = 1;
+        } else if ("conversation".equals(parentKey)) {
+            tabIndex = 2;
+        }
+        TabLayout.Tab tab = tabLayout.getTabAt(tabIndex);
+        if (tab != null && tabLayout.getSelectedTabPosition() != tabIndex) {
+            tab.select();
+        }
     }
 
     @Override
@@ -47,6 +96,19 @@ public class GeneralFragment extends BaseFragment {
             super.onResume();
             setDisplayHomeAsUpEnabled(false);
             updatePluginPreference();
+            setupManageVersionsPref();
+        }
+
+        private void setupManageVersionsPref() {
+            androidx.preference.Preference pref = findPreference("manage_supported_versions");
+            if (pref != null) {
+                pref.setOnPreferenceClickListener(preference -> {
+                    android.content.Intent intent = new android.content.Intent(requireContext(),
+                            SupportedVersionsActivity.class);
+                    startActivity(intent);
+                    return true;
+                });
+            }
         }
 
         private void updatePluginPreference() {
@@ -91,39 +153,12 @@ public class GeneralFragment extends BaseFragment {
         }
     }
 
-    public static class HomeGeneralPreference extends BasePreferenceFragment {
-        @Override
-        public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
-            super.onCreatePreferences(savedInstanceState, rootKey);
-            setPreferencesFromResource(R.xml.preference_general_home, rootKey);
-            setDisplayHomeAsUpEnabled(true);
-        }
-
-        @Override
-        public void onResume() {
-            super.onResume();
-            setupManageVersionsPref();
-        }
-
-        private void setupManageVersionsPref() {
-            androidx.preference.Preference pref = findPreference("manage_supported_versions");
-            if (pref != null) {
-                pref.setOnPreferenceClickListener(preference -> {
-                    android.content.Intent intent = new android.content.Intent(requireContext(),
-                            SupportedVersionsActivity.class);
-                    startActivity(intent);
-                    return true;
-                });
-            }
-        }
-    }
-
     public static class HomeScreenGeneralPreference extends BasePreferenceFragment {
         @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             super.onCreatePreferences(savedInstanceState, rootKey);
             setPreferencesFromResource(R.xml.preference_general_homescreen, rootKey);
-            setDisplayHomeAsUpEnabled(true);
+            setDisplayHomeAsUpEnabled(false);
         }
     }
 
@@ -132,7 +167,7 @@ public class GeneralFragment extends BaseFragment {
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             super.onCreatePreferences(savedInstanceState, rootKey);
             setPreferencesFromResource(R.xml.preference_general_conversation, rootKey);
-            setDisplayHomeAsUpEnabled(true);
+            setDisplayHomeAsUpEnabled(false);
 
             androidx.preference.EditTextPreference customLimitPref = findPreference("customforwardlimit");
             if (customLimitPref != null) {
@@ -152,5 +187,4 @@ public class GeneralFragment extends BaseFragment {
             }
         }
     }
-
 }
