@@ -531,7 +531,7 @@ public class KeyboxVerification {
         }
     }
 
-    private static boolean isBootloaderSpooferActive(Context context, SharedPreferences prefs) {
+    public static boolean isBootloaderSpooferActive(Context context, SharedPreferences prefs) {
         if (context == null) return false;
         
         String pkg = context.getPackageName();
@@ -581,7 +581,7 @@ public class KeyboxVerification {
         }
     }
 
-    private static boolean isBootloaderAttestationSpoofed() {
+    public static boolean isBootloaderAttestationSpoofed() {
         try {
             KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
             keyStore.load(null);

@@ -1022,9 +1022,9 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
         }
 
         // Live check for spoofer status
-        boolean hookActive = isBootloaderSpooferActive();
-        boolean attestationSpoofed = isBootloaderAttestationSpoofed();
         android.content.Context context = getContext();
+        boolean hookActive = com.waenhancer.utils.KeyboxVerification.isBootloaderSpooferActive(context, mPrefs);
+        boolean attestationSpoofed = com.waenhancer.utils.KeyboxVerification.isBootloaderAttestationSpoofed();
         if (context != null) {
             String currentPkg = context.getPackageName();
             boolean isInWhatsApp = "com.whatsapp".equals(currentPkg) || "com.whatsapp.w4b".equals(currentPkg);
@@ -1343,126 +1343,4 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
             return String.valueOf(xml.hashCode());
         }
     }
-
-    private boolean isBootloaderSpooferActive() {
-        android.content.Context context = getContext();
-        if (context == null) {
-            return false;
-        }
-
-        String pkg = context.getPackageName();
-        boolean isInWhatsApp = "com.whatsapp".equals(pkg) || "com.whatsapp.w4b".equals(pkg);
-
-        if (isInWhatsApp) {
-            try {
-                return context.getPackageManager().hasSystemFeature("com.waenhancer.spoofer.active_check");
-            } catch (Throwable ignored) {
-                return false;
-            }
-        } else {
-            boolean enabled = mPrefs.getBoolean("bootloader_spoofer", false);
-            if (!enabled) {
-                return false;
-            }
-
-            boolean hasXposed = false;
-            try {
-                Class.forName("de.robv.android.xposed.XposedBridge");
-                hasXposed = true;
-            } catch (ClassNotFoundException e) {
-                PackageManager pm = context.getPackageManager();
-                for (String managerPkg : new String[]{"org.lsposed.manager", "org.meowcat.edxposed.manager", "de.robv.android.xposed.installer"}) {
-                    try {
-                        pm.getPackageInfo(managerPkg, 0);
-                        hasXposed = true;
-                        break;
-                    } catch (PackageManager.NameNotFoundException ignored) {
-                    }
-                }
-            }
-            if (!hasXposed) {
-                long lastSeen = mPrefs.getLong("module_heartbeat", 0L);
-                if (lastSeen > 0) {
-                    long diff = System.currentTimeMillis() - lastSeen;
-                    if (diff < 24 * 60 * 60 * 1000L) {
-                        hasXposed = true;
-                    }
-                }
-            }
-            return hasXposed;
-        }
-    }
-
-    private boolean isBootloaderAttestationSpoofed() {
-        try {
-            java.security.KeyStore keyStore = java.security.KeyStore.getInstance("AndroidKeyStore");
-            keyStore.load(null);
-            if (keyStore.containsAlias("waenhancer_attestation_test_key")) {
-                keyStore.deleteEntry("waenhancer_attestation_test_key");
-            }
-
-            java.security.KeyPairGenerator keyPairGenerator = java.security.KeyPairGenerator.getInstance(
-                    "EC", "AndroidKeyStore");
-            android.security.keystore.KeyGenParameterSpec spec = new android.security.keystore.KeyGenParameterSpec.Builder(
-                    "waenhancer_attestation_test_key",
-                    android.security.keystore.KeyProperties.PURPOSE_SIGN)
-                    .setAlgorithmParameterSpec(new java.security.spec.ECGenParameterSpec("secp256r1"))
-                    .setDigests(android.security.keystore.KeyProperties.DIGEST_SHA256)
-                    .setAttestationChallenge("waenhancer_challenge".getBytes())
-                    .build();
-            keyPairGenerator.initialize(spec);
-            keyPairGenerator.generateKeyPair();
-
-            java.security.cert.Certificate[] chain = keyStore.getCertificateChain("waenhancer_attestation_test_key");
-
-            keyStore.deleteEntry("waenhancer_attestation_test_key");
-
-            if (chain == null || chain.length == 0) {
-                return false;
-            }
-
-            if (!(chain[0] instanceof java.security.cert.X509Certificate)) {
-                return false;
-            }
-            java.security.cert.X509Certificate leaf = (java.security.cert.X509Certificate) chain[0];
-            byte[] extVal = leaf.getExtensionValue("1.3.6.1.4.1.11129.2.1.17");
-            if (extVal == null || extVal.length == 0) {
-                return false;
-            }
-
-            org.bouncycastle.asn1.ASN1InputStream is = new org.bouncycastle.asn1.ASN1InputStream(extVal);
-            org.bouncycastle.asn1.ASN1OctetString octetString = (org.bouncycastle.asn1.ASN1OctetString) is.readObject();
-            is.close();
-
-            org.bouncycastle.asn1.ASN1InputStream seqIs = new org.bouncycastle.asn1.ASN1InputStream(octetString.getOctets());
-            org.bouncycastle.asn1.ASN1Sequence keyDescription = (org.bouncycastle.asn1.ASN1Sequence) seqIs.readObject();
-            seqIs.close();
-
-            for (int index : new int[]{6, 7}) {
-                if (keyDescription.size() > index) {
-                    org.bouncycastle.asn1.ASN1Encodable element = keyDescription.getObjectAt(index);
-                    if (element instanceof org.bouncycastle.asn1.ASN1Sequence) {
-                        org.bouncycastle.asn1.ASN1Sequence enforced = (org.bouncycastle.asn1.ASN1Sequence) element;
-                        for (int i = 0; i < enforced.size(); i++) {
-                            org.bouncycastle.asn1.ASN1Encodable obj = enforced.getObjectAt(i);
-                            if (obj instanceof org.bouncycastle.asn1.ASN1TaggedObject) {
-                                org.bouncycastle.asn1.ASN1TaggedObject tagged = (org.bouncycastle.asn1.ASN1TaggedObject) obj;
-                                if (tagged.getTagNo() == 704) {
-                                    org.bouncycastle.asn1.ASN1Sequence rootOfTrust = org.bouncycastle.asn1.ASN1Sequence.getInstance(tagged, true);
-                                    org.bouncycastle.asn1.ASN1Boolean deviceLocked = (org.bouncycastle.asn1.ASN1Boolean) rootOfTrust.getObjectAt(1);
-                                    return deviceLocked.isTrue();
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            android.util.Log.e("WAEX", "Attestation check failed: " + t.getMessage());
-        }
-        return false;
-    }
-
-    // showKeyboxVerificationDialog has been moved to KeyboxVerificationImpl in the pro submodule.
-    // Use ProHelper.showKeyboxVerificationDialog(fragment) to invoke it.
 }
