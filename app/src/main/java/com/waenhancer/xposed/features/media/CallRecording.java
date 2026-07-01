@@ -79,7 +79,7 @@ public class CallRecording extends Feature {
 
     @Override
     public void doHook() throws Throwable {
-        logDebug("WAEX: Call Recording feature initializing...");
+        /* Log removed */
         hookCallStateChanges();
     }
 
@@ -105,7 +105,7 @@ public class CallRecording extends Feature {
                     "VoiceServiceEventCallback"
             );
             if (clsCallEventCallback != null) {
-                logDebug("WAEX: Found VoiceServiceEventCallback: " + clsCallEventCallback.getName());
+                /* Log removed */
 
                 try {
                     XposedBridge.hookAllMethods(clsCallEventCallback, "fieldstatsReady", new XC_MethodHook() {
@@ -126,7 +126,7 @@ public class CallRecording extends Feature {
                         if (!prefs.getBoolean("call_recording_enable", false)) {
                             return;
                         }
-                        logDebug("WAEX: soundPortCreated - will record after 3s");
+                        /* Log removed */
                         extractUserJid(param.thisObject);
                         isCallConnected.set(true);
                         scheduleDelayedStart();
@@ -145,7 +145,7 @@ public class CallRecording extends Feature {
                     "VoipActivity"
             );
             if (voipActivityClass != null && android.app.Activity.class.isAssignableFrom(voipActivityClass)) {
-                logDebug("WAEX: Found VoipActivity: " + voipActivityClass.getName());
+                /* Log removed */
 
                 XposedBridge.hookAllMethods(voipActivityClass, "onDestroy", new XC_MethodHook() {
                     @Override
@@ -162,13 +162,11 @@ public class CallRecording extends Feature {
         // Intentionally avoid hooking HomeActivity's options menu here.
         // That path is exercised during native tab changes and reflective
         // fragment scanning in the menu hook was introducing visible jank
-        // while swiping WhatsApp's home tabs.
-
-        logDebug("WAEX: Call Recording initialized with " + hooksInstalled + " hooks");
+        // while swiping WhatsApp'/* Log removed */
     }
 
     private void handleCallEnded(@NonNull String reason) {
-        logDebug("WAEX: Call ended by " + reason);
+        /* Log removed */
         isCallConnected.set(false);
         cancelDelayedStart();
         stopRecording();
@@ -178,11 +176,11 @@ public class CallRecording extends Feature {
         cancelDelayedStart();
         ScheduledFuture<?> future = delayedStartScheduler.schedule(() -> {
             if (!isCallConnected.get()) {
-                logDebug("WAEX: Delayed start cancelled, call not connected");
+                /* Log removed */
                 return;
             }
             if (isRecording.get()) {
-                logDebug("WAEX: Delayed start ignored, already recording");
+                /* Log removed */
                 return;
             }
             startRecording();
@@ -218,7 +216,7 @@ public class CallRecording extends Feature {
                 FMessageWpp.UserJid userJid = new FMessageWpp.UserJid(peerJid);
                 if (!userJid.isNull()) {
                     currentUserJid.set(userJid);
-                    logDebug("WAEX: Found phone from UserJid: " + userJid.getPhoneNumber());
+                    /* Log removed */
                     return;
                 }
             }
@@ -234,7 +232,7 @@ public class CallRecording extends Feature {
                     FMessageWpp.UserJid userJid = new FMessageWpp.UserJid(key);
                     if (!userJid.isNull()) {
                         currentUserJid.set(userJid);
-                        logDebug("WAEX: Found phone from single participant: " + userJid.getPhoneNumber());
+                        /* Log removed */
                         return;
                     }
                 }
@@ -251,7 +249,7 @@ public class CallRecording extends Feature {
 
         try {
             String packageName = FeatureLoader.mApp.getPackageName();
-            logDebug("WAEX: Granting CAPTURE_AUDIO_OUTPUT via root");
+            /* Log removed */
 
             String[] commands = {
                     "pm grant " + packageName + " android.permission.CAPTURE_AUDIO_OUTPUT",
@@ -262,7 +260,7 @@ public class CallRecording extends Feature {
                 try {
                     Process process = Runtime.getRuntime().exec(new String[]{"su", "-c", cmd});
                     int exitCode = process.waitFor();
-                    logDebug("WAEX: " + cmd + " exit: " + exitCode);
+                    /* Log removed */
                 } catch (Exception e) {
                     logDebug("WAEX: Root failed: " + e.getMessage());
                 }
@@ -276,18 +274,18 @@ public class CallRecording extends Feature {
 
     private synchronized void startRecording() {
         if (isRecording.get()) {
-            logDebug("WAEX: Already recording");
+            /* Log removed */
             return;
         }
 
         FMessageWpp.UserJid userJid = currentUserJid.get();
         if (userJid != null && !shouldRecord(userJid.getPhoneNumber())) {
-            logDebug("WAEX: Skipping recording due to privacy settings for: " + userJid.getPhoneNumber());
+            /* Log removed */
             return;
         }
 
         if (!isCallConnected.get()) {
-            logDebug("WAEX: Skipping recording, call is not connected");
+            /* Log removed */
             return;
         }
 
@@ -296,7 +294,7 @@ public class CallRecording extends Feature {
                     FeatureLoader.mApp,
                     Manifest.permission.RECORD_AUDIO
             ) != PackageManager.PERMISSION_GRANTED) {
-                logDebug("WAEX: No RECORD_AUDIO permission");
+                /* Log removed */
                 return;
             }
 
@@ -362,7 +360,7 @@ public class CallRecording extends Feature {
             for (int i = 0; i < audioSources.length; i++) {
                 MediaRecorder testRecorder = new MediaRecorder();
                 try {
-                    logDebug("WAEX: Trying " + sourceNames[i]);
+                    /* Log removed */
                     testRecorder.setAudioSource(audioSources[i]);
                     testRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
                     testRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
@@ -374,7 +372,7 @@ public class CallRecording extends Feature {
 
                     selectedRecorder = testRecorder;
                     usedSource = sourceNames[i];
-                    logDebug("WAEX: SUCCESS " + sourceNames[i]);
+                    /* Log removed */
                     break;
                 } catch (Exception e) {
                     logDebug("WAEX: FAILED " + sourceNames[i] + ": " + e.getMessage());
@@ -387,7 +385,7 @@ public class CallRecording extends Feature {
             }
 
             if (selectedRecorder == null) {
-                logDebug("WAEX: All audio sources failed");
+                /* Log removed */
                 closeOutputResources(false);
                 return;
             }
@@ -405,7 +403,7 @@ public class CallRecording extends Feature {
                 return;
             }
 
-            logDebug("WAEX: Recording started (" + usedSource + "): " + outputTarget.file.getAbsolutePath());
+            /* Log removed */
             if (prefs.getBoolean("call_recording_toast", false)) {
                 Utils.showToast("Recording started", Toast.LENGTH_SHORT);
             }
@@ -450,7 +448,7 @@ public class CallRecording extends Feature {
 
             File outputFile = outputFileRef.getAndSet(null);
             closeOutputResources(!saved);
-            logDebug("WAEX: Recording stopped, file=" + (outputFile != null ? outputFile.getAbsolutePath() : "unknown"));
+            /* Log removed */
 
             if (saved && outputFile != null) {
                 Utils.scanFile(outputFile);
@@ -485,7 +483,7 @@ public class CallRecording extends Feature {
             }
         }
         if (deleteOutputFile && outputFile != null && outputFile.exists() && !outputFile.delete()) {
-            logDebug("WAEX: Could not delete incomplete recording: " + outputFile.getAbsolutePath());
+            /* Log removed */
         }
     }
 
@@ -507,7 +505,7 @@ public class CallRecording extends Feature {
                             parcelFileDescriptor.getFileDescriptor()
                     );
                 }
-                logDebug("WAEX: Bridge openFile returned null, fallback to Android/data path");
+                /* Log removed */
             } catch (Throwable t) {
                 logDebug("WAEX: Bridge openFile failed, fallback to Android/data path: " + t.getMessage());
             }
@@ -525,7 +523,7 @@ public class CallRecording extends Feature {
 
         File fallbackFile = new File(fallbackDir, fileName);
         FileOutputStream fallbackStream = new FileOutputStream(fallbackFile);
-        logDebug("WAEX: Recording fallback path in Android/data: " + fallbackFile.getAbsolutePath());
+        /* Log removed */
         return new OutputTarget(fallbackFile, null, fallbackStream, fallbackStream.getFD());
     }
 

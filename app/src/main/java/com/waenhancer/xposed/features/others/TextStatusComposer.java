@@ -52,7 +52,7 @@ public class TextStatusComposer extends Feature {
                     }
                     
                     if (tempViewRoot == null) {
-                        XposedBridge.log("[WAEX-TextStatusComposer] Error: viewRoot is null!");
+                        /* Log removed */
                         return;
                     }
                     final View viewRoot = tempViewRoot;

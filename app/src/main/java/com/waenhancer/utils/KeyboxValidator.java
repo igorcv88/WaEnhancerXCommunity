@@ -74,14 +74,14 @@ public class KeyboxValidator {
         ServiceConnection conn = new ServiceConnection() {
             @Override
             public void onServiceConnected(ComponentName name, IBinder service) {
-                Log.d(TAG, "ProService connected");
+                /* Log removed */
                 serviceHolder[0] = IProService.Stub.asInterface(service);
                 latch.countDown();
             }
 
             @Override
             public void onServiceDisconnected(ComponentName name) {
-                Log.d(TAG, "ProService disconnected");
+                /* Log removed */
                 latch.countDown();
             }
         };

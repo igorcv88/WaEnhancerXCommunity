@@ -223,7 +223,7 @@ public class ProviderSharedPreferences implements SharedPreferences {
             ;
             Serializable serializable = result.getSerializable("prefs");
             if (!(serializable instanceof Map)) {
-                android.util.Log.e("WAEX", "Hydration failed: result 'prefs' is not a Map (type: " + (serializable != null ? serializable.getClass().getName() : "null") + ")");
+                /* Log removed */
                 return;
             }
             Map<?, ?> rawMap = (Map<?, ?>) serializable;

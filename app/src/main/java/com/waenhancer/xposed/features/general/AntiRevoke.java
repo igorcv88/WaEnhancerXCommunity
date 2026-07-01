@@ -117,16 +117,16 @@ public class AntiRevoke extends Feature {
     public void doHook() throws Exception {
 
         var antiRevokeMessageMethod = Unobfuscator.loadAntiRevokeMessageMethod(classLoader);
-        logDebug(Unobfuscator.getMethodDescriptor(antiRevokeMessageMethod));
+        /* Log removed */
 
         var unknownStatusPlaybackMethod = Unobfuscator.loadUnknownStatusPlaybackMethod(classLoader);
-        logDebug(Unobfuscator.getMethodDescriptor(unknownStatusPlaybackMethod));
+        /* Log removed */
 
         Class<?> statusPlaybackClass = Unobfuscator.loadStatusPlaybackViewClass(classLoader);
-        logDebug(statusPlaybackClass);
+        /* Log removed */
 
         var antiRevokeFStatusMethod = Unobfuscator.loadAntiRevokeFStatusMethod(classLoader);
-        logDebug(Unobfuscator.getMethodDescriptor(antiRevokeFStatusMethod));
+        /* Log removed */
 
         XposedBridge.hookMethod(antiRevokeFStatusMethod, new XC_MethodHook() {
             @Override
@@ -150,7 +150,7 @@ public class AntiRevoke extends Feature {
                 
                 Object fMessageObj = ReflectionUtils.getArg(param.args, FMessageWpp.TYPE, 0);
                 if (fMessageObj == null) {
-                    logDebug("FMessageObj is null in revoke!");
+                    /* Log removed */
                     return;
                 }
 
@@ -212,7 +212,7 @@ public class AntiRevoke extends Feature {
 
                 var textViews = ReflectionUtils.getFieldsByType(statusPlaybackClass, TextView.class);
                 if (textViews.isEmpty()) {
-                    log("Could not find TextView");
+                    /* Log removed */
                     return;
                 }
                 int dateId = Utils.getID("date", "id");

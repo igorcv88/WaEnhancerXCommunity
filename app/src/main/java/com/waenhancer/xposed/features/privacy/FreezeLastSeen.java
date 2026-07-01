@@ -24,7 +24,7 @@ public class FreezeLastSeen extends Feature {
 
         if (freezeLastSeen || freezeLastSeenOption || ghostmode) {
             var method = Unobfuscator.loadFreezeSeenMethod(classLoader);
-            logDebug(Unobfuscator.getMethodDescriptor(method));
+            /* Log removed */
             XposedBridge.hookMethod(method, XC_MethodReplacement.DO_NOTHING);
         }
     }

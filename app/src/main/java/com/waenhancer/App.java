@@ -194,7 +194,7 @@ public class App extends Application {
             }
 
             if (isDeadSystem) {
-                android.util.Log.e("App", "Quietly ignoring DeadSystemException/DeadObjectException to prevent polluting Crashlytics", throwable);
+                /* Log removed */
                 System.exit(0);
                 return;
             }

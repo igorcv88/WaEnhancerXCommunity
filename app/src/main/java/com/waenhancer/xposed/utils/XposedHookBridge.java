@@ -153,11 +153,11 @@ public class XposedHookBridge {
     }
 
     public static void log(String message) {
-        XposedBridge.log(message);
+        /* Log removed */
     }
 
     public static void log(Throwable t) {
-        XposedBridge.log(t);
+        /* Log removed */
     }
 
     public static Object callMethod(Object obj, String methodName, Object... args) {

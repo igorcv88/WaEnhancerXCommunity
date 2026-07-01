@@ -20,7 +20,7 @@ public class DndMode extends Feature {
     public void doHook() throws Exception {
         if (!prefs.getBoolean("dndmode_actual", false)) return;
         var dndMethod = Unobfuscator.loadDndModeMethod(classLoader);
-        logDebug(Unobfuscator.getMethodDescriptor(dndMethod));
+        /* Log removed */
         XposedBridge.hookMethod(dndMethod, XC_MethodReplacement.DO_NOTHING);
     }
 

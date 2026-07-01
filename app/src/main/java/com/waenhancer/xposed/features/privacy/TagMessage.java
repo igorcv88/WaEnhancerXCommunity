@@ -32,9 +32,9 @@ public class TagMessage extends Feature {
     public void doHook() throws Exception {
 
         Method method = Unobfuscator.loadForwardTagMethod(classLoader);
-        logDebug(Unobfuscator.getMethodDescriptor(method));
+        /* Log removed */
         Class<?> forwardClass = Unobfuscator.loadForwardClassMethod(classLoader);
-        logDebug("ForwardClass: " + forwardClass.getName());
+        /* Log removed */
 
         XposedBridge.hookMethod(method, new XC_MethodHook() {
             @Override

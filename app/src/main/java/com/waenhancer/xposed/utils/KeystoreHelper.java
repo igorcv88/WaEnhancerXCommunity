@@ -34,7 +34,7 @@ public class KeystoreHelper {
                 if (getPublicKeyBase64() != null) {
                     return;
                 } else {
-                    Log.w(TAG, "generateRSAKeyPair: Existing key is invalid (public key null). Deleting and regenerating.");
+                    /* Log removed */
                     try {
                         keyStore.deleteEntry(ALIAS);
                     } catch (Exception ignored) {}

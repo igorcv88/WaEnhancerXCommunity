@@ -1725,14 +1725,13 @@ public class Unobfuscator {
                     break;
                 }
                 
-                XposedBridge.log("[WAEX-DebugMenu] Scanning class: " + clsName);
+                /* Log removed */
                 
                 // Debug log all methods taking Menu
                 for (Method m : current.getDeclaredMethods()) {
                     for (Class<?> pType : m.getParameterTypes()) {
                         if (pType.equals(Menu.class)) {
-                            XposedBridge.log("[WAEX-DebugMenu] Found method in " + clsName + ": " + m.getName() + " params: " 
-                                    + Arrays.toString(m.getParameterTypes()) + " return: " + m.getReturnType());
+                            /* Log removed */
                         }
                     }
                 }
@@ -1743,7 +1742,7 @@ public class Unobfuscator {
                         .filter(m -> m.getName().equals("onCreateOptionsMenu"))
                         .findFirst().orElse(null);
                 if (selectedMethod != null) {
-                    XposedBridge.log("[WAEX-DebugMenu] Found onCreateOptionsMenu method: " + selectedMethod.getName() + " in " + clsName);
+                    /* Log removed */
                     return selectedMethod;
                 }
 
@@ -1753,7 +1752,7 @@ public class Unobfuscator {
                         .filter(m -> m.getName().equals("onCreatePanelMenu"))
                         .findFirst().orElse(null);
                 if (selectedMethod != null) {
-                    XposedBridge.log("[WAEX-DebugMenu] Found onCreatePanelMenu method: " + selectedMethod.getName() + " in " + clsName);
+                    /* Log removed */
                     return selectedMethod;
                 }
 
@@ -1762,7 +1761,7 @@ public class Unobfuscator {
                         .filter(m -> m.getParameterCount() == 1 && m.getParameterTypes()[0].equals(Menu.class)).findFirst()
                         .orElse(null);
                 if (selectedMethod != null) {
-                    XposedBridge.log("[WAEX-DebugMenu] Found single-parameter Menu method: " + selectedMethod.getName() + " in " + clsName);
+                    /* Log removed */
                     return selectedMethod;
                 }
 
@@ -1771,7 +1770,7 @@ public class Unobfuscator {
                         .filter(m -> m.getParameterCount() >= 1 && m.getParameterTypes()[0].equals(Menu.class)).findFirst()
                         .orElse(null);
                 if (selectedMethod != null) {
-                    XposedBridge.log("[WAEX-DebugMenu] Found relaxed matching method: " + selectedMethod.getName() + " in " + clsName);
+                    /* Log removed */
                     return selectedMethod;
                 }
                 
@@ -1782,7 +1781,7 @@ public class Unobfuscator {
             try {
                 selectedMethod = XposedHelpers.findMethodExact(conversationClass, "onCreateOptionsMenu", Menu.class);
                 if (selectedMethod != null) {
-                    XposedBridge.log("[WAEX-DebugMenu] Found onCreateOptionsMenu via reflection: " + selectedMethod.toString());
+                    /* Log removed */
                     return selectedMethod;
                 }
             } catch (Throwable ignored) {}
@@ -1790,7 +1789,7 @@ public class Unobfuscator {
             try {
                 selectedMethod = XposedHelpers.findMethodExact(conversationClass, "onCreatePanelMenu", int.class, Menu.class);
                 if (selectedMethod != null) {
-                    XposedBridge.log("[WAEX-DebugMenu] Found onCreatePanelMenu via reflection: " + selectedMethod.toString());
+                    /* Log removed */
                     return selectedMethod;
                 }
             } catch (Throwable ignored) {}

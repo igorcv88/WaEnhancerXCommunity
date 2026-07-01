@@ -419,11 +419,11 @@ public class FeatureLoader {
 
     public static void disableExpirationVersion(ClassLoader classLoader) throws Exception {
         var expirationClass = Unobfuscator.loadExpirationClass(classLoader);
-        XposedBridge.log("[WAEX] Expiration class found: " + expirationClass.getName());
+        /* Log removed */
         for (var method : expirationClass.getDeclaredMethods()) {
             Class<?> returnType = method.getReturnType();
             if (returnType.equals(Date.class) || returnType.equals(long.class) || returnType.equals(Long.class)) {
-                XposedBridge.log("[WAEX] Hooking expiration method: " + method.getName() + " returning " + returnType.getSimpleName());
+                /* Log removed */
                 XposedBridge.hookMethod(method, new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
@@ -438,7 +438,7 @@ public class FeatureLoader {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                         Object result = param.getResult();
-                        XposedBridge.log("[WAEX] Method " + param.method.getName() + " returned (hooked): " + result);
+                        /* Log removed */
                     }
                 });
             }
@@ -490,8 +490,8 @@ public class FeatureLoader {
             }
 
             try {
-                XposedBridge.log("[WAEX] XC_MethodHook classloader: " + de.robv.android.xposed.XC_MethodHook.class.getClassLoader() + " (hash: " + System.identityHashCode(de.robv.android.xposed.XC_MethodHook.class.getClassLoader()) + ")");
-                XposedBridge.log("[WAEX] XposedBridge classloader: " + de.robv.android.xposed.XposedBridge.class.getClassLoader() + " (hash: " + System.identityHashCode(de.robv.android.xposed.XposedBridge.class.getClassLoader()) + ")");
+                /* Log removed */
+                /* Log removed */
             } catch (Throwable t) {
                 XposedBridge.log("[WAEX] Failed to inspect Xposed classloaders: " + t.toString());
             }
@@ -1034,13 +1034,13 @@ public class FeatureLoader {
             ClassLoader xposedFrameworkLoader = de.robv.android.xposed.XC_MethodHook.class.getClassLoader();
             if (xposedFrameworkLoader == null) {
                 xposedFrameworkLoader = Thread.currentThread().getContextClassLoader();
-                XposedBridge.log("[WAEX] XC_MethodHook classloader was null, using thread context classloader: " + xposedFrameworkLoader);
+                /* Log removed */
             }
-            XposedBridge.log("[WAEX] Using xposedFrameworkLoader: " + xposedFrameworkLoader + " (XposedBridge was: " + de.robv.android.xposed.XposedBridge.class.getClassLoader() + ")");
+            /* Log removed */
             ClassLoader proLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(mApp, loader, xposedFrameworkLoader);
             if (proLoader != null) {
                 System.getProperties().put("com.waex.helper.classloader", proLoader);
-                XposedBridge.log("[WAEX] Pro plugin ClassLoader loaded successfully. Injected into System properties.");
+                /* Log removed */
 
                 // Reflectively verify if the native library loaded successfully
                 boolean isNativeLibLoaded = false;
@@ -1054,12 +1054,12 @@ public class FeatureLoader {
                 }
 
                 if (isNativeLibLoaded) {
-                    XposedBridge.log("[WAEX] Pro native library (pro_native) loaded successfully!");
+                    /* Log removed */
                 } else {
-                    XposedBridge.log("[WAEX] WARNING: Pro native library (pro_native) is NOT loaded. Pro features will be inactive! Check logcat for library loading details.");
+                    /* Log removed */
                 }
 
-                XposedBridge.log("[WAEX] Loading Pro plugin entry point...");
+                /* Log removed */
                 Class<?> pluginEntryClass = proLoader.loadClass("com.waex.helper.PluginEntry");
                 IPlugin pluginInstance = (IPlugin) pluginEntryClass.getDeclaredConstructor().newInstance();
                 
@@ -1083,10 +1083,10 @@ public class FeatureLoader {
                         long timemillis = System.currentTimeMillis();
                         String capName = capability.getPluginName();
                         try {
-                            XposedBridge.log("[WAEX] Executing capability: " + capName);
+                            /* Log removed */
                             capability.doHook();
                             long timemillis2 = System.currentTimeMillis() - timemillis;
-                            XposedBridge.log("[WAEX] Executed Pro capability " + capName + " in " + timemillis2 + "ms");
+                            /* Log removed */
                         } catch (Throwable e) {
                             XposedBridge.log("[WAEX] Error executing Pro capability " + capName + ": " + e.toString());
                             XposedBridge.log(e);
@@ -1104,7 +1104,7 @@ public class FeatureLoader {
                     }, executorService);
                 }
             } else {
-                XposedBridge.log("[WAEX] Pro plugin is not installed or failed to load ClassLoader.");
+                /* Log removed */
             }
         } catch (Throwable t) {
             XposedBridge.log("[WAEX] Error initializing Pro plugins loader: " + t.toString());

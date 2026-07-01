@@ -118,7 +118,7 @@ public class BridgeClient extends BaseClient implements ServiceConnection {
         connect().whenComplete((canLoad, ex) -> {
             try {
                 if (ex != null || !Boolean.TRUE.equals(canLoad)) {
-                    Log.e("BridgeClient", "failed to reconnect to service");
+                    /* Log removed */
                     Utils.doRestart(context);
                 } else {
                     Utils.showToast("Reconnected to Bridge", Toast.LENGTH_SHORT);

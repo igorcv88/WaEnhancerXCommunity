@@ -418,7 +418,7 @@ public class Others extends Feature {
                     }
                 });
             } else {
-                XposedBridge.log("[WAEX] Could not find onResume method in Conversation hierarchy");
+                /* Log removed */
             }
         } catch (Throwable t) {
             XposedBridge.log("[WAEX] Failed to hook Conversation: " + t.toString());
@@ -1545,14 +1545,14 @@ public class Others extends Feature {
     private void disable_defEmojis() throws Exception {
         var spanClasses = Unobfuscator.loadEmojiSpanClasses(classLoader);
         if (spanClasses == null || spanClasses.length == 0) {
-            XposedBridge.log("[WAEX] loadEmojiSpanClasses returned 0 classes");
+            /* Log removed */
         } else {
-            XposedBridge.log("[WAEX] loadEmojiSpanClasses found " + spanClasses.length + " classes");
+            /* Log removed */
             for (var spanClass : spanClasses) {
-                XposedBridge.log("[WAEX] Inspecting class: " + spanClass.getName());
+                /* Log removed */
                 try {
                     if (java.lang.reflect.Modifier.isAbstract(spanClass.getModifiers())) {
-                        XposedBridge.log("[WAEX] Skipping abstract class: " + spanClass.getName());
+                        /* Log removed */
                         continue;
                     }
                     var methods = ReflectionUtils.findAllMethodsUsingFilter(spanClass, method -> 
@@ -1560,9 +1560,9 @@ public class Others extends Feature {
                         method.getParameterCount() == 9 &&
                         !java.lang.reflect.Modifier.isAbstract(method.getModifiers())
                     );
-                    XposedBridge.log("[WAEX] Found " + methods.length + " non-abstract draw methods in " + spanClass.getName());
+                    /* Log removed */
                     for (var method : methods) {
-                        XposedBridge.log("[WAEX] Hooking draw method: " + method.toString());
+                        /* Log removed */
                         XposedBridge.hookMethod(method, new XC_MethodHook() {
                             @Override
                             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
@@ -1656,7 +1656,7 @@ public class Others extends Feature {
 
     private void hookSearchbar(String filterChats) throws Exception {
         Method searchbar = Unobfuscator.loadViewAddSearchBarMethod(classLoader);
-        log("ADD HEADER VIEW: " + DexSignUtil.getMethodDescriptor(searchbar));
+        /* Log removed */
         var searchBarID = Utils.getID("my_search_bar", "id");
 
         XposedBridge.hookMethod(searchbar, new XC_MethodHook() {

@@ -155,7 +155,7 @@ public class SeenTick extends Feature {
         // hook current status for other features (e.g. StatusDownload activeStatusObj tracking)
         try {
             var setPageActiveMethod = Unobfuscator.loadStatusActivePage(classLoader);
-            logDebug(Unobfuscator.getMethodDescriptor(setPageActiveMethod));
+            /* Log removed */
             var fieldList = ReflectionUtils.getFieldByType(setPageActiveMethod.getDeclaringClass(), List.class);
 
             XposedBridge.hookMethod(setPageActiveMethod, new XC_MethodHook() {
@@ -201,7 +201,7 @@ public class SeenTick extends Feature {
 
     private void hookStatusScreen(int ticktype) throws Exception {
         var viewButtonMethod = Unobfuscator.loadBlueOnReplayViewButtonMethod(classLoader);
-        logDebug(Unobfuscator.getMethodDescriptor(viewButtonMethod));
+        /* Log removed */
         var viewStatusField = Unobfuscator.loadBlueOnReplayViewButtonOutSideField(classLoader);
         if (ticktype == 1) {
             XposedBridge.hookMethod(viewButtonMethod, new XC_MethodHook() {
@@ -210,7 +210,7 @@ public class SeenTick extends Feature {
                     if (!prefs.getBoolean("hidestatusview", false)) return;
                     var fMessageObj = ReflectionUtils.findFMessageInObject(param.thisObject, FMessageWpp.TYPE, FMessageWpp.Key.TYPE, classLoader);
                     if (fMessageObj == null) {
-                        logDebug("Failed to find fMessageField");
+                        /* Log removed */
                         return;
                     }
                     var fMessage = new FMessageWpp(fMessageObj);
@@ -267,7 +267,7 @@ public class SeenTick extends Feature {
 
     private void hookConversationScreen(int ticktype) throws Exception {
         var onCreateMenuConversationMethod = Unobfuscator.loadBlueOnReplayCreateMenuConversationMethod(classLoader);
-        logDebug(Unobfuscator.getMethodDescriptor(onCreateMenuConversationMethod));
+        /* Log removed */
         XposedBridge.hookMethod(onCreateMenuConversationMethod, new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
@@ -338,7 +338,7 @@ public class SeenTick extends Feature {
 
     private void hookViewOnceScreen(int ticktype) throws Exception {
         var menuMethod = Unobfuscator.loadViewOnceDownloadMenuMethod(classLoader);
-        logDebug(Unobfuscator.getMethodDescriptor(menuMethod));
+        /* Log removed */
 
         XposedBridge.hookMethod(menuMethod, new XC_MethodHook() {
             @Override
@@ -469,12 +469,12 @@ public class SeenTick extends Feature {
             var paramTypes = sendJobConstrutor.getParameterTypes();
             jidIndexes = ReflectionUtils.findClassesOfType(paramTypes, FMessageWpp.UserJid.TYPE_JID);
             if (jidIndexes.size() < 2) {
-                logDebug("Failed to find JID indexes for SendReadReceiptJob");
+                /* Log removed */
                 return Collections.emptyList();
             }
             messageIdIndex = ReflectionUtils.findIndexOfType(paramTypes, String[].class);
             if (messageIdIndex == -1) {
-                logDebug("Failed to find messageId index for SendReadReceiptJob");
+                /* Log removed */
                 return Collections.emptyList();
             }
 
@@ -544,13 +544,13 @@ public class SeenTick extends Feature {
 
                 var jidIndexes = ReflectionUtils.findClassesOfType(paramTypes, FMessageWpp.UserJid.TYPE_JID);
                 if (jidIndexes.size() < 2) {
-                    logDebug("Failed to find JID indexes for SendReadReceiptJob (Status)");
+                    /* Log removed */
                     return;
                 }
 
                 int messageIdIndex = ReflectionUtils.findIndexOfType(paramTypes, String[].class);
                 if (messageIdIndex == -1) {
-                    logDebug("Failed to find messageId index for SendReadReceiptJob (Status)");
+                    /* Log removed */
                     return;
                 }
 

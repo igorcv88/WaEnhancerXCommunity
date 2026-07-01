@@ -41,7 +41,7 @@ public class IsolatedParentClassLoader extends ClassLoader {
                 return de.robv.android.xposed.XSharedPreferences.class;
             }
 
-            android.util.Log.d("WAEX-Loader", "Attempting to load other Xposed class: " + name);
+            /* Log removed */
             try {
                 Class<?> clazz = Class.forName(name, false, null);
                 return clazz;
@@ -72,7 +72,7 @@ public class IsolatedParentClassLoader extends ClassLoader {
             try {
                 return Class.forName(name);
             } catch (Throwable ignored) {}
-            android.util.Log.e("WAEX-Loader", "Failed all attempts to load other Xposed class: " + name);
+            /* Log removed */
         }
 
         // 3. Block com.waex.helper.* from parent delegation

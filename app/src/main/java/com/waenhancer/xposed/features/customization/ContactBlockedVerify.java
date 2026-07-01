@@ -183,7 +183,7 @@ public class ContactBlockedVerify extends Feature {
             var onErrorOpt = Arrays.stream(methods).filter(method -> List.of(method.getParameterTypes()).contains(String.class)).findFirst();
             
             if (onSuccessOpt.isEmpty() || onErrorOpt.isEmpty()) {
-                logDebug("Could not find onSuccess or onError methods in dialerProfilePictureLoader");
+                /* Log removed */
                 return;
             }
             

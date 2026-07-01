@@ -27,7 +27,7 @@ public class CopyStatus extends Feature {
         if (!prefs.getBoolean("copystatus", false)) return;
 
         var viewButtonMethod = Unobfuscator.loadBlueOnReplayViewButtonMethod(classLoader);
-        logDebug(Unobfuscator.getMethodDescriptor(viewButtonMethod));
+        /* Log removed */
 
         XposedBridge.hookMethod(viewButtonMethod, new XC_MethodHook() {
             @Override

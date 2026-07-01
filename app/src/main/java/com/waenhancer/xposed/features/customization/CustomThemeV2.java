@@ -155,7 +155,7 @@ public class CustomThemeV2 extends Feature {
                     });
         } else {
             // Log only in debug mode - theming is disabled so skip expensive hooks
-            logDebug("Theming disabled - skipping expensive theme hooks for performance");
+            /* Log removed */
         }
     }
 

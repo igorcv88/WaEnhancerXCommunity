@@ -216,7 +216,7 @@ public class ProHelper {
         }
 
         if (cachedPath != null && !cachedPath.trim().isEmpty() && new java.io.File(cachedPath).exists()) {
-            android.util.Log.i("WaeX-ClassDebug", "Found pro plugin APK path: " + cachedPath);
+            /* Log removed */
             
             // 1. Try to get nativeLibraryDir from package manager if cachedLibPath is missing
             if (cachedLibPath == null || cachedLibPath.trim().isEmpty()) {
@@ -224,7 +224,7 @@ public class ProHelper {
                     try {
                         android.content.pm.ApplicationInfo appInfo = context.getPackageManager().getApplicationInfo("com.waex.helper", 0);
                         cachedLibPath = appInfo.nativeLibraryDir;
-                        android.util.Log.i("WaeX-ClassDebug", "Resolved nativeLibraryDir from PackageInfo: " + cachedLibPath);
+                        /* Log removed */
                     } catch (Throwable t) {
                         android.util.Log.w("WaeX-ClassDebug", "Could not get nativeLibraryDir from package manager: " + t.toString());
                     }
@@ -250,7 +250,7 @@ public class ProHelper {
                             java.io.File abiDir = new java.io.File(libDir, abi);
                             if (new java.io.File(abiDir, "libpro_native.so").exists()) {
                                 cachedLibPath = abiDir.getAbsolutePath();
-                                android.util.Log.i("WaeX-ClassDebug", "Resolved nativeLibraryDir via parent ABI check: " + cachedLibPath);
+                                /* Log removed */
                                 break;
                             }
                         }
@@ -279,7 +279,7 @@ public class ProHelper {
             libPathBuilder.append(cachedPath);
 
             String finalLibPath = libPathBuilder.toString();
-            android.util.Log.i("WaeX-ClassDebug", "Constructed final native library search path: " + finalLibPath);
+            /* Log removed */
 
             java.io.File optimizedDir = null;
             if (context != null) {
@@ -297,8 +297,7 @@ public class ProHelper {
 
             // Instead of creating a new DexClassLoader (which isolates the plugin and prevents LSPosed from rewriting its Xposed references,
             // causing NoClassDefFoundError name mismatches), we append the pro plugin APK directly to the host module ClassLoader.
-            // Since the host ClassLoader is registered with LSPosed, all loaded pro plugin classes will be correctly rewritten.
-            android.util.Log.i("WaeX-ClassDebug", "Appending pro plugin to host ClassLoader: " + proHelperLoader);
+            // Since the host ClassLoader is registered with LSPosed, /* Log removed */
             
             appendDexPath(proHelperLoader, cachedPath, finalLibPath);
             companionPluginClassLoader = proHelperLoader;
@@ -322,11 +321,11 @@ public class ProHelper {
                     }
                 }
                 if (soFile != null && soFile.exists()) {
-                    android.util.Log.i("WaeX-ClassDebug", "Loading pro native library explicitly from: " + soFile.getAbsolutePath());
+                    /* Log removed */
                     System.load(soFile.getAbsolutePath());
-                    android.util.Log.i("WaeX-ClassDebug", "Successfully loaded pro native library explicitly!");
+                    /* Log removed */
                 } else {
-                    android.util.Log.e("WaeX-ClassDebug", "Could not find libpro_native.so in search paths: " + finalLibPath);
+                    /* Log removed */
                 }
             } catch (Throwable t) {
                 android.util.Log.e("WaeX-ClassDebug", "Failed to explicitly load pro native library: " + t.toString(), t);
@@ -334,7 +333,7 @@ public class ProHelper {
             
             try {
                 Class.forName("com.waex.helper.ProFeature", true, companionPluginClassLoader);
-                android.util.Log.i("WaeX-ClassDebug", "Initialized ProFeature with plugin classloader successfully");
+                /* Log removed */
             } catch (Throwable t) {
                 android.util.Log.e("WaeX-ClassDebug", "Failed to initialize ProFeature with plugin classloader: " + t.toString(), t);
             }
@@ -358,13 +357,13 @@ public class ProHelper {
                 }
             }
             if (pathListField == null) {
-                android.util.Log.e("WaeX-ClassDebug", "pathList field not found in " + classLoader.getClass().getName());
+                /* Log removed */
                 return;
             }
             pathListField.setAccessible(true);
             Object pathList = pathListField.get(classLoader);
             if (pathList == null) {
-                android.util.Log.e("WaeX-ClassDebug", "pathList field is null in " + classLoader.getClass().getName());
+                /* Log removed */
                 return;
             }
 
@@ -376,7 +375,7 @@ public class ProHelper {
                 );
                 addDexPathMethod.setAccessible(true);
                 addDexPathMethod.invoke(pathList, apkPath, null);
-                android.util.Log.i("WaeX-ClassDebug", "Successfully appended dex path via addDexPath: " + apkPath);
+                /* Log removed */
                 dexAppended = true;
             } catch (Throwable ignored) {
                 // Method might not exist or signature changed, fallback to manual elements array manipulation
@@ -396,7 +395,7 @@ public class ProHelper {
                 pathListClass = pathListClass.getSuperclass();
             }
             if (makePathElementsMethod == null) {
-                android.util.Log.e("WaeX-ClassDebug", "makePathElements or makeDexElements method not found");
+                /* Log removed */
                 return;
             }
             makePathElementsMethod.setAccessible(true);
@@ -436,9 +435,9 @@ public class ProHelper {
                     System.arraycopy(originalElements, 0, combinedElements, 0, originalElements.length);
                     System.arraycopy(newElements, 0, combinedElements, originalElements.length, newElements.length);
                     dexElementsField.set(pathList, combinedElements);
-                    android.util.Log.i("WaeX-ClassDebug", "Successfully appended dex elements manually: " + apkPath);
+                    /* Log removed */
                 } else {
-                    android.util.Log.e("WaeX-ClassDebug", "Failed to generate new dex elements for " + apkPath);
+                    /* Log removed */
                 }
             }
 
@@ -467,7 +466,7 @@ public class ProHelper {
                                 }
                             }
                             nativeLibraryDirectoriesField.set(pathList, updatedDirsList);
-                            android.util.Log.i("WaeX-ClassDebug", "Successfully appended to nativeLibraryDirectories (List): " + newDirsList);
+                            /* Log removed */
                         } else if (origDirsObj instanceof java.io.File[]) {
                             java.io.File[] origDirsArr = (java.io.File[]) origDirsObj;
                             java.util.List<java.io.File> updatedDirsList = new java.util.ArrayList<>(java.util.Arrays.asList(origDirsArr));
@@ -478,7 +477,7 @@ public class ProHelper {
                             }
                             java.io.File[] combinedDirsArr = updatedDirsList.toArray(new java.io.File[0]);
                             nativeLibraryDirectoriesField.set(pathList, combinedDirsArr);
-                            android.util.Log.i("WaeX-ClassDebug", "Successfully appended to nativeLibraryDirectories (Array): " + newDirsList);
+                            /* Log removed */
                         }
                     } catch (Throwable t) {
                         android.util.Log.e("WaeX-ClassDebug", "Failed to update nativeLibraryDirectories Field: " + t);
@@ -517,7 +516,7 @@ public class ProHelper {
                             if (elementObj != null) {
                                 newLibElementsList.add(elementObj);
                             } else {
-                                android.util.Log.w("WaeX-ClassDebug", "Could not instantiate element of type " + componentType.getName() + " for " + dir);
+                                /* Log removed */
                             }
                         }
 
@@ -531,9 +530,9 @@ public class ProHelper {
                                 combinedLibElements[originalLibElements.length + i] = newLibElementsList.get(i);
                             }
                             nativeLibraryPathElementsField.set(pathList, combinedLibElements);
-                            android.util.Log.i("WaeX-ClassDebug", "Successfully appended to nativeLibraryPathElements: " + newDirsList);
+                            /* Log removed */
                         } else {
-                            android.util.Log.e("WaeX-ClassDebug", "Failed to generate any native library elements using constructors");
+                            /* Log removed */
                         }
                     } catch (Throwable t) {
                         android.util.Log.e("WaeX-ClassDebug", "Failed to update nativeLibraryPathElements Field: " + t);
@@ -1421,7 +1420,7 @@ public class ProHelper {
                     myVersionCode = myInfo.versionCode;
                 }
                 if (myVersionCode < minVersion) {
-                    android.util.Log.e("WaeX-Helper", "Plugin requires main module version code >= " + minVersion + ", but current version is " + myVersionCode);
+                    /* Log removed */
                     return false;
                 }
             } catch (Throwable ignored) {}

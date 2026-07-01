@@ -47,7 +47,7 @@ public class KeyboxVerification {
 
         final SharedPreferences prefs = resolvePrefs(fragment, context);
         if (prefs == null) {
-            Log.e(TAG, "Could not resolve SharedPreferences — aborting");
+            /* Log removed */
             return;
         }
 
@@ -485,7 +485,7 @@ public class KeyboxVerification {
                 }
             }
             if (method == null) {
-                Log.e(TAG, "getDefaultSpooferXml not found in class hierarchy");
+                /* Log removed */
                 return "";
             }
             method.setAccessible(true);

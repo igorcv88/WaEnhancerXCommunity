@@ -292,11 +292,11 @@ public class MainActivity extends BaseActivity {
         if (intent == null)
             return;
 
-        android.util.Log.d("WAEX_MAIN", "handleIncomingIntent: action=" + intent.getAction());
+        /* Log removed */
         if (intent.getExtras() != null) {
             for (String key : intent.getExtras().keySet()) {
                 Object val = intent.getExtras().get(key);
-                android.util.Log.d("WAEX_MAIN", "Extra: " + key + " = " + val + " (type: " + (val != null ? val.getClass().getName() : "null") + ")");
+                /* Log removed */
             }
         }
 
@@ -579,7 +579,7 @@ public class MainActivity extends BaseActivity {
             java.lang.reflect.Method get = sp.getMethod("get", String.class, String.class);
             String val = (String) get.invoke(null, "debug.waenhancer.lsposed", "0");
             if ("1".equals(val)) {
-                android.util.Log.d(TAG, "DETECTED via SystemProperty");
+                /* Log removed */
                 return true;
             }
         } catch (Throwable ignored) {}
@@ -598,7 +598,7 @@ public class MainActivity extends BaseActivity {
                 java.io.BufferedReader stdErr = new java.io.BufferedReader(new java.io.InputStreamReader(process.getErrorStream()));
                 String line = stdErr.readLine();
                 if (exitCode == 0 || (line != null && line.contains("Permission denied"))) {
-                    android.util.Log.d(TAG, "DETECTED via Shell Directory Check (" + cmd + ")");
+                    /* Log removed */
                     return true;
                 }
             }
@@ -613,13 +613,13 @@ public class MainActivity extends BaseActivity {
                     "de.robv.android.xposed.installer", "me.weishu.exp"}) {
                 try {
                     pm.getPackageInfo(pkg, 0);
-                    android.util.Log.d(TAG, "DETECTED via Package Manager: " + pkg);
+                    /* Log removed */
                     return true;
                 } catch (Throwable ignored) {}
             }
         }
 
-        android.util.Log.d(TAG, "RESULT: Framework NOT detected");
+        /* Log removed */
         return false;
     }
 

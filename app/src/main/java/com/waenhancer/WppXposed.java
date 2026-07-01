@@ -78,7 +78,7 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
                                     java.lang.reflect.Method getPrefs = prefMgr.getMethod("getDefaultSharedPreferences", android.content.Context.class);
                                     android.content.SharedPreferences localPrefs = (android.content.SharedPreferences) getPrefs.invoke(null, context);
                                     localPrefs.edit().putInt("active_xposed_api_version", apiVersion).commit();
-                                    XposedBridge.log("[WAEX] Successfully saved active Xposed API version in manager: " + apiVersion);
+                                    /* Log removed */
                                 } catch (Throwable t) {
                                     XposedBridge.log("[WAEX] Failed to save active Xposed API version in manager: " + t.toString());
                                 }
@@ -254,7 +254,7 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
             try {
                 int apiVersion = de.robv.android.xposed.XposedBridge.getXposedVersion();
                 set.invoke(null, "debug.waenhancer.lsposed.api", String.valueOf(apiVersion));
-                XposedBridge.log("[WAEX] LSPosed markers written: debug.waenhancer.lsposed=1, debug.waenhancer.lsposed.api=" + apiVersion);
+                /* Log removed */
             } catch (Throwable t2) {
                 XposedBridge.log("[WAEX] LSPosed marker written: debug.waenhancer.lsposed=1 (Failed to write API version: " + t2.getMessage() + ")");
             }

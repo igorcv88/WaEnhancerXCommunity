@@ -65,7 +65,7 @@ public class KeyboxFetcher {
                     editor.putString("default_kb_last_updated", lastUpdated);
                 }
                 editor.apply();
-                Log.i(TAG, "Successfully synced default keybox from " + url);
+                /* Log removed */
             }
         }
     }

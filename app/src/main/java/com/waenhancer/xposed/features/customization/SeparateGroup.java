@@ -107,7 +107,7 @@ public class SeparateGroup extends Feature {
         try {
             // XposedBridge.log("[WAEX-SG] hookTabCount starting...");
             Method runMethod = Unobfuscator.loadTabCountMethod(classLoader);
-            logDebug(Unobfuscator.getMethodDescriptor(runMethod));
+            /* Log removed */
 
             Method enableCountMethod = Unobfuscator.loadEnableCountTabMethod(classLoader);
             Constructor<?> badgeWrapperConstructor = Unobfuscator.loadEnableCountTabBadgeWrapper(classLoader);
@@ -284,9 +284,9 @@ public class SeparateGroup extends Feature {
     private void hookTabIcon() {
         try {
             Method iconTabMethod = Unobfuscator.loadIconTabMethod(classLoader);
-            logDebug(Unobfuscator.getMethodDescriptor(iconTabMethod));
+            /* Log removed */
             Method menuAddAndroidX = Unobfuscator.loadAddMenuAndroidX(classLoader);
-            logDebug(menuAddAndroidX.toString());
+            /* Log removed */
 
             XposedBridge.hookMethod(iconTabMethod, new XC_MethodHook() {
                 @Override
@@ -350,10 +350,10 @@ public class SeparateGroup extends Feature {
             );
 
             Method getTabMethod = Unobfuscator.loadGetTabMethod(classLoader);
-            logDebug(Unobfuscator.getMethodDescriptor(getTabMethod));
+            /* Log removed */
 
             Method methodTabInstance = Unobfuscator.loadTabFragmentMethod(classLoader);
-            logDebug(Unobfuscator.getMethodDescriptor(methodTabInstance));
+            /* Log removed */
 
             Constructor<?> recreateFragmentMethod = Unobfuscator.loadRecreateFragmentConstructor(classLoader);
 
@@ -444,7 +444,7 @@ public class SeparateGroup extends Feature {
 
             // Hook fab method
             Method fabintMethod = Unobfuscator.loadFabMethod(classLoader);
-            logDebug(Unobfuscator.getMethodDescriptor(fabintMethod));
+            /* Log removed */
 
             XposedBridge.hookMethod(fabintMethod, new XC_MethodHook() {
                 @Override
@@ -457,7 +457,7 @@ public class SeparateGroup extends Feature {
 
             // Hook publishResults / getFilters method
             Method publishResultsMethod = Unobfuscator.loadGetFiltersMethod(classLoader);
-            logDebug(Unobfuscator.getMethodDescriptor(publishResultsMethod));
+            /* Log removed */
 
             final Method finalPublishResultsMethod = publishResultsMethod;
             XposedBridge.hookMethod(publishResultsMethod, new XC_MethodHook() {
@@ -502,7 +502,7 @@ public class SeparateGroup extends Feature {
     private void hookTabList() {
         try {
             Method onCreateTabList = Unobfuscator.loadTabListMethod(classLoader);
-            logDebug(Unobfuscator.getMethodDescriptor(onCreateTabList));
+            /* Log removed */
 
             XposedBridge.hookMethod(onCreateTabList, new XC_MethodHook() {
                 @SuppressWarnings("unchecked")

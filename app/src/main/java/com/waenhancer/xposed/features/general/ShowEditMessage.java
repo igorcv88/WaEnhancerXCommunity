@@ -51,13 +51,13 @@ public class ShowEditMessage extends Feature {
         if (!prefs.getBoolean("antieditmessages", false)) return;
 
         var onMessageEdit = Unobfuscator.loadMessageEditMethod(classLoader);
-        logDebug(Unobfuscator.getMethodDescriptor(onMessageEdit));
+        /* Log removed */
 
         var callerMessageEditMethod = Unobfuscator.loadCallerMessageEditMethod(classLoader);
-        logDebug(Unobfuscator.getMethodDescriptor(callerMessageEditMethod));
+        /* Log removed */
 
         var getEditMessage = Unobfuscator.loadGetEditMessageMethod(classLoader);
-        logDebug(Unobfuscator.getMethodDescriptor(getEditMessage));
+        /* Log removed */
 
         XposedBridge.hookMethod(onMessageEdit, new XC_MethodHook() {
             @Override

@@ -317,7 +317,7 @@ public class Utils {
     public static void log(Throwable t) {
         if (!DEBUG) return;
         try {
-            XposedBridge.log(t);
+            /* Log removed */
         } catch (NoClassDefFoundError | NoSuchMethodError e) {
             // Fallback logging not available
         }
@@ -332,7 +332,7 @@ public class Utils {
 
     public static void logError(Throwable t) {
         try {
-            XposedBridge.log(t);
+            /* Log removed */
         } catch (NoClassDefFoundError | NoSuchMethodError e) {
         }
     }

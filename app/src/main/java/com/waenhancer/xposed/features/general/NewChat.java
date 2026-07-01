@@ -327,11 +327,11 @@ public class NewChat extends Feature {
                 btnMessage.setOnClickListener(v -> {
                     String cc = edtCc.getText().toString().replaceAll("\\+", "");
                     String phone = edtPhone.getText().toString().replaceAll("[+\\-()/\\s]", "");
-                    android.util.Log.d("NewChat", "Message button clicked: cc=" + cc + ", phone=" + phone);
+                    /* Log removed */
 
                     if (phone.isEmpty()) {
                         edtPhone.setError("Phone number cannot be empty");
-                        android.util.Log.d("NewChat", "Validation failed: Phone number is empty");
+                        /* Log removed */
                         return;
                     }
 
@@ -363,7 +363,7 @@ public class NewChat extends Feature {
                                     } catch (Throwable ignored) {}
                                 }
                             }
-                            android.util.Log.d("NewChat", "Validation: matchingKey=" + matchingKey);
+                            /* Log removed */
 
                             boolean validated = false;
                             if (matchingKey != null) {
@@ -371,7 +371,7 @@ public class NewChat extends Feature {
                                     "isValidForPhoneCodeRegex", String.class, String.class
                                 );
                                 isValid = (boolean) isValidForPhoneCodeRegexMethod.invoke(validatorInstance, validationNumber, matchingKey);
-                                android.util.Log.d("NewChat", "Validation using regex matchingKey: isValid=" + isValid);
+                                /* Log removed */
                                 validated = true;
                             }
 
@@ -381,10 +381,10 @@ public class NewChat extends Feature {
                                     "isValidForCountry", String.class, String.class, boolean.class
                                 );
                                 isValid = (boolean) isValidForCountryMethod.invoke(validatorInstance, validationNumber, englishCountryName, true);
-                                android.util.Log.d("NewChat", "Validation using fallback countryName=" + englishCountryName + ": isValid=" + isValid);
+                                /* Log removed */
                             }
                         } else {
-                            android.util.Log.w("NewChat", "proClassLoader is null, skipping validation");
+                            /* Log removed */
                         }
                     } catch (Throwable t) {
                         android.util.Log.e("NewChat", "Error in Message button validation: " + t.getMessage(), t);
@@ -392,7 +392,7 @@ public class NewChat extends Feature {
                         isValid = true;
                     }
 
-                    android.util.Log.d("NewChat", "Final validation result: isValid=" + isValid);
+                    /* Log removed */
                     if (!isValid) {
                         edtPhone.setError("Invalid phone number for this country");
                         return;
@@ -422,11 +422,11 @@ public class NewChat extends Feature {
     }
 
     private static String getCountryHint(Activity activity, String cc, String activeIso) {
-        android.util.Log.d("NewChat", "getCountryHint called for cc=" + cc + ", activeIso=" + activeIso);
+        /* Log removed */
         try {
             ClassLoader proClassLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(activity);
             if (proClassLoader == null) {
-                android.util.Log.e("NewChat", "proClassLoader is null");
+                /* Log removed */
                 return "Phone Number";
             }
             Class<?> validatorClass = proClassLoader.loadClass("com.waex.helper.utils.PhoneNumberValidator");
@@ -438,7 +438,7 @@ public class NewChat extends Feature {
 
             java.lang.reflect.Method phoneCodeRegexesMethod = validatorClass.getMethod("phoneCodeRegexes");
             java.util.Set<String> keys = (java.util.Set<String>) phoneCodeRegexesMethod.invoke(validatorInstance);
-            android.util.Log.d("NewChat", "phoneCodeRegexes count: " + (keys != null ? keys.size() : "null"));
+            /* Log removed */
 
             String matchingKey = null;
             if (keys != null) {
@@ -453,7 +453,7 @@ public class NewChat extends Feature {
                     }
                 }
             }
-            android.util.Log.d("NewChat", "matchingKey: " + matchingKey);
+            /* Log removed */
 
             if (matchingKey != null) {
                 java.lang.reflect.Method countriesForPhoneCodeRegexMethod = validatorClass.getMethod(
@@ -461,14 +461,14 @@ public class NewChat extends Feature {
                 );
                 java.util.List<?> countryPatterns =
                     (java.util.List<?>) countriesForPhoneCodeRegexMethod.invoke(validatorInstance, matchingKey);
-                android.util.Log.d("NewChat", "countryPatterns size: " + (countryPatterns != null ? countryPatterns.size() : "null"));
+                /* Log removed */
                 if (countryPatterns != null && !countryPatterns.isEmpty()) {
                     Object countryPattern = countryPatterns.get(0);
                     try {
                         java.lang.reflect.Method getPhoneHintMethod =
                             countryPattern.getClass().getMethod("getPhoneHint");
                         String hint = (String) getPhoneHintMethod.invoke(countryPattern);
-                        android.util.Log.d("NewChat", "getPhoneHint retrieved: " + hint);
+                        /* Log removed */
                         return hint;
                     } catch (Throwable t) {
                         android.util.Log.w("NewChat", "getPhoneHint method missing/failed, trying fallback: " + t.getMessage());
@@ -481,7 +481,7 @@ public class NewChat extends Feature {
                     }
                 }
             } else {
-                android.util.Log.w("NewChat", "No matchingKey found for cc=" + cc);
+                /* Log removed */
             }
         } catch (Throwable t) {
             android.util.Log.e("NewChat", "Error in getCountryHint: " + t.getMessage(), t);
@@ -490,7 +490,7 @@ public class NewChat extends Feature {
     }
 
     private static int getCountryPhoneLength(Activity activity, String cc) {
-        android.util.Log.d("NewChat", "getCountryPhoneLength called for cc=" + cc);
+        /* Log removed */
         try {
             ClassLoader proClassLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(activity);
             if (proClassLoader == null) {
@@ -530,7 +530,7 @@ public class NewChat extends Feature {
                         java.lang.reflect.Method getPhoneLengthMethod =
                             countryPattern.getClass().getMethod("getPhoneLength");
                         int len = (int) getPhoneLengthMethod.invoke(countryPattern);
-                        android.util.Log.d("NewChat", "getPhoneLength retrieved: " + len);
+                        /* Log removed */
                         return len;
                     } catch (Throwable t) {
                         android.util.Log.w("NewChat", "Error getting phone length: " + t.getMessage(), t);
@@ -544,12 +544,12 @@ public class NewChat extends Feature {
     }
 
     private static void updatePhoneHintAndLength(Activity activity, EditText edtPhone, String cc, String activeIso) {
-        android.util.Log.d("NewChat", "updatePhoneHintAndLength cc=" + cc);
+        /* Log removed */
         if (edtPhone == null) return;
         String hint = getCountryHint(activity, cc, activeIso);
         edtPhone.setHint(hint);
         int length = getCountryPhoneLength(activity, cc);
-        android.util.Log.d("NewChat", "Applying length limit: " + length);
+        /* Log removed */
         if (length > 0) {
             edtPhone.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(length)});
         } else {
