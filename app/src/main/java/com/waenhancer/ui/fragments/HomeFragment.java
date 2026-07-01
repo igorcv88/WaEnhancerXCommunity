@@ -156,16 +156,27 @@ public class HomeFragment extends BaseFragment {
         binding.btnReportIssue.setOnClickListener(view -> {
             animateClick(view);
             try {
+                String fwRaw = getXposedFrameworkVersion();
+                String fwLabel = "Xposed/LSPosed API";
+                String fwValue = fwRaw;
+                String[] parts = fwRaw.split("\\|");
+                if (parts.length == 2) {
+                    fwLabel = parts[0] + " API";
+                    fwValue = parts[1];
+                }
+
                 String dialogDetailsHtml = "<b>Device:</b> " + android.os.Build.MANUFACTURER + " "
                         + android.os.Build.MODEL + "<br>"
                         + "<b>Android Version:</b> " + android.os.Build.VERSION.RELEASE + " (SDK "
                         + android.os.Build.VERSION.SDK_INT + ")<br>"
+                        + "<b>" + fwLabel + ":</b> " + fwValue + "<br>"
                         + "<b>Module Version:</b> " + com.waenhancer.BuildConfig.VERSION_NAME + "<br>";
 
                 String githubDetailsMd = "**Device:** " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL
                         + "\n"
                         + "**Android Version:** " + android.os.Build.VERSION.RELEASE + " (SDK "
                         + android.os.Build.VERSION.SDK_INT + ")\n"
+                        + "**" + fwLabel + ":** " + fwValue + "\n"
                         + "**Module Version:** " + com.waenhancer.BuildConfig.VERSION_NAME + "\n";
 
                 String tempWaVersion = "Not Installed";
@@ -789,6 +800,16 @@ public class HomeFragment extends BaseFragment {
         binding.deviceName.setText(Build.MANUFACTURER);
         binding.sdk.setText(String.valueOf(Build.VERSION.SDK_INT));
         binding.modelName.setText(Build.DEVICE);
+        
+        String xposedVer = getXposedFrameworkVersion();
+        String[] xposedParts = xposedVer.split("\\|");
+        if (xposedParts.length == 2) {
+            binding.xposedVersionLabel.setText(xposedParts[0] + " API");
+            binding.xposedVersion.setText(xposedParts[1]);
+        } else {
+            binding.xposedVersionLabel.setText("Xposed/LSPosed API");
+            binding.xposedVersion.setText(xposedVer);
+        }
 
         if (App.isOriginalPackage()) {
             checkPackageVersion(activity, FeatureLoader.PACKAGE_WPP, binding.wppVersionRow, binding.wppInstalledVersion,
@@ -1173,5 +1194,77 @@ public class HomeFragment extends BaseFragment {
         } catch (ClassNotFoundException e) {
             Toast.makeText(context, "Pro features are not available.", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private String getXposedFrameworkVersion() {
+        Context context = getContext();
+        if (context == null) return "Unknown";
+        
+        String apiVal = "";
+        try {
+            Class<?> bridge = Class.forName("de.robv.android.xposed.XposedBridge");
+            java.lang.reflect.Method getVersion = bridge.getMethod("getXposedVersion");
+            int ver = (Integer) getVersion.invoke(null);
+            if (ver > 0) {
+                apiVal = String.valueOf(ver);
+            }
+        } catch (Throwable ignored) {}
+        
+        if (apiVal.isEmpty()) {
+            try {
+                android.content.SharedPreferences localPrefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context);
+                int localApi = localPrefs.getInt("active_xposed_api_version", 0);
+                if (localApi > 0) {
+                    apiVal = String.valueOf(localApi);
+                }
+            } catch (Throwable ignored) {}
+        }
+        
+        if (apiVal.isEmpty()) {
+            try {
+                Class<?> sp = Class.forName("android.os.SystemProperties");
+                java.lang.reflect.Method get = sp.getMethod("get", String.class, String.class);
+                apiVal = (String) get.invoke(null, "debug.waenhancer.lsposed.api", "");
+            } catch (Throwable ignored) {}
+        }
+        
+        boolean isActive = false;
+        try {
+            Class<?> sp = Class.forName("android.os.SystemProperties");
+            java.lang.reflect.Method get = sp.getMethod("get", String.class, String.class);
+            String val = (String) get.invoke(null, "debug.waenhancer.lsposed", "0");
+            if ("1".equals(val)) {
+                isActive = true;
+            }
+        } catch (Throwable ignored) {}
+        
+        if (!isActive) {
+            isActive = com.waenhancer.utils.ModuleStatus.isModuleActive();
+        }
+
+        if (apiVal.isEmpty() && !isActive) {
+            return "LSPosed|Not Detected";
+        }
+
+        // Determine framework name (LSPosed, EdXposed, or Xposed)
+        String frameworkName = "LSPosed";
+        android.content.pm.PackageManager pm = context.getPackageManager();
+        String[] managerPackages = {
+                "org.lsposed.manager", 
+                "io.github.lsposed.manager",
+                "org.meowcat.edxposed.manager", 
+                "com.solohsu.android.edxp.manager",
+                "de.robv.android.xposed.installer"
+        };
+        for (String pkg : managerPackages) {
+            try {
+                pm.getPackageInfo(pkg, 0);
+                frameworkName = pkg.contains("lsposed") ? "LSPosed" : (pkg.contains("edxposed") ? "EdXposed" : "Xposed");
+                break;
+            } catch (android.content.pm.PackageManager.NameNotFoundException ignored) {}
+        }
+
+        String finalApi = !apiVal.isEmpty() ? apiVal : "93";
+        return frameworkName + "|" + finalApi;
     }
 }

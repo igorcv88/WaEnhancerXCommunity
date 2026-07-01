@@ -8,7 +8,6 @@ plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.materialthemebuilder)
     alias(libs.plugins.kotlinAndroid)
-    alias(libs.plugins.compose.compiler)
     alias(libs.plugins.google.services)
     alias(libs.plugins.firebase.crashlytics)
 }
@@ -23,6 +22,10 @@ android {
     namespace = "com.waenhancer"
     compileSdk = 36
     ndkVersion = "27.0.12077973"
+
+    androidResources {
+        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:!PublicSuffixDatabase.list"
+    }
 
     flavorDimensions += "version"
 
@@ -58,6 +61,7 @@ android {
         val noticesUrl = (project.findProperty("NOTICES_URL")?.toString() ?: env.getProperty("NOTICES_URL") ?: "https://waex.mubashar.dev/notices.json").trim()
         buildConfigField("String", "NOTICES_URL", "\"$noticesUrl\"")
         multiDexEnabled = true
+        resourceConfigurations += listOf("en", "ar", "de", "es", "fr", "id", "in", "it", "iw", "pt", "ru", "tr", "zh")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -83,7 +87,6 @@ android {
         }
 
         ndk {
-            abiFilters.add("armeabi-v7a")
             abiFilters.add("arm64-v8a")
         }
 
@@ -107,10 +110,18 @@ android {
             excludes += "org/**"
             excludes += "**.properties"
             excludes += "**.bin"
+            excludes += "DebugProbesKt.bin"
+            excludes += "kotlin-tooling-metadata.json"
+            excludes += "client_analytics.proto"
+            excludes += "assets/PublicSuffixDatabase.list"
         }
         jniLibs {
+            useLegacyPackaging = true
             excludes += "lib/x86/**"
             excludes += "lib/x86_64/**"
+        }
+        dex {
+            useLegacyPackaging = true
         }
     }
 
@@ -150,7 +161,6 @@ android {
         viewBinding = true
         buildConfig = true
         aidl = true
-        compose = true
     }
 
 
@@ -180,7 +190,7 @@ android {
         }
         // Add Material Design 3 color tokens (such as palettePrimary100) in generated theme
         // rikka.material >= 2.0.0 provides such attributes
-        generatePalette = true
+        generatePalette = false
     }
 
 
@@ -203,7 +213,6 @@ dependencies {
     implementation(libs.blurview)
     implementation(libs.colorpicker)
     implementation(libs.dexkit)
-    implementation(libs.flatbuffers)
     compileOnly(libs.libxposed.legacy)
 
     implementation(libs.androidx.activity)
@@ -225,21 +234,12 @@ dependencies {
     implementation(libs.bcpkix.jdk18on)
     implementation(libs.arscblamer)
     implementation("com.github.bumptech.glide:glide:4.16.0")
-    implementation("com.facebook.shimmer:shimmer:0.5.0")
+
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)
     implementation(libs.markwon.core)
     implementation(libs.markwon.html)
 
-    val composeBom = platform(libs.androidx.compose.bom)
-    implementation(composeBom)
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.savedstate.ktx)
-    implementation(libs.androidx.compose.ui.tooling.preview)
-    implementation(libs.androidx.activity.compose)
-    
     // Firebase
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)

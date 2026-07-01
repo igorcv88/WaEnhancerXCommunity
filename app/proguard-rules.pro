@@ -112,12 +112,18 @@
     public <init>(android.content.Context, android.util.AttributeSet);
     public <init>(android.content.Context, android.util.AttributeSet, int);
 }
+# Keep reflective helper methods and preference fields in preference fragments to prevent reflection failure at runtime
+-keepclassmembers class * extends androidx.preference.PreferenceFragmentCompat {
+    protected *** mPrefs;
+    private *** getDefaultSpooferXml();
+    private *** updateKeyboxVerifySummary();
+}
 
-# Keep jStyleParser classes and members to prevent reflection errors in obfuscated builds
--keep class cz.vutbr.web.** { *; }
--keep class org.w3c.css.sac.** { *; }
+
+# Suppress warnings for jStyleParser and CSS
 -dontwarn cz.vutbr.web.**
 -dontwarn org.w3c.css.sac.**
+
 # Keep PreferenceManager and all its methods intact for Xposed preference mode hook and dynamic preference access
 -keep class androidx.preference.PreferenceManager { *; }
 
@@ -125,8 +131,13 @@
 -keep class com.waenhancer.xposed.core.devkit.** { *; }
 
 # DexKit and OkHttp warning suppression (R8 handles OKHttp automatically)
--keep class io.luckypray.dexkit.** { *; }
--keep class org.luckypray.dexkit.** { *; }
+-keep class org.luckypray.dexkit.DexKitBridge {
+    private long dexKitPtr;
+    native <methods>;
+}
+-keep class org.luckypray.dexkit.DexKitBridge$Companion {
+    native <methods>;
+}
 -dontwarn io.luckypray.dexkit.**
 -dontwarn org.luckypray.dexkit.**
 -dontwarn okhttp3.**
@@ -136,7 +147,6 @@
 
 # Firebase reflection safety
 -dontwarn com.google.firebase.**
--keep class com.google.firebase.** { *; }
 
 # Markwon and Commonmark warning suppression
 -dontwarn org.commonmark.**
@@ -150,7 +160,3 @@
 -keep public class * extends androidx.fragment.app.Fragment {
     public <init>();
 }
-
-# Keep all fragment classes in UI fragments and Xposed features others package to prevent ClassNotFoundException
--keep class com.waenhancer.ui.fragments.** { *; }
--keep class com.waenhancer.xposed.features.others.** { *; }

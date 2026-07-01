@@ -64,6 +64,30 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
             }
             XposedHelpers.findAndHookMethod("com.waenhancer.utils.ModuleStatus", lpparam.classLoader, "isModuleActive", XC_MethodReplacement.returnConstant(true));
             
+            // Hook Application.onCreate in manager app to save active Xposed version locally
+            try {
+                XposedHelpers.findAndHookMethod(
+                        "android.app.Application", lpparam.classLoader,
+                        "onCreate", new XC_MethodHook() {
+                            @Override
+                            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                                android.content.Context context = (android.content.Context) param.thisObject;
+                                try {
+                                    int apiVersion = XposedBridge.getXposedVersion();
+                                    Class<?> prefMgr = Class.forName("androidx.preference.PreferenceManager", true, context.getClassLoader());
+                                    java.lang.reflect.Method getPrefs = prefMgr.getMethod("getDefaultSharedPreferences", android.content.Context.class);
+                                    android.content.SharedPreferences localPrefs = (android.content.SharedPreferences) getPrefs.invoke(null, context);
+                                    localPrefs.edit().putInt("active_xposed_api_version", apiVersion).commit();
+                                    XposedBridge.log("[WAEX] Successfully saved active Xposed API version in manager: " + apiVersion);
+                                } catch (Throwable t) {
+                                    XposedBridge.log("[WAEX] Failed to save active Xposed API version in manager: " + t.toString());
+                                }
+                            }
+                        });
+            } catch (Throwable t) {
+                XposedBridge.log("[WAEX] Failed to hook Application.onCreate in manager: " + t.toString());
+            }
+            
             // Bypass the Android 7.0+ SecurityException when using MODE_WORLD_READABLE in the module settings app process
             try {
                 XposedHelpers.findAndHookMethod(
@@ -227,7 +251,13 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
             Class<?> sysProp = Class.forName("android.os.SystemProperties");
             java.lang.reflect.Method set = sysProp.getMethod("set", String.class, String.class);
             set.invoke(null, "debug.waenhancer.lsposed", "1");
-            XposedBridge.log("[WAEX] LSPosed marker written: debug.waenhancer.lsposed=1");
+            try {
+                int apiVersion = de.robv.android.xposed.XposedBridge.getXposedVersion();
+                set.invoke(null, "debug.waenhancer.lsposed.api", String.valueOf(apiVersion));
+                XposedBridge.log("[WAEX] LSPosed markers written: debug.waenhancer.lsposed=1, debug.waenhancer.lsposed.api=" + apiVersion);
+            } catch (Throwable t2) {
+                XposedBridge.log("[WAEX] LSPosed marker written: debug.waenhancer.lsposed=1 (Failed to write API version: " + t2.getMessage() + ")");
+            }
         } catch (Throwable t) {
             XposedBridge.log("[WAEX] Failed to write LSPosed marker: " + t.getMessage());
         }

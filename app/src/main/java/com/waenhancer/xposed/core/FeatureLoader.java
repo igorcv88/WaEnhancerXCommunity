@@ -239,6 +239,20 @@ public class FeatureLoader {
                             return;
                         }
 
+                        // Save Xposed API version dynamically to companion app SharedPreferences
+                        try {
+                            int apiVersion = de.robv.android.xposed.XposedBridge.getXposedVersion();
+                            android.os.Bundle extras = new android.os.Bundle();
+                            extras.putString("key", "active_xposed_api_version");
+                            extras.putString("type", "int");
+                            extras.putInt("value", apiVersion);
+                            mApp.getContentResolver().call(
+                                    android.net.Uri.parse("content://" + com.waenhancer.BuildConfig.APPLICATION_ID + ".hookprovider"),
+                                    "put_preference", null, extras);
+                        } catch (Throwable t) {
+                            de.robv.android.xposed.XposedBridge.log("[WAEX] Failed to save active Xposed API version: " + t.toString());
+                        }
+
                         final Thread.UncaughtExceptionHandler defaultHandler = Thread.getDefaultUncaughtExceptionHandler();
                         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
                             try {
