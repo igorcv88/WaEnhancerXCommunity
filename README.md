@@ -175,5 +175,12 @@ All legacy logic and core methods adapted from Dev4Mod are explicitly attributed
 *Built for the community.*
 
 *Managed and Optimized by [Mubashar Dev](https://mubashar.dev)*
+#
 
+<div align="center">
+  <a href="https://t.me/waenhancerx">
+    <img src="https://telegram-badge.pages.dev/api/telegram-badge?channelId=@waenhancerx&style=button&label=Join+Telegram&color=2AABEE&radius=5&padding=24" alt="Join Telegram" />
+  </a>
+</div>
 
+#
