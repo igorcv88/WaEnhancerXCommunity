@@ -53,6 +53,7 @@ public class CustomToolbar extends Feature {
     private static Method onMenuItemSelected;
     private static final WeakHashMap<Object, View> TAB_TOOLBAR_TARGETS = new WeakHashMap<>();
     private static volatile boolean tabVisibilityHookInstalled = false;
+    private static volatile int chatsTabIndex = 0;
 
     public CustomToolbar(ClassLoader loader, SharedPreferences preferences) {
         super(loader, preferences);
@@ -65,6 +66,24 @@ public class CustomToolbar extends Feature {
         var typeArchive = prefs.getString("typearchive", "0");
 
         onMenuItemSelected = Unobfuscator.loadOnMenuItemSelected(classLoader);
+
+        try {
+            var tabListMethod = Unobfuscator.loadTabListMethod(classLoader);
+            XposedBridge.hookMethod(tabListMethod, new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                    if (param.getResult() instanceof java.util.List) {
+                        java.util.List<?> list = (java.util.List<?>) param.getResult();
+                        int idx = list.indexOf(200); // 200 is menuitem_chats
+                        if (idx != -1) {
+                            chatsTabIndex = idx;
+                        }
+                    }
+                }
+            });
+        } catch (Throwable t) {
+            XposedBridge.log("[WaEnhancerX] CustomToolbar: Failed to hook tabListMethod: " + t.getMessage());
+        }
 
         var methodHook = new ToolbarMethodHook(showName, showBio, typeArchive);
         XposedHelpers.findAndHookMethod(
@@ -296,7 +315,7 @@ public class CustomToolbar extends Feature {
                         var toolbarTarget = TAB_TOOLBAR_TARGETS.get(param.thisObject);
                         if (toolbarTarget == null) return;
                         var currentIndex = (int) param.args[0];
-                        var visibility = currentIndex == 0 ? View.VISIBLE : View.GONE;
+                        var visibility = currentIndex == chatsTabIndex ? View.VISIBLE : View.GONE;
                         if (toolbarTarget.getVisibility() != visibility) {
                             toolbarTarget.setVisibility(visibility);
                         }
