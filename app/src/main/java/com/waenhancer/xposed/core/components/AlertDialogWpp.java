@@ -866,16 +866,33 @@ public class AlertDialogWpp {
                     public void onGlobalLayout() {
                         mainLayout.getViewTreeObserver().removeOnGlobalLayoutListener(this);
                         int measuredHeight = mainLayout.getHeight();
-                        int maxAllowedHeight = mIsFullHeight ? (int) capHeight : halfScreenHeight;
-                        if (measuredHeight > maxAllowedHeight) {
-                            android.view.ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
-                            lp.height = maxAllowedHeight;
-                            mainLayout.setLayoutParams(lp);
-                            
-                            android.widget.LinearLayout.LayoutParams sLp = (android.widget.LinearLayout.LayoutParams) scrollView.getLayoutParams();
-                            sLp.height = 0;
-                            sLp.weight = 1.0f;
-                            scrollView.setLayoutParams(sLp);
+                        int defaultHeight = (int) (screenHeight * 0.60f);
+                        int maxHeight = (int) capHeight;
+
+                        if (mIsFullHeight) {
+                            if (measuredHeight > defaultHeight) {
+                                android.view.ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
+                                lp.height = defaultHeight;
+                                mainLayout.setLayoutParams(lp);
+                                
+                                android.widget.LinearLayout.LayoutParams sLp = (android.widget.LinearLayout.LayoutParams) scrollView.getLayoutParams();
+                                sLp.height = 0;
+                                sLp.weight = 1.0f;
+                                scrollView.setLayoutParams(sLp);
+
+                                setupExpandingGestures(scrollView, mainLayout, dragHandle, defaultHeight, maxHeight, screenHeight, density, dialog);
+                            }
+                        } else {
+                            if (measuredHeight > halfScreenHeight) {
+                                android.view.ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
+                                lp.height = halfScreenHeight;
+                                mainLayout.setLayoutParams(lp);
+                                
+                                android.widget.LinearLayout.LayoutParams sLp = (android.widget.LinearLayout.LayoutParams) scrollView.getLayoutParams();
+                                sLp.height = 0;
+                                sLp.weight = 1.0f;
+                                scrollView.setLayoutParams(sLp);
+                            }
                         }
                     }
                 });
@@ -925,6 +942,127 @@ public class AlertDialogWpp {
             }
         }
         return mCreate;
+    }
+
+    private void setupExpandingGestures(
+            final androidx.core.widget.NestedScrollView scrollView,
+            final android.widget.LinearLayout mainLayout,
+            final android.view.View dragHandle,
+            final int defaultHeight,
+            final int maxHeight,
+            final int screenHeight,
+            final float density,
+            final android.app.Dialog dialog) {
+
+        android.view.View.OnTouchListener expandListener = new android.view.View.OnTouchListener() {
+            private float initialY = 0;
+            private int initialHeight;
+            private boolean isExpanding = false;
+
+            @Override
+            public boolean onTouch(android.view.View v, android.view.MotionEvent event) {
+                int currentHeight = mainLayout.getHeight();
+                switch (event.getAction()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        initialY = event.getRawY();
+                        initialHeight = currentHeight;
+                        isExpanding = false;
+                        if (v == scrollView) {
+                            scrollView.onTouchEvent(event);
+                        }
+                        return true; // Claim the touch gesture!
+                    case android.view.MotionEvent.ACTION_MOVE:
+                        if (initialY == 0) {
+                            initialY = event.getRawY();
+                            initialHeight = currentHeight;
+                        }
+                        float deltaY = event.getRawY() - initialY;
+                        
+                        // Dragging UP (deltaY < 0): Expand the sheet if it's not yet at maxHeight
+                        if (deltaY < 0 && currentHeight < maxHeight) {
+                            isExpanding = true;
+                            int newHeight = (int) (initialHeight - deltaY);
+                            if (newHeight > maxHeight) newHeight = maxHeight;
+                            
+                            android.view.ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
+                            lp.height = newHeight;
+                            mainLayout.setLayoutParams(lp);
+                            return true; // Consume event to prevent internal scrolling
+                        }
+                        
+                        // Dragging DOWN (deltaY > 0): Shrink the sheet if it's above defaultHeight and scrollView is at the top
+                        if (deltaY > 0 && !scrollView.canScrollVertically(-1)) {
+                            if (currentHeight > defaultHeight) {
+                                isExpanding = true;
+                                int newHeight = (int) (initialHeight - deltaY);
+                                if (newHeight < defaultHeight) newHeight = defaultHeight;
+                                
+                                android.view.ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
+                                lp.height = newHeight;
+                                mainLayout.setLayoutParams(lp);
+                                return true; // Consume event
+                            } else {
+                                // Translate mainLayout down to dismiss
+                                isExpanding = true;
+                                mainLayout.setTranslationY(deltaY);
+                                return true;
+                            }
+                        }
+                        
+                        // If we are not expanding/shrinking, forward the touch event to the ScrollView
+                        if (v == scrollView) {
+                            scrollView.onTouchEvent(event);
+                            return true;
+                        }
+                        break;
+                    case android.view.MotionEvent.ACTION_UP:
+                    case android.view.MotionEvent.ACTION_CANCEL:
+                        initialY = 0; // Reset
+                        if (isExpanding) {
+                            isExpanding = false;
+                            float translationY = mainLayout.getTranslationY();
+                            if (translationY > 100 * density) {
+                                // Dismiss downwards
+                                mainLayout.animate()
+                                        .translationY(screenHeight)
+                                        .setDuration(200)
+                                        .withEndAction(dialog::dismiss)
+                                        .start();
+                            } else if (translationY > 0) {
+                                // Snap translation back
+                                mainLayout.animate()
+                                        .translationY(0)
+                                        .setDuration(200)
+                                        .start();
+                            } else {
+                                // Snap height to either defaultHeight or maxHeight
+                                int targetHeight = (mainLayout.getHeight() > (defaultHeight + maxHeight) / 2) ? maxHeight : defaultHeight;
+                                android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofInt(mainLayout.getHeight(), targetHeight);
+                                animator.setDuration(200);
+                                animator.addUpdateListener(animation -> {
+                                    android.view.ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
+                                    lp.height = (int) animation.getAnimatedValue();
+                                    mainLayout.setLayoutParams(lp);
+                                });
+                                animator.start();
+                            }
+                            return true;
+                        }
+                        if (v == scrollView) {
+                            scrollView.onTouchEvent(event);
+                            return true;
+                        }
+                        break;
+                }
+                return false;
+            }
+        };
+
+        scrollView.setOnTouchListener(expandListener);
+        mainLayout.setOnTouchListener(expandListener);
+        if (dragHandle != null) {
+            dragHandle.setOnTouchListener(expandListener);
+        }
     }
 
     public void dismiss() {
