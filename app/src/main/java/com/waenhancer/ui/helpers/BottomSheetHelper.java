@@ -824,11 +824,10 @@ public class BottomSheetHelper {
         card.addView(gifView);
 
         String url = isPro
-                ? "https://raw.githubusercontent.com/mubashardev/WaEnhancer/beta/demo/pill_pro.gif"
-                : "https://raw.githubusercontent.com/mubashardev/WaEnhancer/beta/demo/pill_regular.gif";
+                ? "https://cdn.jsdelivr.net/gh/mubashardev/WaEnhancer@master/demo/pill_pro.gif"
+                : "https://cdn.jsdelivr.net/gh/mubashardev/WaEnhancer@master/demo/pill_regular.gif";
 
         com.bumptech.glide.Glide.with(context)
-                .asGif()
                 .load(url)
                 .placeholder(R.drawable.ic_image)
                 .error(android.R.drawable.stat_notify_error)
