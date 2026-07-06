@@ -1,2 +1,4 @@
+
 [Fixes]
-- Fixed for some devices not working
+- Fixed module for some devices not working
+- Fixed text status custom color not working for some devices

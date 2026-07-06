@@ -61,7 +61,22 @@ public class TextStatusComposer extends Feature {
                     var entry = (EditText) viewRoot.findViewById(Utils.getID("entry", "id"));
                     if (pickerColor != null) {
                         pickerColor.setOnLongClickListener(v -> {
-                            var dialog = new SimpleColorPickerDialog(activity, color -> {
+                            int currentBgColor = -1;
+                            View bgView = viewRoot.findViewById(Utils.getID("background", "id"));
+                            if (bgView != null && bgView.getBackground() instanceof ColorDrawable) {
+                                currentBgColor = ((ColorDrawable) bgView.getBackground()).getColor();
+                            }
+                            if (currentBgColor == -1 && activity != null && activity.getWindow() != null) {
+                                var decorView = activity.getWindow().getDecorView();
+                                if (decorView.getBackground() instanceof ColorDrawable) {
+                                    currentBgColor = ((ColorDrawable) decorView.getBackground()).getColor();
+                                }
+                            }
+                            if (currentBgColor == -1 && colorData.backgroundColor != -1) {
+                                currentBgColor = colorData.backgroundColor;
+                            }
+
+                            var dialog = new SimpleColorPickerDialog(activity, currentBgColor, color -> {
                                 try {
                                     activity.getWindow().setBackgroundDrawable(new ColorDrawable(color));
                                     viewRoot.findViewById(Utils.getID("background", "id")).setBackgroundColor(color);
@@ -80,7 +95,15 @@ public class TextStatusComposer extends Feature {
                     var textColor = viewRoot.findViewById(Utils.getID("font_picker_btn", "id"));
                     if (textColor != null) {
                         textColor.setOnLongClickListener(v -> {
-                            var dialog = new SimpleColorPickerDialog(activity, color -> {
+                            int currentTextColor = -1;
+                            if (entry != null) {
+                                currentTextColor = entry.getCurrentTextColor();
+                            }
+                            if (currentTextColor == -1 && colorData.textColor != -1) {
+                                currentTextColor = colorData.textColor;
+                            }
+
+                            var dialog = new SimpleColorPickerDialog(activity, currentTextColor, color -> {
                                 colorData.textColor = color;
                                 if (entry != null) entry.setTextColor(color);
                             });

@@ -154,6 +154,23 @@ public class FeatureCatalog {
                                 "general_home",
                                 Arrays.asList("bootloader", "spoofer", "ban")));
 
+                catalog.add(new SearchableFeature("unlock_limited_free",
+                                context.getString(R.string.unlock_limited_free_title),
+                                context.getString(R.string.unlock_limited_free_sum),
+                                SearchableFeature.Category.GENERAL_HOME,
+                                SearchableFeature.FragmentType.GENERAL,
+                                "general_home",
+                                Arrays.asList("install", "download", "helper", "plugin", "pro", "unlock", "pack")));
+
+                catalog.add(new SearchableFeature("pro_plugin_updates",
+                                "Plugin Updates & Changelog",
+                                "Check for updates and view the helper plugin changelog",
+                                SearchableFeature.Category.GENERAL_HOME,
+                                SearchableFeature.FragmentType.GENERAL,
+                                "general_home",
+                                Arrays.asList("plugin", "updates", "changelog", "helper", "pro", "version")));
+
+
                 catalog.add(new SearchableFeature("ampm",
                                 context.getString(R.string.ampm),
                                 null,

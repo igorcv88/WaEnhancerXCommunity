@@ -5,15 +5,10 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.GridLayout;
 import android.widget.SeekBar;
-
-import com.google.android.material.bottomsheet.BottomSheetBehavior;
-import com.google.android.material.bottomsheet.BottomSheetDialog;
-import com.waenhancer.R;
 
 public class SimpleColorPickerDialog {
 
@@ -22,12 +17,13 @@ public class SimpleColorPickerDialog {
     private int selectedColor;
     private boolean isUpdating = false;
 
-    private BottomSheetDialog dialog;
+    private android.app.Dialog dialog;
 
     private View colorPreview;
     private EditText hexInput;
     private SeekBar hueSeekBar;
     private SeekBar brightnessSeekBar;
+    private GridLayout presetsGrid;
 
     private static final int[] PRESETS = {
         0xFFE53935, // Red
@@ -52,34 +48,16 @@ public class SimpleColorPickerDialog {
 
     public SimpleColorPickerDialog(Context context, int initialColor, OnColorSelectedListener listener) {
         this.mContext = context;
-        this.selectedColor = initialColor;
+        this.selectedColor = initialColor != -1 ? initialColor : 0xFFFF0000;
         this.listener = listener;
     }
 
     public void show() {
-        dialog = new BottomSheetDialog(mContext);
+        dialog = new android.app.Dialog(mContext);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
 
-        View contentView = LayoutInflater.from(mContext).inflate(R.layout.dialog_color_picker, null);
+        View contentView = createContentView(mContext);
         dialog.setContentView(contentView);
-
-        // Force full expand immediately
-        dialog.setOnShowListener(d -> {
-            BottomSheetDialog bsd = (BottomSheetDialog) d;
-            View sheet = bsd.findViewById(com.google.android.material.R.id.design_bottom_sheet);
-            if (sheet != null) {
-                sheet.getLayoutParams().height = android.view.ViewGroup.LayoutParams.MATCH_PARENT;
-                BottomSheetBehavior<View> behavior = BottomSheetBehavior.from(sheet);
-                behavior.setSkipCollapsed(true);
-                behavior.setState(BottomSheetBehavior.STATE_EXPANDED);
-            }
-        });
-
-        // Bind views
-        colorPreview = contentView.findViewById(R.id.color_preview);
-        hexInput = contentView.findViewById(R.id.hex_input);
-        hueSeekBar = contentView.findViewById(R.id.hue_seekbar);
-        brightnessSeekBar = contentView.findViewById(R.id.brightness_seekbar);
-        GridLayout presetsGrid = contentView.findViewById(R.id.presets_grid);
 
         // Build presets
         presetsGrid.removeAllViews();
@@ -161,17 +139,190 @@ public class SimpleColorPickerDialog {
         // Initialize everything from current color
         updateUIFromColor();
 
-        // Buttons
-        contentView.findViewById(R.id.btn_cancel_color).setOnClickListener(v -> dialog.dismiss());
-        contentView.findViewById(R.id.btn_select_color).setOnClickListener(v -> {
+        dialog.setCanceledOnTouchOutside(false);
+        dialog.show();
+
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            int width = (int) (mContext.getResources().getDisplayMetrics().widthPixels * 0.9);
+            dialog.getWindow().setLayout(width, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+    }
+
+    private View createContentView(Context context) {
+        boolean isDark = isDarkTheme(context);
+        int textColor = isDark ? 0xFFFFFFFF : 0xFF1E1E1E;
+        int textSecondary = isDark ? 0xFFB0B0B0 : 0xFF666666;
+        int cardBg = isDark ? 0xFF2C2C2C : 0xFFF5F5F5;
+
+        // Root Layout
+        android.widget.LinearLayout root = new android.widget.LinearLayout(context);
+        root.setOrientation(android.widget.LinearLayout.VERTICAL);
+        root.setPadding(dpToPx(20), dpToPx(24), dpToPx(20), dpToPx(24));
+        
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(isDark ? 0xFF1E1E1E : 0xFFFFFFFF);
+        bg.setCornerRadius(dpToPx(28));
+        root.setBackground(bg);
+
+        // 1. Title
+        android.widget.TextView title = new android.widget.TextView(context);
+        title.setText("Choose Color");
+        title.setTextSize(20);
+        title.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        title.setTextColor(textColor);
+        android.widget.LinearLayout.LayoutParams titleParams = new android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleParams.setMargins(0, 0, 0, dpToPx(20));
+        root.addView(title, titleParams);
+
+        // 2. Presets Label
+        android.widget.TextView presetsLabel = new android.widget.TextView(context);
+        presetsLabel.setText("Presets");
+        presetsLabel.setTextSize(14);
+        presetsLabel.setTextColor(textSecondary);
+        android.widget.LinearLayout.LayoutParams labelParams = new android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        labelParams.setMargins(0, 0, 0, dpToPx(10));
+        root.addView(presetsLabel, labelParams);
+
+        // 3. Presets Scroll + Grid
+        android.widget.HorizontalScrollView presetScroll = new android.widget.HorizontalScrollView(context);
+        presetScroll.setHorizontalScrollBarEnabled(false);
+        presetScroll.setOverScrollMode(android.view.View.OVER_SCROLL_NEVER);
+
+        presetsGrid = new GridLayout(context);
+        presetsGrid.setColumnCount(6);
+        presetsGrid.setRowCount(2);
+
+        presetScroll.addView(presetsGrid, new android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
+
+        android.widget.LinearLayout.LayoutParams scrollParams = new android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        scrollParams.setMargins(0, 0, 0, dpToPx(24));
+        root.addView(presetScroll, scrollParams);
+
+        // 4. Custom Color Label
+        android.widget.TextView customLabel = new android.widget.TextView(context);
+        customLabel.setText("Custom Color");
+        customLabel.setTextSize(14);
+        customLabel.setTextColor(textSecondary);
+        root.addView(customLabel, labelParams);
+
+        // 5. Preview + Hex Row
+        android.widget.LinearLayout previewRow = new android.widget.LinearLayout(context);
+        previewRow.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        previewRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+        colorPreview = new View(context);
+        android.widget.LinearLayout.LayoutParams previewParams = new android.widget.LinearLayout.LayoutParams(dpToPx(52), dpToPx(52));
+        previewParams.setMargins(0, 0, dpToPx(16), 0);
+        previewRow.addView(colorPreview, previewParams);
+
+        hexInput = new EditText(context);
+        hexInput.setHint("Hex Code (#RRGGBB)");
+        hexInput.setSingleLine(true);
+        hexInput.setTextColor(textColor);
+        hexInput.setHintTextColor(textSecondary);
+        hexInput.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(7)});
+        hexInput.setInputType(android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+        
+        GradientDrawable editBg = new GradientDrawable();
+        editBg.setColor(cardBg);
+        editBg.setCornerRadius(dpToPx(8));
+        hexInput.setBackground(editBg);
+        hexInput.setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8));
+        
+        android.widget.LinearLayout.LayoutParams inputParams = new android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+        previewRow.addView(hexInput, inputParams);
+
+        android.widget.LinearLayout.LayoutParams rowParams = new android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        rowParams.setMargins(0, 0, 0, dpToPx(20));
+        root.addView(previewRow, rowParams);
+
+        // 6. Hue Label
+        android.widget.TextView hueLabel = new android.widget.TextView(context);
+        hueLabel.setText("Hue");
+        hueLabel.setTextSize(12);
+        hueLabel.setTextColor(textSecondary);
+        android.widget.LinearLayout.LayoutParams smallLabelParams = new android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        smallLabelParams.setMargins(0, 0, 0, dpToPx(4));
+        root.addView(hueLabel, smallLabelParams);
+
+        // 7. Hue SeekBar
+        hueSeekBar = new SeekBar(context);
+        hueSeekBar.setMax(360);
+        android.widget.LinearLayout.LayoutParams seekParams = new android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(48));
+        seekParams.setMargins(0, 0, 0, dpToPx(16));
+        root.addView(hueSeekBar, seekParams);
+
+        // 8. Brightness Label
+        android.widget.TextView brightnessLabel = new android.widget.TextView(context);
+        brightnessLabel.setText("Brightness");
+        brightnessLabel.setTextSize(12);
+        brightnessLabel.setTextColor(textSecondary);
+        root.addView(brightnessLabel, smallLabelParams);
+
+        // 9. Brightness SeekBar
+        brightnessSeekBar = new SeekBar(context);
+        brightnessSeekBar.setMax(100);
+        brightnessSeekBar.setProgress(100);
+        android.widget.LinearLayout.LayoutParams brightnessParams = new android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(48));
+        brightnessParams.setMargins(0, 0, 0, dpToPx(24));
+        root.addView(brightnessSeekBar, brightnessParams);
+
+        // 10. Buttons Row
+        android.widget.LinearLayout buttonsRow = new android.widget.LinearLayout(context);
+        buttonsRow.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        buttonsRow.setGravity(android.view.Gravity.END);
+
+        android.widget.Button btnCancel = new android.widget.Button(context);
+        btnCancel.setText("Cancel");
+        btnCancel.setTextColor(textColor);
+        GradientDrawable cancelBg = new GradientDrawable();
+        cancelBg.setColor(Color.TRANSPARENT);
+        btnCancel.setBackground(cancelBg);
+        btnCancel.setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8));
+        btnCancel.setOnClickListener(v -> dialog.dismiss());
+        buttonsRow.addView(btnCancel);
+
+        android.widget.Button btnSelect = new android.widget.Button(context);
+        btnSelect.setText("Select");
+        btnSelect.setTextColor(Color.WHITE);
+        GradientDrawable selectBg = new GradientDrawable();
+        selectBg.setColor(0xFF00A884); // WhatsApp green/teal
+        selectBg.setCornerRadius(dpToPx(20));
+        btnSelect.setBackground(selectBg);
+        btnSelect.setPadding(dpToPx(20), dpToPx(8), dpToPx(20), dpToPx(8));
+        btnSelect.setOnClickListener(v -> {
             if (listener != null) {
                 listener.onColorSelected(selectedColor);
             }
             dialog.dismiss();
         });
 
-        dialog.setCanceledOnTouchOutside(false);
-        dialog.show();
+        android.widget.LinearLayout.LayoutParams selectParams = new android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        selectParams.setMargins(dpToPx(12), 0, 0, 0);
+        buttonsRow.addView(btnSelect, selectParams);
+
+        root.addView(buttonsRow, new android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        android.widget.ScrollView scrollView = new android.widget.ScrollView(context);
+        scrollView.addView(root);
+        return scrollView;
+    }
+
+    private boolean isDarkTheme(Context context) {
+        return (context.getResources().getConfiguration().uiMode & 
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK) == 
+                android.content.res.Configuration.UI_MODE_NIGHT_YES;
     }
 
     private void updateUIFromColor() {
