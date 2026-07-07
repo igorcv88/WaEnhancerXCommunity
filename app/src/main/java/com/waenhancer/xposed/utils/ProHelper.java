@@ -1121,6 +1121,31 @@ public class ProHelper {
         }
     }
 
+    public static boolean isProFeature(String key) {
+        if (key == null) return false;
+        return key.equals("message_bomber") 
+                || key.equals("license_verify") 
+                || key.equals("delete_message_file") 
+                || key.equals("delete_message_file_sent") 
+                || key.equals("pro_status_splitter")
+                || key.equals("remove_status_bottom_tile")
+                || key.equals("remove_status_quick_reactions")
+                || key.equals("remove_status_heart_button")
+                || key.equals("status_bottom_play_pause_button")
+                || key.equals("add_status_reply_menu_item")
+                || key.equals("status_video_fast_gesture")
+                || key.equals("status_video_fast_speed")
+                || key.equals("disable_status_swipe_up")
+                || key.equals("always_typing_global")
+                || key.equals("always_typing_global_target")
+                || key.equals("always_typing_global_mode")
+                || key.equals("always_typing_contacts")
+                || key.equals("always_typing_global_type")
+                || key.equals("send_audio_as_voice_status")
+                || key.equals("file_size_spoofer")
+                || key.equals("filter_group_members_messages");
+    }
+
     private static boolean isProFeature(Preference pref) {
         if (pref == null) return false;
 
@@ -1129,30 +1154,7 @@ public class ProHelper {
             return true;
         }
 
-        String key = pref.getKey();
-        if (key != null) {
-            return key.equals("message_bomber") 
-                    || key.equals("license_verify") 
-                    || key.equals("delete_message_file") 
-                    || key.equals("delete_message_file_sent") 
-                    || key.equals("pro_status_splitter")
-                    || key.equals("remove_status_bottom_tile")
-                    || key.equals("remove_status_quick_reactions")
-                    || key.equals("remove_status_heart_button")
-                    || key.equals("status_bottom_play_pause_button")
-                    || key.equals("add_status_reply_menu_item")
-                    || key.equals("status_video_fast_gesture")
-                    || key.equals("status_video_fast_speed")
-                    || key.equals("disable_status_swipe_up")
-                    || key.equals("always_typing_global")
-                    || key.equals("always_typing_global_target")
-                    || key.equals("always_typing_global_mode")
-                    || key.equals("always_typing_contacts")
-                    || key.equals("always_typing_global_type")
-                    || key.equals("send_audio_as_voice_status")
-                    || key.equals("file_size_spoofer");
-        }
-        return false;
+        return isProFeature(pref.getKey());
     }
 
     private static String getHookKeyForPref(String key) {

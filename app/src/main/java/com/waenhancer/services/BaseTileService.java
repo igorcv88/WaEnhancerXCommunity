@@ -26,6 +26,18 @@ public abstract class BaseTileService extends TileService {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         String key = getPreferenceKey();
         
+        if (com.waenhancer.xposed.utils.ProHelper.isProFeature(key)) {
+            boolean isVerified = prefs.getBoolean("is_pro_verified", false);
+            boolean limitedFree = com.waenhancer.xposed.utils.ProHelper.isLimitedFreePreferenceEnabled(key);
+            if (!isVerified && !limitedFree) {
+                if (!isTileActive(prefs)) {
+                    android.widget.Toast.makeText(this, "This is a Pro feature. Please activate Pro to enable it.", android.widget.Toast.LENGTH_LONG).show();
+                    updateTileState();
+                    return;
+                }
+            }
+        }
+
         if (isCustomToggle()) {
             performCustomToggle(prefs, key);
         } else {
