@@ -51,6 +51,7 @@ public class ActivityController extends Feature {
     private static String Key;
     private static String pickingKey;
     private static Class<?> statusDistributionClass;
+    private static boolean isOptimizing = false;
 
     public static void setPickingKey(String key) {
         pickingKey = key;
@@ -112,7 +113,12 @@ public class ActivityController extends Feature {
                         return;
                     Activity activity = (Activity) param.thisObject;
                     if (activity.getIntent().getBooleanExtra("wae_optimize_db", false)) {
-                        param.setResult(null); // Disable back button during optimization
+                        if (isOptimizing) {
+                            param.setResult(null); // Disable back button during optimization (Step 2)
+                        } else {
+                            activity.finish(); // Allow user to exit in Step 1
+                            param.setResult(null);
+                        }
                     }
                 }
             });
@@ -256,6 +262,9 @@ public class ActivityController extends Feature {
     }
 
     private void runDbOptimizationScreen(final Activity activity) {
+        // Reset optimizing flag on start
+        isOptimizing = false;
+
         // Keep screen on
         activity.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
@@ -337,13 +346,142 @@ public class ActivityController extends Feature {
         root.addView(title);
 
         // Message/Subtitle TextView
-        TextView message = new TextView(activity);
+        final TextView message = new TextView(activity);
         message.setPadding(0, dpToPx(activity, 8), 0, dpToPx(activity, 32));
-        message.setText("Creating speed-boosting database indexes for fast group member filtering...");
+        message.setText("Select optimizations to apply to your WhatsApp database.");
         message.setTextColor(android.graphics.Color.parseColor("#8696a0"));
         message.setTextSize(14);
         message.setGravity(Gravity.CENTER_HORIZONTAL);
         root.addView(message);
+
+        // Step 1: Options Container
+        final LinearLayout optionsContainer = new LinearLayout(activity);
+        optionsContainer.setOrientation(LinearLayout.VERTICAL);
+        optionsContainer.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // Options Card (Vertical list with rounded corners and card styling)
+        LinearLayout optionsCard = new LinearLayout(activity);
+        optionsCard.setOrientation(LinearLayout.VERTICAL);
+        android.graphics.drawable.GradientDrawable cardBg = new android.graphics.drawable.GradientDrawable();
+        cardBg.setColor(android.graphics.Color.parseColor("#1f2c34"));
+        cardBg.setCornerRadius(dpToPx(activity, 12));
+        optionsCard.setBackground(cardBg);
+        optionsCard.setPadding(dpToPx(activity, 16), dpToPx(activity, 16), dpToPx(activity, 16), dpToPx(activity, 16));
+        
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cardParams.setMargins(0, 0, 0, dpToPx(activity, 24));
+        optionsCard.setLayoutParams(cardParams);
+
+        // Item 1: Group Message Filter
+        LinearLayout item1 = new LinearLayout(activity);
+        item1.setOrientation(LinearLayout.HORIZONTAL);
+        item1.setGravity(Gravity.CENTER_VERTICAL);
+        item1.setPadding(0, 0, 0, dpToPx(activity, 12));
+
+        final android.widget.CheckBox cb1 = new android.widget.CheckBox(activity);
+        cb1.setChecked(true);
+        cb1.setButtonTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#00a884")));
+        LinearLayout.LayoutParams cb1Lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cb1Lp.setMarginEnd(dpToPx(activity, 8));
+        cb1.setLayoutParams(cb1Lp);
+        item1.addView(cb1);
+
+        LinearLayout textLayout1 = new LinearLayout(activity);
+        textLayout1.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams textLp1 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+        textLayout1.setLayoutParams(textLp1);
+
+        TextView label1 = new TextView(activity);
+        label1.setText("Group Message Filter");
+        label1.setTextColor(android.graphics.Color.parseColor("#e9edef"));
+        label1.setTextSize(14);
+        label1.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        textLayout1.addView(label1);
+
+        TextView desc1 = new TextView(activity);
+        desc1.setText("Rebuilds database indexes for lightning-fast group member message counting.");
+        desc1.setTextColor(android.graphics.Color.parseColor("#8696a0"));
+        desc1.setTextSize(12);
+        desc1.setPadding(0, dpToPx(activity, 2), 0, 0);
+        textLayout1.addView(desc1);
+        item1.addView(textLayout1);
+        optionsCard.addView(item1);
+
+        // Divider
+        android.view.View divider = new android.view.View(activity);
+        divider.setBackgroundColor(android.graphics.Color.parseColor("#202c33"));
+        LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(activity, 1));
+        divParams.setMargins(dpToPx(activity, 32), 0, 0, 0);
+        divider.setLayoutParams(divParams);
+        optionsCard.addView(divider);
+
+        // Item 2: Separate Groups
+        LinearLayout item2 = new LinearLayout(activity);
+        item2.setOrientation(LinearLayout.HORIZONTAL);
+        item2.setGravity(Gravity.CENTER_VERTICAL);
+        item2.setPadding(0, dpToPx(activity, 12), 0, 0);
+
+        final android.widget.CheckBox cb2 = new android.widget.CheckBox(activity);
+        cb2.setChecked(true);
+        cb2.setButtonTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#00a884")));
+        LinearLayout.LayoutParams cb2Lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cb2Lp.setMarginEnd(dpToPx(activity, 8));
+        cb2.setLayoutParams(cb2Lp);
+        item2.addView(cb2);
+
+        LinearLayout textLayout2 = new LinearLayout(activity);
+        textLayout2.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams textLp2 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+        textLayout2.setLayoutParams(textLp2);
+
+        TextView label2 = new TextView(activity);
+        label2.setText("Separate Groups");
+        label2.setTextColor(android.graphics.Color.parseColor("#e9edef"));
+        label2.setTextSize(14);
+        label2.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        textLayout2.addView(label2);
+
+        TextView desc2 = new TextView(activity);
+        desc2.setText("Optimizes chat database for fast loading of separate chats and groups tabs.");
+        desc2.setTextColor(android.graphics.Color.parseColor("#8696a0"));
+        desc2.setTextSize(12);
+        desc2.setPadding(0, dpToPx(activity, 2), 0, 0);
+        textLayout2.addView(desc2);
+        item2.addView(textLayout2);
+        optionsCard.addView(item2);
+
+        optionsContainer.addView(optionsCard);
+
+        // Continue Button
+        final android.widget.Button btnContinue = new android.widget.Button(activity);
+        btnContinue.setText("Continue");
+        btnContinue.setTextColor(android.graphics.Color.WHITE);
+        btnContinue.setTextSize(14);
+        btnContinue.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+
+        android.graphics.drawable.GradientDrawable btnBg = new android.graphics.drawable.GradientDrawable();
+        btnBg.setColor(android.graphics.Color.parseColor("#00a884"));
+        btnBg.setCornerRadius(dpToPx(activity, 24));
+        btnContinue.setBackground(btnBg);
+
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(activity, 48));
+        btnContinue.setLayoutParams(btnParams);
+        optionsContainer.addView(btnContinue);
+
+        root.addView(optionsContainer);
+
+        // Step 2: Progress Container (Step 2)
+        final LinearLayout progressContainer = new LinearLayout(activity);
+        progressContainer.setOrientation(LinearLayout.VERTICAL);
+        progressContainer.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        progressContainer.setVisibility(View.GONE);
 
         // ProgressBar (WhatsApp Green accent, track #202c33, thin 4dp layout)
         final ProgressBar progressBar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
@@ -354,7 +492,7 @@ public class ActivityController extends Feature {
         LinearLayout.LayoutParams pbParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(activity, 4));
         progressBar.setLayoutParams(pbParams);
-        root.addView(progressBar);
+        progressContainer.addView(progressBar);
 
         // Progress/Percentage Text
         final TextView percentText = new TextView(activity);
@@ -364,9 +502,9 @@ public class ActivityController extends Feature {
         percentText.setTextSize(14);
         percentText.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         percentText.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.addView(percentText);
+        progressContainer.addView(percentText);
 
-        // Step list layout (Monospace updates)
+        // Step list layout
         LinearLayout stepLayout = new LinearLayout(activity);
         stepLayout.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams stepLayoutParams = new LinearLayout.LayoutParams(
@@ -381,7 +519,7 @@ public class ActivityController extends Feature {
         stepLayout.addView(step1);
 
         final TextView step2 = new TextView(activity);
-        step2.setText("• Optimizing message storage...");
+        step2.setText("• Rebuilding message filter indexes...");
         step2.setTextColor(android.graphics.Color.parseColor("#8696a0"));
         step2.setTextSize(13);
         step2.setPadding(0, dpToPx(activity, 8), 0, 0);
@@ -394,7 +532,8 @@ public class ActivityController extends Feature {
         step3.setPadding(0, dpToPx(activity, 8), 0, 0);
         stepLayout.addView(step3);
 
-        root.addView(stepLayout);
+        progressContainer.addView(stepLayout);
+        root.addView(progressContainer);
 
         // Spacer to push card to the bottom
         android.view.View spacer = new android.view.View(activity);
@@ -406,15 +545,15 @@ public class ActivityController extends Feature {
         // Warning Card (Bottom aligned with margin)
         LinearLayout card = new LinearLayout(activity);
         card.setOrientation(LinearLayout.VERTICAL);
-        android.graphics.drawable.GradientDrawable cardBg = new android.graphics.drawable.GradientDrawable();
-        cardBg.setColor(android.graphics.Color.parseColor("#1f2c34"));
-        cardBg.setCornerRadius(dpToPx(activity, 12));
-        card.setBackground(cardBg);
+        android.graphics.drawable.GradientDrawable warningCardBg = new android.graphics.drawable.GradientDrawable();
+        warningCardBg.setColor(android.graphics.Color.parseColor("#1f2c34"));
+        warningCardBg.setCornerRadius(dpToPx(activity, 12));
+        card.setBackground(warningCardBg);
         
-        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams warningCardParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        cardParams.setMargins(0, 0, 0, dpToPx(activity, 16));
-        card.setLayoutParams(cardParams);
+        warningCardParams.setMargins(0, 0, 0, dpToPx(activity, 16));
+        card.setLayoutParams(warningCardParams);
         card.setPadding(dpToPx(activity, 16), dpToPx(activity, 16), dpToPx(activity, 16), dpToPx(activity, 16));
 
         TextView cardTitle = new TextView(activity);
@@ -435,8 +574,58 @@ public class ActivityController extends Feature {
 
         activity.setContentView(root);
 
+        // Enable/Disable Continue button dynamically
+        cb1.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            btnContinue.setEnabled(cb1.isChecked() || cb2.isChecked());
+            btnContinue.setAlpha((cb1.isChecked() || cb2.isChecked()) ? 1.0f : 0.5f);
+        });
+        cb2.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            btnContinue.setEnabled(cb1.isChecked() || cb2.isChecked());
+            btnContinue.setAlpha((cb1.isChecked() || cb2.isChecked()) ? 1.0f : 0.5f);
+        });
+
         final Handler mainHandler = new Handler(Looper.getMainLooper());
 
+        btnContinue.setOnClickListener(v -> {
+            boolean optFilter = cb1.isChecked();
+            boolean optSeparate = cb2.isChecked();
+
+            optionsContainer.setVisibility(View.GONE);
+            progressContainer.setVisibility(View.VISIBLE);
+            message.setText("Creating speed-boosting database indexes...");
+            isOptimizing = true;
+
+            // Set up steps visibility and text
+            if (optFilter && optSeparate) {
+                step1.setText("• Stopping background processes...");
+                step2.setText("• Indexing group messages...");
+                step3.setText("• Optimizing chat database...");
+                step1.setTextColor(android.graphics.Color.parseColor("#e9edef"));
+                step2.setTextColor(android.graphics.Color.parseColor("#8696a0"));
+                step3.setTextColor(android.graphics.Color.parseColor("#8696a0"));
+                step3.setVisibility(View.VISIBLE);
+            } else if (optFilter) {
+                step1.setText("• Stopping background processes...");
+                step2.setText("• Indexing group messages...");
+                step1.setTextColor(android.graphics.Color.parseColor("#e9edef"));
+                step2.setTextColor(android.graphics.Color.parseColor("#8696a0"));
+                step3.setVisibility(View.GONE);
+            } else {
+                step1.setText("• Stopping background processes...");
+                step2.setText("• Optimizing chat database...");
+                step1.setTextColor(android.graphics.Color.parseColor("#e9edef"));
+                step2.setTextColor(android.graphics.Color.parseColor("#8696a0"));
+                step3.setVisibility(View.GONE);
+            }
+
+            runOptimizationTask(activity, mainHandler, progressBar, percentText, step1, step2, step3, optFilter, optSeparate);
+        });
+    }
+
+    private void runOptimizationTask(final Activity activity, final Handler mainHandler,
+                                     final ProgressBar progressBar, final TextView percentText,
+                                     final TextView step1, final TextView step2, final TextView step3,
+                                     final boolean optFilter, final boolean optSeparate) {
         CompletableFuture.runAsync(() -> {
             // Kill other WhatsApp helper processes to avoid any database locking
             try {
@@ -464,8 +653,13 @@ public class ActivityController extends Feature {
                         SQLiteDatabase db = SQLiteDatabase.openDatabase(dbFile.getAbsolutePath(), null,
                                 SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
                         try {
-                            db.execSQL("CREATE INDEX IF NOT EXISTS wae_msg_filter_idx ON message (chat_row_id, sender_jid_row_id, from_me, message_type)");
-                            db.execSQL("CREATE INDEX IF NOT EXISTS wae_msg_from_me_idx ON message (chat_row_id, from_me, message_type)");
+                            if (optFilter) {
+                                db.execSQL("CREATE INDEX IF NOT EXISTS wae_msg_filter_idx ON message (chat_row_id, sender_jid_row_id, from_me, message_type)");
+                                db.execSQL("CREATE INDEX IF NOT EXISTS wae_msg_from_me_idx ON message (chat_row_id, from_me, message_type)");
+                            }
+                            if (optSeparate) {
+                                db.execSQL("CREATE INDEX IF NOT EXISTS wae_chat_unseen_idx ON chat (unseen_message_count, archived, chat_lock, jid_row_id)");
+                            }
                         } finally {
                             db.close();
                         }
@@ -491,16 +685,24 @@ public class ActivityController extends Feature {
                         progressBar.setProgress(currentP);
                         percentText.setText(currentP + "%");
 
-                        if (currentP >= 25 && currentP < 90) {
-                            step1.setText("✓ Background services stopped");
-                            step1.setTextColor(android.graphics.Color.parseColor("#00a884"));
-                            step2.setTextColor(android.graphics.Color.parseColor("#e9edef"));
-                        } else if (currentP >= 90) {
-                            step1.setText("✓ Background services stopped");
-                            step1.setTextColor(android.graphics.Color.parseColor("#00a884"));
-                            step2.setText("✓ Message storage optimized");
-                            step2.setTextColor(android.graphics.Color.parseColor("#00a884"));
-                            step3.setTextColor(android.graphics.Color.parseColor("#e9edef"));
+                        if (optFilter && optSeparate) {
+                            if (currentP >= 25 && currentP < 70) {
+                                step1.setText("✓ Background services stopped");
+                                step1.setTextColor(android.graphics.Color.parseColor("#00a884"));
+                                step2.setTextColor(android.graphics.Color.parseColor("#e9edef"));
+                            } else if (currentP >= 70) {
+                                step1.setText("✓ Background services stopped");
+                                step1.setTextColor(android.graphics.Color.parseColor("#00a884"));
+                                step2.setText("✓ Group messages indexed");
+                                step2.setTextColor(android.graphics.Color.parseColor("#00a884"));
+                                step3.setTextColor(android.graphics.Color.parseColor("#e9edef"));
+                            }
+                        } else {
+                            if (currentP >= 30) {
+                                step1.setText("✓ Background services stopped");
+                                step1.setTextColor(android.graphics.Color.parseColor("#00a884"));
+                                step2.setTextColor(android.graphics.Color.parseColor("#e9edef"));
+                            }
                         }
                     });
                     try {
@@ -523,15 +725,27 @@ public class ActivityController extends Feature {
                 ObjectAnimator animator = ObjectAnimator.ofInt(progressBar, "progress", endProgress);
                 animator.setDuration(250);
                 animator.start();
-                
+
                 if (finalSuccess) {
                     percentText.setText("100%");
-                    step1.setText("✓ Background services stopped");
-                    step1.setTextColor(android.graphics.Color.parseColor("#00a884"));
-                    step2.setText("✓ Message storage optimized");
-                    step2.setTextColor(android.graphics.Color.parseColor("#00a884"));
-                    step3.setText("✓ Database indexes rebuilt");
-                    step3.setTextColor(android.graphics.Color.parseColor("#00a884"));
+                    if (optFilter && optSeparate) {
+                        step1.setText("✓ Background services stopped");
+                        step1.setTextColor(android.graphics.Color.parseColor("#00a884"));
+                        step2.setText("✓ Group messages indexed");
+                        step2.setTextColor(android.graphics.Color.parseColor("#00a884"));
+                        step3.setText("✓ Chat database optimized");
+                        step3.setTextColor(android.graphics.Color.parseColor("#00a884"));
+                    } else if (optFilter) {
+                        step1.setText("✓ Background services stopped");
+                        step1.setTextColor(android.graphics.Color.parseColor("#00a884"));
+                        step2.setText("✓ Group messages indexed");
+                        step2.setTextColor(android.graphics.Color.parseColor("#00a884"));
+                    } else {
+                        step1.setText("✓ Background services stopped");
+                        step1.setTextColor(android.graphics.Color.parseColor("#00a884"));
+                        step2.setText("✓ Chat database optimized");
+                        step2.setTextColor(android.graphics.Color.parseColor("#00a884"));
+                    }
                 } else {
                     percentText.setText("Failed");
                     step1.setTextColor(android.graphics.Color.parseColor("#ea0038"));
@@ -544,15 +758,6 @@ public class ActivityController extends Feature {
 
             mainHandler.post(() -> {
                 if (finalSuccess) {
-                    // Clean restart (Disabled for UI testing)
-                    /*
-                    try {
-                        Intent restartIntent = activity.getPackageManager().getLaunchIntentForPackage(activity.getPackageName());
-                        restartIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
-                        activity.startActivity(restartIntent);
-                    } catch (Throwable ignored) {}
-                    android.os.Process.killProcess(android.os.Process.myPid());
-                    */
                     Toast.makeText(activity, "Optimization finished! (UI Test Mode)", Toast.LENGTH_LONG).show();
                 } else {
                     // Show failure and allow exit via crash-proof standard AlertDialog
