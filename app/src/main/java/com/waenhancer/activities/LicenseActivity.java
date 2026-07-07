@@ -65,6 +65,12 @@ public class LicenseActivity extends BaseActivity {
     private ProFeatureAdapter proFeaturesAdapter;
     private MaterialTextView tvProFeaturesTitle;
 
+    // Limited Free Features section
+    private LinearLayout limitedFreeFeaturesSection;
+    private RecyclerView limitedFreeFeaturesRecycler;
+    private ProFeatureAdapter limitedFreeFeaturesAdapter;
+    private MaterialTextView tvLimitedFreeFeaturesTitle;
+
     private View loadingOverlay;
     private MaterialTextView tvLoadingStatus;
 
@@ -165,6 +171,12 @@ public class LicenseActivity extends BaseActivity {
         proFeaturesSection = findViewById(getResId("pro_features_section", "id"));
         proFeaturesRecycler = findViewById(getResId("pro_features_recycler", "id"));
         tvProFeaturesTitle = findViewById(getResId("tv_pro_features_title", "id"));
+        
+        // Bind Limited Free Features layout components
+        limitedFreeFeaturesSection = findViewById(getResId("limited_free_features_section", "id"));
+        limitedFreeFeaturesRecycler = findViewById(getResId("limited_free_features_recycler", "id"));
+        tvLimitedFreeFeaturesTitle = findViewById(getResId("tv_limited_free_features_title", "id"));
+
         loadingOverlay = findViewById(getResId("loading_overlay", "id"));
         if (loadingOverlay != null) {
             tvLoadingStatus = loadingOverlay.findViewById(getResId("tv_loading_status", "id"));
@@ -174,6 +186,12 @@ public class LicenseActivity extends BaseActivity {
             proFeaturesRecycler.setLayoutManager(new LinearLayoutManager(this));
             proFeaturesAdapter = new ProFeatureAdapter(this::navigateAndHighlightFeature);
             proFeaturesRecycler.setAdapter(proFeaturesAdapter);
+        }
+
+        if (limitedFreeFeaturesRecycler != null) {
+            limitedFreeFeaturesRecycler.setLayoutManager(new LinearLayoutManager(this));
+            limitedFreeFeaturesAdapter = new ProFeatureAdapter(this::navigateAndHighlightFeature);
+            limitedFreeFeaturesRecycler.setAdapter(limitedFreeFeaturesAdapter);
         }
 
         // Setup listeners
@@ -250,41 +268,64 @@ public class LicenseActivity extends BaseActivity {
 
         boolean isPro = "ACTIVE".equalsIgnoreCase(proStatus);
 
-        // Populate the adapter with only Pro features (always show this list)
-        if (proFeaturesAdapter != null) {
-            java.util.List<SearchableFeature> proFeatures = new java.util.ArrayList<>();
-            try {
-                java.util.List<SearchableFeature> allFeatures = FeatureCatalog.getAllFeatures(this);
-                if (allFeatures != null) {
-                    for (SearchableFeature feature : allFeatures) {
-                        String key = feature.getKey();
-                        if ("message_bomber".equals(key) 
-                                || "delete_message_file".equals(key) 
-                                || "pro_status_splitter".equals(key)
-                                || "customize_status_view_category".equals(key)
-                                || "always_typing_global".equals(key)
-                                || "floating_bottom_bar_pill_design".equals(key)
-                                || "filter_items".equals(key)
-                                || "send_audio_as_voice_status".equals(key)) {
+        java.util.List<SearchableFeature> proFeatures = new java.util.ArrayList<>();
+        java.util.List<SearchableFeature> limitedFreeFeatures = new java.util.ArrayList<>();
+        try {
+            java.util.List<SearchableFeature> allFeatures = FeatureCatalog.getAllFeatures(this);
+            if (allFeatures != null) {
+                for (SearchableFeature feature : allFeatures) {
+                    String key = feature.getKey();
+                    if ("file_size_spoofer".equals(key)
+                            || "filter_group_members_messages".equals(key)
+                            || "message_bomber".equals(key) 
+                            || "delete_message_file".equals(key) 
+                            || "pro_status_splitter".equals(key)
+                            || "customize_status_view_category".equals(key)
+                            || "always_typing_global".equals(key)
+                            || "floating_bottom_bar_pill_design".equals(key)
+                            || "filter_items".equals(key)
+                            || "send_audio_as_voice_status".equals(key)) {
+                        
+                        if (ProHelper.isLimitedFreePreferenceEnabled(key)) {
+                            limitedFreeFeatures.add(feature);
+                        } else {
                             proFeatures.add(feature);
                         }
                     }
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
             }
-            proFeaturesAdapter.setFeatures(proFeatures);
+        } catch (Exception e) {
+            e.printStackTrace();
         }
 
-        // Always show the Pro features section, but update the header title dynamically
-        if (proFeaturesSection != null) {
-            proFeaturesSection.setVisibility(View.VISIBLE);
+        if (proFeaturesAdapter != null) {
+            proFeaturesAdapter.setFeatures(proFeatures);
         }
+        if (limitedFreeFeaturesAdapter != null) {
+            limitedFreeFeaturesAdapter.setFeatures(limitedFreeFeatures);
+        }
+
+        // Handle sections visibility dynamically
+        if (proFeaturesSection != null) {
+            proFeaturesSection.setVisibility(proFeatures.isEmpty() ? View.GONE : View.VISIBLE);
+        }
+        if (limitedFreeFeaturesSection != null) {
+            limitedFreeFeaturesSection.setVisibility(limitedFreeFeatures.isEmpty() ? View.GONE : View.VISIBLE);
+        }
+
         if (tvProFeaturesTitle != null) {
             if (isPro) {
                 tvProFeaturesTitle.setText("Exclusive Pro Features");
             } else {
                 tvProFeaturesTitle.setText("Pro Features you're missing");
+            }
+        }
+
+        if (tvLimitedFreeFeaturesTitle != null) {
+            if (isPro) {
+                tvLimitedFreeFeaturesTitle.setText("Active Promo Features");
+            } else {
+                tvLimitedFreeFeaturesTitle.setText("Limited Free Features (Pro Recommended)");
             }
         }
 

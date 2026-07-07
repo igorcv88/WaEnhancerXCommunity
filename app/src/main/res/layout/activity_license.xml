@@ -340,6 +340,37 @@
 
             </LinearLayout>
 
+            <!-- Limited Free Features Section -->
+            <LinearLayout
+                android:id="@+id/limited_free_features_section"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="16dp"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <com.google.android.material.textview.MaterialTextView
+                    android:id="@+id/tv_limited_free_features_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginBottom="12dp"
+                    android:layout_marginStart="8dp"
+                    android:text="Limited Free Features (Pro Recommended)"
+                    android:textAppearance="?attr/textAppearanceTitleMedium"
+                    android:textColor="?attr/colorOnSurface"
+                    android:textStyle="bold" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/limited_free_features_recycler"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:nestedScrollingEnabled="false"
+                    android:clipToPadding="false"
+                    android:scrollbars="none" />
+            </LinearLayout>
+
             <!-- Pro Features / Features you're missing Section (displayed at the end) -->
             <LinearLayout
                 android:id="@+id/pro_features_section"

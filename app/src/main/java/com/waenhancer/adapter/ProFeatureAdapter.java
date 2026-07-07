@@ -83,7 +83,14 @@ public class ProFeatureAdapter extends RecyclerView.Adapter<ProFeatureAdapter.Vi
                 String summary = feature.getSummary();
                 String key = feature.getKey();
 
-                titleView.setText(title);
+                boolean isPro = "ACTIVE".equalsIgnoreCase(com.waenhancer.xposed.utils.ProHelper.getProStatus());
+                boolean isLimitedFree = com.waenhancer.xposed.utils.ProHelper.isLimitedFreePreferenceEnabled(key);
+                if (isLimitedFree && !isPro) {
+                    titleView.setText(title + " (Limited Free)");
+                } else {
+                    titleView.setText(title);
+                }
+
                 summaryView.setText(summary);
 
                 // Map custom premium icons based on feature keys
@@ -100,6 +107,10 @@ public class ProFeatureAdapter extends RecyclerView.Adapter<ProFeatureAdapter.Vi
                     iconRes = getResId(context, "edit2", "drawable");
                 } else if ("floating_bottom_bar_pill_design".equals(key)) {
                     iconRes = getResId(context, "ic_palette", "drawable");
+                } else if ("file_size_spoofer".equals(key)) {
+                    iconRes = getResId(context, "ic_media", "drawable");
+                } else if ("filter_group_members_messages".equals(key)) {
+                    iconRes = getResId(context, "ic_general", "drawable"); // Fallback to general or similar safe drawable
                 }
                 iconView.setImageResource(iconRes);
             } catch (Exception e) {
