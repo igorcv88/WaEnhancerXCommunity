@@ -348,11 +348,33 @@ public class ActivityController extends Feature {
             }
         } catch (Throwable ignored) {}
 
+        // Check database for existing indexes
+        boolean filterIndexExists = false;
+        boolean separateIndexExists = false;
+        try {
+            java.io.File dbFile = activity.getDatabasePath("msgstore.db");
+            if (dbFile.exists()) {
+                try (SQLiteDatabase db = SQLiteDatabase.openDatabase(dbFile.getAbsolutePath(), null,
+                        SQLiteDatabase.OPEN_READONLY | SQLiteDatabase.NO_LOCALIZED_COLLATORS)) {
+                    try (Cursor c = db.rawQuery("SELECT name FROM sqlite_master WHERE type='index' AND name='wae_msg_filter_idx'", null)) {
+                        filterIndexExists = c != null && c.moveToFirst();
+                    }
+                    try (Cursor c = db.rawQuery("SELECT name FROM sqlite_master WHERE type='index' AND name='wae_chat_unseen_idx'", null)) {
+                        separateIndexExists = c != null && c.moveToFirst();
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            XposedBridge.log("[WAEX] Error checking database indexes: " + t.toString());
+        }
+
         // Build the layout programmatically
         LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER_HORIZONTAL);
         root.setBackgroundColor(android.graphics.Color.parseColor(bgColor));
+        root.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT));
 
         // Padding
         int pad = dpToPx(activity, 28);
@@ -411,11 +433,79 @@ public class ActivityController extends Feature {
         // Message/Subtitle TextView (using WDSTextView)
         final TextView message = createWDSTextView(activity);
         message.setPadding(0, dpToPx(activity, 8), 0, dpToPx(activity, 32));
-        message.setText("Select optimizations to apply to your WhatsApp database.");
         message.setTextColor(android.graphics.Color.parseColor(txtSecondary));
         message.setTextSize(14);
         message.setGravity(Gravity.CENTER_HORIZONTAL);
         root.addView(message);
+
+        if (filterIndexExists && separateIndexExists) {
+            // Already Optimized State UI: circular green checkmark badge from custom SVG
+            android.widget.ImageView successBadge = new android.widget.ImageView(activity);
+            LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(
+                    dpToPx(activity, 80), dpToPx(activity, 80));
+            badgeLp.setMargins(0, dpToPx(activity, 32), 0, dpToPx(activity, 24));
+            badgeLp.gravity = Gravity.CENTER_HORIZONTAL;
+            successBadge.setLayoutParams(badgeLp);
+
+            try {
+                android.graphics.drawable.Drawable checkIcon = com.waenhancer.xposed.utils.DesignUtils.getDrawable(com.waenhancer.R.drawable.wae_check_circle);
+                if (checkIcon != null) {
+                    successBadge.setImageDrawable(checkIcon);
+                    successBadge.setColorFilter(android.graphics.Color.parseColor(accentColor));
+                }
+            } catch (Throwable t) {
+                XposedBridge.log("[WAEX] Failed to load success badge drawable: " + t.toString());
+            }
+            root.addView(successBadge);
+
+            message.setText("Your WhatsApp database is already fully optimized! The index structures are built and active.");
+            message.setPadding(dpToPx(activity, 16), dpToPx(activity, 8), dpToPx(activity, 16), dpToPx(activity, 48));
+
+            // Spacer to push the Dismiss button to the bottom of the screen
+            android.view.View spacer = new android.view.View(activity);
+            LinearLayout.LayoutParams spacerLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f);
+            spacer.setLayoutParams(spacerLp);
+            root.addView(spacer);
+
+            // Dismiss Button
+            android.view.View dismissBtn = null;
+            try {
+                Class<?> wdsButtonClass = activity.getClassLoader().loadClass("com.whatsapp.ui.wds.components.button.WDSButton");
+                dismissBtn = (android.view.View) wdsButtonClass.getConstructor(android.content.Context.class, android.util.AttributeSet.class)
+                        .newInstance(activity, null);
+                try {
+                    Class<?> variantEnum = activity.getClassLoader().loadClass("X.0xb");
+                    Object filledVariant = Enum.valueOf((Class<Enum>) variantEnum, "FILLED");
+                    XposedHelpers.callMethod(dismissBtn, "setVariant", filledVariant);
+                } catch (Throwable t) {}
+            } catch (Throwable ignored) {}
+
+            if (dismissBtn == null) {
+                dismissBtn = new android.widget.Button(activity);
+            }
+            final android.view.View btnDismiss = dismissBtn;
+            if (btnDismiss instanceof android.widget.TextView) {
+                ((android.widget.TextView) btnDismiss).setText("Dismiss");
+                ((android.widget.TextView) btnDismiss).setGravity(Gravity.CENTER);
+            } else {
+                try {
+                    XposedHelpers.callMethod(btnDismiss, "setText", "Dismiss");
+                } catch (Throwable ignored) {}
+            }
+
+            LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(activity, 48));
+            btnParams.setMargins(dpToPx(activity, 16), 0, dpToPx(activity, 16), dpToPx(activity, 16));
+            btnDismiss.setLayoutParams(btnParams);
+            btnDismiss.setOnClickListener(v -> activity.finish());
+            root.addView(btnDismiss);
+
+            activity.setContentView(root);
+            return;
+        }
+
+        message.setText("Select optimizations to apply to your WhatsApp database.");
 
         // Step 1: Options Container
         final LinearLayout optionsContainer = new LinearLayout(activity);
@@ -429,14 +519,14 @@ public class ActivityController extends Feature {
             wdsSwitchClass = activity.getClassLoader().loadClass("com.whatsapp.ui.wds.components.toggle.WDSSwitch");
         } catch (Throwable ignored) {}
 
+        android.util.TypedValue outValue = new android.util.TypedValue();
+        activity.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValue, true);
+
         // Item 1: Group Message Filter
         LinearLayout item1 = new LinearLayout(activity);
         item1.setOrientation(LinearLayout.HORIZONTAL);
         item1.setGravity(Gravity.CENTER_VERTICAL);
         item1.setPadding(dpToPx(activity, 16), dpToPx(activity, 16), dpToPx(activity, 16), dpToPx(activity, 16));
-        
-        android.util.TypedValue outValue = new android.util.TypedValue();
-        activity.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValue, true);
         item1.setBackgroundResource(outValue.resourceId);
         item1.setClickable(true);
         item1.setFocusable(true);
@@ -485,17 +575,6 @@ public class ActivityController extends Feature {
                 ((android.widget.CompoundButton) finalSwitch1).toggle();
             }
         });
-
-        optionsContainer.addView(item1);
-
-        // Divider
-        android.view.View optDivider = new android.view.View(activity);
-        optDivider.setBackgroundColor(android.graphics.Color.parseColor(dividerColor));
-        LinearLayout.LayoutParams optDivParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(activity, 1));
-        optDivParams.setMargins(dpToPx(activity, 16), 0, dpToPx(activity, 16), 0);
-        optDivider.setLayoutParams(optDivParams);
-        optionsContainer.addView(optDivider);
 
         // Item 2: Separate Groups
         LinearLayout item2 = new LinearLayout(activity);
@@ -551,7 +630,23 @@ public class ActivityController extends Feature {
             }
         });
 
-        optionsContainer.addView(item2);
+        // Add views dynamically based on what indexes are missing
+        if (!filterIndexExists) {
+            optionsContainer.addView(item1);
+        }
+        if (!filterIndexExists && !separateIndexExists) {
+            // Divider
+            android.view.View optDivider = new android.view.View(activity);
+            optDivider.setBackgroundColor(android.graphics.Color.parseColor(dividerColor));
+            LinearLayout.LayoutParams optDivParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(activity, 1));
+            optDivParams.setMargins(dpToPx(activity, 16), 0, dpToPx(activity, 16), 0);
+            optDivider.setLayoutParams(optDivParams);
+            optionsContainer.addView(optDivider);
+        }
+        if (!separateIndexExists) {
+            optionsContainer.addView(item2);
+        }
 
         // Spacer to push the warning text and button to the bottom of the screen
         android.view.View optSpacer = new android.view.View(activity);
@@ -672,24 +767,28 @@ public class ActivityController extends Feature {
         activity.setContentView(root);
 
         // Enable/Disable Continue button dynamically
+        final boolean finalFilterExists = filterIndexExists;
+        final boolean finalSeparateExists = separateIndexExists;
         if (finalSwitch1 instanceof android.widget.CompoundButton && finalSwitch2 instanceof android.widget.CompoundButton) {
             android.widget.CompoundButton s1 = (android.widget.CompoundButton) finalSwitch1;
             android.widget.CompoundButton s2 = (android.widget.CompoundButton) finalSwitch2;
             s1.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                btnContinue.setEnabled(s1.isChecked() || s2.isChecked());
-                btnContinue.setAlpha((s1.isChecked() || s2.isChecked()) ? 1.0f : 0.5f);
+                boolean enable = (!finalFilterExists && s1.isChecked()) || (!finalSeparateExists && s2.isChecked());
+                btnContinue.setEnabled(enable);
+                btnContinue.setAlpha(enable ? 1.0f : 0.5f);
             });
             s2.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                btnContinue.setEnabled(s1.isChecked() || s2.isChecked());
-                btnContinue.setAlpha((s1.isChecked() || s2.isChecked()) ? 1.0f : 0.5f);
+                boolean enable = (!finalFilterExists && s1.isChecked()) || (!finalSeparateExists && s2.isChecked());
+                btnContinue.setEnabled(enable);
+                btnContinue.setAlpha(enable ? 1.0f : 0.5f);
             });
         }
 
         final Handler mainHandler = new Handler(Looper.getMainLooper());
 
         btnContinue.setOnClickListener(v -> {
-            boolean optFilter = finalSwitch1 instanceof android.widget.CompoundButton && ((android.widget.CompoundButton) finalSwitch1).isChecked();
-            boolean optSeparate = finalSwitch2 instanceof android.widget.CompoundButton && ((android.widget.CompoundButton) finalSwitch2).isChecked();
+            boolean optFilter = !finalFilterExists && finalSwitch1 instanceof android.widget.CompoundButton && ((android.widget.CompoundButton) finalSwitch1).isChecked();
+            boolean optSeparate = !finalSeparateExists && finalSwitch2 instanceof android.widget.CompoundButton && ((android.widget.CompoundButton) finalSwitch2).isChecked();
 
             optionsContainer.setVisibility(View.GONE);
             progressContainer.setVisibility(View.VISIBLE);

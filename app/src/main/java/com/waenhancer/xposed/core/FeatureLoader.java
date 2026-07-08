@@ -424,7 +424,7 @@ public class FeatureLoader {
                                              .setNegativeButton("Don't Ask Again", (dialog, which) -> {
                                                  try {
                                                      localPrefs.edit().putBoolean("dont_ask_optimize_db", true).apply();
-                                                     android.widget.Toast.makeText(activity, "You can find database optimizations in WhatsApp Settings > WaEnhancerX db Optimization.", android.widget.Toast.LENGTH_LONG).show();
+                                                     android.widget.Toast.makeText(activity, "You can find database optimizations in Settings > WaeX Settings > Optimizations.", android.widget.Toast.LENGTH_LONG).show();
                                                  } catch (Throwable t) {
                                                      XposedBridge.log("[WAEX] Failed to save dont_ask_optimize_db: " + t.toString());
                                                  }
