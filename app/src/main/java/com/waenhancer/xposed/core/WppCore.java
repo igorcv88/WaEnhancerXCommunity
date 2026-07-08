@@ -518,6 +518,9 @@ public class WppCore {
 
     public synchronized static Class getSettingsActivityClass(@NonNull ClassLoader loader) {
         try {
+            try {
+                return loader.loadClass("com.whatsapp.settings.ui.SettingsTabActivity");
+            } catch (Throwable ignored) {}
             return Unobfuscator.loadSettingsActivityClass(loader);
         } catch (Exception e) {
             return null;

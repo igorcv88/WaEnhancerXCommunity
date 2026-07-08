@@ -1139,7 +1139,16 @@ public class AlertDialogWpp {
             View button = (View) wdsButtonClass.getConstructor(Context.class, AttributeSet.class).newInstance(context, null);
             ((TextView) button).setText(text);
             try {
-                Class<?> variantClass = context.getClassLoader().loadClass("X.0xb");
+                Class<?> variantClass = null;
+                for (java.lang.reflect.Method m : wdsButtonClass.getDeclaredMethods()) {
+                    if (m.getName().equals("setVariant") && m.getParameterTypes().length == 1) {
+                        variantClass = m.getParameterTypes()[0];
+                        break;
+                    }
+                }
+                if (variantClass == null) {
+                    variantClass = context.getClassLoader().loadClass("X.0xb");
+                }
                 Object variantVal = Enum.valueOf((Class<Enum>) variantClass, variant);
                 XposedHelpers.callMethod(button, "setVariant", variantVal);
             } catch (Throwable ignored) {}

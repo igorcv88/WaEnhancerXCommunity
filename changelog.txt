@@ -1,4 +1,5 @@
 [Added]
+- Added support upto 2.26.27.xx (WA/WB)
 - WhatsApp Native Embedded Settings
 
 [Improved]

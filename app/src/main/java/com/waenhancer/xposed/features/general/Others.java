@@ -362,8 +362,12 @@ public class Others extends Feature {
 
         callInfo();
 
-        if (disableProfileStatus) {
+        XposedBridge.log("[WAEX] Unconditional disablePhotoProfileStatus check starting...");
+        try {
             disablePhotoProfileStatus();
+            XposedBridge.log("[WAEX] disablePhotoProfileStatus hook applied successfully!");
+        } catch (Throwable t) {
+            XposedBridge.log("[WAEX] disablePhotoProfileStatus error: " + t.toString());
         }
 
         if (disableExpiration) {
@@ -860,16 +864,26 @@ public class Others extends Feature {
         try {
             refreshStatusClass = Unobfuscator.loadRefreshStatusClass(classLoader);
         } catch (Exception e) {
-            logDebug("disablePhotoProfileStatus: RefreshStatus class not found, skipping", e);
+            XposedBridge.log("[WAEX] disablePhotoProfileStatus: RefreshStatus class not found, skipping: " + e.toString());
             return;
         }
         var photoProfileClass = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, ".WDSProfilePhoto");
+        XposedBridge.log("[WAEX] disablePhotoProfileStatus: refreshStatusClass=" + refreshStatusClass.getName());
+        XposedBridge.log("[WAEX] disablePhotoProfileStatus: photoProfileClass=" + (photoProfileClass != null ? photoProfileClass.getName() : "null"));
         var convClass = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, ".ConversationsFragment");
+        XposedBridge.log("[WAEX] disablePhotoProfileStatus: convClass=" + (convClass != null ? convClass.getName() : "null"));
         var jidClass = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "jid.Jid");
+        XposedBridge.log("[WAEX] disablePhotoProfileStatus: jidClass=" + (jidClass != null ? jidClass.getName() : "null"));
         var method = ReflectionUtils.findMethodUsingFilter(convClass, m -> m.getParameterCount() > 0 && !Modifier.isStatic(m.getModifiers()) && m.getParameterTypes()[0] == View.class && ReflectionUtils.findIndexOfType(m.getParameterTypes(), jidClass) != -1);
+        XposedBridge.log("[WAEX] disablePhotoProfileStatus: method=" + (method != null ? method.getName() : "null"));
         var field = ReflectionUtils.getFieldByExtendType(convClass, refreshStatusClass);
+        XposedBridge.log("[WAEX] disablePhotoProfileStatus: field=" + (field != null ? field.getName() : "null"));
         if (field == null) {
-            ;
+            XposedBridge.log("[WAEX] disablePhotoProfileStatus: field is null, dumping all fields of convClass:");
+            for (java.lang.reflect.Field f : convClass.getDeclaredFields()) {
+                XposedBridge.log("[WAEX] convClass field: " + f.getName() + " of type " + f.getType().getName());
+            }
+            XposedBridge.log("[WAEX] disablePhotoProfileStatus: field is null, returning early!");
             return;
         }
         XposedBridge.hookMethod(method, new XC_MethodHook() {

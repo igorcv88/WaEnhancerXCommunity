@@ -657,8 +657,6 @@ public class FeatureLoader {
                         if (pref instanceof XSharedPreferences) {
                             ((XSharedPreferences) pref).reload();
                         }
-
-                        showRestartDialog(activity);
                     } catch (Throwable e) {
                         XposedBridge.log("[WAEX] Error during activity resume check: " + e.getMessage());
                     } finally {
@@ -1267,6 +1265,13 @@ public class FeatureLoader {
     public static void showRestartDialog(Activity activity) {
         if (activity == null || activity.isFinishing()) return;
         try {
+            Class<?> settingsClass = WppCore.getSettingsActivityClass(activity.getClassLoader());
+            if (settingsClass == null || !settingsClass.isAssignableFrom(activity.getClass())) {
+                return;
+            }
+            if (activity.getIntent() != null && activity.getIntent().getStringExtra("waex_screen_id") != null) {
+                return;
+            }
             boolean needRestart = WppCore.getPrivBoolean("need_restart", false);
             if (needRestart && !isRestartDialogShowing) {
                 isRestartDialogShowing = true;
