@@ -56,6 +56,7 @@
 -keep class com.waenhancer.xposed.utils.ReflectionUtils { *; }
 -keep class com.waenhancer.xposed.features.listeners.ConversationItemListener { *; }
 -keep class com.waenhancer.xposed.core.components.AlertDialogWpp { *; }
+-keep class com.waenhancer.xposed.core.db.** { *; }
 -keep class com.waenhancer.R { *; }
 -keep class com.waenhancer.R$* { *; }
 -keep class com.waenhancer.ui.helpers.BottomSheetHelper { *; }
