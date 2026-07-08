@@ -905,33 +905,23 @@ public class AlertDialogWpp {
                     public void onGlobalLayout() {
                         mainLayout.getViewTreeObserver().removeOnGlobalLayoutListener(this);
                         int measuredHeight = mainLayout.getHeight();
-                        int defaultHeight = (int) (screenHeight * 0.60f);
-                        int maxHeight = (int) capHeight;
+                        int defaultHeight = (int) (screenHeight * 0.55f);
+                        int maxHeight = (int) (screenHeight * 0.90f);
 
-                        if (mIsFullHeight) {
-                            if (measuredHeight > defaultHeight) {
-                                ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
-                                lp.height = defaultHeight;
-                                mainLayout.setLayoutParams(lp);
-                                
-                                LinearLayout.LayoutParams sLp = (LinearLayout.LayoutParams) scrollView.getLayoutParams();
-                                sLp.height = 0;
-                                sLp.weight = 1.0f;
-                                scrollView.setLayoutParams(sLp);
+                        if (measuredHeight > defaultHeight) {
+                            ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
+                            lp.height = defaultHeight;
+                            mainLayout.setLayoutParams(lp);
 
-                                setupExpandingGestures(scrollView, mainLayout, dragHandle, defaultHeight, maxHeight, screenHeight, density, dialog);
-                            }
+                            LinearLayout.LayoutParams sLp = (LinearLayout.LayoutParams) scrollView.getLayoutParams();
+                            sLp.height = 0;
+                            sLp.weight = 1.0f;
+                            scrollView.setLayoutParams(sLp);
+
+                            setupExpandingGestures(scrollView, mainLayout, dragHandle, defaultHeight, maxHeight, screenHeight, density, dialog);
                         } else {
-                            if (measuredHeight > halfScreenHeight) {
-                                ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
-                                lp.height = halfScreenHeight;
-                                mainLayout.setLayoutParams(lp);
-                                
-                                LinearLayout.LayoutParams sLp = (LinearLayout.LayoutParams) scrollView.getLayoutParams();
-                                sLp.height = 0;
-                                sLp.weight = 1.0f;
-                                scrollView.setLayoutParams(sLp);
-                            }
+                            // Content fits in default peek height. Wrap content, and enable dismiss dragging.
+                            setupExpandingGestures(scrollView, mainLayout, dragHandle, measuredHeight, measuredHeight, screenHeight, density, dialog);
                         }
                     }
                 });
