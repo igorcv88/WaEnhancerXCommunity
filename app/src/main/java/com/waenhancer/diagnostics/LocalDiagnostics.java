@@ -77,7 +77,7 @@ public final class LocalDiagnostics {
             report.append("Floating bottom bar: ")
                     .append(preferences.getBoolean("floating_bottom_bar", false)).append('\n');
             report.append("Theme preset: ")
-                    .append(sanitize(preferences.getString("waex_color_preset", "green"))).append('\n');
+                    .append(sanitize(preferences.getString("wae_color_preset", "green"))).append('\n');
             report.append("Pending restart: ")
                     .append(preferences.getBoolean("need_restart", false)).append('\n');
         }
