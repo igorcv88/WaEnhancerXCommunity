@@ -371,14 +371,14 @@ public class Utils {
     public static Properties getPropertiesFromText(String text, boolean enabled) {
         Properties properties = new Properties();
         if (!enabled || text == null) return properties;
-        Pattern pattern = Pattern.compile("^/\*\s*(.*?)\s*\*/", Pattern.DOTALL);
+        Pattern pattern = Pattern.compile("^/\\*\\s*(.*?)\\s*\\*/", Pattern.DOTALL);
         Matcher matcher = pattern.matcher(text);
         if (!matcher.find()) return properties;
 
-        String[] lines = matcher.group(1).split("\s*\n\s*");
+        String[] lines = matcher.group(1).split("\\s*\\n\\s*");
         for (String line : lines) {
             if (line == null || line.isBlank() || !line.contains("=")) continue;
-            String[] keyValue = line.split("\s*=\s*", 2);
+            String[] keyValue = line.split("\\s*=\\s*", 2);
             if (keyValue.length != 2) continue;
             String propertyKey = keyValue[0].strip();
             String value = keyValue[1].strip().replaceAll("^\"|\"$", "");

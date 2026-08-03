@@ -338,7 +338,7 @@ public class NewChat extends Feature {
                     String fullNumber = cc + phone;
                     String validationNumber = "+" + cc + phone;
                     // Local conservative E.164 validation. WhatsApp performs the final account check.
-                    boolean isValid = validationNumber.matches("\+[1-9]\d{7,14}");
+                    boolean isValid = validationNumber.matches("\\+[1-9]\\d{7,14}");
 
                     if (!isValid) {
                         edtPhone.setError("Invalid phone number for this country");
@@ -368,7 +368,7 @@ public class NewChat extends Feature {
     }
 
     private static int getCountryPhoneLength(Activity activity, String cc) {
-        int countryCodeLength = cc == null ? 0 : cc.replaceAll("\D", "").length();
+        int countryCodeLength = cc == null ? 0 : cc.replaceAll("\\D", "").length();
         return Math.max(4, Math.min(14, 15 - countryCodeLength));
     }
 
