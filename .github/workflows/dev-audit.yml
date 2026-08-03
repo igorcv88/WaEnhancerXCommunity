@@ -1,0 +1,45 @@
+name: Temporary Block A audit
+
+on:
+  pull_request:
+    branches:
+      - integration/community
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Inventory repository and prohibited references
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo '=== SOURCE FILES ==='
+          find app api -type f | sort
+          echo '=== PRO HELPER FIREBASE REFERENCES ==='
+          grep -RInE 'com\.waex\.helper|ProHelper|LicenseManager|LicenseActivity|ProFeaturesActivity|PillDesignPro|libpro_native\.so|appendDexPath|FirebaseAnalytics|FirebaseCrashlytics|google-services|firebase_' app api build.gradle.kts gradle 2>/dev/null || true
+          echo '=== BOTTOM BAR REFERENCES ==='
+          grep -RInE 'floating_bottom_bar|BottomBar|BottomNavigation|pill_design|jStyleParser|jstyleparser' app/src 2>/dev/null || true
+          echo '=== BACKUP REFERENCES ==='
+          grep -RInE 'Backup|Restore|SharedPreferences\.getAll|getAll\(\)|import.*json|export.*json' app/src 2>/dev/null || true
+          echo '=== SETTINGS ICON REFERENCES ==='
+          grep -RInE 'waex_settings_map|WdsSettingsTileRenderer|WdsSettingsNavigator|SettingsInjector|FeatureCatalog' app/src 2>/dev/null || true
+
+      - name: Compile debug and run unit tests
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon clean assembleWhatsappDebug testWhatsappDebugUnitTest
