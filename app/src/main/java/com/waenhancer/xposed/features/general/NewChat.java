@@ -409,93 +409,21 @@ public class NewChat extends Feature {
         }
     }
 
-
     private static boolean isValidatorLoaded(Activity activity) {
-        try {
-            ClassLoader proClassLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(activity);
-            if (proClassLoader != null) {
-                proClassLoader.loadClass("com.waex.helper.utils.PhoneNumberValidator");
-                return true;
-            }
-        } catch (Throwable ignored) {}
-        return false;
+        return true;
     }
 
     private static String getCountryHint(Activity activity, String cc, String activeIso) {
-        /* Log removed */
-        try {
-            ClassLoader proClassLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(activity);
-            if (proClassLoader == null) {
-                /* Log removed */
-                return "Phone Number";
-            }
-            Class<?> validatorClass = proClassLoader.loadClass("com.waex.helper.utils.PhoneNumberValidator");
-
-            // Use the singleton INSTANCE to safely invoke @JvmStatic methods
-            java.lang.reflect.Field instanceField = validatorClass.getDeclaredField("INSTANCE");
-            instanceField.setAccessible(true);
-            Object validatorInstance = instanceField.get(null);
-
-            java.lang.reflect.Method phoneCodeRegexesMethod = validatorClass.getMethod("phoneCodeRegexes");
-            java.util.Set<String> keys = (java.util.Set<String>) phoneCodeRegexesMethod.invoke(validatorInstance);
-            /* Log removed */
-
-            String matchingKey = null;
-            if (keys != null) {
-                for (String key : keys) {
-                    try {
-                        if (java.util.regex.Pattern.compile(key).matcher("+" + cc).matches()) {
-                            matchingKey = key;
-                            break;
-                        }
-                    } catch (Throwable t) {
-                        android.util.Log.w("NewChat", "Error matching key " + key + ": " + t.getMessage());
-                    }
-                }
-            }
-            /* Log removed */
-
-            if (matchingKey != null) {
-                java.lang.reflect.Method countriesForPhoneCodeRegexMethod = validatorClass.getMethod(
-                    "countriesForPhoneCodeRegex", String.class
-                );
-                java.util.List<?> countryPatterns =
-                    (java.util.List<?>) countriesForPhoneCodeRegexMethod.invoke(validatorInstance, matchingKey);
-                /* Log removed */
-                if (countryPatterns != null && !countryPatterns.isEmpty()) {
-                    Object countryPattern = countryPatterns.get(0);
-                    try {
-                        java.lang.reflect.Method getPhoneHintMethod =
-                            countryPattern.getClass().getMethod("getPhoneHint");
-                        String hint = (String) getPhoneHintMethod.invoke(countryPattern);
-                        /* Log removed */
-                        return hint;
-                    } catch (Throwable t) {
-                        android.util.Log.w("NewChat", "getPhoneHint method missing/failed, trying fallback: " + t.getMessage());
-                        java.lang.reflect.Method getPhonePatternMethod =
-                            countryPattern.getClass().getMethod("getPhonePattern");
-                        String phonePattern = (String) getPhonePatternMethod.invoke(countryPattern);
-                        String hint = formatPatternToHint(phonePattern, matchingKey);
-                        android.util.Log.d("NewChat", "fallback hint: " + hint);
-                        return hint;
-                    }
-                }
-            } else {
-                /* Log removed */
-            }
-        } catch (Throwable t) {
-            android.util.Log.e("NewChat", "Error in getCountryHint: " + t.getMessage(), t);
-        }
-        return "Phone Number";
+        String country = getCountryName(activeIso);
+        return country == null || country.isBlank()
+                ? "Phone number"
+                : country + " phone number";
     }
 
     private static int getCountryPhoneLength(Activity activity, String cc) {
-        /* Log removed */
-        try {
-            ClassLoader proClassLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(activity);
-            if (proClassLoader == null) {
-                return -1;
-            }
+        int countryCodeLength = cc == null ? 0 : cc.replaceAll("\D", "").length();
+        return Math.max(4, Math.min(14, 15 - countryCodeLength));
+    }
             Class<?> validatorClass = proClassLoader.loadClass("com.waex.helper.utils.PhoneNumberValidator");
 
             // Use the singleton INSTANCE to safely invoke @JvmStatic methods

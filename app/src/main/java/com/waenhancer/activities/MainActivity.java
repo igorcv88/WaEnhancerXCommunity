@@ -528,10 +528,9 @@ public class MainActivity extends BaseActivity {
         }
 
         // Check if there is a pending downgrade reason to show
-        String downgradeMsg = rawPrefs.getString("pending_downgrade_reason_msg", null);
+        String downgradeMsg = rawPrefs.getString("obsolete_downgrade_notice", null);
         if (downgradeMsg != null) {
             android.widget.Toast.makeText(this, downgradeMsg, android.widget.Toast.LENGTH_LONG).show();
-            showDowngradeBottomSheet(downgradeMsg);
         }
 
         // Remote notices (cached + rate-limited)
@@ -729,7 +728,7 @@ public class MainActivity extends BaseActivity {
             actionBtn.setText("Upgrade to Pro");
             actionBtn.setOnClickListener(v -> {
                 android.content.SharedPreferences rawPrefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this);
-                rawPrefs.edit().remove("pending_downgrade_reason_msg").apply();
+                rawPrefs.edit().remove("obsolete_downgrade_notice").apply();
                 
                 dialog.dismiss();
                 try {
@@ -742,7 +741,7 @@ public class MainActivity extends BaseActivity {
             dismissBtn.setText("Dismiss");
             dismissBtn.setOnClickListener(v -> {
                 android.content.SharedPreferences rawPrefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this);
-                rawPrefs.edit().remove("pending_downgrade_reason_msg").apply();
+                rawPrefs.edit().remove("obsolete_downgrade_notice").apply();
                 
                 dialog.dismiss();
             });

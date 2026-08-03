@@ -744,8 +744,6 @@ You can still try it, but please wait for a stable version — it will be launch
     <!-- Helper Plugin Installer -->
     <string name="unlock_limited_free_title">Unlock Limited Free &amp; Pro Features</string>
     <string name="unlock_limited_free_sum">Download and load the helper plugin pack to unlock features</string>
-    <string name="pro_download_consent_title">Helper Plugin Required</string>
-    <string name="pro_download_consent_msg">You are about to download the helper plugin pack (com.waex.helper). This external component extends WaEnhancer Community with additional features.\n\nNote: Root access is required to install this package silently in the background.</string>
     <string name="agree_and_download">Agree &amp; Download</string>
     <string name="root_required_error">Root access is required to perform silent installation. Please grant root access and try again.</string>
     <string name="checking_root_access">Checking Root access...</string>

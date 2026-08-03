@@ -23,6 +23,7 @@ import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
 import com.waenhancer.xposed.core.WppCore;
+import com.waenhancer.theme.SemanticTheme;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -150,58 +151,61 @@ public class DesignUtils {
     public static int getPrimaryTextColor() {
         try {
             if (mPrefs == null) return isNightMode() ? 0xfffffffe : 0xff000001;
-            var textColor = mPrefs.getInt("text_color", 0);
+            if (!mPrefs.getBoolean("changecolor", false)) {
+                return isNightMode() ? 0xfffffffe : 0xff000001;
+            }
+            int explicit = mPrefs.getInt("text_color", 0);
             if (shouldUseMonetColors()) {
-                var monetTextColor = resolveMonetColor(isNightMode() ? "system_neutral1_100" : "system_neutral1_900");
-                if (monetTextColor != 0) {
-                    textColor = monetTextColor;
-                }
+                int monet = resolveMonetColor(isNightMode()
+                        ? "system_neutral1_100" : "system_neutral1_900");
+                if (monet != 0) explicit = monet;
             }
-            if (textColor == 0 || !mPrefs.getBoolean("changecolor", false)) {
-                return DesignUtils.isNightMode() ? 0xfffffffe : 0xff000001;
-            }
-            return textColor;
-        } catch (Throwable t) {
+            return explicit != 0 ? explicit : semanticToken("onSurface");
+        } catch (Throwable ignored) {
             return isNightMode() ? 0xfffffffe : 0xff000001;
         }
     }
 
     public static int getUnSeenColor() {
         try {
-            if (mPrefs == null) return 0xFF25d366;
-            var primaryColor = mPrefs.getInt("primary_color", 0);
+            if (mPrefs == null || !mPrefs.getBoolean("changecolor", false)) return 0xFF25d366;
+            int explicit = mPrefs.getInt("primary_color", 0);
             if (shouldUseMonetColors()) {
-                var monetPrimaryColor = resolveMonetColor(isNightMode() ? "system_accent1_300" : "system_accent1_600");
-                if (monetPrimaryColor != 0) {
-                    primaryColor = monetPrimaryColor;
-                }
+                int monet = resolveMonetColor(isNightMode()
+                        ? "system_accent1_300" : "system_accent1_600");
+                if (monet != 0) explicit = monet;
             }
-            if (primaryColor == 0 || !mPrefs.getBoolean("changecolor", false)) {
-                return 0xFF25d366;
-            }
-            return primaryColor;
-        } catch (Throwable t) {
+            return explicit != 0 ? explicit : semanticToken("primary");
+        } catch (Throwable ignored) {
             return 0xFF25d366;
         }
     }
 
+    public static int getPrimaryColor() {
+        return getUnSeenColor();
+    }
+
     public static int getPrimarySurfaceColor() {
         try {
-            if (mPrefs == null) return isNightMode() ? 0xff121212 : 0xfffffffe;
-            var backgroundColor = mPrefs.getInt("background_color", 0);
+            if (mPrefs == null || !mPrefs.getBoolean("changecolor", false)) {
+                return isNightMode() ? 0xff121212 : 0xfffffffe;
+            }
+            int explicit = mPrefs.getInt("background_color", 0);
             if (shouldUseMonetColors()) {
-                var monetBackgroundColor = resolveMonetColor(isNightMode() ? "system_neutral1_900" : "system_neutral1_10");
-                if (monetBackgroundColor != 0) {
-                    backgroundColor = monetBackgroundColor;
-                }
+                int monet = resolveMonetColor(isNightMode()
+                        ? "system_neutral1_900" : "system_neutral1_10");
+                if (monet != 0) explicit = monet;
             }
-            if (backgroundColor == 0 || !mPrefs.getBoolean("changecolor", false)) {
-                return DesignUtils.isNightMode() ? 0xff121212 : 0xfffffffe;
-            }
-            return backgroundColor;
-        } catch (Throwable t) {
+            return explicit != 0 ? explicit : semanticToken("surface");
+        } catch (Throwable ignored) {
             return isNightMode() ? 0xff121212 : 0xfffffffe;
         }
+    }
+
+    private static int semanticToken(String token) {
+        String preset = mPrefs == null ? "green"
+                : mPrefs.getString("wae_color_preset", "green");
+        return SemanticTheme.fromPreset(preset, isNightMode()).get(token);
     }
 
     public static Drawable generatePrimaryColorDrawable(Drawable drawable) {
@@ -434,8 +438,10 @@ public class DesignUtils {
     }
 
     public static int getThemeAccentColor(android.content.Context context) {
+        if (mPrefs != null && mPrefs.getBoolean("changecolor", false)) {
+            return getPrimaryColor();
+        }
         int color = resolveColorAttr(context, android.R.attr.colorAccent);
-        if (color == 0) return 0xff25d366; // WhatsApp Green
-        return color;
+        return color == 0 ? 0xff25d366 : color;
     }
 }

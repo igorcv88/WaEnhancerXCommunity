@@ -225,7 +225,7 @@ public final class BackupCodec {
             encoded.put("value", ((Number) value).doubleValue());
         } else if (value instanceof Set<?>) {
             encoded.put("type", "string_set");
-            encoded.put("value", new JSONArray(value));
+            encoded.put("value", new JSONArray((Set<?>) value));
         } else {
             encoded.put("type", "string");
             encoded.put("value", String.valueOf(value));

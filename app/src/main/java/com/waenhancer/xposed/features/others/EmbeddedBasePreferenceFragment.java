@@ -142,7 +142,6 @@ public abstract class EmbeddedBasePreferenceFragment extends PreferenceFragmentC
         }
         runWithoutRestartBroadcast(() -> applyDynamicStates(null));
         refreshSpecialSummaries();
-        com.waenhancer.xposed.utils.ProHelper.updatePreferences(requireContext(), getPreferenceScreen());
     }
 
     @Override
