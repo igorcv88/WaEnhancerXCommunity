@@ -206,16 +206,6 @@
             app:summary="@string/floating_bottom_bar_sum"
             app:title="@string/floating_bottom_bar" />
 
-        <com.waenhancer.preference.ProListPreference
-            app:defaultValue="regular"
-            app:dependency="floating_bottom_bar"
-            app:entries="@array/pill_design_entries"
-            app:entryValues="@array/pill_design_values"
-            app:key="floating_bottom_bar_pill_design"
-            app:summary="%s"
-            app:title="@string/floating_bottom_bar_pill_design"
-            app:proEntryValues="@array/pill_design_pro_values" />
-
         <rikka.material.preference.MaterialSwitchPreference
             app:dependency="floating_bottom_bar"
             app:key="floating_bottom_bar_scroll_hide"

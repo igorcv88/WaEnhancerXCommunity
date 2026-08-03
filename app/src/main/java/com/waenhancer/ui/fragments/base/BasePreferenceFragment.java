@@ -200,13 +200,6 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
         initializeReleaseChannelPreference();
         setupReleaseChannelPreference();
         updateKeyboxVerifySummary();
-
-        try {
-            com.waenhancer.utils.KeyboxFetcher.syncKeyboxAsync(requireContext());
-        } catch (Throwable ignored) {}
-
-        // Lockdown pro preferences dynamically if not verified
-        com.waenhancer.xposed.utils.ProHelper.updatePreferences(requireContext(), getPreferenceScreen());
     }
 
     @Override
@@ -297,10 +290,6 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
 
     @Override
     public boolean onPreferenceTreeClick(@NonNull androidx.preference.Preference preference) {
-        if ("bootloader_spoofer_verify".equals(preference.getKey())) {
-            com.waenhancer.xposed.utils.ProHelper.showKeyboxVerificationDialog(this);
-            return true;
-        }
         if (preference.getFragment() != null) {
             try {
                 Class<?> clazz = Class.forName(preference.getFragment());

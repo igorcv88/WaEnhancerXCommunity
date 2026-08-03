@@ -58,7 +58,6 @@ public class FloatingBottomBar extends Feature {
     private static boolean glassEnabled = false;
     private static float glassOpacity = 35f;
     private static int glassFillColor = 0;
-    private static boolean pillDesignPro = true;
 
     public FloatingBottomBar(@NonNull ClassLoader loader, @NonNull SharedPreferences preferences) {
         super(loader, preferences);
@@ -72,10 +71,6 @@ public class FloatingBottomBar extends Feature {
         glassEnabled = prefs.getBoolean("floating_bottom_bar_glass", true);
         glassOpacity = getPrefFloat(prefs, "floating_bottom_bar_glass_opacity", 35f);
         glassFillColor = getPrefColor(prefs, "floating_bottom_bar_fill_color", 0);
-        // Read pref — default to "regular" so new installs/free users get Classic
-        boolean prefWantsPro = "pro".equals(prefs.getString("floating_bottom_bar_pill_design", "regular"));
-        // Runtime Pro gate: override to false if the license is not active regardless of saved pref
-        pillDesignPro = prefWantsPro && com.waenhancer.xposed.utils.ProHelper.isPillDesignProEnabled();
 
 
         // Hook the tab frame container
@@ -203,21 +198,9 @@ public class FloatingBottomBar extends Feature {
                         // Clear backgrounds of immediate children to prevent solid white rectangular overlays
                         makeChildrenTransparent(view);
 
-                        if (pillDesignPro) {
-                            try {
-                                ClassLoader pluginLoader = (ClassLoader) System.getProperties().get("com.waex.helper.classloader");
-                                if (pluginLoader != null) {
-                                    Class<?> pillProClass = Class.forName("com.waex.helper.PillDesignPro", true, pluginLoader);
-                                    pillProClass.getMethod("applyProDesign", View.class, float.class).invoke(null, view, density);
-                                }
-                            } catch (Throwable t) {
-                                XposedBridge.log("Failed to load PillDesignPro: " + t.getMessage());
-                            }
-                        }
-
                         // Adjust padding to center items within floating pill
                         // Pro: tighter 3dp; Regular: original 6dp
-                        int paddingVertical = (int) ((pillDesignPro ? 3 : 6) * density);
+                        int paddingVertical = dp(density, Math.round(getPrefFloat(prefs, "floating_bottom_bar_padding_vertical", 6f)));
                         view.setPadding(view.getPaddingLeft(), paddingVertical, view.getPaddingRight(), paddingVertical);
 
                         // Attach LayoutChangeListener to enforce margins, overriding parent-forced layout passes
@@ -230,9 +213,6 @@ public class FloatingBottomBar extends Feature {
                                 if (isUpdating) return;
                                 isUpdating = true;
                                 try {
-                                    if (pillDesignPro && v.getMinimumHeight() != 0) {
-                                        v.setMinimumHeight(0);
-                                    }
                                     ViewGroup.LayoutParams lp = v.getLayoutParams();
                                     if (lp instanceof ViewGroup.MarginLayoutParams) {
                                         ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;

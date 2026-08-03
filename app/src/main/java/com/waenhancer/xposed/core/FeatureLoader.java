@@ -113,10 +113,6 @@ import com.waenhancer.xposed.utils.ResId;
 import com.waenhancer.xposed.utils.Utils;
 import com.waenhancer.xposed.utils.XResManager;
 
-import com.waex.api.plugin.IPlugin;
-import com.waex.api.plugin.IPluginContext;
-import com.waex.api.plugin.ICapabilityRegistry;
-import com.waex.api.plugin.IPluginCapability;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -544,15 +540,6 @@ public class FeatureLoader {
 
             initComponents(loader, providerPrefs);
             plugins(loader, providerPrefs, packageInfo.versionName);
-
-            // Initialize limited-free feature config in the Xposed context.
-            // This mirrors the companion app call in App.java and ensures the config
-            // is available before pro features try to resolve hook strings.
-            try {
-                com.waenhancer.xposed.utils.ProHelper.initLimitedFree(mApp, providerPrefs);
-            } catch (Throwable t) {
-                XposedBridge.log("[WAEX] Failed to initialize LimitedFree in Xposed context: " + t.getMessage());
-            }
 
             try {
                 /* Log removed */
@@ -1068,7 +1055,7 @@ public class FeatureLoader {
                             var doHookMethod = pluginObj.getClass().getMethod("doHook");
                             doHookMethod.invoke(pluginObj);
                         } catch (Exception ex) {
-                            XposedBridge.log("Failed to invoke doHook on Pro feature: " + classe.getSimpleName() + " - " + ex.getMessage());
+                            XposedBridge.log("Failed to invoke doHook on feature: " + classe.getSimpleName() + " - " + ex.getMessage());
                         }
                     }
                 } catch (Throwable e) {
@@ -1086,92 +1073,6 @@ public class FeatureLoader {
                 var timemillis2 = System.currentTimeMillis() - timemillis;
                 times.add("* Loaded Plugin " + classe.getSimpleName() + " in " + timemillis2 + "ms");
             }, executorService);
-        }
-
-        // Load Pro features dynamically if installed
-        try {
-            // XposedBridge.class.getClassLoader() returns null under LSPosed because it is
-            // injected at native level and treated as a bootstrap class.
-            // XC_MethodHook lives in the same InMemoryDexClassLoader but is NOT bootstrap-null.
-            // Use it to get a non-null reference to the Xposed framework classloader.
-            ClassLoader xposedFrameworkLoader = de.robv.android.xposed.XC_MethodHook.class.getClassLoader();
-            if (xposedFrameworkLoader == null) {
-                xposedFrameworkLoader = Thread.currentThread().getContextClassLoader();
-                /* Log removed */
-            }
-            /* Log removed */
-            ClassLoader proLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(mApp, loader, xposedFrameworkLoader);
-            if (proLoader != null) {
-                System.getProperties().put("com.waex.helper.classloader", proLoader);
-                /* Log removed */
-
-                // Reflectively verify if the native library loaded successfully
-                boolean isNativeLibLoaded = false;
-                try {
-                    Class<?> proFeatureClass = proLoader.loadClass("com.waex.helper.ProFeature");
-                    java.lang.reflect.Field nlField = proFeatureClass.getDeclaredField("nl");
-                    nlField.setAccessible(true);
-                    isNativeLibLoaded = nlField.getBoolean(null);
-                } catch (Throwable t) {
-                    XposedBridge.log("[WAEX] Warning: Failed to query ProFeature.nl via reflection: " + t.toString());
-                }
-
-                if (isNativeLibLoaded) {
-                    /* Log removed */
-                } else {
-                    /* Log removed */
-                }
-
-                /* Log removed */
-                Class<?> pluginEntryClass = proLoader.loadClass("com.waex.helper.PluginEntry");
-                IPlugin pluginInstance = (IPlugin) pluginEntryClass.getDeclaredConstructor().newInstance();
-                
-                pluginInstance.load();
-                
-                com.waenhancer.xposed.core.plugins.PluginContextImpl pluginContext = 
-                    new com.waenhancer.xposed.core.plugins.PluginContextImpl(loader, mApp, pref);
-                pluginInstance.attachContext(pluginContext);
-                
-                pluginInstance.init();
-                
-                CapabilityRegistryImpl registry = new CapabilityRegistryImpl();
-                pluginInstance.registerCapabilities(registry);
-                
-                // Invoke execute life-cycle hook (pure capability provider: no-op but standard lifecycle call)
-                pluginInstance.execute();
-                
-                // Execute registered capabilities with error isolation
-                for (IPluginCapability capability : registry.getCapabilities()) {
-                    CompletableFuture.runAsync(() -> {
-                        long timemillis = System.currentTimeMillis();
-                        String capName = capability.getPluginName();
-                        try {
-                            /* Log removed */
-                            capability.doHook();
-                            long timemillis2 = System.currentTimeMillis() - timemillis;
-                            /* Log removed */
-                        } catch (Throwable e) {
-                            XposedBridge.log("[WAEX] Error executing Pro capability " + capName + ": " + e.toString());
-                            XposedBridge.log(e);
-                            
-                            var error = new ErrorItem();
-                            error.setPluginName(capName);
-                            error.setWhatsAppVersion(versionWpp);
-                            error.setModuleVersion(BuildConfig.VERSION_NAME);
-                            error.setMessage(e.getMessage());
-                            error.setError(Arrays.toString(Arrays.stream(e.getStackTrace()).filter(
-                                    s -> !s.getClassName().startsWith("android") && !s.getClassName().startsWith("com.android"))
-                                    .map(StackTraceElement::toString).toArray()));
-                            list.add(error);
-                        }
-                    }, executorService);
-                }
-            } else {
-                /* Log removed */
-            }
-        } catch (Throwable t) {
-            XposedBridge.log("[WAEX] Error initializing Pro plugins loader: " + t.toString());
-            XposedBridge.log(t);
         }
 
         executorService.shutdown();

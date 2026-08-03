@@ -195,15 +195,6 @@ public class FilterItemsActivity extends BaseActivity implements FilterItemsAdap
         ArrayAdapter<String> behaviorAdapter = new ArrayAdapter<>(this, android.R.layout.simple_dropdown_item_1line, behaviors);
         behaviorDropdown.setAdapter(behaviorAdapter);
         behaviorDropdown.setOnItemClickListener((parent, view, pos, id) -> {
-            if (pos > 0 && !com.waenhancer.xposed.utils.ProHelper.isFilterItemsProEnabled()) {
-                Toast.makeText(FilterItemsActivity.this, "This behavior is for Pro users only. Please activate your license.", Toast.LENGTH_LONG).show();
-                try {
-                    Class<?> clazz = Class.forName("com.waenhancer.activities.LicenseActivity");
-                    Intent intent = new Intent(FilterItemsActivity.this, clazz);
-                    startActivity(intent);
-                } catch (ClassNotFoundException e) {
-                    Toast.makeText(FilterItemsActivity.this, "License module not found.", Toast.LENGTH_SHORT).show();
-                }
                 behaviorDropdown.setText(getBehaviorNameFromIndex(0), false);
                 toggleBehaviorLayouts(0, layoutColor, layoutOpacity, layoutResize);
             } else {
@@ -253,15 +244,6 @@ public class FilterItemsActivity extends BaseActivity implements FilterItemsAdap
             }
 
             int behaviorPos = getIndexFromBehaviorName(behaviorDropdown.getText().toString());
-            if (behaviorPos > 0 && !com.waenhancer.xposed.utils.ProHelper.isFilterItemsProEnabled()) {
-                Toast.makeText(FilterItemsActivity.this, "This behavior is for Pro users only. Please activate your license.", Toast.LENGTH_LONG).show();
-                try {
-                    Class<?> clazz = Class.forName("com.waenhancer.activities.LicenseActivity");
-                    Intent intent = new Intent(FilterItemsActivity.this, clazz);
-                    startActivity(intent);
-                } catch (ClassNotFoundException e) {
-                    Toast.makeText(FilterItemsActivity.this, "License module not found.", Toast.LENGTH_SHORT).show();
-                }
                 return;
             }
 

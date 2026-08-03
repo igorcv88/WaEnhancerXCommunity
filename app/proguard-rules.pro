@@ -86,12 +86,6 @@
 # =============================================================================
 # 3. LICENSING LAYER REFLECTION SAFETY (GAP CLOSED)
 # =============================================================================
-# Keep the names and reflective entrypoints of LicenseManager to ensure dynamic lookups succeed.
--keep class com.waenhancer.xposed.utils.LicenseManager {
-    public static void makePrefsWorldReadable(android.content.Context);
-    public static void silentCheck(android.content.Context);
-    public <init>(...);
-}
 
 # =============================================================================
 # 4. FLAT PACKAGING (REPACKAGING CLASSES TO MATCH COMPETITOR)

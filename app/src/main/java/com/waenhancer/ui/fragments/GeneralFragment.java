@@ -105,14 +105,12 @@ public class GeneralFragment extends BaseFragment {
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             super.onCreatePreferences(savedInstanceState, rootKey);
             setPreferencesFromResource(R.xml.fragment_general, rootKey);
-            updatePluginPreference();
         }
 
         @Override
         public void onResume() {
             super.onResume();
             setDisplayHomeAsUpEnabled(false);
-            updatePluginPreference();
             setupManageVersionsPref();
         }
 
@@ -128,46 +126,6 @@ public class GeneralFragment extends BaseFragment {
             }
         }
 
-        private void updatePluginPreference() {
-            android.content.Context context = getContext();
-            if (context == null) return;
-            androidx.preference.Preference pref = findPreference("unlock_limited_free");
-            androidx.preference.Preference updatesPref = findPreference("pro_plugin_updates");
-            androidx.preference.PreferenceCategory category = findPreference("plugin_pack_category");
-            if (category == null) return;
-
-            boolean isInstalled = com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(context);
-            if (isInstalled) {
-                category.setVisible(true);
-                if (pref != null) pref.setVisible(false);
-                if (updatesPref != null) {
-                    updatesPref.setVisible(true);
-                    updatesPref.setOnPreferenceClickListener(preference -> {
-                        try {
-                            android.content.Intent intent = new android.content.Intent();
-                            intent.setClassName("com.waex.helper", "com.waex.helper.activities.ProUpdateActivity");
-                            var prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context);
-                            var colorPreset = prefs.getString("wae_color_preset", "green");
-                            intent.putExtra("wae_color_preset", colorPreset);
-                            startActivity(intent);
-                        } catch (Exception e) {
-                            android.widget.Toast.makeText(context, "Failed to launch update activity: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
-                        }
-                        return true;
-                    });
-                }
-            } else {
-                category.setVisible(true);
-                if (pref != null) {
-                    pref.setVisible(true);
-                    pref.setOnPreferenceClickListener(preference -> {
-                        com.waenhancer.xposed.utils.ProHelper.checkRootAndInstallPlugin(getActivity(), null);
-                        return true;
-                    });
-                }
-                if (updatesPref != null) updatesPref.setVisible(false);
-            }
-        }
     }
 
     public static class HomeScreenGeneralPreference extends BasePreferenceFragment {
