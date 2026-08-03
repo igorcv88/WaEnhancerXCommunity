@@ -7,15 +7,18 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
-/** Local CSS validation and rollback state; no CSS or diagnostics leave the device. */
+/** Local CSS validation, temporary testing, rollback and safe-mode state. */
 public final class CssSafetyManager {
 
     public static final int MAX_CSS_BYTES = 256 * 1024;
     public static final int MAX_IMAGE_REFERENCES = 24;
+    public static final long DEFAULT_TEST_DURATION_MS = 120_000L;
     public static final String KEY_LAST_VALID = "css_last_valid";
     public static final String KEY_PREVIOUS_VALID = "css_previous_valid";
     public static final String KEY_SAFE_MODE = "css_safe_mode";
     public static final String KEY_FAILURE_COUNT = "css_failure_count";
+    public static final String KEY_TEST_CSS = "css_test_value";
+    public static final String KEY_TEST_EXPIRES_AT = "css_test_expires_at";
 
     private CssSafetyManager() {
     }
@@ -77,7 +80,7 @@ public final class CssSafetyManager {
         if (lower.contains("position:fixed") || lower.contains("position: fixed")) {
             warnings.add("Fixed-position elements can cover WhatsApp controls.");
         }
-        if (lower.contains("*{" ) || lower.contains("* {")) {
+        if (lower.contains("*{") || lower.contains("* {")) {
             warnings.add("A universal selector can increase rendering cost.");
         }
         return new ValidationResult(errors.isEmpty(), errors, warnings);
@@ -88,18 +91,41 @@ public final class CssSafetyManager {
         if (!validation.valid) return new SaveResult(false, validation, null);
 
         String previous = preferences.getString(KEY_LAST_VALID, "");
+        String safeCss = css == null ? "" : css;
         boolean committed = preferences.edit()
                 .putString(KEY_PREVIOUS_VALID, previous)
-                .putString(KEY_LAST_VALID, css == null ? "" : css)
-                .putString("custom_css", css == null ? "" : css)
+                .putString(KEY_LAST_VALID, safeCss)
+                .putString("custom_css", safeCss)
+                .remove(KEY_TEST_CSS)
+                .remove(KEY_TEST_EXPIRES_AT)
                 .putBoolean(KEY_SAFE_MODE, false)
                 .putInt(KEY_FAILURE_COUNT, 0)
                 .commit();
-        return new SaveResult(committed, validation, committed ? css : null);
+        return new SaveResult(committed, validation, committed ? safeCss : null);
+    }
+
+    public static SaveResult beginTest(SharedPreferences preferences, String css, long durationMs) {
+        ValidationResult validation = validate(css);
+        if (!validation.valid) return new SaveResult(false, validation, null);
+        long duration = Math.max(15_000L, Math.min(10 * 60_000L, durationMs));
+        String testCss = css == null ? "" : css;
+        boolean committed = preferences.edit()
+                .putString(KEY_TEST_CSS, testCss)
+                .putLong(KEY_TEST_EXPIRES_AT, System.currentTimeMillis() + duration)
+                .putBoolean(KEY_SAFE_MODE, false)
+                .commit();
+        return new SaveResult(committed, validation, committed ? testCss : null);
     }
 
     public static String effectiveCss(SharedPreferences preferences) {
         if (preferences.getBoolean(KEY_SAFE_MODE, false)) return "";
+
+        long expiresAt = readLong(preferences, KEY_TEST_EXPIRES_AT, 0L);
+        String testCss = preferences.getString(KEY_TEST_CSS, "");
+        if (expiresAt > System.currentTimeMillis() && validate(testCss).valid) {
+            return testCss;
+        }
+
         String candidate = preferences.getString("custom_css", "");
         if (validate(candidate).valid) return candidate;
         return preferences.getString(KEY_LAST_VALID, "");
@@ -111,6 +137,23 @@ public final class CssSafetyManager {
         return preferences.edit()
                 .putString("custom_css", previous)
                 .putString(KEY_LAST_VALID, previous)
+                .remove(KEY_TEST_CSS)
+                .remove(KEY_TEST_EXPIRES_AT)
+                .putBoolean(KEY_SAFE_MODE, false)
+                .putInt(KEY_FAILURE_COUNT, 0)
+                .commit();
+    }
+
+    public static boolean enableSafeMode(SharedPreferences preferences) {
+        return preferences.edit()
+                .putBoolean(KEY_SAFE_MODE, true)
+                .remove(KEY_TEST_CSS)
+                .remove(KEY_TEST_EXPIRES_AT)
+                .commit();
+    }
+
+    public static boolean disableSafeMode(SharedPreferences preferences) {
+        return preferences.edit()
                 .putBoolean(KEY_SAFE_MODE, false)
                 .putInt(KEY_FAILURE_COUNT, 0)
                 .commit();
@@ -130,6 +173,16 @@ public final class CssSafetyManager {
 
     public static void clearFailureState(SharedPreferences preferences) {
         preferences.edit().putInt(KEY_FAILURE_COUNT, 0).apply();
+    }
+
+    private static long readLong(SharedPreferences preferences, String key, long fallback) {
+        try {
+            Object value = preferences.getAll().get(key);
+            if (value instanceof Number) return ((Number) value).longValue();
+            if (value instanceof String) return Long.parseLong((String) value);
+        } catch (RuntimeException ignored) {
+        }
+        return fallback;
     }
 
     private static int occurrences(String source, String needle) {
