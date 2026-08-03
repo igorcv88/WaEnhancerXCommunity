@@ -2,9 +2,9 @@ package com.waenhancer.xposed.bridge.providers;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
-import android.database.Cursor;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 
@@ -12,14 +12,18 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.preference.PreferenceManager;
 
-import java.io.Serializable;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-
 import com.waenhancer.xposed.bridge.service.HookBinder;
 
+import java.util.HashMap;
+import java.util.HashSet;
+
+/**
+ * Legacy compatibility bridge.
+ *
+ * <p>Block C owns the audited replacement of these generic preference operations with a
+ * UID-validated, read-only public configuration provider. Block A deliberately removes telemetry
+ * and external-helper operations without changing the preference transport that current hooks use.</p>
+ */
 public class HookProvider extends ContentProvider {
 
     @Override
@@ -29,67 +33,29 @@ public class HookProvider extends ContentProvider {
 
     private SharedPreferences getPrefs() {
         Context context = getContext();
-        if (context == null) return null;
-        // Explicitly target the default preferences used by the UI to ensure 100% parity
-        return PreferenceManager.getDefaultSharedPreferences(context);
+        return context == null ? null : PreferenceManager.getDefaultSharedPreferences(context);
     }
 
     @Nullable
     @Override
     public Bundle call(@NonNull String method, @Nullable String arg, @Nullable Bundle extras) {
-        ;
-        
-        int callingUid = android.os.Binder.getCallingUid();
         long token = android.os.Binder.clearCallingIdentity();
         try {
             SharedPreferences prefs = getPrefs();
-            if (prefs == null) {
-                /* Log removed */
+            Context context = getContext();
+            if (prefs == null || context == null) {
                 return null;
             }
-            if (method.equals("getHookBinder")) {
+
+            if ("getHookBinder".equals(method)) {
                 Bundle result = new Bundle();
                 result.putBinder("binder", HookBinder.getInstance());
                 return result;
             }
-            var context = getContext();
-            if (context == null) {
-                return null;
-            }
-            if ("record_event".equals(method) && extras != null) {
-                if (!prefs.getBoolean("enable_crash_analytics", false)) {
-                    return Bundle.EMPTY;
-                }
-                String eventName = extras.getString("event_name");
-                Bundle params = extras.getBundle("params");
-                if (eventName != null) {
-                    com.waenhancer.utils.AnalyticsManager.logEvent(context, eventName, params);
-                }
-                return Bundle.EMPTY;
-            }
-            if ("record_crash".equals(method) && extras != null) {
-                if (com.waenhancer.BuildConfig.DEBUG || !prefs.getBoolean("enable_crash_analytics", false)) {
-                    return Bundle.EMPTY;
-                }
-                String stacktrace = extras.getString("stacktrace");
-                if (stacktrace != null && !stacktrace.isEmpty()) {
-                    try {
-                        // Dynamically check if Firebase is initialized first
-                        Class<?> firebaseAppClass = Class.forName("com.google.firebase.FirebaseApp");
-                        try {
-                            firebaseAppClass.getMethod("getInstance").invoke(null);
-                        } catch (Exception e) {
-                            // Try to initialize it if not initialized
-                            firebaseAppClass.getMethod("initializeApp", Context.class).invoke(null, context.getApplicationContext());
-                        }
 
-                        /* Log removed */
-                        com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(
-                                new com.waenhancer.utils.WhatsAppCrashException("WhatsApp Crash: \n" + stacktrace));
-                    } catch (Throwable t) {
-                        android.util.Log.e("WAEX_Provider", "Failed to record crash to Crashlytics: " + t.getMessage());
-                    }
-                }
+            // Telemetry was removed. Keep these old calls as local no-ops for one compatibility
+            // release so an injected process built against the previous bridge does not crash.
+            if ("record_event".equals(method) || "record_crash".equals(method)) {
                 return Bundle.EMPTY;
             }
 
@@ -106,46 +72,19 @@ public class HookProvider extends ContentProvider {
                 }
                 return result;
             }
-            if ("get_pro_plugin_info".equals(method)) {
+
+            if ("get_all_preferences".equals(method)) {
                 Bundle result = new Bundle();
-                try {
-                    android.content.pm.ApplicationInfo info =
-                            context.getPackageManager().getApplicationInfo("com.waex.helper", android.content.pm.PackageManager.GET_META_DATA);
-                    if (info.sourceDir != null && new java.io.File(info.sourceDir).exists()) {
-                        result.putString("sourceDir", info.sourceDir);
-                        result.putString("nativeLibraryDir", info.nativeLibraryDir);
-                        int minVersion = info.metaData != null ? info.metaData.getInt("min_waex_version", 0) : 0;
-                        result.putInt("min_waex_version", minVersion);
-                        prefs.edit()
-                                .putString("pro_plugin_path", info.sourceDir)
-                                .putString("pro_plugin_lib_path", info.nativeLibraryDir)
-                                .putInt("min_waex_version", minVersion)
-                                .commit();
-                    }
-                } catch (Throwable t) {
-                    android.util.Log.e("WAEX_Provider", "Failed to resolve pro plugin info", t);
-                }
+                result.putSerializable("prefs", new HashMap<>(prefs.getAll()));
                 return result;
             }
-            if (method.equals("get_all_preferences")) {
-                var all = prefs.getAll();
-                ;
-                // Dump keys for diagnosis
-                for (String k : all.keySet()) {
-                    ;
-                }
-                Bundle result = new Bundle();
-                result.putSerializable("prefs", new HashMap<>(all));
-                return result;
-            }
+
             if ("put_preference".equals(method) && extras != null) {
                 String key = extras.getString("key");
                 String type = extras.getString("type");
-                ;
-                if (key == null || type == null) {
-                    return null;
-                }
-                var editor = prefs.edit();
+                if (key == null || type == null) return null;
+
+                SharedPreferences.Editor editor = prefs.edit();
                 switch (type) {
                     case "string":
                         editor.putString(key, extras.getString("value"));
@@ -170,20 +109,22 @@ public class HookProvider extends ContentProvider {
                         return null;
                 }
                 editor.commit();
-                context.getContentResolver().notifyChange(Uri.parse("content://" + com.waenhancer.BuildConfig.APPLICATION_ID + ".hookprovider/preferences"), null);
+                notifyPreferencesChanged(context);
                 return Bundle.EMPTY;
             }
+
             if ("remove_preference".equals(method) && extras != null) {
                 String key = extras.getString("key");
                 if (key != null) {
                     prefs.edit().remove(key).commit();
-                    context.getContentResolver().notifyChange(Uri.parse("content://" + com.waenhancer.BuildConfig.APPLICATION_ID + ".hookprovider/preferences"), null);
+                    notifyPreferencesChanged(context);
                     return Bundle.EMPTY;
                 }
             }
+
             if ("clear_preferences".equals(method)) {
                 prefs.edit().clear().commit();
-                context.getContentResolver().notifyChange(Uri.parse("content://" + com.waenhancer.BuildConfig.APPLICATION_ID + ".hookprovider/preferences"), null);
+                notifyPreferencesChanged(context);
                 return Bundle.EMPTY;
             }
             return null;
@@ -192,9 +133,18 @@ public class HookProvider extends ContentProvider {
         }
     }
 
+    private static void notifyPreferencesChanged(Context context) {
+        context.getContentResolver().notifyChange(
+                Uri.parse("content://" + com.waenhancer.BuildConfig.APPLICATION_ID
+                        + ".hookprovider/preferences"),
+                null);
+    }
+
     @Nullable
     @Override
-    public Cursor query(@NonNull Uri uri, @Nullable String[] projection, @Nullable String selection, @Nullable String[] selectionArgs, @Nullable String sortOrder) {
+    public Cursor query(@NonNull Uri uri, @Nullable String[] projection,
+                        @Nullable String selection, @Nullable String[] selectionArgs,
+                        @Nullable String sortOrder) {
         return null;
     }
 
@@ -211,12 +161,14 @@ public class HookProvider extends ContentProvider {
     }
 
     @Override
-    public int delete(@NonNull Uri uri, @Nullable String selection, @Nullable String[] selectionArgs) {
+    public int delete(@NonNull Uri uri, @Nullable String selection,
+                      @Nullable String[] selectionArgs) {
         return 0;
     }
 
     @Override
-    public int update(@NonNull Uri uri, @Nullable ContentValues values, @Nullable String selection, @Nullable String[] selectionArgs) {
+    public int update(@NonNull Uri uri, @Nullable ContentValues values,
+                      @Nullable String selection, @Nullable String[] selectionArgs) {
         return 0;
     }
 }
