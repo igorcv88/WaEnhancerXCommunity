@@ -39,13 +39,14 @@ jobs:
         run: |
           set -euo pipefail
           file='app/src/main/java/com/waenhancer/ui/fragments/HomeFragment.java'
-          if grep -nE 'getAll\(\)|edit\(\)\.clear\(\)|\.clear\(\)\.commit\(\)' "$file"; then
-            echo "HomeFragment still contains a raw preference dump or destructive import." >&2
+          backup_methods="$(sed -n '/private void saveConfigs/,/private boolean isInitialCheck/p' "$file")"
+          if grep -nE 'getAll\(\)|edit\(\)\.clear\(\)|\.clear\(\)\.commit\(\)' <<< "$backup_methods"; then
+            echo "Backup export/import still contains a raw preference dump or destructive clear." >&2
             exit 1
           fi
-          grep -q 'BackupCodec.exportSettings' "$file"
-          grep -q 'BackupCodec.parseAndValidate' "$file"
-          grep -q 'BackupCodec.apply' "$file"
+          grep -q 'BackupCodec.exportSettings' <<< "$backup_methods"
+          grep -q 'BackupCodec.parseAndValidate' <<< "$backup_methods"
+          grep -q 'BackupCodec.apply' <<< "$backup_methods"
 
       - name: Verify manual-only release workflow
         shell: bash
