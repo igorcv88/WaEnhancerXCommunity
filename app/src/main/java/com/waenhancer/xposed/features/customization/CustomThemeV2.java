@@ -27,6 +27,7 @@ import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 
 import com.waenhancer.utils.IColors;
+import com.waenhancer.theme.CssSafetyManager;
 import com.waenhancer.views.WallpaperView;
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.PerfLogger;
@@ -121,7 +122,8 @@ public class CustomThemeV2 extends Feature {
 
     @Override
     public void doHook() throws Throwable {
-        if (prefs.getBoolean("lite_mode", false)) {
+        if (prefs.getBoolean("lite_mode", false)
+                || prefs.getBoolean(CssSafetyManager.KEY_SAFE_MODE, false)) {
             return;
         }
 

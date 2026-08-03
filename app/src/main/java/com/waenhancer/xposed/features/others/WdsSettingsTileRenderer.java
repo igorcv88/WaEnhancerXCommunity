@@ -93,11 +93,10 @@ public class WdsSettingsTileRenderer {
                 String title = cat.getString("title");
                 String summary = cat.optString("summary", "");
 
-                String iconName = cat.optString("icon", "ic_settings");
-                android.graphics.drawable.Drawable icon = com.waenhancer.xposed.utils.DesignUtils.getDrawableByName(iconName);
-                if (icon == null) {
-                    icon = com.waenhancer.xposed.utils.DesignUtils.getDrawableByName("ic_settings");
-                }
+                String iconName = SettingsIconRegistry.iconName(
+                        id, cat.optString("icon", ""));
+                android.graphics.drawable.Drawable icon =
+                        SettingsIconRegistry.resolve(activity, id, iconName);
                 de.robv.android.xposed.XposedBridge.log("[WAEX] Category id: " + id + ", iconName: " + iconName + ", icon: " + icon);
 
                 View row = createWdsRow(activity, title, summary, icon, iconName, v -> {
@@ -246,7 +245,7 @@ public class WdsSettingsTileRenderer {
                 String title = pref.getString("title");
                 boolean isEnabled = pref.optBoolean("enabled", true);
                 if (!isEnabled) {
-                    title = title + " [Pro]";
+                    title = title + " [Unavailable]";
                 }
                 String summary = pref.optString("summary", "");
 
@@ -262,7 +261,7 @@ public class WdsSettingsTileRenderer {
                             builder.setPositiveButton("Dismiss", null);
                             builder.show();
                         } catch (Throwable t) {
-                            de.robv.android.xposed.XposedBridge.log("[WAEX] Failed to show pro bottom sheet: " + t.getMessage());
+                            de.robv.android.xposed.XposedBridge.log("[WAEX] Failed to show unavailable-feature sheet: " + t.getMessage());
                         }
                     });
                 } else {

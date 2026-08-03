@@ -22,6 +22,7 @@ import androidx.fragment.app.FragmentActivity;
 import androidx.preference.PreferenceManager;
 
 import com.waenhancer.App;
+import com.waenhancer.backup.BackupCodec;
 import com.waenhancer.BuildConfig;
 import com.waenhancer.R;
 import com.waenhancer.UpdateChecker;
@@ -55,8 +56,8 @@ import java.io.File;
 
 public class HomeFragment extends BaseFragment {
 
-    private static final String RELEASES_URL = "https://github.com/igorcv88/WaEnhancerX/releases";
-    private static final String LATEST_STABLE_URL = "https://github.com/igorcv88/WaEnhancerX/releases/latest";
+    private static final String RELEASES_URL = "https://github.com/igorcv88/WaEnhancer Community/releases";
+    private static final String LATEST_STABLE_URL = "https://github.com/igorcv88/WaEnhancer Community/releases/latest";
 
     /**
      * In-memory flag — reset to false every time the app process starts.
@@ -192,7 +193,7 @@ public class HomeFragment extends BaseFragment {
                 final String finalDialogDetails = dialogDetailsHtml;
                 final String finalGithubDetails = githubDetailsMd;
 
-                String dialogMessageHtml = "This will open the WaEnhancer X GitHub Issues page to report a bug.<br><br>"
+                String dialogMessageHtml = "This will open the WaEnhancer Community GitHub Issues page to report a bug.<br><br>"
                         + "The following information about your device and installed apps will be pre-filled in your report:<br><br>"
                         + finalDialogDetails + "<b>WhatsApp Version:</b> " + waVersion + "<br>"
                         + "<b>WhatsApp Business Version:</b> " + waBusinessVersion + "<br>";
@@ -303,7 +304,7 @@ public class HomeFragment extends BaseFragment {
                                     + "\n---\n"
                                     + description + "\n";
 
-                            String url = "https://github.com/igorcv88/WaEnhancerX/issues/new?title="
+                            String url = "https://github.com/igorcv88/WaEnhancer Community/issues/new?title="
                                     + java.net.URLEncoder.encode(title, "UTF-8") + "&body="
                                     + java.net.URLEncoder.encode(body, "UTF-8");
                             openUrl(requireContext(), url);
@@ -327,7 +328,7 @@ public class HomeFragment extends BaseFragment {
 
         binding.githubBtn.setOnClickListener(view -> {
             animateClick(view);
-            openUrl(requireContext(), "https://github.com/igorcv88/WaEnhancerX/issues");
+            openUrl(requireContext(), "https://github.com/igorcv88/WaEnhancer Community/issues");
         });
 
         binding.clearCacheBtn.setOnClickListener(view -> {
@@ -359,7 +360,7 @@ public class HomeFragment extends BaseFragment {
     }
 
     private void openTelegramChannel(Context context) {
-        String channelUrl = "https://t.me/WaEnhancerX";
+        String channelUrl = "https://t.me/WaEnhancer Community";
         String installedPackage = Utils.getInstalledTelegramPackage(context);
 
         if (installedPackage != null) {
@@ -500,109 +501,93 @@ public class HomeFragment extends BaseFragment {
         }
     }
 
-    private static @NonNull
-    JSONObject getJsonObject(SharedPreferences prefs) throws JSONException {
-        var entries = prefs.getAll();
-        var JSOjsonObject = new JSONObject();
-        for (var entry : entries.entrySet()) {
-            var type = new JSONObject();
-            var keyValue = entry.getValue();
-            if (keyValue instanceof HashSet<?> hashSet) {
-                keyValue = new JSONArray(new ArrayList<>(hashSet));
-            }
-            type.put("type", keyValue.getClass().getSimpleName());
-            type.put("value", keyValue);
-            JSOjsonObject.put(entry.getKey(), type);
-        }
-        return JSOjsonObject;
-    }
-
     private void saveConfigs(Context context) {
         if (FilePicker.fileSalve == null) {
-            Toast.makeText(context, context.getString(R.string.configs_imported) != null ? "Please use the standalone WaEnhancer Community app for file operations." : "Please use the standalone WaEnhancer Community app for file operations.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(context,
+                    "Please use the standalone WaEnhancer Community app for file operations.",
+                    Toast.LENGTH_SHORT).show();
             return;
         }
-        FilePicker.setOnUriPickedListener((uri) -> {
-            try {
+
+        Runnable launchExport = () -> {
+            FilePicker.setOnUriPickedListener(uri -> {
                 try (var output = context.getContentResolver().openOutputStream(uri)) {
-                    var prefs = PreferenceManager.getDefaultSharedPreferences(context);
-                    var JSOjsonObject = getJsonObject(prefs);
-                    Objects.requireNonNull(output).write(JSOjsonObject.toString(4).getBytes());
+                    if (output == null) throw new IllegalStateException("Unable to open destination.");
+                    SharedPreferences preferences =
+                            PreferenceManager.getDefaultSharedPreferences(context);
+                    String backup = BackupCodec.exportSettings(
+                            preferences, BuildConfig.VERSION_NAME);
+                    output.write(backup.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    preferences.edit().putBoolean("backup_privacy_notice_seen", true).apply();
+                    Toast.makeText(context, R.string.configs_saved, Toast.LENGTH_SHORT).show();
+                } catch (Exception exception) {
+                    Log.e("saveConfigs", "Unable to export settings", exception);
+                    Toast.makeText(context, exception.getMessage(), Toast.LENGTH_LONG).show();
                 }
-                Toast.makeText(context, context.getString(R.string.configs_saved), Toast.LENGTH_SHORT).show();
-            } catch (Exception e) {
-                Toast.makeText(context, e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
-        });
-        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US);
-        String formattedDate = dateFormat.format(new Date());
-        FilePicker.fileSalve.launch("wpp_enhacer_configs_" + formattedDate + ".json");
+            });
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US);
+            FilePicker.fileSalve.launch("WaEnhancerCommunity-settings-"
+                    + format.format(new Date()) + ".json");
+        };
+
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
+        if (preferences.getBoolean("backup_privacy_notice_seen", false)) {
+            launchExport.run();
+            return;
+        }
+
+        com.waenhancer.ui.helpers.BottomSheetHelper.showConfirmation(
+                requireActivity(),
+                "Export settings",
+                "The export contains only allowlisted module settings. It excludes keys, tokens, "
+                        + "certificates, license data, internal paths, diagnostics, messages and media. "
+                        + "Review the file before sharing it.",
+                "Export",
+                false,
+                launchExport);
     }
 
     private void importConfigs(Context context) {
         if (FilePicker.fileCapture == null) {
-            Toast.makeText(context, "Please use the standalone WaEnhancer Community app for file operations.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(context,
+                    "Please use the standalone WaEnhancer Community app for file operations.",
+                    Toast.LENGTH_SHORT).show();
             return;
         }
-        FilePicker.setOnUriPickedListener((uri) -> {
-            try {
-                try (var input = context.getContentResolver().openInputStream(uri)) {
-                    java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
-                    int nRead;
-                    byte[] dataBuffer = new byte[8192];
-                    int totalRead = 0;
-                    while ((nRead = input.read(dataBuffer, 0, dataBuffer.length)) != -1) {
-                        buffer.write(dataBuffer, 0, nRead);
-                        totalRead += nRead;
-                        if (totalRead > 5 * 1024 * 1024) { // 5 MB limit
-                            throw new RuntimeException("File is too large to be a valid config.");
-                        }
-                    }
-                    var data = buffer.toString("UTF-8");
-                    var prefs = PreferenceManager.getDefaultSharedPreferences(context);
-                    var jsonObject = new JSONObject(data);
-                    prefs.getAll().forEach((key, value) -> prefs.edit().remove(key).apply());
-                    var key = jsonObject.keys();
-                    while (key.hasNext()) {
-                        var keyName = key.next();
-                        var value = jsonObject.get(keyName);
-                        var type = value.getClass().getSimpleName();
-                        if (value instanceof JSONObject valueJson) {
-                            value = valueJson.get("value");
-                            type = valueJson.getString("type");
-                        }
 
-                        if (type.equals(JSONArray.class.getSimpleName())) {
-                            var jsonArray = (JSONArray) value;
-                            HashSet<String> hashSet = new HashSet<>();
-                            for (var i = 0; i < jsonArray.length(); i++) {
-                                hashSet.add(jsonArray.getString(i));
-                            }
-                            prefs.edit().putStringSet(keyName, hashSet).apply();
-                        } else if (type.equals(String.class.getSimpleName())) {
-                            prefs.edit().putString(keyName, (String) value).apply();
-                        } else if (type.equals(Boolean.class.getSimpleName())) {
-                            prefs.edit().putBoolean(keyName, (boolean) value).apply();
-                        } else if (type.equals(Integer.class.getSimpleName())) {
-                            prefs.edit().putInt(keyName, (int) value).apply();
-                        } else if (type.equals(Long.class.getSimpleName())) {
-                            prefs.edit().putLong(keyName, (long) value).apply();
-                        } else if (type.equals(Double.class.getSimpleName())) {
-                            prefs.edit().putFloat(keyName, Float.parseFloat(String.valueOf(value))).apply();
-                        } else if (type.equals(Float.class.getSimpleName())) {
-                            prefs.edit().putFloat(keyName, Float.parseFloat(String.valueOf(value))).apply();
-                        }
+        FilePicker.setOnUriPickedListener(uri -> {
+            try (var input = context.getContentResolver().openInputStream(uri)) {
+                if (input == null) throw new IllegalStateException("Unable to open backup.");
+                java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+                byte[] chunk = new byte[8192];
+                int total = 0;
+                int read;
+                while ((read = input.read(chunk)) != -1) {
+                    total += read;
+                    if (total > BackupCodec.MAX_BYTES) {
+                        throw new BackupCodec.BackupException(
+                                "Backup exceeds the 2 MB safety limit.");
                     }
+                    buffer.write(chunk, 0, read);
                 }
-                Toast.makeText(context, context.getString(R.string.configs_imported), Toast.LENGTH_SHORT).show();
+
+                SharedPreferences preferences =
+                        PreferenceManager.getDefaultSharedPreferences(context);
+                BackupCodec.ImportPlan plan = BackupCodec.parseAndValidate(buffer.toByteArray());
+                BackupCodec.ImportReport report = BackupCodec.apply(
+                        context, preferences, plan);
+
+                com.waenhancer.ui.helpers.BottomSheetHelper.showInfo(
+                        requireActivity(), "Import complete", report.summary());
                 App.getInstance().restartApp(FeatureLoader.PACKAGE_WPP);
                 App.getInstance().restartApp(FeatureLoader.PACKAGE_BUSINESS);
-                if (getActivity() != null && context.getPackageName().equals(BuildConfig.APPLICATION_ID)) {
+                if (getActivity() != null
+                        && context.getPackageName().equals(BuildConfig.APPLICATION_ID)) {
                     getActivity().recreate();
                 }
-            } catch (Exception e) {
-                Log.e("importConfigs", e.getMessage(), e);
-                Toast.makeText(context, e.getMessage(), Toast.LENGTH_SHORT).show();
+            } catch (Exception exception) {
+                Log.e("importConfigs", "Unable to import settings", exception);
+                Toast.makeText(context, exception.getMessage(), Toast.LENGTH_LONG).show();
             }
         });
         FilePicker.fileCapture.launch(new String[]{"application/json"});
@@ -734,7 +719,7 @@ public class HomeFragment extends BaseFragment {
                     com.waenhancer.ui.helpers.BottomSheetHelper.showInfo(
                             activity,
                             "Unsupported Version",
-                            "The installed WaEnhancer X has no support for your installed version of WhatsApp. It may not work as expected. Please either update WaEnhancer X, install a supported version of WhatsApp, or open an issue on GitHub.");
+                            "The installed WaEnhancer Community has no support for your installed version of WhatsApp. It may not work as expected. Please either update WaEnhancer Community, install a supported version of WhatsApp, or open an issue on GitHub.");
                 });
             }
 
@@ -757,7 +742,7 @@ public class HomeFragment extends BaseFragment {
 
                                 ((com.google.android.material.textview.MaterialTextView) view.findViewById(R.id.bs_title)).setText("WhatsApp Beta Detected");
                                 ((com.google.android.material.textview.MaterialTextView) view.findViewById(R.id.bs_message)).setText(
-                                        "You are using a beta version of " + appName + " while WaEnhancerX is currently set to the Stable update channel.\n\nTo ensure full compatibility and stay up-to-date with every new WhatsApp beta update, we highly recommend switching WaEnhancerX to the Beta update channel.");
+                                        "You are using a beta version of " + appName + " while WaEnhancer Community is currently set to the Stable update channel.\n\nTo ensure full compatibility and stay up-to-date with every new WhatsApp beta update, we highly recommend switching WaEnhancer Community to the Beta update channel.");
 
                                 com.google.android.material.button.MaterialButton okBtn = view.findViewById(R.id.bs_confirm_btn);
                                 okBtn.setText("Leave WhatsApp Beta");
@@ -834,7 +819,7 @@ public class HomeFragment extends BaseFragment {
 
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
                 .setTitle("Beta Version Detected")
-                .setMessage("You have installed a beta version of " + appName + ". WaEnhancerX is designed for the stable versions of WhatsApp, if you face any bugs please switch to a stable version of " + appName + ".")
+                .setMessage("You have installed a beta version of " + appName + ". WaEnhancer Community is designed for the stable versions of WhatsApp, if you face any bugs please switch to a stable version of " + appName + ".")
                 .setPositiveButton("Dismiss for 1 Day", (dialog, which) -> {
                     prefs.edit().putLong(prefKey, System.currentTimeMillis()).apply();
                     dialog.dismiss();

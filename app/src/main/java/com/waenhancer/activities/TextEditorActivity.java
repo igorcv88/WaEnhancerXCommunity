@@ -23,9 +23,12 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.widget.Toolbar;
 import androidx.preference.PreferenceManager;
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+
 import com.waenhancer.R;
 import com.waenhancer.activities.base.BaseActivity;
 import com.waenhancer.preference.ThemePreference;
+import com.waenhancer.theme.CssSafetyManager;
 import com.waenhancer.xposed.utils.Utils;
 
 import java.io.File;
@@ -143,24 +146,34 @@ public class TextEditorActivity extends BaseActivity {
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
         switch (item.getItemId()) {
-            case R.id.menuitem_save -> {
-                try {
-                    getTextareaContentAsync().thenAccept(content -> {
-                        String code = content;
-                        File folderFolder = new File(ThemePreference.rootDirectory, folderName);
-                        File cssCode = new File(folderFolder, "style.css");
-                        FilesKt.writeText(cssCode, code, Charset.defaultCharset());
-                        Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show();
-                        var prefs = PreferenceManager.getDefaultSharedPreferences(this);
-                        var key = getIntent().getStringExtra("key");
-                        if (key != null && prefs.getString(key, "").equals(folderName)) {
-                            prefs.edit().putString("custom_css", code).commit();
+            case R.id.menuitem_save -> getTextareaContentAsync().thenAccept(content ->
+                    runOnUiThread(() -> {
+                        try {
+                            var preferences = PreferenceManager.getDefaultSharedPreferences(this);
+                            CssSafetyManager.SaveResult result =
+                                    CssSafetyManager.save(preferences, content);
+                            if (!result.saved) {
+                                new MaterialAlertDialogBuilder(this)
+                                        .setTitle("CSS validation failed")
+                                        .setMessage(result.validation.message())
+                                        .setPositiveButton(android.R.string.ok, null)
+                                        .show();
+                                return;
+                            }
+
+                            File folder = new File(ThemePreference.rootDirectory, folderName);
+                            File cssFile = new File(folder, "style.css");
+                            FilesKt.writeText(cssFile, content, Charset.defaultCharset());
+                            Toast.makeText(this,
+                                    result.validation.warnings.isEmpty()
+                                            ? getString(R.string.saved)
+                                            : "Saved with warnings: "
+                                                + result.validation.message(),
+                                    Toast.LENGTH_LONG).show();
+                        } catch (Exception exception) {
+                            Toast.makeText(this, exception.getMessage(), Toast.LENGTH_LONG).show();
                         }
-                    });
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
+                    }));
             case R.id.menuitem_exit -> finish();
             case R.id.menuitem_clear -> {
                 updateWebViewContent("");

@@ -155,3 +155,8 @@
 -keep public class * extends androidx.fragment.app.Fragment {
     public <init>();
 }
+# jStyleParser uses reflective enum and grammar lookups. These names must survive R8.
+-keep class cz.vutbr.web.css.** { *; }
+-keep class cz.vutbr.web.csskit.** { *; }
+-keepclassmembers enum * { public static **[] values(); public static ** valueOf(java.lang.String); }
+-keepattributes Signature,InnerClasses,EnclosingMethod

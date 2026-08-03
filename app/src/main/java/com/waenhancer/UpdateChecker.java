@@ -29,9 +29,9 @@ import okhttp3.OkHttpClient;
 public class UpdateChecker implements Runnable {
 
     private static final String TAG = "WAE_UpdateChecker";
-    private static final String RELEASES_API = "https://api.github.com/repos/mubashardev/WaEnhancer/releases";
+    private static final String RELEASES_API = "https://api.github.com/repos/igorcv88/WaEnhancerX/releases";
     private static final String RELEASE_TAG_PREFIX = "debug-";
-    private static final String TELEGRAM_UPDATE_URL = "https://github.com/mubashardev/WaEnhancer/releases";
+    private static final String TELEGRAM_UPDATE_URL = "https://github.com/igorcv88/WaEnhancerX/releases";
     private static final Pattern BETA_TAG_PATTERN = Pattern.compile("^\\d+\\.\\d+\\.\\d+-beta-\\d+$");
     private static final Pattern VERSION_PATTERN = Pattern.compile("^\\d+\\.\\d+\\.\\d+(-beta-\\d+)?$");
 
@@ -85,11 +85,7 @@ public class UpdateChecker implements Runnable {
             var requestBuilder = new okhttp3.Request.Builder()
                     .url(RELEASES_API)
                     .header("Accept", "application/vnd.github+json")
-                    .header("User-Agent", "WaEnhancer X-UpdateChecker");
-
-            if (BuildConfig.GH_PUBLIC_TOKEN != null && !BuildConfig.GH_PUBLIC_TOKEN.isEmpty()) {
-                requestBuilder.header("Authorization", "Bearer " + BuildConfig.GH_PUBLIC_TOKEN);
-            }
+                    .header("User-Agent", "WaEnhancer-Community-UpdateChecker");
 
             var request = requestBuilder.build();
 
