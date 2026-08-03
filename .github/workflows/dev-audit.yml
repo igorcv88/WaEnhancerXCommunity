@@ -136,9 +136,9 @@ jobs:
             exit 1
           fi
 
-          APK_CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apksigner.txt" | head -n 1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          APK_CERT="$(sed -n -E 's/^(Signer #[0-9]+|V[0-9.]+ Signer): certificate SHA-256 digest: //p' "$RUNNER_TEMP/apksigner.txt" | head -n 1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
           KEYSTORE_CERT="$(keytool -list -v -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" 2>/dev/null | sed -n 's/^[[:space:]]*SHA256: //p' | head -n 1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
-          [[ -n "$APK_CERT" && "$APK_CERT" == "$KEYSTORE_CERT" ]] || {
+          [[ -n "$APK_CERT" && -n "$KEYSTORE_CERT" && "$APK_CERT" == "$KEYSTORE_CERT" ]] || {
             echo "APK signing certificate does not match the configured keystore alias." >&2
             exit 1
           }
