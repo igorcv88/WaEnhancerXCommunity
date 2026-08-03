@@ -1,5 +1,7 @@
 # WaEnhancer Community — Handoff dos Blocos A e B
 
+> **Addendum pós-review obrigatório:** leia também `REVIEW_FIXES_A_B.md`. Ele registra os fixes aplicados após o Codex Reviewer, o run final `30838456180`, a ordem recomendada de agentes e os prompts atualizados. Em caso de divergência, o addendum prevalece.
+
 ## Estado entregue
 
 Branch: `block-a-foundation-visual`
@@ -83,14 +85,20 @@ Os Blocos A e B atribuídos ao ChatGPT App foram implementados. Nenhuma alteraç
 
 ## Validação executada
 
-GitHub Actions final: run `30801556300`.
+GitHub Actions inicial dos Blocos A+B: run `30801556300`.
 
-Resultados:
+Validação final após os fixes do Codex Reviewer: run `30838456180`.
+
+Resultados finais:
 
 - auditoria estática de referências Helper/Pro/Firebase: passou;
 - auditoria de material criptográfico embutido: passou;
 - auditoria do backup transacional/allowlist: passou;
 - auditoria do workflow manual-only: passou;
+- auditoria de XMLs contra classes Pro removidas: passou;
+- auditoria de targets runtime contra o application ID antigo: passou;
+- auditoria de URLs malformadas pelo rebrand: passou;
+- auditoria de tema inativo e fall-through do editor CSS: passou;
 - `assembleWhatsappDebug`: passou;
 - `assembleWhatsappRelease` com R8: passou;
 - `testWhatsappDebugUnitTest`: passou;
@@ -112,92 +120,25 @@ O CI prova compilação, minificação, testes JVM, assinatura e invariantes est
 - instalação/upgrade e abertura do app;
 - ativação no LSPosed para WhatsApp e WhatsApp Business aplicáveis;
 - inicialização do WhatsApp com todas as funções novas desligadas;
+- abertura de todas as telas standalone e embedded de Preferences;
+- abertura do companion app pelo menu injetado;
 - ativação e desativação da barra flutuante;
 - presets claro/escuro e cor customizada;
+- salvar tema ativo e tema inativo, confirmando que somente o ativo altera o CSS global;
+- executar Save, Test, Rollback e Safe Mode separadamente;
 - teste temporário de CSS, expiração e safe mode;
 - exportação, importação válida, importação inválida e rollback;
 - diagnóstico com preview e verificação manual de redação;
+- validação dos links de GitHub e Telegram;
 - reinício do WhatsApp após alterações que exigem restart.
 
-## Prompt para o próximo responsável — Bloco C
+## Prompts e ordem de agentes
 
-Você é o responsável pelo Bloco C do projeto WaEnhancer Community no repositório `igorcv88/WaEnhancerX`.
+Os prompts atualizados e a ordem recomendada estão integralmente em `REVIEW_FIXES_A_B.md`.
 
-Comece pela PR `#1`, branch `block-a-foundation-visual`, com base de integração `integration/community`. Leia integralmente `HANDOFF_WaEnhancer_Community_v2_ExecutionPlan.md`, `HANDOFF_BLOCKS_A_B.md`, `ARCHITECTURE.md`, `MIGRATIONS.md`, `SECURITY.md` e `PRIVACY.md` antes de editar qualquer arquivo.
+Resumo vinculante:
 
-Considere os Blocos A e B congelados, salvo correção de defeito demonstrável. A implementação entregue está em `1.8.0-alpha1` (`18001`), application ID `com.waenhancer.community`, baseada no upstream estável 1.7.0 commit `433a1c630bc1286f2db3c657a63f477aa0aa426d`. Não reintroduza Firebase, Helper, licenciamento, sistema Pro, DEX/`.so` externo, token público compilado, material criptográfico embutido ou workflow automático de release.
-
-Execute somente o escopo designado ao Bloco C no plano autoritativo. Respeite rigorosamente as fronteiras de ownership de storage, IPC, providers, Tasker e banco `Deleted for Me`. Não altere formatos persistidos ou contratos entre processos sem migração explícita, versionada, transacional, testada e documentada. Preserve compatibilidade de leitura quando exigida pelo plano e nunca use `clear()` antes da validação completa.
-
-Antes de implementar:
-
-1. faça inventário dos stores, authorities, providers, broadcasts, serviços, receivers e consumidores cross-process existentes;
-2. escreva o contrato alvo e a matriz de migração/rollback;
-3. identifique quais chaves pertencem ao app, ao processo do WhatsApp e às integrações externas;
-4. defina testes de compatibilidade e falha antes de modificar produção.
-
-Durante a implementação:
-
-- trabalhe em branch própria derivada do head aprovado dos Blocos A+B;
-- mantenha commits pequenos e temáticos;
-- use JDK 17;
-- não publique artifacts no Actions;
-- não acione releases automaticamente;
-- não misture mudanças visuais dos Blocos A+B com storage/IPC;
-- trate entradas externas como não confiáveis;
-- use allowlists, permissões mínimas, authorities derivadas do application ID e validação de caller quando aplicável;
-- registre decisões e gotchas no handoff do Bloco C.
-
-Critérios mínimos de entrega:
-
-- builds debug e release verdes;
-- testes unitários e de migração verdes;
-- auditoria de authorities e componentes exportados;
-- teste de upgrade a partir do estado produzido pelos Blocos A+B;
-- rollback ou recuperação documentados;
-- nenhum dado sensível em logs/backups;
-- nenhuma regressão no workflow manual de release;
-- smoke test em dispositivo LSPosed documentado, ou declaração explícita do que não pôde ser testado.
-
-Ao final, abra uma PR contra `integration/community`, descreva exatamente o que mudou, o que não mudou, os contratos migrados, as evidências de testes e os riscos residuais. Não faça merge automático.
-
-## Prompt para revisão independente dos Blocos A+B
-
-Faça uma revisão independente, adversarial e baseada em evidências da PR `#1` do repositório `igorcv88/WaEnhancerX`, comparando `block-a-foundation-visual` contra `integration/community`.
-
-Leia integralmente `HANDOFF_WaEnhancer_Community_v2_ExecutionPlan.md` e `HANDOFF_BLOCKS_A_B.md`. Não aceite o handoff como prova: confirme cada afirmação no diff, na árvore final e nos logs do GitHub Actions run `30801556300`.
-
-Objetivos da revisão:
-
-1. verificar aderência completa ao escopo dos Blocos A e B e apontar requisitos ausentes ou implementados apenas superficialmente;
-2. confirmar ausência real de Firebase, Helper, licenciamento, sistema Pro, loaders de DEX/`.so`, AIDL associado, tokens compilados, material criptográfico embutido e referências residuais em código, recursos, manifest, Gradle, ProGuard e assets;
-3. revisar o workflow manual de release, secrets, tratamento do keystore, verificação de certificado, package/version, SHA-256, ausência de debug fallback, ausência de triggers automáticos e ausência de upload de artifacts;
-4. revisar a barra inferior flutuante quanto a defaults, faixas, clamp, persistência, restauração do layout original, modos de scroll, lifecycle, reflection/hook fragility e compatibilidade com mudanças do WhatsApp;
-5. revisar a engine semântica de cores quanto a cobertura de tokens, contraste, claro/escuro, alpha, custom color, fallback e ausência de substituição global insegura;
-6. revisar CSS quanto a validação, limite de tamanho, safe mode, last-known-good, teste temporário, expiração, crash loops e caminhos de recuperação;
-7. revisar backup v1 quanto a allowlist, schema, tipos, ranges, unknown keys, sensitive keys, limite de arquivo, snapshot, atomicidade, rollback, compatibilidade legada e possibilidade de partial writes;
-8. revisar diagnóstico quanto a coleta mínima, persistência, limites, redação, preview, compartilhamento e vazamento por exceções/logs paralelos;
-9. procurar regressões funcionais introduzidas pela remoção de Pro/Helper, especialmente chamadas que agora retornam sucesso sem executar, telas mortas, manifest inconsistente, recursos órfãos e comportamento silenciosamente degradado;
-10. avaliar segurança Android: componentes exportados, permissions, FileProvider/ContentProvider authorities, intent spoofing, path traversal, URI grants e superfícies cross-process, sem avançar para a reestruturação pertencente ao Bloco C.
-
-Execute pelo menos:
-
-- busca estática por termos proibidos e por blocos PEM;
-- `./gradlew --no-daemon clean assembleWhatsappDebug assembleWhatsappRelease testWhatsappDebugUnitTest` com JDK 17;
-- inspeção do APK release com `apksigner`, `aapt` e análise do manifest final;
-- comparação do certificado do APK com o alias do keystore de teste, sem expor secrets;
-- testes unitários adicionais para qualquer edge case encontrado;
-- testes negativos de backup e CSS;
-- revisão manual das mudanças de Gradle/Manifest/ProGuard;
-- quando houver dispositivo LSPosed disponível, smoke test com todas as funções novas desligadas e depois ativadas individualmente.
-
-Formato obrigatório da resposta:
-
-- veredito: `APROVAR`, `APROVAR COM RESSALVAS` ou `SOLICITAR ALTERAÇÕES`;
-- achados ordenados por severidade, cada um com arquivo/linha, impacto, evidência e correção proposta;
-- requisitos do handoff não comprovados;
-- testes executados e resultados;
-- riscos residuais específicos de hooks/versões do WhatsApp;
-- checklist final de merge.
-
-Não faça mudanças no código durante a primeira passagem. Primeiro entregue o relatório de revisão. Só implemente correções após seleção explícita dos achados.
+1. revisão independente de A+B no Claude Code da Anthropic com Opus 5;
+2. merge de A+B somente após aprovação e smoke test aplicável;
+3. nova sessão Claude Code/Opus 5 para o Bloco C, derivada do estado merged;
+4. Codex CLI/Terra somente no Bloco D, após C merged e validado.
