@@ -15,6 +15,8 @@ import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.app.ActivityCompat;
 import androidx.preference.PreferenceManager;
 
+import com.waenhancer.diagnostics.LocalDiagnostics;
+
 import java.io.File;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -58,6 +60,7 @@ public class App extends Application {
     public void onCreate() {
         super.onCreate();
         instance = this;
+        LocalDiagnostics.record(this, "lifecycle", "Manager process started");
 
         var sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
         if (sharedPreferences.getBoolean("verify_blocked_contact", false)) {

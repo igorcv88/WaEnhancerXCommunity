@@ -364,25 +364,26 @@ public class Utils {
     }
 
     public static Properties getProperties(SharedPreferences prefs, String key, String checkKey) {
+        boolean enabled = checkKey == null || prefs.getBoolean(checkKey, false);
+        return getPropertiesFromText(prefs.getString(key, ""), enabled);
+    }
+
+    public static Properties getPropertiesFromText(String text, boolean enabled) {
         Properties properties = new Properties();
-        if (checkKey != null && !prefs.getBoolean(checkKey, false))
-            return properties;
-        String text = prefs.getString(key, "");
-        Pattern pattern = Pattern.compile("^/\\*\\s*(.*?)\\s*\\*/", Pattern.DOTALL);
+        if (!enabled || text == null) return properties;
+        Pattern pattern = Pattern.compile("^/\*\s*(.*?)\s*\*/", Pattern.DOTALL);
         Matcher matcher = pattern.matcher(text);
+        if (!matcher.find()) return properties;
 
-        if (matcher.find()) {
-            String propertiesText = matcher.group(1);
-            String[] lines = propertiesText.split("\\s*\\n\\s*");
-
-            for (String line : lines) {
-                String[] keyValue = line.split("\\s*=\\s*");
-                String skey = keyValue[0].strip();
-                String value = keyValue[1].strip().replaceAll("^\"|\"$", ""); // Remove quotes, if any
-                properties.put(skey, value);
-            }
+        String[] lines = matcher.group(1).split("\s*\n\s*");
+        for (String line : lines) {
+            if (line == null || line.isBlank() || !line.contains("=")) continue;
+            String[] keyValue = line.split("\s*=\s*", 2);
+            if (keyValue.length != 2) continue;
+            String propertyKey = keyValue[0].strip();
+            String value = keyValue[1].strip().replaceAll("^\"|\"$", "");
+            if (!propertyKey.isEmpty()) properties.put(propertyKey, value);
         }
-
         return properties;
     }
 

@@ -150,4 +150,14 @@
 
     </PreferenceCategory>
 
+
+    <Preference
+        android:key="local_diagnostics"
+        android:summary="Preview and share redacted local diagnostics. No automatic upload."
+        android:title="Local diagnostics">
+        <intent
+            android:targetClass="com.waenhancer.activities.DiagnosticsActivity"
+            android:targetPackage="com.waenhancer.community" />
+    </Preference>
+
 </PreferenceScreen>

@@ -127,7 +127,9 @@ public class CustomThemeV2 extends Feature {
             return;
         }
 
-        properties = Utils.getProperties(prefs, "custom_css", "custom_filters");
+        properties = Utils.getPropertiesFromText(
+                CssSafetyManager.effectiveCss(prefs),
+                prefs.getBoolean("custom_filters", false));
 
         // PERFORMANCE OPTIMIZATION: Check if any theming features are enabled
         // Skip expensive hooks if no theming is active

@@ -52,7 +52,7 @@ public class SettingsInjector extends Feature {
             Class<?> directClass = XposedHelpers.findClassIfExists(SETTINGS_TAB_ACTIVITY, classLoader);
             settingsActivityClass = directClass != null ? directClass : Unobfuscator.loadSettingsActivityClass(classLoader);
         } catch (Throwable t) {
-            // XposedBridge.log("[WaEnhancerX] SettingsInjector disabled: unable to resolve settings activity");
+            // XposedBridge.log("[WaEnhancer Community] SettingsInjector disabled: unable to resolve settings activity");
             return;
         }
         if (settingsActivityClass == null) return;
@@ -259,7 +259,7 @@ public class SettingsInjector extends Feature {
                 }
             }
         } catch (Throwable t) {
-            XposedBridge.log("[WaEnhancerX] SettingsInjector: native view tile error: " + t.getMessage());
+            XposedBridge.log("[WaEnhancer Community] SettingsInjector: native view tile error: " + t.getMessage());
         }
     }
 
@@ -414,7 +414,7 @@ public class SettingsInjector extends Feature {
             android.widget.LinearLayout.LayoutParams iconParams = new android.widget.LinearLayout.LayoutParams(dp(activity, 24), dp(activity, 24));
             iconView.setLayoutParams(iconParams);
 
-            android.graphics.drawable.Drawable icon = DesignUtils.getDrawableByName("ic_settings");
+            android.graphics.drawable.Drawable icon = SettingsIconRegistry.resolve(activity, "waenhancer", "ic_waenhancer_entry");
             if (icon != null) {
                 iconView.setImageDrawable(icon);
             }
@@ -445,7 +445,7 @@ public class SettingsInjector extends Feature {
 
             // Title TextView
             android.widget.TextView titleText = new android.widget.TextView(activity);
-            titleText.setText(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.waenhancer_settings, "WaEnhancerX Settings"));
+            titleText.setText(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.waenhancer_settings, "WaEnhancer Community"));
 
             // Extract title typography from the anchor title TextView if available
             if (anchorTitle != null) {
@@ -464,7 +464,7 @@ public class SettingsInjector extends Feature {
             summaryText.setText(com.waenhancer.xposed.core.FeatureLoader.getModuleString(
                 activity,
                 R.string.waenhancer_settings_desc, 
-                "Configure WaEnhancerX features, UI customization, and privacy settings."
+                "Configure WaEnhancer Community features, appearance, and privacy settings."
             ));
 
             // Copy typography and exact native description color from adjacent row!
@@ -501,7 +501,7 @@ public class SettingsInjector extends Feature {
 
             return rowLayout;
         } catch (Throwable t) {
-            XposedBridge.log("[WaEnhancerX] SettingsInjector: Error creating dynamic setting row: " + t.getMessage());
+            XposedBridge.log("[WaEnhancer Community] SettingsInjector: Error creating dynamic setting row: " + t.getMessage());
             return null;
         }
     }
@@ -533,7 +533,7 @@ public class SettingsInjector extends Feature {
             if (settingsMap != null) {
                 View contentView;
                 String title = com.waenhancer.xposed.core.FeatureLoader.getModuleString(
-                        activity, R.string.waenhancer_settings, "WaeX Settings");
+                        activity, R.string.waenhancer_settings, "WaEnhancer Community");
                 
                 SharedPreferences localPrefs = activity.getSharedPreferences(com.waenhancer.BuildConfig.APPLICATION_ID + "_preferences", android.content.Context.MODE_PRIVATE);
                 SharedPreferences readWritePrefs = new com.waenhancer.xposed.bridge.client.ProviderSharedPreferences(activity, localPrefs, prefs);
@@ -661,7 +661,7 @@ public class SettingsInjector extends Feature {
                 }
             }
         } catch (Throwable t) {
-            XposedBridge.log("[WaEnhancerX] SettingsInjector: Hijack failed: " + t.getMessage());
+            XposedBridge.log("[WaEnhancer Community] SettingsInjector: Hijack failed: " + t.getMessage());
         }
     }
 
@@ -739,7 +739,7 @@ public class SettingsInjector extends Feature {
             params.setMarginEnd(margin);
             ((FrameLayout) root).addView(floatingButton, params);
         } catch (Throwable t) {
-            XposedBridge.log("[WaEnhancerX] SettingsInjector: direct button error: " + t.getMessage());
+            XposedBridge.log("[WaEnhancer Community] SettingsInjector: direct button error: " + t.getMessage());
         }
     }
 
@@ -769,9 +769,9 @@ public class SettingsInjector extends Feature {
         ImageView button = new ImageView(activity);
         button.setClickable(true);
         button.setFocusable(true);
-        button.setContentDescription("WaEnhancerX Settings");
+        button.setContentDescription("WaEnhancer Community");
         button.setPadding(dp(activity, 4), dp(activity, 4), dp(activity, 4), dp(activity, 4));
-        var icon = DesignUtils.getDrawableByName("ic_settings");
+        var icon = SettingsIconRegistry.resolve(activity, "waenhancer", "ic_waenhancer_entry");
         if (icon != null) {
             icon.setTint(0xff8696a0);
             button.setImageDrawable(icon);
@@ -810,16 +810,16 @@ public class SettingsInjector extends Feature {
     private void injectToolbarMenu(Menu menu, Activity activity) {
         try {
             if (menu != null && menu.findItem(MENU_ID_WAEX_SETTINGS) == null) {
-                String title = "WaEnhancerX Settings";
+                String title = "WaEnhancer Community";
                 try {
-                    String moduleTitle = com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.waenhancer_settings, "WaEnhancerX Settings");
+                    String moduleTitle = com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.waenhancer_settings, "WaEnhancer Community");
                     if (moduleTitle != null && !moduleTitle.isEmpty()) {
                         title = moduleTitle;
                     }
                 } catch (Throwable ignored) {}
 
                 var item = menu.add(0, MENU_ID_WAEX_SETTINGS, 0, title);
-                var icon = DesignUtils.getDrawableByName("ic_settings");
+                var icon = SettingsIconRegistry.resolve(activity, "waenhancer", "ic_waenhancer_entry");
                 if (icon != null) {
                     icon.setTint(0xff8696a0);
                     item.setIcon(icon);
@@ -831,7 +831,7 @@ public class SettingsInjector extends Feature {
                 });
             }
         } catch (Throwable t) {
-            XposedBridge.log("[WaEnhancerX] SettingsInjector: Toolbar error: " + t.getMessage());
+            XposedBridge.log("[WaEnhancer Community] SettingsInjector: Toolbar error: " + t.getMessage());
         }
     }
 
@@ -979,7 +979,7 @@ public class SettingsInjector extends Feature {
             android.widget.LinearLayout.LayoutParams iconParams = new android.widget.LinearLayout.LayoutParams(dp(activity, 24), dp(activity, 24));
             iconView.setLayoutParams(iconParams);
 
-            android.graphics.drawable.Drawable icon = DesignUtils.getDrawableByName("ic_settings");
+            android.graphics.drawable.Drawable icon = SettingsIconRegistry.resolve(activity, "waenhancer", "ic_waenhancer_entry");
             if (icon != null) {
                 iconView.setImageDrawable(icon);
             }
@@ -1063,7 +1063,7 @@ public class SettingsInjector extends Feature {
 
             return rowLayout;
         } catch (Throwable t) {
-            XposedBridge.log("[WaEnhancerX] SettingsInjector: Error creating database optimization row: " + t.getMessage());
+            XposedBridge.log("[WaEnhancer Community] SettingsInjector: Error creating database optimization row: " + t.getMessage());
             return null;
         }
     }

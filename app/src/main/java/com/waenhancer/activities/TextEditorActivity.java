@@ -26,6 +26,9 @@ import androidx.preference.PreferenceManager;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import com.waenhancer.R;
+import com.waenhancer.BuildConfig;
+import com.waenhancer.App;
+import com.waenhancer.diagnostics.LocalDiagnostics;
 import com.waenhancer.activities.base.BaseActivity;
 import com.waenhancer.preference.ThemePreference;
 import com.waenhancer.theme.CssSafetyManager;
@@ -164,6 +167,8 @@ public class TextEditorActivity extends BaseActivity {
                             File folder = new File(ThemePreference.rootDirectory, folderName);
                             File cssFile = new File(folder, "style.css");
                             FilesKt.writeText(cssFile, content, Charset.defaultCharset());
+                            LocalDiagnostics.record(this, "css", "Validated CSS saved");
+                            notifyCssChanged();
                             Toast.makeText(this,
                                     result.validation.warnings.isEmpty()
                                             ? getString(R.string.saved)
@@ -174,6 +179,57 @@ public class TextEditorActivity extends BaseActivity {
                             Toast.makeText(this, exception.getMessage(), Toast.LENGTH_LONG).show();
                         }
                     }));
+            case R.id.menuitem_test_theme -> getTextareaContentAsync().thenAccept(content ->
+                    runOnUiThread(() -> {
+                        var preferences = PreferenceManager.getDefaultSharedPreferences(this);
+                        CssSafetyManager.SaveResult result = CssSafetyManager.beginTest(
+                                preferences, content, CssSafetyManager.DEFAULT_TEST_DURATION_MS);
+                        if (!result.saved) {
+                            new MaterialAlertDialogBuilder(this)
+                                    .setTitle("CSS validation failed")
+                                    .setMessage(result.validation.message())
+                                    .setPositiveButton(android.R.string.ok, null)
+                                    .show();
+                            return;
+                        }
+                        LocalDiagnostics.record(this, "css", "Temporary two-minute CSS test started");
+                        notifyCssChanged();
+                        restartWhatsAppVariants();
+                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                            LocalDiagnostics.record(this, "css", "Temporary CSS test expired");
+                            notifyCssChanged();
+                            restartWhatsAppVariants();
+                        }, CssSafetyManager.DEFAULT_TEST_DURATION_MS);
+                        new MaterialAlertDialogBuilder(this)
+                                .setTitle("Temporary theme test")
+                                .setMessage("The CSS was validated and enabled for two minutes. "
+                                        + "WhatsApp is restarted now and again when the test expires. "
+                                        + "The saved theme is not replaced.")
+                                .setPositiveButton(android.R.string.ok, null)
+                                .show();
+                    }));
+            case R.id.menuitem_rollback_theme -> {
+                var preferences = PreferenceManager.getDefaultSharedPreferences(this);
+                boolean restored = CssSafetyManager.rollback(preferences);
+                LocalDiagnostics.record(this, "css", restored
+                        ? "Previous valid CSS restored" : "CSS rollback unavailable");
+                if (restored) {
+                    notifyCssChanged();
+                    restartWhatsAppVariants();
+                }
+                Toast.makeText(this, restored
+                                ? "Previous valid CSS restored"
+                                : "No previous valid CSS is available",
+                        Toast.LENGTH_LONG).show();
+            }
+            case R.id.menuitem_css_safe_mode -> {
+                var preferences = PreferenceManager.getDefaultSharedPreferences(this);
+                CssSafetyManager.enableSafeMode(preferences);
+                LocalDiagnostics.record(this, "css", "CSS safe mode enabled manually");
+                notifyCssChanged();
+                restartWhatsAppVariants();
+                Toast.makeText(this, "CSS safe mode enabled", Toast.LENGTH_LONG).show();
+            }
             case R.id.menuitem_exit -> finish();
             case R.id.menuitem_clear -> {
                 updateWebViewContent("");
@@ -187,6 +243,20 @@ public class TextEditorActivity extends BaseActivity {
 
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void notifyCssChanged() {
+        try {
+            getContentResolver().notifyChange(
+                    Uri.parse("content://" + BuildConfig.APPLICATION_ID
+                            + ".hookprovider/preferences"), null);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private void restartWhatsAppVariants() {
+        App.getInstance().restartApp("com.whatsapp");
+        App.getInstance().restartApp("com.whatsapp.w4b");
     }
 
     private void exportAsZip(Uri uri) {
