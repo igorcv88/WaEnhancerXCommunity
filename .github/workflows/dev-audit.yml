@@ -23,16 +23,16 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
-          if [[ ! -f .github/run-block-ab-transform ]]; then
+          if [[ ! -f .github/run-next-transform || ! -f tools/next_transform.py ]]; then
             echo "No transformation marker; skipping."
             exit 0
           fi
-          python3 tools/apply_block_ab.py
-          rm -f .github/run-block-ab-transform tools/apply_block_ab.py
+          python3 tools/next_transform.py
+          rm -f .github/run-next-transform tools/next_transform.py
           git config user.name "ChatGPT Blocks A-B"
           git config user.email "actions@users.noreply.github.com"
           git add -A
-          git commit -m "feat: integrate block-a visuals and safe backup v1"
+          git commit -m "fix: complete block-a and block-b integration"
           git push origin "HEAD:${HEAD_REF}"
 
   inventory:
@@ -46,6 +46,8 @@ jobs:
         run: |
           set -uo pipefail
           grep -RInE 'com\.waex\.helper|ProHelper|LicenseManager|LicenseActivity|ProFeaturesActivity|PillDesignPro|libpro_native\.so|appendDexPath|FirebaseAnalytics|FirebaseCrashlytics|google-services|firebase_' app api build.gradle.kts gradle 2>/dev/null || true
+          echo '=== raw backup hazards ==='
+          grep -RInE 'prefs\.getAll\(\).*JSONObject|prefs\.edit\(\)\.clear|clear_preferences' app/src/main/java 2>/dev/null || true
 
   build:
     runs-on: ubuntu-latest
