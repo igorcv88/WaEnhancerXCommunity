@@ -337,62 +337,9 @@ public class NewChat extends Feature {
 
                     String fullNumber = cc + phone;
                     String validationNumber = "+" + cc + phone;
-                    boolean isValid = true;
+                    // Local conservative E.164 validation. WhatsApp performs the final account check.
+                    boolean isValid = validationNumber.matches("\+[1-9]\d{7,14}");
 
-                    // Final validation guard before starting the chat
-                    try {
-                        ClassLoader proClassLoader = com.waenhancer.xposed.utils.ProHelper.getPluginClassLoader(activity);
-                        if (proClassLoader != null) {
-                            Class<?> validatorClass = proClassLoader.loadClass("com.waex.helper.utils.PhoneNumberValidator");
-
-                            java.lang.reflect.Field instanceField = validatorClass.getDeclaredField("INSTANCE");
-                            instanceField.setAccessible(true);
-                            Object validatorInstance = instanceField.get(null);
-
-                            java.lang.reflect.Method phoneCodeRegexesMethod = validatorClass.getMethod("phoneCodeRegexes");
-                            java.util.Set<String> keys = (java.util.Set<String>) phoneCodeRegexesMethod.invoke(validatorInstance);
-
-                            String matchingKey = null;
-                            if (keys != null) {
-                                for (String key : keys) {
-                                    try {
-                                        if (java.util.regex.Pattern.compile(key).matcher("+" + cc).matches()) {
-                                            matchingKey = key;
-                                            break;
-                                        }
-                                    } catch (Throwable ignored) {}
-                                }
-                            }
-                            /* Log removed */
-
-                            boolean validated = false;
-                            if (matchingKey != null) {
-                                java.lang.reflect.Method isValidForPhoneCodeRegexMethod = validatorClass.getMethod(
-                                    "isValidForPhoneCodeRegex", String.class, String.class
-                                );
-                                isValid = (boolean) isValidForPhoneCodeRegexMethod.invoke(validatorInstance, validationNumber, matchingKey);
-                                /* Log removed */
-                                validated = true;
-                            }
-
-                            if (!validated) {
-                                String englishCountryName = new java.util.Locale("", activeIso).getDisplayCountry(java.util.Locale.ENGLISH);
-                                java.lang.reflect.Method isValidForCountryMethod = validatorClass.getMethod(
-                                    "isValidForCountry", String.class, String.class, boolean.class
-                                );
-                                isValid = (boolean) isValidForCountryMethod.invoke(validatorInstance, validationNumber, englishCountryName, true);
-                                /* Log removed */
-                            }
-                        } else {
-                            /* Log removed */
-                        }
-                    } catch (Throwable t) {
-                        android.util.Log.e("NewChat", "Error in Message button validation: " + t.getMessage(), t);
-                        // Validator not available — allow without validation
-                        isValid = true;
-                    }
-
-                    /* Log removed */
                     if (!isValid) {
                         edtPhone.setError("Invalid phone number for this country");
                         return;
@@ -423,52 +370,6 @@ public class NewChat extends Feature {
     private static int getCountryPhoneLength(Activity activity, String cc) {
         int countryCodeLength = cc == null ? 0 : cc.replaceAll("\D", "").length();
         return Math.max(4, Math.min(14, 15 - countryCodeLength));
-    }
-            Class<?> validatorClass = proClassLoader.loadClass("com.waex.helper.utils.PhoneNumberValidator");
-
-            // Use the singleton INSTANCE to safely invoke @JvmStatic methods
-            java.lang.reflect.Field instanceField = validatorClass.getDeclaredField("INSTANCE");
-            instanceField.setAccessible(true);
-            Object validatorInstance = instanceField.get(null);
-
-            java.lang.reflect.Method phoneCodeRegexesMethod = validatorClass.getMethod("phoneCodeRegexes");
-            java.util.Set<String> keys = (java.util.Set<String>) phoneCodeRegexesMethod.invoke(validatorInstance);
-
-            String matchingKey = null;
-            if (keys != null) {
-                for (String key : keys) {
-                    try {
-                        if (java.util.regex.Pattern.compile(key).matcher("+" + cc).matches()) {
-                            matchingKey = key;
-                            break;
-                        }
-                    } catch (Throwable ignored) {}
-                }
-            }
-
-            if (matchingKey != null) {
-                java.lang.reflect.Method countriesForPhoneCodeRegexMethod = validatorClass.getMethod(
-                    "countriesForPhoneCodeRegex", String.class
-                );
-                java.util.List<?> countryPatterns =
-                    (java.util.List<?>) countriesForPhoneCodeRegexMethod.invoke(validatorInstance, matchingKey);
-                if (countryPatterns != null && !countryPatterns.isEmpty()) {
-                    Object countryPattern = countryPatterns.get(0);
-                    try {
-                        java.lang.reflect.Method getPhoneLengthMethod =
-                            countryPattern.getClass().getMethod("getPhoneLength");
-                        int len = (int) getPhoneLengthMethod.invoke(countryPattern);
-                        /* Log removed */
-                        return len;
-                    } catch (Throwable t) {
-                        android.util.Log.w("NewChat", "Error getting phone length: " + t.getMessage(), t);
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            android.util.Log.e("NewChat", "Error in getCountryPhoneLength: " + t.getMessage(), t);
-        }
-        return -1;
     }
 
     private static void updatePhoneHintAndLength(Activity activity, EditText edtPhone, String cc, String activeIso) {

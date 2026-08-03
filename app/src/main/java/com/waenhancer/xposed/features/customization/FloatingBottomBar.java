@@ -67,6 +67,7 @@ public class FloatingBottomBar extends Feature {
     private static int fabVisibleOffsetDp = FAB_VISIBLE_OFFSET_DP;
     private static String fabMode = "default";
     private static boolean indicatorVisible = true;
+    private static SharedPreferences activePrefs;
 
     public FloatingBottomBar(@NonNull ClassLoader loader, @NonNull SharedPreferences preferences) {
         super(loader, preferences);
@@ -74,14 +75,15 @@ public class FloatingBottomBar extends Feature {
 
     @Override
     public void doHook() throws Throwable {
+        activePrefs = prefs;
         if (!prefs.getBoolean("floating_bottom_bar", false)) return;
 
-        scrollHideMode = getPrefString(prefs, "floating_bottom_bar_scroll_hide_mode",
+        scrollHideMode = getPrefString(activePrefs, "floating_bottom_bar_scroll_hide_mode",
                 prefs.getBoolean("floating_bottom_bar_scroll_hide", true) ? "tabs" : "off");
         scrollHideEnabled = !"off".equals(scrollHideMode);
         glassEnabled = prefs.getBoolean("floating_bottom_bar_glass", true);
         glassOpacity = normalized("floating_bottom_bar_glass_opacity");
-        glassFillColor = getPrefColor(prefs, "floating_bottom_bar_fill_color", 0);
+        glassFillColor = getPrefColor(activePrefs, "floating_bottom_bar_fill_color", 0);
         pillRadiusDp = prefs.getBoolean("floating_bottom_bar_fully_rounded", false)
                 ? 1000 : Math.round(normalized("floating_bottom_bar_radius"));
         pillSideMarginDp = Math.round(normalized("floating_bottom_bar_horizontal_margin"));
@@ -90,7 +92,7 @@ public class FloatingBottomBar extends Feature {
                 prefs, "floating_bottom_bar_height_mode", "automatic"));
         pillManualHeightDp = Math.round(normalized("floating_bottom_bar_manual_height"));
         fabVisibleOffsetDp = Math.round(normalized("floating_bottom_bar_fab_offset"));
-        fabMode = getPrefString(prefs, "floating_bottom_bar_fab_mode", "default");
+        fabMode = getPrefString(activePrefs, "floating_bottom_bar_fab_mode", "default");
         indicatorVisible = prefs.getBoolean("floating_bottom_bar_indicator_visible", true);
 
 
@@ -1331,7 +1333,7 @@ public class FloatingBottomBar extends Feature {
 
     private static float normalized(String key) {
         try {
-            return com.waenhancer.config.BottomBarPreferenceSchema.read(prefs, key);
+            return activePrefs == null ? 0f : com.waenhancer.config.BottomBarPreferenceSchema.read(activePrefs, key);
         } catch (Throwable ignored) {
             return 0f;
         }
@@ -1468,7 +1470,7 @@ public class FloatingBottomBar extends Feature {
                     continue;
                 }
                 GradientDrawable indicator = new GradientDrawable();
-                int color = getPrefColor(prefs,
+                int color = getPrefColor(activePrefs,
                         "floating_bottom_bar_indicator_color", 0);
                 if (color == 0) color = DesignUtils.getPrimaryColor();
                 int opacity = Math.round(normalized(
@@ -1485,12 +1487,12 @@ public class FloatingBottomBar extends Feature {
                 int vertical = Math.round(normalized(
                         "floating_bottom_bar_indicator_padding_vertical") * density);
                 item.setPadding(horizontal, vertical, horizontal, vertical);
-                if ("manual".equals(getPrefString(prefs,
+                if ("manual".equals(getPrefString(activePrefs,
                         "floating_bottom_bar_indicator_width_mode", "automatic"))) {
                     ViewGroup.LayoutParams params = item.getLayoutParams();
                     params.width = Math.round(normalized(
                             "floating_bottom_bar_indicator_width") * density);
-                    if ("manual".equals(getPrefString(prefs,
+                    if ("manual".equals(getPrefString(activePrefs,
                             "floating_bottom_bar_indicator_height_mode", "automatic"))) {
                         params.height = Math.round(normalized(
                                 "floating_bottom_bar_indicator_height") * density);
@@ -1513,7 +1515,7 @@ public class FloatingBottomBar extends Feature {
                 fab.setLayoutParams(params);
             }
             GradientDrawable background = new GradientDrawable();
-            int color = getPrefColor(prefs, "floating_bottom_bar_minimal_fab_color", 0);
+            int color = getPrefColor(activePrefs, "floating_bottom_bar_minimal_fab_color", 0);
             if (color == 0) color = DesignUtils.getPrimaryColor();
             int opacity = Math.round(normalized("floating_bottom_bar_minimal_fab_opacity"));
             background.setColor((Math.max(0, Math.min(255, Math.round(opacity * 2.55f))) << 24)
@@ -1523,7 +1525,7 @@ public class FloatingBottomBar extends Feature {
             fab.setBackground(background);
             if (fab instanceof android.widget.ImageView) {
                 ((android.widget.ImageView) fab).setImageTintList(ColorStateList.valueOf(
-                        getPrefColor(prefs,
+                        getPrefColor(activePrefs,
                                 "floating_bottom_bar_minimal_fab_icon_color", 0xffffffff)));
             }
         } catch (Throwable ignored) {
