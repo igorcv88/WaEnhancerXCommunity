@@ -1196,7 +1196,7 @@ public class FeatureLoader {
                     msg = sb.toString().trim();
                 }
 
-                if (msg.isEmpty()) msg = "WhatsApp needs to be restarted to apply your recent changes in WaEnhancer X. Would you like to restart now?";
+                if (msg.isEmpty()) msg = "WhatsApp needs to be restarted to apply your recent changes in WaEnhancer Community. Would you like to restart now?";
                 if (btnRestart.isEmpty()) btnRestart = "Restart WhatsApp";
                 if (btnCancel.isEmpty()) btnCancel = "Cancel";
 
@@ -1222,21 +1222,6 @@ public class FeatureLoader {
     }
 
 
-
-    private static class CapabilityRegistryImpl implements ICapabilityRegistry {
-        private final List<IPluginCapability> capabilities = new ArrayList<>();
-
-        @Override
-        public void register(IPluginCapability capability) {
-            if (capability != null) {
-                capabilities.add(capability);
-            }
-        }
-
-        public List<IPluginCapability> getCapabilities() {
-            return capabilities;
-        }
-    }
 
     private static class ErrorItem {
         private String pluginName;
