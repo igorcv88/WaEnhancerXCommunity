@@ -16,8 +16,6 @@ kotlin {
     jvmToolchain(17)
 }
 
-
-
 android {
     namespace = "com.waenhancer"
     compileSdk = 36
@@ -38,13 +36,13 @@ android {
         create("business") {
             dimension = "version"
             applicationIdSuffix = ".w4b"
-            resValue("string", "app_name", "Wa Enhancer X Business")
+            resValue("string", "app_name", "WaEnhancer Community Business")
         }
 */
     }
 
     defaultConfig {
-        applicationId = "com.waenhancer"
+        applicationId = "com.waenhancer.community"
         minSdk = 28
         targetSdk = 34
         versionCode = project.findProperty("VERSION_CODE")?.toString()?.toInt() ?: 1
@@ -55,10 +53,10 @@ android {
         if (envFile.exists()) {
             runCatching { env.load(FileInputStream(envFile)) }
         }
-        val githubToken = (project.findProperty("GH_PUBLIC_TOKEN")?.toString() ?: env.getProperty("GH_PUBLIC_TOKEN") ?: "").trim()
-        buildConfigField("String", "GH_PUBLIC_TOKEN", "\"$githubToken\"")
 
-        val noticesUrl = (project.findProperty("NOTICES_URL")?.toString() ?: env.getProperty("NOTICES_URL") ?: "https://waex.mubashar.dev/notices.json").trim()
+        val noticesUrl = (project.findProperty("NOTICES_URL")?.toString()
+            ?: env.getProperty("NOTICES_URL")
+            ?: "https://waex.mubashar.dev/notices.json").trim()
         buildConfigField("String", "NOTICES_URL", "\"$noticesUrl\"")
         multiDexEnabled = true
         resourceConfigurations += listOf("en", "ar", "de", "es", "fr", "id", "in", "it", "iw", "pt", "ru", "tr", "zh")
@@ -89,7 +87,6 @@ android {
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
         }
-
     }
 
     packaging {
@@ -126,25 +123,15 @@ android {
     }
 
     buildTypes {
-        all {
-            signingConfig =
-                if (signingConfigs["config"].storeFile != null) signingConfigs["config"] else signingConfigs["debug"]
-            if (project.hasProperty("minify") && project.properties["minify"].toString()
-                    .toBoolean()
-            ) {
-                isMinifyEnabled = true
-                proguardFiles(
-                    getDefaultProguardFile("proguard-android-optimize.txt"),
-                    "proguard-rules.pro"
-                )
-            }
-        }
         debug {
+            signingConfig = signingConfigs["debug"]
             isMinifyEnabled = false
             isShrinkResources = false
-            // Local testing: pair with `adb reverse tcp:3000 tcp:3000`
         }
         release {
+            if (signingConfigs["config"].storeFile != null) {
+                signingConfig = signingConfigs["config"]
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -162,7 +149,6 @@ android {
         buildConfig = true
         aidl = true
     }
-
 
     lint {
         disable += "SelectedPhotoAccess"
@@ -188,12 +174,8 @@ android {
                 }
             }
         }
-        // Add Material Design 3 color tokens (such as palettePrimary100) in generated theme
-        // rikka.material >= 2.0.0 provides such attributes
         generatePalette = false
     }
-
-
 
     applicationVariants.all {
         val variant = this
@@ -201,12 +183,11 @@ android {
             val output = it as? com.android.build.gradle.api.ApkVariantOutput
             if (output != null) {
                 val suffix = if (variant.buildType.name == "debug") "_debug" else "_release"
-                output.outputFileName = "WaEnhancerX-v${variant.versionName}${suffix}.apk"
+                output.outputFileName = "WaEnhancerCommunity-v${variant.versionName}${suffix}.apk"
             }
         }
     }
 }
-
 
 dependencies {
     implementation(project(":api"))
@@ -240,7 +221,7 @@ dependencies {
     implementation(libs.markwon.core)
     implementation(libs.markwon.html)
 
-    // Firebase
+    // Firebase is removed in Block A1.
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.crashlytics)
@@ -256,12 +237,11 @@ interface InjectedExecOps {
     @get:Inject val execOps: ExecOperations
 }
 
-
 afterEvaluate {
     listOf("installWhatsappDebug").forEach { taskName ->
         tasks.findByName(taskName)?.doLast {
             runCatching {
-                val injected  = project.objects.newInstance<InjectedExecOps>()
+                val injected = project.objects.newInstance<InjectedExecOps>()
                 runBlocking {
                     injected.execOps.exec {
                         commandLine(
