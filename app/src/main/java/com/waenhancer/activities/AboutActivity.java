@@ -48,7 +48,7 @@ public class AboutActivity extends BaseActivity {
     private ContributorAdapter adapter;
     private List<Contributor> contributorList = new ArrayList<>();
 
-    private static final String API_URL = "https://api.github.com/repos/mubashardev/WaEnhancer/contributors";
+    private static final String API_URL = "https://api.github.com/repos/igorcv88/WaEnhancerX/contributors";
     private static final OkHttpClient client = new OkHttpClient();
 
     @Override
@@ -58,7 +58,7 @@ public class AboutActivity extends BaseActivity {
         setContentView(binding.getRoot());
 
         binding.btnTelegram.setOnClickListener(v -> openTelegramChannel());
-        binding.btnGithub.setOnClickListener(view -> openUrl("https://github.com/mubashardev/WaEnhancer/issues"));
+        binding.btnGithub.setOnClickListener(view -> openUrl("https://github.com/igorcv88/WaEnhancerX/issues"));
 
         adapter = new ContributorAdapter();
         binding.rvContributors.setAdapter(adapter);
@@ -67,7 +67,7 @@ public class AboutActivity extends BaseActivity {
     }
 
     private void openTelegramChannel() {
-        String channelUrl = "https://t.me/WaEnhancer Community";
+        String channelUrl = "https://t.me/WaEnhancerX";
         String installedPackage = Utils.getInstalledTelegramPackage(this);
 
         if (installedPackage != null) {
