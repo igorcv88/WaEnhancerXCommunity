@@ -395,7 +395,7 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
 
     private int resolvePrimary() {
         android.util.TypedValue value = new android.util.TypedValue();
-        return getTheme().resolveAttribute(com.waenhancer.R.attr.colorPrimary, value, true)
+        return getTheme().resolveAttribute(android.R.attr.colorAccent, value, true)
                 ? value.data : Color.rgb(79, 175, 80);
     }
 

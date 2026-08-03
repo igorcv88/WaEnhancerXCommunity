@@ -136,8 +136,12 @@ public final class LocalDiagnostics {
         int start = Math.max(0, lines.size() - MAX_EVENTS);
         List<String> kept = new ArrayList<>(lines.subList(start, lines.size()));
         while (byteSize(kept) > MAX_FILE_BYTES && kept.size() > 1) kept.remove(0);
-        Files.write(file.toPath(), kept, StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        try (java.io.FileOutputStream output = new java.io.FileOutputStream(file, false)) {
+            for (String line : kept) {
+                output.write(line.getBytes(StandardCharsets.UTF_8));
+                output.write('\n');
+            }
+        }
     }
 
     private static int byteSize(List<String> lines) {
