@@ -1,15 +1,12 @@
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import java.io.FileInputStream
-import java.util.Locale
 import java.util.Properties
 
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.materialthemebuilder)
     alias(libs.plugins.kotlinAndroid)
-    alias(libs.plugins.google.services)
-    alias(libs.plugins.firebase.crashlytics)
 }
 
 kotlin {
@@ -32,13 +29,6 @@ android {
             dimension = "version"
             applicationIdSuffix = ""
         }
-/*
-        create("business") {
-            dimension = "version"
-            applicationIdSuffix = ".w4b"
-            resValue("string", "app_name", "WaEnhancer Community Business")
-        }
-*/
     }
 
     defaultConfig {
@@ -56,11 +46,10 @@ android {
 
         val noticesUrl = (project.findProperty("NOTICES_URL")?.toString()
             ?: env.getProperty("NOTICES_URL")
-            ?: "https://waex.mubashar.dev/notices.json").trim()
+            ?: "https://api.github.com/repos/igorcv88/WaEnhancerX/releases/latest").trim()
         buildConfigField("String", "NOTICES_URL", "\"$noticesUrl\"")
         multiDexEnabled = true
         resourceConfigurations += listOf("en", "ar", "de", "es", "fr", "id", "in", "it", "iw", "pt", "ru", "tr", "zh")
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         signingConfigs.create("config") {
@@ -81,6 +70,8 @@ android {
                     ?: keystoreProperties.getProperty("androidKeyAlias")
                 keyPassword = project.findProperty("androidKeyPassword") as String?
                     ?: keystoreProperties.getProperty("androidKeyPassword")
+                enableV1Signing = true
+                enableV2Signing = true
             }
         }
 
@@ -109,7 +100,6 @@ android {
             excludes += "**.bin"
             excludes += "DebugProbesKt.bin"
             excludes += "kotlin-tooling-metadata.json"
-            excludes += "client_analytics.proto"
             excludes += "assets/PublicSuffixDatabase.list"
         }
         jniLibs {
@@ -140,10 +130,12 @@ android {
             )
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
     buildFeatures {
         viewBinding = true
         buildConfig = true
@@ -221,10 +213,8 @@ dependencies {
     implementation(libs.markwon.core)
     implementation(libs.markwon.html)
 
-    // Firebase is removed in Block A1.
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.analytics)
-    implementation(libs.firebase.crashlytics)
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20250517")
 }
 
 configurations.all {
