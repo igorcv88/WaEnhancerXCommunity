@@ -243,7 +243,7 @@ public class ThemePreference extends Preference implements FilePicker.OnUriPicke
                     }
                     Files.write(file.toPath(), bytes);
                     if (file.getName().equalsIgnoreCase("style.css")) {
-                        String css = Files.readString(file.toPath());
+                        String css = FilesKt.readText(file, Charset.defaultCharset());
                         CssSafetyManager.ValidationResult validation = CssSafetyManager.validate(css);
                         if (!validation.valid) {
                             file.delete();

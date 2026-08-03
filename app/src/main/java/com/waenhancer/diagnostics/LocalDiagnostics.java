@@ -11,7 +11,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.StandardOpenOption;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -45,8 +44,10 @@ public final class LocalDiagnostics {
         synchronized (LOCK) {
             try {
                 File file = file(context);
-                Files.writeString(file.toPath(), line + "\n", StandardCharsets.UTF_8,
-                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                try (java.io.FileOutputStream output =
+                             new java.io.FileOutputStream(file, true)) {
+                    output.write((line + "\n").getBytes(StandardCharsets.UTF_8));
+                }
                 trim(file);
             } catch (IOException ignored) {
                 // Diagnostics must never affect the module's normal execution.

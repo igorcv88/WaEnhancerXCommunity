@@ -544,7 +544,7 @@ public class HomeFragment extends BaseFragment {
                         + "Review the file before sharing it.",
                 "Export",
                 false,
-                launchExport);
+                () -> launchExport.run());
     }
 
     private void importConfigs(Context context) {

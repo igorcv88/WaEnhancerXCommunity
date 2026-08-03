@@ -137,16 +137,12 @@ public class ReleaseDetailsActivity extends BaseActivity {
                     .build();
 
             // Fetch from mubashardev/WaEnhancer as requested
-            String url = "https://api.github.com/repos/mubashardev/WaEnhancer/releases/tags/" + tagName;
+            String url = "https://api.github.com/repos/igorcv88/WaEnhancerX/releases/tags/" + tagName;
 
             var requestBuilder = new Request.Builder()
                     .url(url)
                     .header("Accept", "application/vnd.github+json")
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-
-            if (BuildConfig.GH_PUBLIC_TOKEN != null && !BuildConfig.GH_PUBLIC_TOKEN.isEmpty()) {
-                requestBuilder.header("Authorization", "Bearer " + BuildConfig.GH_PUBLIC_TOKEN);
-            }
 
             Request request = requestBuilder.build();
 
