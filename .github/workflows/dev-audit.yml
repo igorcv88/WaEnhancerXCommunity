@@ -9,19 +9,12 @@ permissions:
   contents: read
 
 jobs:
-  audit:
+  inventory:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
 
       - name: Inventory repository and prohibited references
         shell: bash
@@ -38,6 +31,15 @@ jobs:
           echo '=== SETTINGS ICON REFERENCES ==='
           grep -RInE 'waex_settings_map|WdsSettingsTileRenderer|WdsSettingsNavigator|SettingsInjector|FeatureCatalog' app/src 2>/dev/null || true
 
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
       - name: Compile debug and run unit tests
         shell: bash
         run: |
