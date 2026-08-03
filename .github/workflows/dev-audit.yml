@@ -1,4 +1,4 @@
-name: Temporary Block A and B audit
+name: Temporary Block A and B final audit
 
 on:
   pull_request:
@@ -6,48 +6,64 @@ on:
       - integration/community
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  transform:
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
-      - name: Apply requested transformation
-        shell: bash
-        env:
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: |
-          set -euo pipefail
-          if [[ ! -f .github/run-next-transform || ! -f tools/next_transform.py ]]; then
-            echo "No transformation marker; skipping."
-            exit 0
-          fi
-          python3 tools/next_transform.py
-          rm -f .github/run-next-transform tools/next_transform.py
-          git config user.name "ChatGPT Blocks A-B"
-          git config user.email "actions@users.noreply.github.com"
-          git add -A
-          git commit -m "fix: complete block-a and block-b integration"
-          git push origin "HEAD:${HEAD_REF}"
-
   inventory:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Inventory prohibited references
+      - name: Reject prohibited closed-system references
         shell: bash
         run: |
-          set -uo pipefail
-          grep -RInE 'com\.waex\.helper|ProHelper|LicenseManager|LicenseActivity|ProFeaturesActivity|PillDesignPro|libpro_native\.so|appendDexPath|FirebaseAnalytics|FirebaseCrashlytics|google-services|firebase_' app api build.gradle.kts gradle 2>/dev/null || true
-          echo '=== raw backup hazards ==='
-          grep -RInE 'prefs\.getAll\(\).*JSONObject|prefs\.edit\(\)\.clear|clear_preferences' app/src/main/java 2>/dev/null || true
+          set -euo pipefail
+          pattern='com\.waex\.helper|ProHelper|LicenseManager|LicenseActivity|ProFeaturesActivity|PillDesignPro|libpro_native\.so|appendDexPath|FirebaseAnalytics|FirebaseCrashlytics|google-services|firebase_'
+          if grep -RInE "$pattern" app api build.gradle.kts gradle 2>/dev/null; then
+            echo "Prohibited Helper/Pro/Firebase reference remains." >&2
+            exit 1
+          fi
+
+      - name: Reject embedded private keys and certificates
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|BEGIN CERTIFICATE' app api 2>/dev/null; then
+            echo "Embedded private key or certificate remains in source." >&2
+            exit 1
+          fi
+
+      - name: Reject unsafe configuration backup implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='app/src/main/java/com/waenhancer/ui/fragments/HomeFragment.java'
+          if grep -nE 'getAll\(\)|edit\(\)\.clear\(\)|\.clear\(\)\.commit\(\)' "$file"; then
+            echo "HomeFragment still contains a raw preference dump or destructive import." >&2
+            exit 1
+          fi
+          grep -q 'BackupCodec.exportSettings' "$file"
+          grep -q 'BackupCodec.parseAndValidate' "$file"
+          grep -q 'BackupCodec.apply' "$file"
+
+      - name: Verify manual-only release workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow='.github/workflows/android.yml'
+          grep -q 'workflow_dispatch:' "$workflow"
+          if grep -qE '^  (push|pull_request|schedule|release):' "$workflow"; then
+            echo "Release workflow has an automatic trigger." >&2
+            exit 1
+          fi
+          if grep -q 'actions/upload-artifact' "$workflow"; then
+            echo "Release workflow still uploads Actions artifacts." >&2
+            exit 1
+          fi
+          for secret in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            grep -q "$secret" "$workflow"
+          done
 
   build:
     runs-on: ubuntu-latest
@@ -58,8 +74,12 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
-      - name: Compile debug and run unit tests
+      - name: Compile debug and release and run unit tests
         shell: bash
         run: |
+          set -euo pipefail
           chmod +x gradlew
-          ./gradlew --no-daemon clean assembleWhatsappDebug testWhatsappDebugUnitTest
+          ./gradlew --no-daemon clean \
+            assembleWhatsappDebug \
+            assembleWhatsappRelease \
+            testWhatsappDebugUnitTest
