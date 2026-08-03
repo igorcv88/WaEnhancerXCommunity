@@ -6,38 +6,56 @@ on:
       - integration/community
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  audit:
+  transform:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Apply requested transformation
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f .github/run-block-a1-transform ]]; then
+            echo "No transformation marker; skipping."
+            exit 0
+          fi
+          python3 tools/apply_block_a1.py
+          rm -f .github/run-block-a1-transform tools/apply_block_a1.py
+          git config user.name "ChatGPT Block A"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "refactor: remove pro helper and firebase runtime"
+          git push origin "HEAD:${HEAD_REF}"
+
+  inventory:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Inventory prohibited references
+        shell: bash
+        run: |
+          set -uo pipefail
+          grep -RInE 'com\.waex\.helper|ProHelper|LicenseManager|LicenseActivity|ProFeaturesActivity|PillDesignPro|libpro_native\.so|appendDexPath|FirebaseAnalytics|FirebaseCrashlytics|google-services|firebase_' app api build.gradle.kts gradle 2>/dev/null || true
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v5
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
           cache: gradle
-
-      - name: Inventory repository and prohibited references
-        shell: bash
-        run: |
-          set -uo pipefail
-          echo '=== SOURCE FILES ==='
-          find app api -type f | sort
-          echo '=== PRO HELPER FIREBASE REFERENCES ==='
-          grep -RInE 'com\.waex\.helper|ProHelper|LicenseManager|LicenseActivity|ProFeaturesActivity|PillDesignPro|libpro_native\.so|appendDexPath|FirebaseAnalytics|FirebaseCrashlytics|google-services|firebase_' app api build.gradle.kts gradle 2>/dev/null || true
-          echo '=== BOTTOM BAR REFERENCES ==='
-          grep -RInE 'floating_bottom_bar|BottomBar|BottomNavigation|pill_design|jStyleParser|jstyleparser' app/src 2>/dev/null || true
-          echo '=== BACKUP REFERENCES ==='
-          grep -RInE 'Backup|Restore|SharedPreferences\.getAll|getAll\(\)|import.*json|export.*json' app/src 2>/dev/null || true
-          echo '=== SETTINGS ICON REFERENCES ==='
-          grep -RInE 'waex_settings_map|WdsSettingsTileRenderer|WdsSettingsNavigator|SettingsInjector|FeatureCatalog' app/src 2>/dev/null || true
-
       - name: Compile debug and run unit tests
         shell: bash
         run: |
