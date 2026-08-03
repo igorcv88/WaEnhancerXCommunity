@@ -53,8 +53,9 @@ jobs:
         run: |
           set -euo pipefail
           workflow='.github/workflows/android.yml'
-          grep -q 'workflow_dispatch:' "$workflow"
-          if grep -qE '^  (push|pull_request|schedule|release):' "$workflow"; then
+          on_block="$(awk '/^on:/{active=1; next} active && /^[^ ]/{exit} active{print}' "$workflow")"
+          grep -q '^  workflow_dispatch:' <<< "$on_block"
+          if grep -qE '^  (push|pull_request|schedule|release):' <<< "$on_block"; then
             echo "Release workflow has an automatic trigger." >&2
             exit 1
           fi
