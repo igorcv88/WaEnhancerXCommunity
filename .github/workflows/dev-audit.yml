@@ -1,4 +1,4 @@
-name: Temporary Block A audit
+name: Temporary Block A and B audit
 
 on:
   pull_request:
@@ -23,16 +23,16 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
-          if [[ ! -f .github/run-block-a1-transform ]]; then
+          if [[ ! -f .github/run-block-ab-transform ]]; then
             echo "No transformation marker; skipping."
             exit 0
           fi
-          python3 tools/apply_block_a1.py
-          rm -f .github/run-block-a1-transform tools/apply_block_a1.py
-          git config user.name "ChatGPT Block A"
+          python3 tools/apply_block_ab.py
+          rm -f .github/run-block-ab-transform tools/apply_block_ab.py
+          git config user.name "ChatGPT Blocks A-B"
           git config user.email "actions@users.noreply.github.com"
           git add -A
-          git commit -m "refactor: remove pro helper and firebase runtime"
+          git commit -m "feat: integrate block-a visuals and safe backup v1"
           git push origin "HEAD:${HEAD_REF}"
 
   inventory:
