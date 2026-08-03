@@ -28,6 +28,7 @@ import com.waenhancer.xposed.features.listeners.ConversationItemListener;
 import com.waenhancer.xposed.utils.DesignUtils;
 import com.waenhancer.xposed.utils.ReflectionUtils;
 import com.waenhancer.R;
+import com.waenhancer.BuildConfig;
 import com.waenhancer.xposed.utils.Utils;
 
 import java.util.ArrayList;
@@ -377,7 +378,7 @@ public class ShowEditMessage extends Feature {
             // Switch (MaterialSwitch by default for M3 style)
             android.widget.CompoundButton diffSwitch = null;
             try {
-                android.content.Context modContext = ctx.createPackageContext("com.waenhancer", android.content.Context.CONTEXT_IGNORE_SECURITY);
+                android.content.Context modContext = ctx.createPackageContext(BuildConfig.APPLICATION_ID, android.content.Context.CONTEXT_IGNORE_SECURITY);
                 boolean isDarkMode = DesignUtils.isNightMode();
                 int themeResId = isDarkMode ? 
                         com.google.android.material.R.style.Theme_Material3_Dark : 
