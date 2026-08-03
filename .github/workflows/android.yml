@@ -1,298 +1,265 @@
-name: Android CI
+name: Manual signed release
 
 on:
-  push:
-    branches: ["master", "beta"]
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "Optional; must match VERSION_NAME in gradle.properties"
+        required: false
+        type: string
+      version_code:
+        description: "Optional; must match VERSION_CODE in gradle.properties"
+        required: false
+        type: string
+      tag_name:
+        description: "Release tag; defaults to v<VERSION_NAME>"
+        required: false
+        type: string
+      release_title:
+        description: "Release title; defaults to WaEnhancer Community <VERSION_NAME>"
+        required: false
+        type: string
+      prerelease:
+        description: "Mark the GitHub Release as a prerelease"
+        required: true
+        default: false
+        type: boolean
+      release_notes:
+        description: "Optional release notes; SHA-256 is appended automatically"
+        required: false
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
-  check-build-flag:
+  release:
+    name: Build, verify, and publish
     runs-on: ubuntu-latest
-    outputs:
-      should_build: ${{ steps.flags.outputs.should_build }}
-      release_type: ${{ steps.flags.outputs.release_type }}
+    permissions:
+      contents: write
+
     steps:
-      - name: Detect build flag and release type
-        id: flags
-        run: |
-          COMMIT_MSG="${{ github.event.head_commit.message }}"
-          BRANCH="${GITHUB_REF#refs/heads/}"
-
-          if [[ "$COMMIT_MSG" =~ [[:space:]]--build$ ]]; then
-            echo "should_build=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_build=false" >> "$GITHUB_OUTPUT"
-          fi
-
-          if [[ "$BRANCH" == "beta" ]]; then
-            echo "release_type=beta" >> "$GITHUB_OUTPUT"
-          else
-            echo "release_type=stable" >> "$GITHUB_OUTPUT"
-          fi
-
-  build:
-    needs: check-build-flag
-    if: needs.check-build-flag.outputs.should_build == 'true'
-    permissions: write-all
-    runs-on: ubuntu-latest
-    env:
-      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-      CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
-      NOTICES_URL: ${{ secrets.NOTICES_URL }}
-    steps:
-      - uses: actions/checkout@v4
+      - name: Check out selected commit
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
+          distribution: temurin
           java-version: "17"
-          distribution: "temurin"
           cache: gradle
-          cache-dependency-path: |
-            **/*.gradle*
-            **/gradle-wrapper.properties
-            gradle/libs.versions.toml
-            **/gradle.properties
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
 
-      - name: Remove local properties
-        run: sed -i '/org.gradle.java.home/d' gradle.properties
-
-      - name: Calculate and bump version
+      - name: Resolve and validate release metadata
+        id: metadata
+        shell: bash
+        env:
+          INPUT_VERSION_NAME: ${{ inputs.version_name }}
+          INPUT_VERSION_CODE: ${{ inputs.version_code }}
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          INPUT_RELEASE_TITLE: ${{ inputs.release_title }}
         run: |
-          BRANCH="${GITHUB_REF#refs/heads/}"
-          VERSION_CODE="$(grep '^VERSION_CODE=' gradle.properties | cut -d'=' -f2 | tr -d '\r\n')"
-          VERSION_NAME="$(grep '^VERSION_NAME=' gradle.properties | cut -d'=' -f2 | tr -d '\r\n')"
+          set -euo pipefail
 
-          if [[ "$VERSION_NAME" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-beta-([0-9]+))?$ ]]; then
-            MAJOR="${BASH_REMATCH[1]}"
-            MINOR="${BASH_REMATCH[2]}"
-            PATCH="${BASH_REMATCH[3]}"
-            BETA_NUM="${BASH_REMATCH[5]}"
-            BASE_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          else
-            echo "Unsupported VERSION_NAME format: $VERSION_NAME"
+          FILE_VERSION_NAME="$(sed -n 's/^VERSION_NAME=//p' gradle.properties | tr -d '\r' | tail -n 1)"
+          FILE_VERSION_CODE="$(sed -n 's/^VERSION_CODE=//p' gradle.properties | tr -d '\r' | tail -n 1)"
+
+          test -n "$FILE_VERSION_NAME" || { echo "VERSION_NAME is missing" >&2; exit 1; }
+          test -n "$FILE_VERSION_CODE" || { echo "VERSION_CODE is missing" >&2; exit 1; }
+          [[ "$FILE_VERSION_CODE" =~ ^[0-9]+$ ]] || { echo "VERSION_CODE must be numeric" >&2; exit 1; }
+
+          if [[ -n "$INPUT_VERSION_NAME" && "$INPUT_VERSION_NAME" != "$FILE_VERSION_NAME" ]]; then
+            echo "Input version_name ($INPUT_VERSION_NAME) does not match gradle.properties ($FILE_VERSION_NAME)" >&2
             exit 1
           fi
 
-          if [[ "$BRANCH" == "beta" ]]; then
-            RELEASE_PRERELEASE="true"
-            RELEASE_TYPE="BETA"
-
-            # Check if this base version is already released as stable
-            if git rev-parse "$BASE_VERSION" >/dev/null 2>&1; then
-              # Already released! Move to next version beta-1
-              if [ "$PATCH" -eq 9 ]; then
-                NEW_PATCH=0
-                NEW_MINOR=$((MINOR + 1))
-                if [ "$NEW_MINOR" -ge 10 ]; then
-                  NEW_MINOR=0
-                  NEW_MAJOR=$((MAJOR + 1))
-                else
-                  NEW_MAJOR="$MAJOR"
-                fi
-              else
-                NEW_PATCH=$((PATCH + 1))
-                NEW_MINOR="$MINOR"
-                NEW_MAJOR="$MAJOR"
-              fi
-              NEW_VERSION_NAME="${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}-beta-1"
-            elif [ -n "$BETA_NUM" ]; then
-              # Not released, just increment beta
-              NEW_BETA_NUM=$((BETA_NUM + 1))
-              NEW_VERSION_NAME="${BASE_VERSION}-beta-${NEW_BETA_NUM}"
-            else
-              # Stable format in beta branch but not tagged. Start next version beta.
-              if [ "$PATCH" -eq 9 ]; then
-                NEW_PATCH=0
-                NEW_MINOR=$((MINOR + 1))
-                if [ "$NEW_MINOR" -ge 10 ]; then
-                  NEW_MINOR=0
-                  NEW_MAJOR=$((MAJOR + 1))
-                else
-                  NEW_MAJOR="$MAJOR"
-                fi
-              else
-                NEW_PATCH=$((PATCH + 1))
-                NEW_MINOR="$MINOR"
-                NEW_MAJOR="$MAJOR"
-              fi
-              NEW_VERSION_NAME="${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}-beta-1"
-            fi
-          else
-            # master branch logic
-            RELEASE_PRERELEASE="false"
-            RELEASE_TYPE="STABLE"
-
-            if [ -n "$BETA_NUM" ]; then
-              # If it was a beta, the stable version is just the base version
-              NEW_VERSION_NAME="$BASE_VERSION"
-            else
-              # If it was already stable, increment to next stable
-              if [ "$PATCH" -eq 9 ]; then
-                NEW_PATCH=0
-                NEW_MINOR=$((MINOR + 1))
-                if [ "$NEW_MINOR" -ge 10 ]; then
-                  NEW_MINOR=0
-                  NEW_MAJOR=$((MAJOR + 1))
-                else
-                  NEW_MAJOR="$MAJOR"
-                fi
-              else
-                NEW_PATCH=$((PATCH + 1))
-                NEW_MINOR="$MINOR"
-                NEW_MAJOR="$MAJOR"
-              fi
-              NEW_VERSION_NAME="${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}"
-            fi
+          if [[ -n "$INPUT_VERSION_CODE" && "$INPUT_VERSION_CODE" != "$FILE_VERSION_CODE" ]]; then
+            echo "Input version_code ($INPUT_VERSION_CODE) does not match gradle.properties ($FILE_VERSION_CODE)" >&2
+            exit 1
           fi
 
-          if [[ "$NEW_VERSION_NAME" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-beta-([0-9]+)$ ]]; then
-            BETA_TAIL=$(printf "%02d" "${BASH_REMATCH[4]}")
-            NEW_VERSION_CODE="${BASH_REMATCH[1]}${BASH_REMATCH[2]}${BASH_REMATCH[3]}${BETA_TAIL}"
-          elif [[ "$NEW_VERSION_NAME" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-            NEW_VERSION_CODE="${BASH_REMATCH[1]}${BASH_REMATCH[2]}${BASH_REMATCH[3]}99"
+          TAG_NAME="${INPUT_TAG_NAME:-v${FILE_VERSION_NAME}}"
+          RELEASE_TITLE="${INPUT_RELEASE_TITLE:-WaEnhancer Community ${FILE_VERSION_NAME}}"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG_NAME}" >/dev/null 2>&1; then
+            echo "Tag ${TAG_NAME} already exists" >&2
+            exit 1
           fi
 
-          sed -i "s/^VERSION_CODE=.*/VERSION_CODE=${NEW_VERSION_CODE}/" gradle.properties
-          sed -i "s/^VERSION_NAME=.*/VERSION_NAME=${NEW_VERSION_NAME}/" gradle.properties
+          {
+            echo "version_name=$FILE_VERSION_NAME"
+            echo "version_code=$FILE_VERSION_CODE"
+            echo "tag_name=$TAG_NAME"
+            echo "release_title=$RELEASE_TITLE"
+          } >> "$GITHUB_OUTPUT"
 
-          echo "NEW_VERSION_NAME=$NEW_VERSION_NAME" >> "$GITHUB_ENV"
-          echo "NEW_VERSION_CODE=$NEW_VERSION_CODE" >> "$GITHUB_ENV"
-          echo "RELEASE_PRERELEASE=$RELEASE_PRERELEASE" >> "$GITHUB_ENV"
-          echo "RELEASE_TYPE=$RELEASE_TYPE" >> "$GITHUB_ENV"
-
-          git config --global user.name "GitHub Action"
-          git config --global user.email "action@github.com"
-          git add gradle.properties
-          git commit -m "chore(release): bump to ${NEW_VERSION_NAME} (${NEW_VERSION_CODE}) [skip ci]"
-          git push
-
-      - name: Setup Google Services
+      - name: Decode and inspect signing key
+        id: signing
+        shell: bash
         env:
-          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
-            # Check if it starts with { (raw JSON) or needs decoding
-            if [[ "$GOOGLE_SERVICES_JSON" == \{* ]]; then
-              echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
-              echo "Google Services: Configuration injected from raw JSON secret"
-            else
-              echo "$GOOGLE_SERVICES_JSON" | base64 --decode > app/google-services.json
-              echo "Google Services: Configuration injected from base64 secret"
+          set -euo pipefail
+
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Required secret ${name} is missing" >&2
+              exit 1
             fi
-            
-            # Verify file exists and is not empty
-            if [ -s "app/google-services.json" ]; then
-              echo "Google Services: app/google-services.json created successfully"
-            else
-              echo "::warning::Google Services file was not created or is empty!"
-            fi
-          else
-            echo "Google Services: GOOGLE_SERVICES_JSON secret is missing. Crashlytics will be disabled for this build."
-          fi
+          done
 
-      - name: Build WhatsApp flavor
-        run: |
-          BUILD_TASKS="assembleWhatsappRelease assembleWhatsappDebug"
-          if [ -s "app/google-services.json" ]; then
-            BUILD_TASKS="$BUILD_TASKS uploadCrashlyticsMappingFileWhatsappRelease"
-          fi
-          
-          NOTICES_URL_FLAG=""
-          if [ -n "$NOTICES_URL" ]; then
-            NOTICES_URL_FLAG="-PNOTICES_URL=${NOTICES_URL}"
-          fi
+          KEYSTORE_PATH="$RUNNER_TEMP/waenhancer-community-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
 
-          if [ -n "${{ secrets.KEY_STORE }}" ]; then
-            echo "${{ secrets.KEY_STORE }}" | base64 --decode > release.jks
-            ./gradlew $BUILD_TASKS -Pminify=true \
-              -PandroidStoreFile=release.jks \
-              -PandroidStorePassword='${{ secrets.KEY_STORE_PASSWORD }}' \
-              -PandroidKeyAlias='${{ secrets.ALIAS }}' \
-              -PandroidKeyPassword='${{ secrets.KEY_PASSWORD }}' \
-              $NOTICES_URL_FLAG
-          else
-            ./gradlew $BUILD_TASKS -Pminify=true $NOTICES_URL_FLAG
-          fi
+          keytool -list \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" >/dev/null
 
-      - name: Rename APK to versioned name
-        run: |
-          mkdir -p release_artifacts
-          cp app/build/outputs/apk/whatsapp/release/WaEnhancerX-v${{ env.NEW_VERSION_NAME }}_release.apk "release_artifacts/WaEnhancerX-v${{ env.NEW_VERSION_NAME }}_release.apk"
-          cp app/build/outputs/apk/whatsapp/debug/WaEnhancerX-v${{ env.NEW_VERSION_NAME }}_debug.apk "release_artifacts/WaEnhancerX-v${{ env.NEW_VERSION_NAME }}_debug.apk"
+          EXPECTED_CERT_SHA256="$(keytool -list -v \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" \
+            | awk -F': ' '/SHA256:/{print $2; exit}' \
+            | tr -d ':' \
+            | tr '[:upper:]' '[:lower:]')"
 
-      - name: Upload WhatsApp flavor artifact
-        uses: actions/upload-artifact@v5
-        with:
-          name: WaEnhancerX-v${{ env.NEW_VERSION_NAME }}
-          path: |
-            release_artifacts/WaEnhancerX-v${{ env.NEW_VERSION_NAME }}_release.apk
-            release_artifacts/WaEnhancerX-v${{ env.NEW_VERSION_NAME }}_debug.apk
+          test -n "$EXPECTED_CERT_SHA256" || { echo "Could not read signing certificate SHA-256" >&2; exit 1; }
 
-      - name: Upload to GitHub release
-        id: release
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          name: WaEnhancerX v${{ env.NEW_VERSION_NAME }}
-          body_path: changelog.txt
-          files: |
-            release_artifacts/WaEnhancerX-v${{ env.NEW_VERSION_NAME }}_release.apk
-            release_artifacts/WaEnhancerX-v${{ env.NEW_VERSION_NAME }}_debug.apk
-          tag_name: ${{ env.NEW_VERSION_NAME }}
-          prerelease: ${{ env.RELEASE_PRERELEASE }}
+          echo "keystore_path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
+          echo "expected_cert_sha256=$EXPECTED_CERT_SHA256" >> "$GITHUB_OUTPUT"
 
-#       - name: Sync commits and push custom tag to Xposed Repo fork
-#         run: |
-#           git remote add xposed-repo https://x-access-token:${{ secrets.XPOSED_REPO_TOKEN }}@github.com/Xposed-Modules-Repo/com.waenhancer.git
-#           git push xposed-repo HEAD:master --force || git push xposed-repo HEAD:main --force
-#           git tag ${{ env.NEW_VERSION_CODE }}-${{ env.NEW_VERSION_NAME }}
-#           git push xposed-repo ${{ env.NEW_VERSION_CODE }}-${{ env.NEW_VERSION_NAME }}
-# 
-#       - name: Upload to Xposed Repo release
-#         uses: softprops/action-gh-release@v2
-#         with:
-#           repository: Xposed-Modules-Repo/com.waenhancer
-#           token: ${{ secrets.XPOSED_REPO_TOKEN }}
-#           name: WaEnhancerX v${{ env.NEW_VERSION_NAME }}
-#           body_path: changelog.txt
-#           files: |
-#             release_artifacts/WaEnhancerX-v${{ env.NEW_VERSION_NAME }}_release.apk
-#           tag_name: ${{ env.NEW_VERSION_CODE }}-${{ env.NEW_VERSION_NAME }}
-#           prerelease: ${{ env.RELEASE_PRERELEASE }}
-
-      - name: Read changelog
-        id: changelog
-        run: |
-          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64 | tr -dc 'a-zA-Z0-9')
-          echo "body<<$EOF" >> "$GITHUB_OUTPUT"
-          sed '/./,$!d' changelog.txt >> "$GITHUB_OUTPUT"
-          echo "" >> "$GITHUB_OUTPUT"
-          echo "$EOF" >> "$GITHUB_OUTPUT"
-
-      - name: Post release to Telegram
-        if: env.RELEASE_PRERELEASE == 'false'
+      - name: Build signed release APK
+        shell: bash
         env:
-          CHANGELOG_BODY: ${{ steps.changelog.outputs.body }}
-          RELEASE_URL: ${{ steps.release.outputs.url }}
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+          KEYSTORE_PATH: ${{ steps.signing.outputs.keystore_path }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -z "$BOT_TOKEN" ] || [ -z "$CHANNEL_ID" ]; then
-            echo "Telegram credentials missing. Skipping notification."
-            exit 0
-          fi
-          
-          CLEAN_BODY=$(printf '%s' "$CHANGELOG_BODY" | sed '/./,$!d' | cut -c 1-4000)
-          FULL_MESSAGE="$(printf 'STABLE %s\n\n%s\n\nRelease: %s' "${{ env.NEW_VERSION_NAME }}" "$CLEAN_BODY" "$RELEASE_URL")"
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew clean :app:assembleWhatsappRelease \
+            -Pminify=true \
+            -PandroidStoreFile="$KEYSTORE_PATH" \
+            -PandroidStorePassword="$KEYSTORE_PASSWORD" \
+            -PandroidKeyAlias="$KEY_ALIAS" \
+            -PandroidKeyPassword="$KEY_PASSWORD"
 
-          curl -f -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${CHANNEL_ID}" \
-            --data-urlencode "text=$FULL_MESSAGE" \
-            -d "disable_web_page_preview=true"
+      - name: Locate and name release APK
+        id: apk
+        shell: bash
+        env:
+          VERSION_NAME: ${{ steps.metadata.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          SOURCE_APK="$(find app/build/outputs/apk/whatsapp/release -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$SOURCE_APK" || { echo "Release APK was not produced" >&2; exit 1; }
+
+          mkdir -p release
+          APK_PATH="release/WaEnhancerCommunity-v${VERSION_NAME}.apk"
+          cp "$SOURCE_APK" "$APK_PATH"
+          echo "path=$APK_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Verify signature, identity, version, and checksum
+        id: verify
+        shell: bash
+        env:
+          APK_PATH: ${{ steps.apk.outputs.path }}
+          EXPECTED_CERT_SHA256: ${{ steps.signing.outputs.expected_cert_sha256 }}
+          EXPECTED_VERSION_NAME: ${{ steps.metadata.outputs.version_name }}
+          EXPECTED_VERSION_CODE: ${{ steps.metadata.outputs.version_code }}
+          EXPECTED_APPLICATION_ID: com.waenhancer.community
+        run: |
+          set -euo pipefail
+
+          BUILD_TOOLS_VERSION="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V | tail -n 1)"
+          APKSIGNER="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/aapt"
+
+          test -x "$APKSIGNER" || { echo "apksigner not found" >&2; exit 1; }
+          test -x "$AAPT" || { echo "aapt not found" >&2; exit 1; }
+
+          SIGNATURE_REPORT="$($APKSIGNER verify --verbose --print-certs "$APK_PATH")"
+          printf '%s\n' "$SIGNATURE_REPORT"
+
+          if grep -qi 'CN=Android Debug' <<< "$SIGNATURE_REPORT"; then
+            echo "APK is signed with an Android debug certificate" >&2
+            exit 1
+          fi
+
+          ACTUAL_CERT_SHA256="$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' <<< "$SIGNATURE_REPORT" \
+            | tr -d ':' \
+            | tr '[:upper:]' '[:lower:]')"
+
+          [[ "$ACTUAL_CERT_SHA256" == "$EXPECTED_CERT_SHA256" ]] || {
+            echo "APK certificate does not match the configured keystore" >&2
+            exit 1
+          }
+
+          BADGING="$($AAPT dump badging "$APK_PATH" | head -n 1)"
+          ACTUAL_APPLICATION_ID="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<< "$BADGING")"
+          ACTUAL_VERSION_CODE="$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" <<< "$BADGING")"
+          ACTUAL_VERSION_NAME="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<< "$BADGING")"
+
+          [[ "$ACTUAL_APPLICATION_ID" == "$EXPECTED_APPLICATION_ID" ]] || {
+            echo "Unexpected application ID: $ACTUAL_APPLICATION_ID" >&2
+            exit 1
+          }
+          [[ "$ACTUAL_VERSION_CODE" == "$EXPECTED_VERSION_CODE" ]] || {
+            echo "Unexpected versionCode: $ACTUAL_VERSION_CODE" >&2
+            exit 1
+          }
+          [[ "$ACTUAL_VERSION_NAME" == "$EXPECTED_VERSION_NAME" ]] || {
+            echo "Unexpected versionName: $ACTUAL_VERSION_NAME" >&2
+            exit 1
+          }
+
+          SHA256="$(sha256sum "$APK_PATH" | awk '{print $1}')"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release and attach APK directly
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.metadata.outputs.tag_name }}
+          RELEASE_TITLE: ${{ steps.metadata.outputs.release_title }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+          APK_PATH: ${{ steps.apk.outputs.path }}
+          SHA256: ${{ steps.verify.outputs.sha256 }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+          if [[ -n "$RELEASE_NOTES" ]]; then
+            printf '%s\n\n' "$RELEASE_NOTES" > "$NOTES_FILE"
+          else
+            printf 'Manual signed release from commit `%s`.\n\n' "$GITHUB_SHA" > "$NOTES_FILE"
+          fi
+          printf 'SHA-256: `%s`\n' "$SHA256" >> "$NOTES_FILE"
+
+          ARGS=(release create "$TAG_NAME" "$APK_PATH" --target "$GITHUB_SHA" --title "$RELEASE_TITLE" --notes-file "$NOTES_FILE")
+          if [[ "$PRERELEASE" == "true" ]]; then
+            ARGS+=(--prerelease)
+          fi
+          gh "${ARGS[@]}"
+
+      - name: Remove temporary signing material
+        if: always()
+        shell: bash
+        env:
+          KEYSTORE_PATH: ${{ steps.signing.outputs.keystore_path }}
+        run: |
+          if [[ -n "${KEYSTORE_PATH:-}" ]]; then
+            rm -f "$KEYSTORE_PATH"
+          fi
