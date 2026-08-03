@@ -107,7 +107,7 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
         addColorField("Minimal FAB icon", "floating_bottom_bar_minimal_fab_icon_color", Color.WHITE);
 
         addSection("Selected tab indicator");
-        addSwitch("Show indicator", "floating_bottom_bar_indicator_visible", true);
+        addSwitch("Show indicator", "floating_bottom_bar_indicator_visible", false);
         addDropdown("Indicator width", "floating_bottom_bar_indicator_width_mode",
                 new String[]{"Automatic", "Manual"}, new String[]{"automatic", "manual"}, "automatic");
         addDropdown("Indicator height", "floating_bottom_bar_indicator_height_mode",

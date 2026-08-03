@@ -66,7 +66,7 @@ public class FloatingBottomBar extends Feature {
     private static boolean pillManualHeight = false;
     private static int fabVisibleOffsetDp = FAB_VISIBLE_OFFSET_DP;
     private static String fabMode = "default";
-    private static boolean indicatorVisible = true;
+    private static boolean indicatorVisible = false;
     private static SharedPreferences activePrefs;
 
     public FloatingBottomBar(@NonNull ClassLoader loader, @NonNull SharedPreferences preferences) {
@@ -93,7 +93,7 @@ public class FloatingBottomBar extends Feature {
         pillManualHeightDp = Math.round(normalized("floating_bottom_bar_manual_height"));
         fabVisibleOffsetDp = Math.round(normalized("floating_bottom_bar_fab_offset"));
         fabMode = getPrefString(activePrefs, "floating_bottom_bar_fab_mode", "default");
-        indicatorVisible = prefs.getBoolean("floating_bottom_bar_indicator_visible", true);
+        indicatorVisible = prefs.getBoolean("floating_bottom_bar_indicator_visible", false);
 
 
         // Hook the tab frame container
@@ -303,7 +303,7 @@ public class FloatingBottomBar extends Feature {
                             try {
                                 if (hasSetPadding) return;
                                 if (v.getHeight() > 0 && v.getWidth() > 0) {
-                                    if (isMainTabScrollable(v)) {
+                                    if ("all".equals(scrollHideMode) || isMainTabScrollable(v)) {
                                         View bottomNav = findBottomNavForScrollable(v);
                                         if (bottomNav != null) {
                                             float density = v.getContext().getResources().getDisplayMetrics().density;
@@ -758,7 +758,8 @@ public class FloatingBottomBar extends Feature {
                     final View scrollView = child;
                     scrollView.post(() -> {
                         try {
-                            if (!isMainTabScrollable(scrollView)) {
+                            if (!"all".equals(scrollHideMode)
+                                    && !isMainTabScrollable(scrollView)) {
                                 restoreOriginalBottomPadding(scrollView);
                                 return;
                             }
@@ -818,7 +819,7 @@ public class FloatingBottomBar extends Feature {
             if (Math.abs(dy) > 50000) return; // Ignore layout measureSpec triggers (e.g. 1073743008)
             if (Math.abs(dy) < 5) return;
             if (!rv.isShown()) return; // Ignore background scrolls
-            if (!isMainTabScrollable(rv)) return;
+            if (!"all".equals(scrollHideMode) && !isMainTabScrollable(rv)) return;
 
             View bottomNav = findBottomNavForScrollable(rv);
             if (bottomNav == null) return;
@@ -1460,12 +1461,13 @@ public class FloatingBottomBar extends Feature {
     }
 
     private static void applySelectedIndicator(View bottomNav, int selectedId, float density) {
+        if (!indicatorVisible) return;
         try {
             ViewGroup menu = findMenuView(bottomNav);
             if (menu == null) return;
             for (int i = 0; i < menu.getChildCount(); i++) {
                 View item = menu.getChildAt(i);
-                if (!indicatorVisible || item.getId() != selectedId) {
+                if (item.getId() != selectedId) {
                     item.setBackground(null);
                     continue;
                 }
