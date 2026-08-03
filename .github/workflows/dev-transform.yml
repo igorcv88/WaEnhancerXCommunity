@@ -32,5 +32,7 @@ jobs:
           git config user.name "ChatGPT Blocks A-B"
           git config user.email "actions@users.noreply.github.com"
           git add -A
-          git commit -m "fix: preserve floating bar defaults and scroll modes"
+          git commit -m "fix: complete final javac integration"
+          git fetch origin "${HEAD_REF}"
+          git rebase "origin/${HEAD_REF}"
           git push origin "HEAD:${HEAD_REF}"
