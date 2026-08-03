@@ -193,7 +193,7 @@ public class FeatureLoader {
      */
     public static String getModuleString(Context context, int resId, String fallback) {
         try {
-            Context moduleContext = context.createPackageContext("com.waenhancer", 0);
+            Context moduleContext = context.createPackageContext(BuildConfig.APPLICATION_ID, 0);
             
             // Explicitly apply the host's configuration (which contains the active locale) 
             // to the module context so it doesn't default to the system language.
@@ -459,7 +459,7 @@ public class FeatureLoader {
                                                 (dialog, which) -> {
                                                     try {
                                                         Intent intent = new Intent();
-                                                        intent.setComponent(new android.content.ComponentName("com.waenhancer", "com.waenhancer.activities.ChangelogActivity"));
+                                                        intent.setComponent(new android.content.ComponentName(BuildConfig.APPLICATION_ID, "com.waenhancer.activities.ChangelogActivity"));
                                                         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                                                         activity.startActivity(intent);
                                                     } catch (Throwable t) {
@@ -1143,7 +1143,7 @@ public class FeatureLoader {
                         .setNegativeButton("Switch to WAEX Beta", (dialog, which) -> {
                             try {
                                 Intent intent = new Intent();
-                                intent.setComponent(new android.content.ComponentName("com.waenhancer", "com.waenhancer.activities.ChangelogActivity"));
+                                intent.setComponent(new android.content.ComponentName(BuildConfig.APPLICATION_ID, "com.waenhancer.activities.ChangelogActivity"));
                                 intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                                 activity.startActivity(intent);
                             } catch (Throwable t) {

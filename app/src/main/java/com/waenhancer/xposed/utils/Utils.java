@@ -29,6 +29,7 @@ import androidx.core.app.NotificationManagerCompat;
 import androidx.documentfile.provider.DocumentFile;
 
 import com.waenhancer.App;
+import com.waenhancer.BuildConfig;
 
 import com.waenhancer.xposed.core.FeatureLoader;
 import com.waenhancer.xposed.core.WppCore;
@@ -93,16 +94,16 @@ public class Utils {
             if ("1".equals(mode) && context instanceof Activity) {
                 com.waenhancer.xposed.features.others.EmbeddedSettingsDialogFragment.show((Activity) context);
             } else {
-                Intent intent = context.getPackageManager().getLaunchIntentForPackage("com.waenhancer");
+                Intent intent = context.getPackageManager().getLaunchIntentForPackage(BuildConfig.APPLICATION_ID);
                 if (intent == null) {
                     intent = new Intent();
-                    intent.setComponent(new ComponentName("com.waenhancer", "com.waenhancer.activities.MainActivity"));
+                    intent.setComponent(new ComponentName(BuildConfig.APPLICATION_ID, "com.waenhancer.activities.MainActivity"));
                 }
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 context.startActivity(intent);
             }
         } catch (Exception e) {
-            Toast.makeText(context, "Error opening WaEnhancer X: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, "Error opening WaEnhancer Community: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 

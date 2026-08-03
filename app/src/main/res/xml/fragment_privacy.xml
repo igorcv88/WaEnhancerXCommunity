@@ -176,7 +176,7 @@
 
     </PreferenceCategory>
 
-    <com.waenhancer.preference.ProPreferenceCategory
+    <PreferenceCategory
         app:iconSpaceReserved="false"
         app:key="always_typing_category"
         app:title="@string/always_typing_category_title">
@@ -241,6 +241,6 @@
             android:title="Check Contacts"
             android:summary="View and clear per-contact custom privacy" />
 
-    </com.waenhancer.preference.ProPreferenceCategory>
+    </PreferenceCategory>
 
 </PreferenceScreen>

@@ -56,8 +56,8 @@ import java.io.File;
 
 public class HomeFragment extends BaseFragment {
 
-    private static final String RELEASES_URL = "https://github.com/igorcv88/WaEnhancer Community/releases";
-    private static final String LATEST_STABLE_URL = "https://github.com/igorcv88/WaEnhancer Community/releases/latest";
+    private static final String RELEASES_URL = "https://github.com/igorcv88/WaEnhancerX/releases";
+    private static final String LATEST_STABLE_URL = "https://github.com/igorcv88/WaEnhancerX/releases/latest";
 
     /**
      * In-memory flag — reset to false every time the app process starts.
@@ -304,7 +304,7 @@ public class HomeFragment extends BaseFragment {
                                     + "\n---\n"
                                     + description + "\n";
 
-                            String url = "https://github.com/igorcv88/WaEnhancer Community/issues/new?title="
+                            String url = "https://github.com/igorcv88/WaEnhancerX/issues/new?title="
                                     + java.net.URLEncoder.encode(title, "UTF-8") + "&body="
                                     + java.net.URLEncoder.encode(body, "UTF-8");
                             openUrl(requireContext(), url);
@@ -328,7 +328,7 @@ public class HomeFragment extends BaseFragment {
 
         binding.githubBtn.setOnClickListener(view -> {
             animateClick(view);
-            openUrl(requireContext(), "https://github.com/igorcv88/WaEnhancer Community/issues");
+            openUrl(requireContext(), "https://github.com/igorcv88/WaEnhancerX/issues");
         });
 
         binding.clearCacheBtn.setOnClickListener(view -> {
@@ -360,7 +360,7 @@ public class HomeFragment extends BaseFragment {
     }
 
     private void openTelegramChannel(Context context) {
-        String channelUrl = "https://t.me/WaEnhancer Community";
+        String channelUrl = "https://t.me/WaEnhancerX";
         String installedPackage = Utils.getInstalledTelegramPackage(context);
 
         if (installedPackage != null) {

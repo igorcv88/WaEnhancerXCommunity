@@ -51,6 +51,7 @@ import rikka.core.util.IOUtils;
 public class TextEditorActivity extends BaseActivity {
     // private CodeView codeView;
     private String folderName;
+    private String preferenceKey;
     private ActivityResultLauncher<String> mGetContent;
     private ActivityResultLauncher<String> mExportFile;
     private WebView webView;
@@ -83,6 +84,10 @@ public class TextEditorActivity extends BaseActivity {
         mExportFile = registerForActivityResult(new ActivityResultContracts.CreateDocument("*/*"), this::exportAsZip);
 
         folderName = getIntent().getStringExtra("folder_name");
+        preferenceKey = getIntent().getStringExtra("key");
+        if (TextUtils.isEmpty(preferenceKey)) {
+            preferenceKey = "folder_theme";
+        }
         if (!TextUtils.isEmpty(folderName)) {
             readFile(folderName);
         }
@@ -149,12 +154,17 @@ public class TextEditorActivity extends BaseActivity {
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
         switch (item.getItemId()) {
-            case R.id.menuitem_save -> getTextareaContentAsync().thenAccept(content ->
-                    runOnUiThread(() -> {
-                        try {
+            case R.id.menuitem_save -> {
+                getTextareaContentAsync().thenAccept(content ->
+                        runOnUiThread(() -> saveThemeContent(content)));
+                return true;
+            }
+            case R.id.menuitem_test_theme -> {
+                getTextareaContentAsync().thenAccept(content ->
+                        runOnUiThread(() -> {
                             var preferences = PreferenceManager.getDefaultSharedPreferences(this);
-                            CssSafetyManager.SaveResult result =
-                                    CssSafetyManager.save(preferences, content);
+                            CssSafetyManager.SaveResult result = CssSafetyManager.beginTest(
+                                    preferences, content, CssSafetyManager.DEFAULT_TEST_DURATION_MS);
                             if (!result.saved) {
                                 new MaterialAlertDialogBuilder(this)
                                         .setTitle("CSS validation failed")
@@ -163,51 +173,26 @@ public class TextEditorActivity extends BaseActivity {
                                         .show();
                                 return;
                             }
-
-                            File folder = new File(ThemePreference.rootDirectory, folderName);
-                            File cssFile = new File(folder, "style.css");
-                            FilesKt.writeText(cssFile, content, Charset.defaultCharset());
-                            LocalDiagnostics.record(this, "css", "Validated CSS saved");
-                            notifyCssChanged();
-                            Toast.makeText(this,
-                                    result.validation.warnings.isEmpty()
-                                            ? getString(R.string.saved)
-                                            : "Saved with warnings: "
-                                                + result.validation.message(),
-                                    Toast.LENGTH_LONG).show();
-                        } catch (Exception exception) {
-                            Toast.makeText(this, exception.getMessage(), Toast.LENGTH_LONG).show();
-                        }
-                    }));
-            case R.id.menuitem_test_theme -> getTextareaContentAsync().thenAccept(content ->
-                    runOnUiThread(() -> {
-                        var preferences = PreferenceManager.getDefaultSharedPreferences(this);
-                        CssSafetyManager.SaveResult result = CssSafetyManager.beginTest(
-                                preferences, content, CssSafetyManager.DEFAULT_TEST_DURATION_MS);
-                        if (!result.saved) {
-                            new MaterialAlertDialogBuilder(this)
-                                    .setTitle("CSS validation failed")
-                                    .setMessage(result.validation.message())
-                                    .setPositiveButton(android.R.string.ok, null)
-                                    .show();
-                            return;
-                        }
-                        LocalDiagnostics.record(this, "css", "Temporary two-minute CSS test started");
-                        notifyCssChanged();
-                        restartWhatsAppVariants();
-                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                            LocalDiagnostics.record(this, "css", "Temporary CSS test expired");
+                            LocalDiagnostics.record(this, "css",
+                                    "Temporary two-minute CSS test started");
                             notifyCssChanged();
                             restartWhatsAppVariants();
-                        }, CssSafetyManager.DEFAULT_TEST_DURATION_MS);
-                        new MaterialAlertDialogBuilder(this)
-                                .setTitle("Temporary theme test")
-                                .setMessage("The CSS was validated and enabled for two minutes. "
-                                        + "WhatsApp is restarted now and again when the test expires. "
-                                        + "The saved theme is not replaced.")
-                                .setPositiveButton(android.R.string.ok, null)
-                                .show();
-                    }));
+                            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                                LocalDiagnostics.record(this, "css",
+                                        "Temporary CSS test expired");
+                                notifyCssChanged();
+                                restartWhatsAppVariants();
+                            }, CssSafetyManager.DEFAULT_TEST_DURATION_MS);
+                            new MaterialAlertDialogBuilder(this)
+                                    .setTitle("Temporary theme test")
+                                    .setMessage("The CSS was validated and enabled for two minutes. "
+                                            + "WhatsApp is restarted now and again when the test expires. "
+                                            + "The saved theme is not replaced.")
+                                    .setPositiveButton(android.R.string.ok, null)
+                                    .show();
+                        }));
+                return true;
+            }
             case R.id.menuitem_rollback_theme -> {
                 var preferences = PreferenceManager.getDefaultSharedPreferences(this);
                 boolean restored = CssSafetyManager.rollback(preferences);
@@ -221,6 +206,7 @@ public class TextEditorActivity extends BaseActivity {
                                 ? "Previous valid CSS restored"
                                 : "No previous valid CSS is available",
                         Toast.LENGTH_LONG).show();
+                return true;
             }
             case R.id.menuitem_css_safe_mode -> {
                 var preferences = PreferenceManager.getDefaultSharedPreferences(this);
@@ -229,20 +215,78 @@ public class TextEditorActivity extends BaseActivity {
                 notifyCssChanged();
                 restartWhatsAppVariants();
                 Toast.makeText(this, "CSS safe mode enabled", Toast.LENGTH_LONG).show();
+                return true;
             }
-            case R.id.menuitem_exit -> finish();
+            case R.id.menuitem_exit -> {
+                finish();
+                return true;
+            }
             case R.id.menuitem_clear -> {
                 updateWebViewContent("");
+                return true;
             }
             case R.id.menuitem_import_image -> {
                 mGetContent.launch("image/*");
+                return true;
             }
             case R.id.menuitem_export -> {
                 mExportFile.launch(folderName + ".zip");
+                return true;
+            }
+            default -> {
+                return super.onOptionsItemSelected(item);
+            }
+        }
+    }
+
+    private void saveThemeContent(String content) {
+        try {
+            var preferences = PreferenceManager.getDefaultSharedPreferences(this);
+            CssSafetyManager.ValidationResult validation = CssSafetyManager.validate(content);
+            if (!validation.valid) {
+                new MaterialAlertDialogBuilder(this)
+                        .setTitle("CSS validation failed")
+                        .setMessage(validation.message())
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show();
+                return;
             }
 
+            String selectedTheme = preferences.getString(preferenceKey, null);
+            boolean activeTheme = !TextUtils.isEmpty(folderName)
+                    && folderName.equals(selectedTheme);
+            if (activeTheme) {
+                CssSafetyManager.SaveResult result = CssSafetyManager.save(preferences, content);
+                if (!result.saved) {
+                    Toast.makeText(this, "Could not update the active CSS state",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+                validation = result.validation;
+            }
+
+            File folder = new File(ThemePreference.rootDirectory, folderName);
+            if (!folder.exists() && !folder.mkdirs()) {
+                throw new IllegalStateException("Could not create the theme folder");
+            }
+            File cssFile = new File(folder, "style.css");
+            FilesKt.writeText(cssFile, content == null ? "" : content,
+                    Charset.defaultCharset());
+
+            LocalDiagnostics.record(this, "css", activeTheme
+                    ? "Validated active CSS saved"
+                    : "Validated inactive theme CSS saved without activation");
+            if (activeTheme) {
+                notifyCssChanged();
+            }
+            Toast.makeText(this,
+                    validation.warnings.isEmpty()
+                            ? getString(R.string.saved)
+                            : "Saved with warnings: " + validation.message(),
+                    Toast.LENGTH_LONG).show();
+        } catch (Exception exception) {
+            Toast.makeText(this, exception.getMessage(), Toast.LENGTH_LONG).show();
         }
-        return super.onOptionsItemSelected(item);
     }
 
     private void notifyCssChanged() {
