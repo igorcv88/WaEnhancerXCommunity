@@ -8,9 +8,7 @@ import android.view.MenuItem;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
-import android.widget.SeekBar;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.preference.PreferenceManager;
@@ -18,7 +16,6 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.appbar.MaterialToolbar;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
@@ -34,6 +31,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class FilterItemsActivity extends BaseActivity implements FilterItemsAdapter.OnFilterActionListener {
 
@@ -60,7 +58,6 @@ public class FilterItemsActivity extends BaseActivity implements FilterItemsAdap
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         adapter = new FilterItemsAdapter(filtersList, this);
         recyclerView.setAdapter(adapter);
-
         updateEmptyState();
 
         FloatingActionButton fab = findViewById(R.id.fab_add_filter);
@@ -71,96 +68,85 @@ public class FilterItemsActivity extends BaseActivity implements FilterItemsAdap
         filtersList.clear();
         String rawFilters = PreferenceManager.getDefaultSharedPreferences(this)
                 .getString("filter_items", "");
-        if (rawFilters != null && !rawFilters.trim().isEmpty()) {
-            if (rawFilters.trim().startsWith("[")) {
-                try {
-                    JSONArray arr = new JSONArray(rawFilters);
-                    for (int i = 0; i < arr.length(); i++) {
-                        JSONObject obj = arr.getJSONObject(i);
-                        String idStr = obj.optString("id", "").trim();
-                        if (!idStr.isEmpty()) {
-                            String behavior = obj.optString("behavior", FilterItem.BEHAVIOR_GONE);
-                            int color = obj.optInt("color", 0xFFFF0000);
-                            int opacity = obj.optInt("opacity", 100);
-                            double scale = obj.optDouble("scale", 1.0);
-                            filtersList.add(new FilterItem(idStr, behavior, color, opacity, (float) scale));
-                        }
-                    }
-                } catch (Exception e) {
-                    android.util.Log.e("WAEX", "Failed to parse JSON filter_items", e);
+        if (rawFilters == null || rawFilters.trim().isEmpty()) return;
+
+        if (rawFilters.trim().startsWith("[")) {
+            try {
+                JSONArray array = new JSONArray(rawFilters);
+                for (int i = 0; i < array.length(); i++) {
+                    JSONObject object = array.getJSONObject(i);
+                    String id = object.optString("id", "").trim();
+                    if (id.isEmpty()) continue;
+                    filtersList.add(new FilterItem(
+                            id,
+                            object.optString("behavior", FilterItem.BEHAVIOR_GONE),
+                            object.optInt("color", 0xFFFF0000),
+                            object.optInt("opacity", 100),
+                            (float) object.optDouble("scale", 1.0)));
                 }
-            } else {
-                // Fallback to old newline-separated format
-                String[] items = rawFilters.split("\n");
-                for (String item : items) {
-                    String cleaned = item.trim();
-                    if (!cleaned.isEmpty()) {
-                        filtersList.add(new FilterItem(cleaned, FilterItem.BEHAVIOR_GONE, 0xFFFF0000, 100, 1.0f));
-                    }
-                }
+            } catch (Exception exception) {
+                android.util.Log.e("WAEX", "Failed to parse JSON filter_items", exception);
+            }
+            return;
+        }
+
+        for (String item : rawFilters.split("\n")) {
+            String cleaned = item.trim();
+            if (!cleaned.isEmpty()) {
+                filtersList.add(new FilterItem(
+                        cleaned, FilterItem.BEHAVIOR_GONE, 0xFFFF0000, 100, 1.0f));
             }
         }
     }
 
     private void saveFilters() {
-        JSONArray arr = new JSONArray();
+        JSONArray array = new JSONArray();
         for (FilterItem item : filtersList) {
             try {
-                JSONObject obj = new JSONObject();
-                obj.put("id", item.id);
-                obj.put("behavior", item.behavior);
-                obj.put("color", item.color);
-                obj.put("opacity", item.opacity);
-                obj.put("scale", item.scale);
-                arr.put(obj);
-            } catch (Exception ignored) {}
+                JSONObject object = new JSONObject();
+                object.put("id", item.id);
+                object.put("behavior", item.behavior);
+                object.put("color", item.color);
+                object.put("opacity", item.opacity);
+                object.put("scale", item.scale);
+                array.put(object);
+            } catch (Exception ignored) {
+            }
         }
-        String filterString = arr.toString();
+
         PreferenceManager.getDefaultSharedPreferences(this)
                 .edit()
-                .putString("filter_items", filterString)
+                .putString("filter_items", array.toString())
                 .putBoolean("need_restart", true)
                 .apply();
 
-        // Notify content provider and packages
         try {
             String authority = BuildConfig.APPLICATION_ID + ".hookprovider";
             getContentResolver().notifyChange(
-                    Uri.parse("content://" + authority + "/preferences"),
-                    null
-            );
+                    Uri.parse("content://" + authority + "/preferences"), null);
 
-            Intent intent = new Intent(BuildConfig.APPLICATION_ID + ".PREFS_CHANGED");
-            intent.setPackage("com.whatsapp");
-            sendBroadcast(intent);
+            for (String packageName : new String[]{"com.whatsapp", "com.whatsapp.w4b"}) {
+                Intent changed = new Intent(BuildConfig.APPLICATION_ID + ".PREFS_CHANGED");
+                changed.setPackage(packageName);
+                sendBroadcast(changed);
 
-            Intent intent2 = new Intent(BuildConfig.APPLICATION_ID + ".PREFS_CHANGED");
-            intent2.setPackage("com.whatsapp.w4b");
-            sendBroadcast(intent2);
-
-            // Send MANUAL_RESTART intent to prompt WhatsApp restart dialog
-            ArrayList<String> titles = new ArrayList<>();
-            titles.add(getString(R.string.filter_items_by_id));
-
-            for (String pkg : new String[]{"com.whatsapp", "com.whatsapp.w4b"}) {
-                Intent restartIntent = new Intent(BuildConfig.APPLICATION_ID + ".MANUAL_RESTART");
-                restartIntent.setPackage(pkg);
-                restartIntent.putStringArrayListExtra("changed_titles", titles);
-                sendBroadcast(restartIntent);
+                ArrayList<String> titles = new ArrayList<>();
+                titles.add(getString(R.string.filter_items_by_id));
+                Intent restart = new Intent(BuildConfig.APPLICATION_ID + ".MANUAL_RESTART");
+                restart.setPackage(packageName);
+                restart.putStringArrayListExtra("changed_titles", titles);
+                sendBroadcast(restart);
             }
-        } catch (Exception ignored) {}
-    }
-
-    private void updateEmptyState() {
-        if (filtersList.isEmpty()) {
-            emptyStateText.setVisibility(View.VISIBLE);
-        } else {
-            emptyStateText.setVisibility(View.GONE);
+        } catch (Exception ignored) {
         }
     }
 
+    private void updateEmptyState() {
+        emptyStateText.setVisibility(filtersList.isEmpty() ? View.VISIBLE : View.GONE);
+    }
+
     private void showFilterEditDialog(FilterItem item, boolean isEdit, int position) {
-        com.google.android.material.bottomsheet.BottomSheetDialog dialog = 
+        com.google.android.material.bottomsheet.BottomSheetDialog dialog =
                 new com.google.android.material.bottomsheet.BottomSheetDialog(this);
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_filter_edit, null);
         dialog.setContentView(dialogView);
@@ -169,109 +155,86 @@ public class FilterItemsActivity extends BaseActivity implements FilterItemsAdap
         TextInputEditText idInput = dialogView.findViewById(R.id.dialog_filter_id);
         TextInputLayout idInputLayout = dialogView.findViewById(R.id.dialog_filter_id_layout);
         AutoCompleteTextView behaviorDropdown = dialogView.findViewById(R.id.dialog_filter_behavior);
-        
         View layoutColor = dialogView.findViewById(R.id.layout_change_color);
         View layoutOpacity = dialogView.findViewById(R.id.layout_opacity);
         TextInputEditText opacityInput = dialogView.findViewById(R.id.dialog_opacity_input);
         View layoutResize = dialogView.findViewById(R.id.layout_resize);
         TextView resizeScaleText = dialogView.findViewById(R.id.resize_scale_text);
-        com.google.android.material.slider.Slider resizeSlider = dialogView.findViewById(R.id.dialog_resize_slider);
+        com.google.android.material.slider.Slider resizeSlider =
+                dialogView.findViewById(R.id.dialog_resize_slider);
 
-        // Prepopulate values
-        if (isEdit && item != null) {
-            titleView.setText("Edit Filter");
-            idInput.setText(item.id);
-            int behaviorIndex = getIndexFromBehavior(item.behavior);
-            behaviorDropdown.setText(getBehaviorNameFromIndex(behaviorIndex), false);
-            toggleBehaviorLayouts(behaviorIndex, layoutColor, layoutOpacity, layoutResize);
-        } else {
-            titleView.setText("Add Filter");
-            behaviorDropdown.setText(getBehaviorNameFromIndex(0), false);
-            toggleBehaviorLayouts(0, layoutColor, layoutOpacity, layoutResize);
-        }
+        int initialBehavior = isEdit && item != null ? getIndexFromBehavior(item.behavior) : 0;
+        titleView.setText(isEdit ? "Edit Filter" : "Add Filter");
+        if (isEdit && item != null) idInput.setText(item.id);
+        behaviorDropdown.setText(getBehaviorNameFromIndex(initialBehavior), false);
+        toggleBehaviorLayouts(initialBehavior, layoutColor, layoutOpacity, layoutResize);
 
-        // Setup behavior dropdown
-        String[] behaviors = {"Gone (Remove)", "Change Color (Pro)", "Opacity (Pro)", "Resize (Pro)"};
-        ArrayAdapter<String> behaviorAdapter = new ArrayAdapter<>(this, android.R.layout.simple_dropdown_item_1line, behaviors);
-        behaviorDropdown.setAdapter(behaviorAdapter);
-        behaviorDropdown.setOnItemClickListener((parent, view, pos, id) -> {
-                behaviorDropdown.setText(getBehaviorNameFromIndex(0), false);
-                toggleBehaviorLayouts(0, layoutColor, layoutOpacity, layoutResize);
-            } else {
-                toggleBehaviorLayouts(pos, layoutColor, layoutOpacity, layoutResize);
-            }
-        });
+        String[] behaviors = {"Gone (Remove)", "Change Color", "Opacity", "Resize"};
+        behaviorDropdown.setAdapter(new ArrayAdapter<>(
+                this, android.R.layout.simple_dropdown_item_1line, behaviors));
+        behaviorDropdown.setOnItemClickListener((parent, view, selected, id) ->
+                toggleBehaviorLayouts(selected, layoutColor, layoutOpacity, layoutResize));
 
-        // Setup Color Picker
-        final int[] selectedColor = { (isEdit && item != null) ? item.color : 0xFFFF0000 };
+        final int[] selectedColor = {
+                isEdit && item != null ? item.color : 0xFFFF0000
+        };
         View colorPreview = dialogView.findViewById(R.id.color_preview_view);
         GradientDrawable previewDrawable = new GradientDrawable();
         previewDrawable.setShape(GradientDrawable.OVAL);
         previewDrawable.setColor(selectedColor[0]);
         colorPreview.setBackground(previewDrawable);
+        dialogView.findViewById(R.id.btn_choose_color).setOnClickListener(v ->
+                new SimpleColorPickerDialog(this, selectedColor[0], color -> {
+                    selectedColor[0] = color;
+                    previewDrawable.setColor(color);
+                }).show());
 
-        dialogView.findViewById(R.id.btn_choose_color).setOnClickListener(v -> {
-            new SimpleColorPickerDialog(this, selectedColor[0], color -> {
-                selectedColor[0] = color;
-                previewDrawable.setColor(color);
-            }).show();
-        });
+        opacityInput.setText(isEdit && item != null
+                && FilterItem.BEHAVIOR_OPACITY.equals(item.behavior)
+                ? String.valueOf(item.opacity) : "100");
 
-        // Setup Opacity
-        if (isEdit && item != null && FilterItem.BEHAVIOR_OPACITY.equals(item.behavior)) {
-            opacityInput.setText(String.valueOf(item.opacity));
-        } else {
-            opacityInput.setText("100");
-        }
-
-        // Setup Resize Slider
-        float initialScale = (isEdit && item != null) ? item.scale : 1.0f;
-        if (initialScale < 0.1f) initialScale = 0.1f;
-        if (initialScale > 3.0f) initialScale = 3.0f;
+        float initialScale = isEdit && item != null ? item.scale : 1.0f;
+        initialScale = Math.max(0.1f, Math.min(3.0f, initialScale));
         resizeSlider.setValue(initialScale);
-        resizeScaleText.setText("Scale: " + String.format("%.1fx", initialScale));
-        resizeSlider.addOnChangeListener((slider, value, fromUser) -> {
-            resizeScaleText.setText("Scale: " + String.format("%.1fx", value));
-        });
+        resizeScaleText.setText("Scale: " + String.format(Locale.US, "%.1fx", initialScale));
+        resizeSlider.addOnChangeListener((slider, value, fromUser) ->
+                resizeScaleText.setText("Scale: " + String.format(Locale.US, "%.1fx", value)));
 
-        // Buttons
         dialogView.findViewById(R.id.btn_cancel).setOnClickListener(v -> dialog.dismiss());
         dialogView.findViewById(R.id.btn_save).setOnClickListener(v -> {
-            String idStr = idInput.getText() != null ? idInput.getText().toString().trim() : "";
-            if (idStr.isEmpty()) {
+            String id = idInput.getText() == null ? "" : idInput.getText().toString().trim();
+            if (id.isEmpty()) {
                 idInputLayout.setError("Filter ID cannot be empty");
                 return;
             }
+            idInputLayout.setError(null);
 
-            int behaviorPos = getIndexFromBehaviorName(behaviorDropdown.getText().toString());
-                return;
-            }
-
-            String behavior = getBehaviorFromIndex(behaviorPos);
+            int behaviorPosition = getIndexFromBehaviorName(
+                    behaviorDropdown.getText().toString());
+            String behavior = getBehaviorFromIndex(behaviorPosition);
 
             int opacity = 100;
-            if (behavior.equals(FilterItem.BEHAVIOR_OPACITY)) {
-                String opStr = opacityInput.getText() != null ? opacityInput.getText().toString().trim() : "";
+            if (FilterItem.BEHAVIOR_OPACITY.equals(behavior)) {
                 try {
-                    opacity = Integer.parseInt(opStr);
+                    opacity = Integer.parseInt(opacityInput.getText() == null
+                            ? "" : opacityInput.getText().toString().trim());
                     if (opacity < 0 || opacity > 100) {
                         opacityInput.setError("Opacity must be between 0 and 100");
                         return;
                     }
-                } catch (NumberFormatException e) {
+                } catch (NumberFormatException exception) {
                     opacityInput.setError("Invalid opacity percent");
                     return;
                 }
             }
 
-            float scale = resizeSlider.getValue();
-
-            FilterItem resultItem = new FilterItem(idStr, behavior, selectedColor[0], opacity, scale);
+            FilterItem result = new FilterItem(
+                    id, behavior, selectedColor[0], opacity, resizeSlider.getValue());
             if (isEdit && position >= 0 && position < filtersList.size()) {
-                filtersList.set(position, resultItem);
+                filtersList.set(position, result);
                 adapter.notifyItemChanged(position);
             } else {
-                filtersList.add(resultItem);
+                filtersList.add(result);
                 adapter.notifyItemInserted(filtersList.size() - 1);
             }
 
@@ -279,14 +242,13 @@ public class FilterItemsActivity extends BaseActivity implements FilterItemsAdap
             saveFilters();
             dialog.dismiss();
         });
-
         dialog.show();
     }
 
-    private void toggleBehaviorLayouts(int position, View layoutColor, View layoutOpacity, View layoutResize) {
-        layoutColor.setVisibility(position == 1 ? View.VISIBLE : View.GONE);
-        layoutOpacity.setVisibility(position == 2 ? View.VISIBLE : View.GONE);
-        layoutResize.setVisibility(position == 3 ? View.VISIBLE : View.GONE);
+    private void toggleBehaviorLayouts(int position, View color, View opacity, View resize) {
+        color.setVisibility(position == 1 ? View.VISIBLE : View.GONE);
+        opacity.setVisibility(position == 2 ? View.VISIBLE : View.GONE);
+        resize.setVisibility(position == 3 ? View.VISIBLE : View.GONE);
     }
 
     private String getBehaviorFromIndex(int index) {
@@ -310,9 +272,9 @@ public class FilterItemsActivity extends BaseActivity implements FilterItemsAdap
 
     private String getBehaviorNameFromIndex(int index) {
         return switch (index) {
-            case 1 -> "Change Color (Pro)";
-            case 2 -> "Opacity (Pro)";
-            case 3 -> "Resize (Pro)";
+            case 1 -> "Change Color";
+            case 2 -> "Opacity";
+            case 3 -> "Resize";
             default -> "Gone (Remove)";
         };
     }
@@ -329,20 +291,19 @@ public class FilterItemsActivity extends BaseActivity implements FilterItemsAdap
 
     @Override
     public void onDelete(int position) {
-        if (position >= 0 && position < filtersList.size()) {
-            new AlertDialog.Builder(this)
-                    .setTitle(R.string.delete_filter)
-                    .setMessage(R.string.delete_filter_confirm)
-                    .setPositiveButton(android.R.string.ok, (dialog, which) -> {
-                        filtersList.remove(position);
-                        adapter.notifyItemRemoved(position);
-                        adapter.notifyItemRangeChanged(position, filtersList.size() - position);
-                        updateEmptyState();
-                        saveFilters();
-                    })
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show();
-        }
+        if (position < 0 || position >= filtersList.size()) return;
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.delete_filter)
+                .setMessage(R.string.delete_filter_confirm)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    filtersList.remove(position);
+                    adapter.notifyItemRemoved(position);
+                    adapter.notifyItemRangeChanged(position, filtersList.size() - position);
+                    updateEmptyState();
+                    saveFilters();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     @Override
