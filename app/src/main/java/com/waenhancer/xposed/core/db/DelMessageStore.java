@@ -4,6 +4,7 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteException;
 import android.database.sqlite.SQLiteOpenHelper;
 
 import androidx.annotation.NonNull;
@@ -22,7 +23,11 @@ public class DelMessageStore extends SQLiteOpenHelper {
         }
     });
 
-    private static final int DATABASE_VERSION = 10;
+    /**
+     * Version 11 adds the owned-media index.  Never use a destructive fallback here: this
+     * database is the only copy of a user's recovered-message history.
+     */
+    private static final int DATABASE_VERSION = 11;
     public static final String TABLE_DELETED_FOR_ME = "deleted_for_me";
 
     private DelMessageStore(@NonNull Context context) {
@@ -89,18 +94,18 @@ public class DelMessageStore extends SQLiteOpenHelper {
                 }
             }
         }
+        if (oldVersion < 11) {
+            createDeletedMediaTable(sqLiteDatabase);
+            sqLiteDatabase.execSQL("CREATE INDEX IF NOT EXISTS idx_deleted_media_sha256 ON deleted_media(sha256)");
+            sqLiteDatabase.execSQL("CREATE INDEX IF NOT EXISTS idx_deleted_media_message ON deleted_media(message_id)");
+        }
     }
 
     @Override
     public void onDowngrade(SQLiteDatabase sqLiteDatabase, int oldVersion, int newVersion) {
-        // SQLite does not support schema downgrade natively, so we drop all tables and
-        // recreate the base schema. This clears the deleted-message history stored by
-        // this fork, but WhatsApp's own data is in a separate database and is
-        // unaffected.
-        ;
-        sqLiteDatabase.execSQL("DROP TABLE IF EXISTS " + TABLE_DELETED_FOR_ME);
-        sqLiteDatabase.execSQL("DROP TABLE IF EXISTS delmessages");
-        onCreate(sqLiteDatabase);
+        // The framework rolls this exception back.  Refusing is safer than manufacturing an
+        // older schema by deleting recovered messages or media.
+        throw new SQLiteException("Deleted-data downgrade is unsupported; restore a compatible backup instead.");
     }
 
     private void createDeletedForMeTable(SQLiteDatabase db) {
@@ -119,6 +124,19 @@ public class DelMessageStore extends SQLiteOpenHelper {
                 "contact_name TEXT, " +
                 "package_name TEXT, " +
                 "UNIQUE(key_id, chat_jid))");
+    }
+
+    private void createDeletedMediaTable(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS deleted_media ("
+                + "_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                + "message_id INTEGER NOT NULL, "
+                + "storage_id TEXT NOT NULL UNIQUE, "
+                + "sha256 TEXT NOT NULL, "
+                + "mime_type TEXT NOT NULL, "
+                + "size_bytes INTEGER NOT NULL, "
+                + "created_at INTEGER NOT NULL, "
+                + "last_accessed_at INTEGER NOT NULL, "
+                + "FOREIGN KEY(message_id) REFERENCES " + TABLE_DELETED_FOR_ME + "(_id) ON DELETE CASCADE)");
     }
 
     public void insertMessage(String jid, String msgid, long timestamp) {
@@ -298,6 +316,19 @@ public class DelMessageStore extends SQLiteOpenHelper {
         sqLiteDatabase.execSQL(
                 "CREATE TABLE IF NOT EXISTS delmessages (_id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT, msgid TEXT, timestamp INTEGER DEFAULT 0, UNIQUE(jid, msgid))");
         createDeletedForMeTable(sqLiteDatabase);
+        createDeletedMediaTable(sqLiteDatabase);
+        sqLiteDatabase.execSQL("CREATE INDEX IF NOT EXISTS idx_deleted_media_sha256 ON deleted_media(sha256)");
+        sqLiteDatabase.execSQL("CREATE INDEX IF NOT EXISTS idx_deleted_media_message ON deleted_media(message_id)");
+    }
+
+    @Override
+    public void onOpen(SQLiteDatabase database) {
+        super.onOpen(database);
+        try (Cursor result = database.rawQuery("PRAGMA integrity_check", null)) {
+            if (!result.moveToFirst() || !"ok".equalsIgnoreCase(result.getString(0))) {
+                throw new SQLiteException("Deleted-data integrity check failed");
+            }
+        }
     }
 
     public long getTimestampByMessageId(String msgid) {
