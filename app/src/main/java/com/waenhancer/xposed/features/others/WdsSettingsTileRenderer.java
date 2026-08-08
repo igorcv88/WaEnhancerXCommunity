@@ -35,7 +35,8 @@ public class WdsSettingsTileRenderer {
         try {
             android.content.res.Resources res = com.waenhancer.xposed.utils.XResManager.moduleResources;
             if (res == null) res = context.getResources();
-            int resId = res.getIdentifier("waex_settings_map", "raw", "com.waenhancer");
+            int resId = res.getIdentifier("waex_settings_map", "raw",
+                    com.waenhancer.BuildConfig.APPLICATION_ID);
             if (resId == 0) {
                 resId = res.getIdentifier("waex_settings_map", "raw", context.getPackageName());
             }
@@ -59,14 +60,14 @@ public class WdsSettingsTileRenderer {
                 android.content.res.Resources res = com.waenhancer.xposed.utils.XResManager.moduleResources;
                 int id = 0;
                 if (res != null) {
-                    id = res.getIdentifier(name, "string", "com.waenhancer");
+                    id = res.getIdentifier(name, "string", com.waenhancer.BuildConfig.APPLICATION_ID);
                 }
                 if (id == 0) {
                     res = context.getResources();
                     id = res.getIdentifier(name, "string", context.getPackageName());
                 }
                 if (id == 0) {
-                    id = res.getIdentifier(name, "string", "com.waenhancer");
+                    id = res.getIdentifier(name, "string", com.waenhancer.BuildConfig.APPLICATION_ID);
                 }
                 if (id != 0) {
                     return res.getString(id);

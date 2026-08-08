@@ -84,16 +84,29 @@ public final class BottomBarPreferenceSchema {
         return normalize(key, preferences.getAll().get(key));
     }
 
+    /**
+     * Reads from a caller-supplied {@link SharedPreferences#getAll()} snapshot. Prefer this inside
+     * the hooked WhatsApp process: {@code getAll()} copies the whole preference map on every call.
+     */
+    public static float read(Map<String, ?> snapshot, String key) {
+        return normalize(key, snapshot == null ? null : snapshot.get(key));
+    }
+
     public static int readInt(SharedPreferences preferences, String key) {
         return Math.round(read(preferences, key));
     }
 
+    public static int readInt(Map<String, ?> snapshot, String key) {
+        return Math.round(read(snapshot, key));
+    }
+
     public static void normalizePersistedValues(SharedPreferences preferences) {
+        Map<String, ?> stored = preferences.getAll();
         SharedPreferences.Editor editor = preferences.edit();
         boolean changed = false;
         for (Map.Entry<String, Spec> entry : SPECS.entrySet()) {
             String key = entry.getKey();
-            Object raw = preferences.getAll().get(key);
+            Object raw = stored.get(key);
             float normalized = normalize(key, raw);
             if (!(raw instanceof Float) || Float.compare((Float) raw, normalized) != 0) {
                 editor.putFloat(key, normalized);

@@ -1,5 +1,5 @@
 <resources>
-    <string name="maintainer" translatable="false">mubashardev</string>
+    <string name="maintainer" translatable="false">igorcv88</string>
     <string name="developer" translatable="false">Based on Dev4Mod</string>
     <string name="force_restore_backup">Force Restore Backup</string>
     <string name="force_restore_backup_summary">Launch the restore backup screen manually. Use this if you skipped restoration during setup.</string>
@@ -693,9 +693,6 @@ You can still try it, but please wait for a stable version — it will be launch
     <string name="freeze_last_seen_s">Freeze Last Seen [%s]</string>
     <string name="manage_recordings">Manage Recordings</string>
 
-    <string name="enable_crash_analytics">Share Anonymous Crash Logs</string>
-    <string name="enable_crash_analytics_sum">Help us fix bugs by sharing anonymous crash logs to Firebase Crashlytics.</string>
-    
     <string name="region_s">Region: %s</string>
     <string name="isp_s">ISP: %s</string>
     <string name="proxy_s">Proxy/VPN: %s</string>
@@ -766,4 +763,23 @@ You can still try it, but please wait for a stable version — it will be launch
     <string name="custom_versions">Custom Versions</string>
     <string name="system_versions">System Versions</string>
     <string name="not_applied">Not Applied</string>
+    <string name="css_menu_test_theme">Test theme for 2 minutes</string>
+    <string name="css_menu_rollback">Restore previous valid CSS</string>
+    <string name="css_menu_safe_mode_start">Start CSS safe mode</string>
+    <string name="css_menu_safe_mode_exit">Leave CSS safe mode</string>
+    <string name="css_safe_mode_enabled">CSS safe mode enabled</string>
+    <string name="css_safe_mode_disabled">CSS safe mode disabled</string>
+    <string name="css_validation_failed">CSS validation failed</string>
+    <string name="css_rollback_done">Previous valid CSS restored</string>
+    <string name="css_rollback_unavailable">No previous valid CSS is available</string>
+    <string name="css_test_title">Temporary theme test</string>
+    <string name="css_test_message">The CSS was validated and enabled for two minutes. WhatsApp is restarted now and again when the test expires. The saved theme is not replaced.</string>
+    <string name="css_active_state_failed">Could not update the active CSS state</string>
+    <string name="diagnostics_title">Local diagnostics</string>
+    <string name="diagnostics_notice">This preview is generated locally. Review it before sharing. Message content, phone numbers, JIDs, tokens, keys, certificates and private paths are redacted.</string>
+    <string name="diagnostics_refresh">Refresh</string>
+    <string name="diagnostics_clear">Clear events</string>
+    <string name="diagnostics_share">Share preview</string>
+    <string name="diagnostics_share_subject">WaEnhancer Community diagnostics</string>
+    <string name="diagnostics_share_chooser">Share diagnostic preview</string>
 </resources>

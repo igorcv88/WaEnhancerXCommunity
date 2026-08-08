@@ -27,7 +27,6 @@ public class ProviderSharedPreferences implements SharedPreferences {
     private final Context context;
     private final SharedPreferences localPrefs;
     private static final String AUTHORITY_SUFFIX = ".hookprovider";
-    private static final String AUTHORITY_LEGACY = "com.waenhancer.hookprovider";
 
     private final SharedPreferences fallbackPrefs;
 
@@ -71,26 +70,9 @@ public class ProviderSharedPreferences implements SharedPreferences {
             ;
         } catch (Throwable e) {
             Utils.log("[WAEX] ProviderSharedPreferences: Failed to register observer: " + e.getMessage());
-            // Try legacy
-            if (!authority.equals(AUTHORITY_LEGACY)) {
-                try {
-                    context.getContentResolver().registerContentObserver(
-                        Uri.parse("content://" + AUTHORITY_LEGACY + "/preferences"),
-                        true,
-                        new android.database.ContentObserver(new android.os.Handler(android.os.Looper.getMainLooper())) {
-                            private long lastHydration = 0;
-                            @Override
-                            public void onChange(boolean selfChange) {
-                                long now = System.currentTimeMillis();
-                                if (now - lastHydration > 500) {
-                                    lastHydration = now;
-                                    hydrateFromProvider();
-                                }
-                            }
-                        }
-                    );
-                } catch (Throwable ignored) {}
-            }
+            // No legacy-authority fallback: "com.waenhancer.hookprovider" belongs to the upstream
+            // package, so observing it would cross an application trust boundary and could bind
+            // this module's configuration to another app's exported provider.
         }
     }
 
@@ -392,7 +374,9 @@ public class ProviderSharedPreferences implements SharedPreferences {
 
     @Nullable
     private Bundle callProvider(@NonNull String method, @Nullable Bundle extras) {
-        String[] authorities = new String[] { BuildConfig.APPLICATION_ID + AUTHORITY_SUFFIX, AUTHORITY_LEGACY, "com.waenhancer.provider" };
+        // Only this installation's own provider: legacy authorities belong to the upstream
+        // package and must not be probed from here.
+        String[] authorities = new String[] { BuildConfig.APPLICATION_ID + AUTHORITY_SUFFIX };
         for (String authority : authorities) {
             try {
                 Bundle result = context.getContentResolver().call(

@@ -35,16 +35,28 @@ public final class CssSafetyManager {
         String lower = source.toLowerCase(Locale.ROOT);
         if (lower.contains("javascript:")) errors.add("javascript: URLs are not allowed.");
         if (lower.contains("expression(")) errors.add("CSS expressions are not allowed.");
-        if (lower.matches("(?s).*@import\\s+(url\\()?['\"]?https?://.*")) {
+        // Covers @import url(...), @import "...", protocol-relative //host and missing whitespace.
+        if (lower.matches("(?s).*@import\\s*(url\\s*\\()?\\s*['\"]?\\s*(https?:)?//.*")) {
             errors.add("Remote @import rules are not allowed.");
+        }
+        if (lower.matches("(?s).*url\\s*\\(\\s*['\"]?\\s*(https?:)?//.*")) {
+            warnings.add("Remote url() references reveal your IP address to a third-party host.");
         }
 
         int braces = 0;
         boolean inString = false;
+        boolean inComment = false;
         char quote = 0;
         boolean escaped = false;
         for (int i = 0; i < source.length(); i++) {
             char c = source.charAt(i);
+            if (inComment) {
+                if (c == '*' && i + 1 < source.length() && source.charAt(i + 1) == '/') {
+                    inComment = false;
+                    i++;
+                }
+                continue;
+            }
             if (escaped) {
                 escaped = false;
                 continue;
@@ -55,6 +67,12 @@ public final class CssSafetyManager {
             }
             if (inString) {
                 if (c == quote) inString = false;
+                continue;
+            }
+            // Braces inside /* */ are not structural; counting them rejected valid stylesheets.
+            if (c == '/' && i + 1 < source.length() && source.charAt(i + 1) == '*') {
+                inComment = true;
+                i++;
                 continue;
             }
             if (c == '\'' || c == '"') {

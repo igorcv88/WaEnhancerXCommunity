@@ -14,7 +14,7 @@ import com.waenhancer.xposed.core.db.DelMessageStore;
 
 public class DeletedMessagesProvider extends ContentProvider {
 
-    public static final String AUTHORITY = "com.waenhancer.provider";
+    public static final String AUTHORITY = com.waenhancer.BuildConfig.APPLICATION_ID + ".provider";
     public static final String PATH_DELETED_MESSAGES = "deleted_messages";
     public static final String PATH_PREFERENCES = "preferences";
     public static final Uri CONTENT_URI = Uri.parse("content://" + AUTHORITY + "/" + PATH_DELETED_MESSAGES);

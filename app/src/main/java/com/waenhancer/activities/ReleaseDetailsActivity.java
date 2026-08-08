@@ -136,7 +136,7 @@ public class ReleaseDetailsActivity extends BaseActivity {
                     .connectTimeout(15, TimeUnit.SECONDS)
                     .build();
 
-            // Fetch from mubashardev/WaEnhancer as requested
+            // Fetch from the Community repository
             String url = "https://api.github.com/repos/igorcv88/WaEnhancerX/releases/tags/" + tagName;
 
             var requestBuilder = new Request.Builder()

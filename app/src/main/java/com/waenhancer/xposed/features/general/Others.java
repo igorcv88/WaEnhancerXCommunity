@@ -32,6 +32,7 @@ import com.waenhancer.xposed.utils.ReflectionUtils;
 import com.waenhancer.xposed.core.components.AlertDialogWpp;
 import com.waenhancer.R;
 import com.waenhancer.xposed.utils.Utils;
+import com.waenhancer.theme.CssSafetyManager;
 import com.waenhancer.model.FilterItem;
 
 import org.json.JSONObject;
@@ -112,7 +113,8 @@ public class Others extends Feature {
         }
 
         // receivedIncomingTimestamp
-        properties = Utils.getProperties(prefs, "custom_css", "custom_filters");
+        properties = Utils.getPropertiesFromText(
+                CssSafetyManager.effectiveCss(prefs), prefs.getBoolean("custom_filters", false));
 
         var menuWIcons = prefs.getBoolean("menuwicon", false);
         var newSettings = prefs.getBoolean("novaconfig", false);
@@ -766,7 +768,7 @@ public class Others extends Feature {
             } catch (Throwable ignored) {
             }
         }
-        if ("com.waenhancer".equals(currentPkg)) {
+        if (com.waenhancer.BuildConfig.APPLICATION_ID.equals(currentPkg)) {
             return;
         }
 

@@ -182,7 +182,6 @@ android {
 }
 
 dependencies {
-    implementation(project(":api"))
     implementation(libs.blurview)
     implementation(libs.colorpicker)
     implementation(libs.dexkit)

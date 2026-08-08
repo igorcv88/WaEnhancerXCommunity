@@ -105,11 +105,12 @@ public final class BackupCodec {
         root.put("appVersion", appVersion == null ? "unknown" : appVersion);
         root.put("createdAt", OffsetDateTime.now().toString());
 
+        Map<String, ?> stored = preferences.getAll();
         JSONObject settings = new JSONObject();
         for (String key : SAFE_KEYS) {
-            if (!preferences.contains(key) || isSensitive(key)) continue;
-            Object value = preferences.getAll().get(key);
-            if (!isSupportedValue(value)) continue;
+            if (isSensitive(key)) continue;
+            Object value = stored.get(key);
+            if (value == null || !isSupportedValue(value)) continue;
             settings.put(key, encode(value));
         }
         root.put("settings", settings);
@@ -175,15 +176,16 @@ public final class BackupCodec {
         if (plan == null) throw new BackupException("Import plan is missing.");
         writeSnapshot(context, preferences);
 
-        Map<String, Object> before = new LinkedHashMap<>(preferences.getAll());
         SharedPreferences.Editor editor = preferences.edit();
         for (Map.Entry<String, Object> entry : plan.values.entrySet()) {
             put(editor, entry.getKey(), entry.getValue());
         }
 
+        // commit() applies the whole editor atomically. A false result means nothing was written,
+        // so the existing preferences are still intact and must not be cleared and rebuilt.
         if (!editor.commit()) {
-            restore(preferences, before);
-            throw new BackupException("Android rejected the settings transaction.");
+            throw new BackupException("Android rejected the settings transaction. "
+                    + "No setting was changed.");
         }
         return new ImportReport(plan.values.size(), plan.unknownKeys,
                 plan.sensitiveKeys, plan.normalizedKeys, plan.legacy);
@@ -325,17 +327,12 @@ public final class BackupCodec {
         } else editor.putString(key, String.valueOf(value));
     }
 
-    private static void restore(SharedPreferences preferences, Map<String, Object> snapshot) {
-        SharedPreferences.Editor editor = preferences.edit().clear();
-        for (Map.Entry<String, Object> entry : snapshot.entrySet()) {
-            put(editor, entry.getKey(), entry.getValue());
-        }
-        editor.commit();
-    }
 
     private static void writeSnapshot(Context context, SharedPreferences preferences)
             throws BackupException {
-        if (context == null) return;
+        if (context == null) {
+            throw new BackupException("Cannot import without a context to store the rollback snapshot.");
+        }
         try {
             File directory = new File(context.getFilesDir(), "migration_snapshots");
             if (!directory.exists() && !directory.mkdirs()) {

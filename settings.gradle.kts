@@ -24,4 +24,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "WaEnhancer Community"
 include(":app")
-include(":api")

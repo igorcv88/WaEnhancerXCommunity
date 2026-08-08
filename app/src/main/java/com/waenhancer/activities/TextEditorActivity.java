@@ -144,6 +144,37 @@ public class TextEditorActivity extends BaseActivity {
         }
     }
 
+    private android.os.Handler testExpiryHandler;
+    private Runnable testExpiryTask;
+
+    /** Restarts WhatsApp once the temporary test expires, cancelling any previous timer. */
+    private void scheduleTestExpiry() {
+        cancelTestExpiry();
+        testExpiryHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        testExpiryTask = () -> {
+            LocalDiagnostics.record(this, "css", "Temporary CSS test expired");
+            notifyCssChanged();
+            restartWhatsAppVariants();
+        };
+        testExpiryHandler.postDelayed(testExpiryTask, CssSafetyManager.DEFAULT_TEST_DURATION_MS);
+    }
+
+    private void cancelTestExpiry() {
+        if (testExpiryHandler != null && testExpiryTask != null) {
+            testExpiryHandler.removeCallbacks(testExpiryTask);
+        }
+        testExpiryHandler = null;
+        testExpiryTask = null;
+    }
+
+    @Override
+    protected void onDestroy() {
+        // effectiveCss() reconciles KEY_TEST_EXPIRES_AT lazily, so dropping the timer here only
+        // skips the courtesy restart - it never leaves the test CSS active past its deadline.
+        cancelTestExpiry();
+        super.onDestroy();
+    }
+
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.css_editor_menu, menu);
@@ -167,7 +198,7 @@ public class TextEditorActivity extends BaseActivity {
                                     preferences, content, CssSafetyManager.DEFAULT_TEST_DURATION_MS);
                             if (!result.saved) {
                                 new MaterialAlertDialogBuilder(this)
-                                        .setTitle("CSS validation failed")
+                                        .setTitle(getString(R.string.css_validation_failed))
                                         .setMessage(result.validation.message())
                                         .setPositiveButton(android.R.string.ok, null)
                                         .show();
@@ -177,17 +208,10 @@ public class TextEditorActivity extends BaseActivity {
                                     "Temporary two-minute CSS test started");
                             notifyCssChanged();
                             restartWhatsAppVariants();
-                            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                                LocalDiagnostics.record(this, "css",
-                                        "Temporary CSS test expired");
-                                notifyCssChanged();
-                                restartWhatsAppVariants();
-                            }, CssSafetyManager.DEFAULT_TEST_DURATION_MS);
+                            scheduleTestExpiry();
                             new MaterialAlertDialogBuilder(this)
-                                    .setTitle("Temporary theme test")
-                                    .setMessage("The CSS was validated and enabled for two minutes. "
-                                            + "WhatsApp is restarted now and again when the test expires. "
-                                            + "The saved theme is not replaced.")
+                                    .setTitle(R.string.css_test_title)
+                                    .setMessage(R.string.css_test_message)
                                     .setPositiveButton(android.R.string.ok, null)
                                     .show();
                         }));
@@ -203,9 +227,18 @@ public class TextEditorActivity extends BaseActivity {
                     restartWhatsAppVariants();
                 }
                 Toast.makeText(this, restored
-                                ? "Previous valid CSS restored"
-                                : "No previous valid CSS is available",
+                                ? R.string.css_rollback_done
+                                : R.string.css_rollback_unavailable,
                         Toast.LENGTH_LONG).show();
+                return true;
+            }
+            case R.id.menuitem_css_safe_mode_exit -> {
+                var preferences = PreferenceManager.getDefaultSharedPreferences(this);
+                CssSafetyManager.disableSafeMode(preferences);
+                LocalDiagnostics.record(this, "css", "CSS safe mode disabled manually");
+                notifyCssChanged();
+                restartWhatsAppVariants();
+                Toast.makeText(this, R.string.css_safe_mode_disabled, Toast.LENGTH_LONG).show();
                 return true;
             }
             case R.id.menuitem_css_safe_mode -> {
@@ -214,7 +247,7 @@ public class TextEditorActivity extends BaseActivity {
                 LocalDiagnostics.record(this, "css", "CSS safe mode enabled manually");
                 notifyCssChanged();
                 restartWhatsAppVariants();
-                Toast.makeText(this, "CSS safe mode enabled", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, R.string.css_safe_mode_enabled, Toast.LENGTH_LONG).show();
                 return true;
             }
             case R.id.menuitem_exit -> {
@@ -245,7 +278,7 @@ public class TextEditorActivity extends BaseActivity {
             CssSafetyManager.ValidationResult validation = CssSafetyManager.validate(content);
             if (!validation.valid) {
                 new MaterialAlertDialogBuilder(this)
-                        .setTitle("CSS validation failed")
+                        .setTitle(getString(R.string.css_validation_failed))
                         .setMessage(validation.message())
                         .setPositiveButton(android.R.string.ok, null)
                         .show();
@@ -258,7 +291,7 @@ public class TextEditorActivity extends BaseActivity {
             if (activeTheme) {
                 CssSafetyManager.SaveResult result = CssSafetyManager.save(preferences, content);
                 if (!result.saved) {
-                    Toast.makeText(this, "Could not update the active CSS state",
+                    Toast.makeText(this, R.string.css_active_state_failed,
                             Toast.LENGTH_LONG).show();
                     return;
                 }

@@ -226,7 +226,7 @@ public class Tasker extends Feature {
 
     private static void logEventViaProvider(Context context, String type, String targetNumber, String messagePreview) {
         try {
-            Uri uri = Uri.parse("content://com.waenhancer.provider");
+            Uri uri = Uri.parse("content://" + com.waenhancer.BuildConfig.APPLICATION_ID + ".provider");
             android.os.Bundle extras = new android.os.Bundle();
             extras.putString("type", type);
             extras.putString("targetNumber", targetNumber);

@@ -31,6 +31,20 @@ public final class LocalDiagnostics {
     private static final Pattern PHONE = Pattern.compile("(?<![A-Za-z0-9])\\+?[0-9][0-9 .()_-]{6,}[0-9](?![A-Za-z0-9])");
     private static final Pattern PRIVATE_PATH = Pattern.compile("(?i)(/data/(user|user_de|data)/[^\\s,;]+|/storage/emulated/[0-9]+/[^\\s,;]+)");
     private static final Pattern MESSAGE_FIELD = Pattern.compile("(?i)(message|text|body|jid|number|contact|name)=([^,;\\n]+)");
+    private static final Pattern TOKEN = Pattern.compile(
+            "(?i)(gh[pousr]_[A-Za-z0-9]{16,}|AIza[0-9A-Za-z_-]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}"
+                    + "|eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,})");
+    private static final Pattern BEARER = Pattern.compile(
+            "(?i)\\bbearer\\s+[A-Za-z0-9._~+/=-]{8,}");
+    // The separator is required so the trigger word alone does not swallow the following token,
+    // and the replacement markers below deliberately avoid every trigger word so a later pattern
+    // cannot redact the redaction.
+    private static final Pattern SECRET_FIELD = Pattern.compile(
+            "(?i)\\b(authorization|token|secret|password|passwd|api[_-]?key|keybox|private[_-]?key)"
+                    + "\\b\\s*[:=]\\s*(?:bearer\\s+)?[^\\s,;\\n]+");
+    private static final Pattern PEM_BLOCK = Pattern.compile("(?s)-----BEGIN[^-]*-----.*?-----END[^-]*-----");
+    private static final Pattern EMAIL = Pattern.compile(
+            "(?i)\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b");
 
     private LocalDiagnostics() {
     }
@@ -104,7 +118,14 @@ public final class LocalDiagnostics {
     public static String sanitize(String value) {
         if (value == null) return "";
         String result = value.replace('\r', ' ').replace('\n', ' ');
+        // Cryptographic material and credentials first: they can contain characters the later,
+        // narrower patterns would otherwise leave behind.
+        result = PEM_BLOCK.matcher(result).replaceAll("<redacted-crypto>");
+        result = TOKEN.matcher(result).replaceAll("<redacted-credential>");
+        result = BEARER.matcher(result).replaceAll("<redacted-credential>");
+        result = SECRET_FIELD.matcher(result).replaceAll("$1=<redacted-credential>");
         result = JID.matcher(result).replaceAll("<redacted-jid>");
+        result = EMAIL.matcher(result).replaceAll("<redacted-email>");
         result = PHONE.matcher(result).replaceAll("<redacted-number>");
         result = PRIVATE_PATH.matcher(result).replaceAll("<redacted-path>");
         result = MESSAGE_FIELD.matcher(result).replaceAll("$1=<redacted>");

@@ -37,7 +37,7 @@
             app:title="@string/manage_supported_versions">
             <intent
                 android:action="android.intent.action.VIEW"
-                android:targetPackage="com.waenhancer"
+                android:targetPackage="com.waenhancer.community"
                 android:targetClass="com.waenhancer.ui.fragments.SupportedVersionsActivity" />
         </Preference>
 

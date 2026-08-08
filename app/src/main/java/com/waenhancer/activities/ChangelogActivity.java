@@ -581,7 +581,7 @@ public class ChangelogActivity extends BaseActivity {
                     try {
                         android.content.Context context = v.getContext();
                         android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW,
-                                android.net.Uri.parse("https://github.com/mubashardev/WaEnhancer/releases"));
+                                android.net.Uri.parse("https://github.com/igorcv88/WaEnhancerX/releases"));
                         context.startActivity(intent);
                     } catch (Exception ignored) {
                     }
@@ -627,7 +627,7 @@ public class ChangelogActivity extends BaseActivity {
                 }
             });
 
-            String htmlUrl = release.optString("html_url", "https://github.com/mubashardev/WaEnhancer/releases");
+            String htmlUrl = release.optString("html_url", "https://github.com/igorcv88/WaEnhancerX/releases");
             btnGithub.setOnClickListener(v -> {
                 try {
                     android.content.Context context = v.getContext();

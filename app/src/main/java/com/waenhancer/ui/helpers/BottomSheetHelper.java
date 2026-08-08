@@ -591,7 +591,7 @@ public class BottomSheetHelper {
         }
 
         okhttp3.Request request = new okhttp3.Request.Builder()
-                .url("https://api.github.com/repos/mubashardev/WaEnhancer/stats/contributors")
+                .url("https://api.github.com/repos/igorcv88/WaEnhancerX/stats/contributors")
                 .header("User-Agent", "WaEnhancerX-App")
                 .header("Accept", "application/vnd.github.v3+json")
                 .build();
@@ -724,7 +724,7 @@ public class BottomSheetHelper {
         previewContainer.setLayoutParams(containerLp);
 
         LinearLayout classicCard = createPreviewCard(context, "Classic", false, density, currentValue.equals("regular"));
-        LinearLayout refinedCard = createPreviewCard(context, "Refined (Pro)", true, density, currentValue.equals("pro"));
+        LinearLayout refinedCard = createPreviewCard(context, "Refined", true, density, currentValue.equals("pro"));
 
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
         cardLp.setMargins((int) (4 * density), 0, (int) (4 * density), 0);
@@ -772,7 +772,7 @@ public class BottomSheetHelper {
         dialog.show();
     }
 
-    private static LinearLayout createPreviewCard(Context context, String label, boolean isPro, float density, boolean isSelected) {
+    private static LinearLayout createPreviewCard(Context context, String label, boolean isRefined, float density, boolean isSelected) {
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
@@ -823,9 +823,9 @@ public class BottomSheetHelper {
         gifView.setLayoutParams(gifLp);
         card.addView(gifView);
 
-        String url = isPro
-                ? "https://cdn.jsdelivr.net/gh/mubashardev/WaEnhancer@master/demo/pill_pro.gif"
-                : "https://cdn.jsdelivr.net/gh/mubashardev/WaEnhancer@master/demo/pill_regular.gif";
+        String url = isRefined
+                ? "https://cdn.jsdelivr.net/gh/igorcv88/WaEnhancerX@master/demo/pill_pro.gif"
+                : "https://cdn.jsdelivr.net/gh/igorcv88/WaEnhancerX@master/demo/pill_regular.gif";
 
         com.bumptech.glide.Glide.with(context)
                 .load(url)

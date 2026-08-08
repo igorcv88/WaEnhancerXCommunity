@@ -122,11 +122,22 @@ public class CustomThemeV2 extends Feature {
 
     @Override
     public void doHook() throws Throwable {
-        if (prefs.getBoolean("lite_mode", false)
-                || prefs.getBoolean(CssSafetyManager.KEY_SAFE_MODE, false)) {
+        try {
+            applyTheme();
+            CssSafetyManager.clearFailureState(prefs);
+        } catch (Throwable failure) {
+            CssSafetyManager.recordThemeFailure(prefs);
+            throw failure;
+        }
+    }
+
+    private void applyTheme() throws Throwable {
+        if (prefs.getBoolean("lite_mode", false)) {
             return;
         }
 
+        // Safe mode is scoped to CSS only: effectiveCss() already returns an empty sheet under
+        // safe mode, so colors and wallpaper keep working instead of being disabled wholesale.
         properties = Utils.getPropertiesFromText(
                 CssSafetyManager.effectiveCss(prefs),
                 prefs.getBoolean("custom_filters", false));

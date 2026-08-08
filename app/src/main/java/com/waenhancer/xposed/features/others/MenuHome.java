@@ -328,7 +328,7 @@ public class MenuHome extends Feature {
                             extras.putString("type", "boolean");
                             extras.putBoolean("value", !current);
                             activity.getContentResolver().call(
-                                android.net.Uri.parse("content://com.waenhancer.hookprovider"),
+                                android.net.Uri.parse("content://" + com.waenhancer.BuildConfig.APPLICATION_ID + ".hookprovider"),
                                 "put_preference",
                                 null,
                                 extras

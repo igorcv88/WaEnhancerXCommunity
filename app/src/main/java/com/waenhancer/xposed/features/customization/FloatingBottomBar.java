@@ -1332,9 +1332,69 @@ public class FloatingBottomBar extends Feature {
         return null;
     }
 
+    /** Original tab appearance captured before the indicator ever touched it. */
+    private static final class TabState {
+        Drawable background;
+        float translationY;
+        int paddingLeft;
+        int paddingTop;
+        int paddingRight;
+        int paddingBottom;
+        int layoutWidth;
+        int layoutHeight;
+    }
+
+    private static final WeakHashMap<View, TabState> originalTabStates = new WeakHashMap<>();
+
+    private static void rememberOriginalTabState(View item) {
+        if (originalTabStates.containsKey(item)) return;
+        TabState state = new TabState();
+        state.background = item.getBackground();
+        state.translationY = item.getTranslationY();
+        state.paddingLeft = item.getPaddingLeft();
+        state.paddingTop = item.getPaddingTop();
+        state.paddingRight = item.getPaddingRight();
+        state.paddingBottom = item.getPaddingBottom();
+        ViewGroup.LayoutParams params = item.getLayoutParams();
+        if (params != null) {
+            state.layoutWidth = params.width;
+            state.layoutHeight = params.height;
+        }
+        originalTabStates.put(item, state);
+    }
+
+    private static void restoreOriginalTabState(View item) {
+        TabState state = originalTabStates.get(item);
+        if (state == null) {
+            item.setBackground(null);
+            return;
+        }
+        // Restore WhatsApp's own ripple, offset, padding and measured size instead of leaving the
+        // indicator's values behind on every tab the user has visited.
+        item.setBackground(state.background);
+        item.setTranslationY(state.translationY);
+        item.setPadding(state.paddingLeft, state.paddingTop,
+                state.paddingRight, state.paddingBottom);
+        ViewGroup.LayoutParams params = item.getLayoutParams();
+        if (params != null
+                && (params.width != state.layoutWidth || params.height != state.layoutHeight)) {
+            params.width = state.layoutWidth;
+            params.height = state.layoutHeight;
+            item.setLayoutParams(params);
+        }
+    }
+
     private static float normalized(String key) {
         try {
-            return activePrefs == null ? 0f : com.waenhancer.config.BottomBarPreferenceSchema.read(activePrefs, key);
+            if (activePrefs != null) {
+                return com.waenhancer.config.BottomBarPreferenceSchema.read(activePrefs, key);
+            }
+        } catch (Throwable ignored) {
+        }
+        // Never fall back to 0: for sizes such as manual_height (48-96) or minimal_fab_size
+        // (32-72) that would collapse the element instead of degrading to a sane default.
+        try {
+            return com.waenhancer.config.BottomBarPreferenceSchema.spec(key).defaultValue;
         } catch (Throwable ignored) {
             return 0f;
         }
@@ -1467,8 +1527,9 @@ public class FloatingBottomBar extends Feature {
             if (menu == null) return;
             for (int i = 0; i < menu.getChildCount(); i++) {
                 View item = menu.getChildAt(i);
+                rememberOriginalTabState(item);
                 if (item.getId() != selectedId) {
-                    item.setBackground(null);
+                    restoreOriginalTabState(item);
                     continue;
                 }
                 GradientDrawable indicator = new GradientDrawable();

@@ -71,7 +71,8 @@ public class DesignUtils {
         }
         if (XResManager.moduleResources != null) {
             try {
-                int moduleId = XResManager.moduleResources.getIdentifier(name, "drawable", "com.waenhancer");
+                int moduleId = XResManager.moduleResources.getIdentifier(
+                        name, "drawable", com.waenhancer.BuildConfig.APPLICATION_ID);
                 if (moduleId > 0) {
                     return XResManager.moduleResources.getDrawable(moduleId, null);
                 }

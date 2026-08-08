@@ -105,7 +105,7 @@ public final class SettingsViewBuilder {
         subtitleView.setLayoutParams(subtitleParams);
         subtitleView.setTextColor(textSecondary);
         subtitleView.setTextSize(14);
-        subtitleView.setText("WaEnhancer X Premium");
+        subtitleView.setText("WaEnhancer Community");
         subtitleView.setAlpha(0.7f);
 
         header.addView(titleView);

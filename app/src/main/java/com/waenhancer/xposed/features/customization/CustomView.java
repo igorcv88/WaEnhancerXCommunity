@@ -32,6 +32,7 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import com.waenhancer.theme.CssSafetyManager;
 
 import com.waenhancer.preference.ThemePreference;
 import com.waenhancer.utils.IColors;
@@ -125,17 +126,31 @@ public class CustomView extends Feature {
 
     @Override
     public void doHook() throws Throwable {
+        // A stylesheet that survives validation can still break at parse/apply time. Count those
+        // failures so CssSafetyManager can arm safe mode automatically after three bad starts.
+        try {
+            applyCustomView();
+            CssSafetyManager.clearFailureState(prefs);
+        } catch (Throwable failure) {
+            CssSafetyManager.recordThemeFailure(prefs);
+            throw failure;
+        }
+    }
+
+    private void applyCustomView() throws Throwable {
         if (prefs.getBoolean("lite_mode", false)) return;
 
         var filter_itens = prefs.getString("css_theme", "");
         var folder_theme = prefs.getString("folder_theme", "");
-        var custom_css = prefs.getString("custom_css", "");
+        // Always go through the safety layer: it honours safe mode, the temporary test CSS
+        // and the last-known-good fallback instead of the raw stored value.
+        var custom_css = CssSafetyManager.effectiveCss(prefs);
 
         if ((TextUtils.isEmpty(filter_itens) && TextUtils.isEmpty(folder_theme) && TextUtils.isEmpty(custom_css))
                 || !prefs.getBoolean("custom_filters", true))
             return;
 
-        properties = Utils.getProperties(prefs, "custom_css", "custom_filters");
+        properties = Utils.getPropertiesFromText(custom_css, prefs.getBoolean("custom_filters", false));
 
         WppCore.addListenerActivity((activity1, type) -> {
             if (type != WppCore.ActivityChangeState.ChangeType.CREATED) return;

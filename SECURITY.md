@@ -39,6 +39,22 @@ The following rules apply to the Community fork:
 - backups must use an explicit allowlist and must not export secrets or internal paths;
 - migrations must preserve the source until the destination has been validated.
 
+## Known exposures pending Block C
+
+These are documented rather than fixed, because the audited replacement belongs to the storage and
+IPC block. They are listed so no one treats the current baseline as fully hardened.
+
+- `HookProvider` (`${applicationId}.hookprovider`) is `exported="true"` with no permission and no
+  calling-UID check. Its `call()` interface exposes generic preference read, write, remove and
+  clear operations to any application installed on the device. Block C replaces this with a
+  read-only, UID-validated public configuration bridge.
+- `DeletedMessagesProvider` (`${applicationId}.provider`) is `exported="true"` and accepts inserts
+  without validating the caller.
+- `TaskerMessageSentReceiver` and `WAFReceiver` are exported and accept broadcasts from any sender.
+
+Until Block C lands, install this module only on a device where you trust the other installed
+applications, and treat module preferences as readable by them.
+
 ## Data-preservation rule
 
 A security change must not silently destroy configuration, `Deleted for Me` records, preserved media, or compatibility with an existing installation. Critical storage changes require snapshot, validation, rollback, and a documented migration path.

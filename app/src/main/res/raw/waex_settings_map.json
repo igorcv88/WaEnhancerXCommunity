@@ -120,14 +120,6 @@
               "default": true,
               "title": "Show Hook Loading Toast",
               "summary": "Show toast and snackbar notifications during hook initialization and when hooks finish loading"
-            },
-            {
-              "key": "enable_crash_analytics",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "Share Anonymous Crash Logs",
-              "summary": "Help us fix bugs by sharing anonymous crash logs to Firebase Crashlytics."
             }
           ]
         },

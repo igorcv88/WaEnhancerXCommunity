@@ -63,7 +63,7 @@
                     android:letterSpacing="-0.03"
                     android:textStyle="bold" />
 
-                <!-- Maintainer badge - mubashardev as dominant -->
+                <!-- Community fork maintainer; the upstream developer is credited below. -->
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"

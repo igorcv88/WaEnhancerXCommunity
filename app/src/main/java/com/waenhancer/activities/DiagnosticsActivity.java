@@ -13,6 +13,7 @@ import androidx.preference.PreferenceManager;
 
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
+import com.waenhancer.R;
 import com.waenhancer.activities.base.BaseActivity;
 import com.waenhancer.diagnostics.LocalDiagnostics;
 
@@ -35,15 +36,14 @@ public class DiagnosticsActivity extends BaseActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         MaterialToolbar toolbar = new MaterialToolbar(this);
-        toolbar.setTitle("Local diagnostics");
+        toolbar.setTitle(R.string.diagnostics_title);
         toolbar.setNavigationIcon(android.R.drawable.ic_media_previous);
         toolbar.setNavigationOnClickListener(v -> finish());
         root.addView(toolbar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
 
         TextView notice = new TextView(this);
-        notice.setText("This preview is generated locally. Review it before sharing. "
-                + "Message content, phone numbers, JIDs, tokens, keys, certificates and private paths are redacted.");
+        notice.setText(R.string.diagnostics_notice);
         notice.setPadding(dp(20), dp(12), dp(20), dp(12));
         root.addView(notice);
 
@@ -63,18 +63,18 @@ public class DiagnosticsActivity extends BaseActivity {
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setPadding(dp(12), dp(8), dp(12), dp(12));
 
-        MaterialButton refresh = button("Refresh");
+        MaterialButton refresh = button(getString(R.string.diagnostics_refresh));
         refresh.setOnClickListener(v -> refresh());
         actions.addView(refresh, weighted());
 
-        MaterialButton clear = button("Clear events");
+        MaterialButton clear = button(getString(R.string.diagnostics_clear));
         clear.setOnClickListener(v -> {
             LocalDiagnostics.clear(this);
             refresh();
         });
         actions.addView(clear, weighted());
 
-        MaterialButton share = button("Share preview");
+        MaterialButton share = button(getString(R.string.diagnostics_share));
         share.setOnClickListener(v -> share());
         actions.addView(share, weighted());
         root.addView(actions);
@@ -104,9 +104,9 @@ public class DiagnosticsActivity extends BaseActivity {
         String report = reportView.getText() == null ? "" : reportView.getText().toString();
         Intent intent = new Intent(Intent.ACTION_SEND);
         intent.setType("text/plain");
-        intent.putExtra(Intent.EXTRA_SUBJECT, "WaEnhancer Community diagnostics");
+        intent.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.diagnostics_share_subject));
         intent.putExtra(Intent.EXTRA_TEXT, report);
-        startActivity(Intent.createChooser(intent, "Share diagnostic preview"));
+        startActivity(Intent.createChooser(intent, getString(R.string.diagnostics_share_chooser)));
     }
 
     private int dp(float value) {

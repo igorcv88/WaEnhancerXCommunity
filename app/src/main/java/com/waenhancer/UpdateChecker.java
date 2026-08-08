@@ -253,14 +253,14 @@ public class UpdateChecker implements Runnable {
 
             if (!isXposed) {
                 BottomSheetHelper.showConfirmation(mActivity, title, message, contactText, false, () -> {
-                    Utils.openLink(mActivity, "https://t.me/mubashardev");
+                    Utils.openLink(mActivity, "https://t.me/WaEnhancerX");
                 });
             } else {
                 var dialog = new AlertDialogWpp(mActivity);
                 dialog.setTitle(title);
                 dialog.setMessage(message);
                 dialog.setPositiveButton(contactText, (dialog1, which) -> {
-                    Utils.openLink(mActivity, "https://t.me/mubashardev");
+                    Utils.openLink(mActivity, "https://t.me/WaEnhancerX");
                     dialog1.dismiss();
                 });
                 dialog.setNegativeButton(mActivity.getString(R.string.cancel), (dialog1, which) -> dialog1.dismiss());
