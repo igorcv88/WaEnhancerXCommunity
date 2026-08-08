@@ -73,6 +73,19 @@ public class DeletedMessagesProvider extends ContentProvider {
             
             long id = db.insertWithOnConflict(DelMessageStore.TABLE_DELETED_FOR_ME, null, values, SQLiteDatabase.CONFLICT_REPLACE);
             if (id > 0) {
+                // The hook sends this while the source is still reachable. A failed media copy
+                // must never discard the recovered message, so media is deliberately optional.
+                String sourcePath = values.getAsString("media_path");
+                if (sourcePath != null && !sourcePath.isEmpty()) {
+                    try {
+                        new com.waenhancer.xposed.core.db.DeletedMediaVault(getContext(), dbHelper)
+                                .preserve(id, new java.io.File(sourcePath), values.getAsString("media_mime_type"),
+                                        values.getAsLong("media_quota_bytes") == null ? 0L
+                                                : values.getAsLong("media_quota_bytes"));
+                    } catch (java.io.IOException ignored) {
+                        // The message remains available; the UI can show it without media.
+                    }
+                }
                 return Uri.withAppendedPath(CONTENT_URI, String.valueOf(id));
             }
         }

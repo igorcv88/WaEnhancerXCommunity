@@ -13,6 +13,7 @@ import java.util.HashSet;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.ArrayList;
 
 public class DelMessageStore extends SQLiteOpenHelper {
     private static DelMessageStore mInstance;
@@ -29,6 +30,7 @@ public class DelMessageStore extends SQLiteOpenHelper {
      */
     private static final int DATABASE_VERSION = 11;
     public static final String TABLE_DELETED_FOR_ME = "deleted_for_me";
+    public static final String TABLE_DELETED_MEDIA = "deleted_media";
 
     private DelMessageStore(@NonNull Context context) {
         super(context, "delmessages.db", null, DATABASE_VERSION);
@@ -96,8 +98,7 @@ public class DelMessageStore extends SQLiteOpenHelper {
         }
         if (oldVersion < 11) {
             createDeletedMediaTable(sqLiteDatabase);
-            sqLiteDatabase.execSQL("CREATE INDEX IF NOT EXISTS idx_deleted_media_sha256 ON deleted_media(sha256)");
-            sqLiteDatabase.execSQL("CREATE INDEX IF NOT EXISTS idx_deleted_media_message ON deleted_media(message_id)");
+            createDeletedMediaIndexes(sqLiteDatabase);
         }
     }
 
@@ -127,7 +128,7 @@ public class DelMessageStore extends SQLiteOpenHelper {
     }
 
     private void createDeletedMediaTable(SQLiteDatabase db) {
-        db.execSQL("CREATE TABLE IF NOT EXISTS deleted_media ("
+        db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_DELETED_MEDIA + " ("
                 + "_id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 + "message_id INTEGER NOT NULL, "
                 + "storage_id TEXT NOT NULL UNIQUE, "
@@ -137,6 +138,54 @@ public class DelMessageStore extends SQLiteOpenHelper {
                 + "created_at INTEGER NOT NULL, "
                 + "last_accessed_at INTEGER NOT NULL, "
                 + "FOREIGN KEY(message_id) REFERENCES " + TABLE_DELETED_FOR_ME + "(_id) ON DELETE CASCADE)");
+    }
+
+    private void createDeletedMediaIndexes(SQLiteDatabase db) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_deleted_media_sha256 ON " + TABLE_DELETED_MEDIA + "(sha256)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_deleted_media_message ON " + TABLE_DELETED_MEDIA + "(message_id)");
+    }
+
+    /** Inserts a media index row only after the private file was written and hashed. */
+    public long insertDeletedMedia(long messageId, String storageId, String sha256, String mimeType, long sizeBytes) {
+        ContentValues values = new ContentValues();
+        long now = System.currentTimeMillis();
+        values.put("message_id", messageId);
+        values.put("storage_id", storageId);
+        values.put("sha256", sha256);
+        values.put("mime_type", mimeType);
+        values.put("size_bytes", sizeBytes);
+        values.put("created_at", now);
+        values.put("last_accessed_at", now);
+        return getWritableDatabase().insertOrThrow(TABLE_DELETED_MEDIA, null, values);
+    }
+
+    public DeletedMediaRecord findMediaByHash(String sha256) {
+        try (Cursor cursor = getReadableDatabase().query(TABLE_DELETED_MEDIA, null, "sha256=?",
+                new String[] { sha256 }, null, null, "_id ASC", "1")) {
+            return cursor.moveToFirst() ? mediaFromCursor(cursor) : null;
+        }
+    }
+
+    public ArrayList<DeletedMediaRecord> getDeletedMedia() {
+        ArrayList<DeletedMediaRecord> result = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().query(TABLE_DELETED_MEDIA, null, null, null, null, null,
+                "created_at DESC")) {
+            while (cursor.moveToNext()) result.add(mediaFromCursor(cursor));
+        }
+        return result;
+    }
+
+    public int deleteDeletedMedia(String storageId) {
+        return getWritableDatabase().delete(TABLE_DELETED_MEDIA, "storage_id=?", new String[] { storageId });
+    }
+
+    private DeletedMediaRecord mediaFromCursor(Cursor cursor) {
+        return new DeletedMediaRecord(cursor.getLong(cursor.getColumnIndexOrThrow("_id")),
+                cursor.getLong(cursor.getColumnIndexOrThrow("message_id")),
+                cursor.getString(cursor.getColumnIndexOrThrow("storage_id")),
+                cursor.getString(cursor.getColumnIndexOrThrow("sha256")),
+                cursor.getString(cursor.getColumnIndexOrThrow("mime_type")),
+                cursor.getLong(cursor.getColumnIndexOrThrow("size_bytes")));
     }
 
     public void insertMessage(String jid, String msgid, long timestamp) {
@@ -317,8 +366,7 @@ public class DelMessageStore extends SQLiteOpenHelper {
                 "CREATE TABLE IF NOT EXISTS delmessages (_id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT, msgid TEXT, timestamp INTEGER DEFAULT 0, UNIQUE(jid, msgid))");
         createDeletedForMeTable(sqLiteDatabase);
         createDeletedMediaTable(sqLiteDatabase);
-        sqLiteDatabase.execSQL("CREATE INDEX IF NOT EXISTS idx_deleted_media_sha256 ON deleted_media(sha256)");
-        sqLiteDatabase.execSQL("CREATE INDEX IF NOT EXISTS idx_deleted_media_message ON deleted_media(message_id)");
+        createDeletedMediaIndexes(sqLiteDatabase);
     }
 
     @Override
