@@ -47,6 +47,27 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
     private static final String RELEASES_URL = "https://github.com/igorcv88/WaEnhancerX/releases";
     private static final String LATEST_STABLE_URL = "https://github.com/igorcv88/WaEnhancerX/releases/latest";
     protected SharedPreferences mPrefs;
+    /**
+     * Per-key store cache. A settings screen must never write a schema-private key into the
+     * world-readable file: the one-time migration only moves values that already exist, so an
+     * edit made afterwards would recreate the secret in public storage.
+     */
+    private final java.util.Map<String, SharedPreferences> mSchemaPrefs = new java.util.HashMap<>();
+
+    /** The store {@link com.waenhancer.config.PreferenceSchema} assigns to this key. */
+    private SharedPreferences storeFor(String key) {
+        SharedPreferences cached = mSchemaPrefs.get(key);
+        if (cached != null) return cached;
+        com.waenhancer.config.PreferenceSchema.Entry entry =
+                com.waenhancer.config.PreferenceSchema.entry(key);
+        SharedPreferences resolved = entry != null
+                && entry.store == com.waenhancer.config.PreferenceSchema.Store.PRIVATE
+                ? new com.waenhancer.preference.SafeSharedPreferences(
+                        com.waenhancer.config.PreferenceStores.privateStore(requireContext()))
+                : mPrefs;
+        mSchemaPrefs.put(key, resolved);
+        return resolved;
+    }
     private boolean suppressRestartBroadcast;
     private final Handler restartBroadcastHandler = new Handler(Looper.getMainLooper());
     private final Runnable restartBroadcastRunnable = () -> {
@@ -80,68 +101,69 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
     public void onCreatePreferences(@Nullable Bundle savedInstanceState, @Nullable String rootKey) {
         var localPrefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
         mPrefs = new com.waenhancer.preference.SafeSharedPreferences(localPrefs);
+        mSchemaPrefs.clear();
 
         getPreferenceManager().setPreferenceDataStore(new androidx.preference.PreferenceDataStore() {
             @Override
             public void putString(String key, @Nullable String value) {
-                mPrefs.edit().putString(key, value).apply();
+                storeFor(key).edit().putString(key, value).apply();
             }
 
             @Override
             @Nullable
             public String getString(String key, @Nullable String defValue) {
-                return mPrefs.getString(key, defValue);
+                return storeFor(key).getString(key, defValue);
             }
 
             @Override
             public void putBoolean(String key, boolean value) {
-                mPrefs.edit().putBoolean(key, value).apply();
+                storeFor(key).edit().putBoolean(key, value).apply();
             }
 
             @Override
             public boolean getBoolean(String key, boolean defValue) {
-                return mPrefs.getBoolean(key, defValue);
+                return storeFor(key).getBoolean(key, defValue);
             }
 
             @Override
             public void putInt(String key, int value) {
-                mPrefs.edit().putInt(key, value).apply();
+                storeFor(key).edit().putInt(key, value).apply();
             }
 
             @Override
             public int getInt(String key, int defValue) {
-                return mPrefs.getInt(key, defValue);
+                return storeFor(key).getInt(key, defValue);
             }
 
             @Override
             public void putFloat(String key, float value) {
-                mPrefs.edit().putFloat(key, value).apply();
+                storeFor(key).edit().putFloat(key, value).apply();
             }
 
             @Override
             public float getFloat(String key, float defValue) {
-                return mPrefs.getFloat(key, defValue);
+                return storeFor(key).getFloat(key, defValue);
             }
 
             @Override
             public void putLong(String key, long value) {
-                mPrefs.edit().putLong(key, value).apply();
+                storeFor(key).edit().putLong(key, value).apply();
             }
 
             @Override
             public long getLong(String key, long defValue) {
-                return mPrefs.getLong(key, defValue);
+                return storeFor(key).getLong(key, defValue);
             }
 
             @Override
             public void putStringSet(String key, @Nullable Set<String> values) {
-                mPrefs.edit().putStringSet(key, values).apply();
+                storeFor(key).edit().putStringSet(key, values).apply();
             }
 
             @Override
             @Nullable
             public Set<String> getStringSet(String key, @Nullable Set<String> defValues) {
-                Set<String> value = mPrefs.getStringSet(key, defValues);
+                Set<String> value = storeFor(key).getStringSet(key, defValues);
                 return value != null ? value : (defValues != null ? defValues : new LinkedHashSet<>());
             }
         });
