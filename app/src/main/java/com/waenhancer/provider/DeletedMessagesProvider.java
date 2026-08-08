@@ -54,6 +54,9 @@ public class DeletedMessagesProvider extends ContentProvider {
     @Nullable
     @Override
     public Uri insert(@NonNull Uri uri, @Nullable ContentValues values) {
+        // Exported so the hooked process can record a deletion. Without this check any
+        // application could write arbitrary rows into the user's message history.
+        if (!com.waenhancer.security.CallerAuthority.isTrustedCaller(getContext())) return null;
         if (uriMatcher.match(uri) == DELETED_MESSAGES && values != null) {
             SQLiteDatabase db = dbHelper.getWritableDatabase();
             
@@ -94,22 +97,15 @@ public class DeletedMessagesProvider extends ContentProvider {
             return super.call(method, arg, extras);
         }
 
-        var prefs = context.getSharedPreferences(context.getPackageName() + "_preferences",
-                android.content.Context.MODE_PRIVATE);
-
-        if ("get_preference".equals(method) && extras != null) {
-            String key = extras.getString("key");
-            android.os.Bundle result = new android.os.Bundle();
-            if (key != null) {
-                Object value = prefs.getAll().get(key);
-                if (value instanceof Boolean) result.putBoolean("value", (Boolean) value);
-                else if (value instanceof String) result.putString("value", (String) value);
-                else if (value instanceof Integer) result.putInt("value", (Integer) value);
-                else if (value instanceof Long) result.putLong("value", (Long) value);
-                else if (value instanceof Float) result.putFloat("value", (Float) value);
-            }
-            return result;
+        // This provider is exported. Every operation below touches the user's message history
+        // or their automation log, so an untrusted caller gets nothing at all.
+        if (!com.waenhancer.security.CallerAuthority.isTrustedCaller(context)) {
+            return null;
         }
+
+        // get_preference and put_preference are deliberately gone. A provider that owns the
+        // deleted-message database has no business being a second, unvalidated door onto the
+        // configuration; HookProvider is the one configuration bridge and it checks the schema.
 
         if ("log_tasker_event".equals(method) && extras != null) {
             String type = extras.getString("type");
@@ -126,23 +122,6 @@ public class DeletedMessagesProvider extends ContentProvider {
             return android.os.Bundle.EMPTY;
         }
 
-        if ("put_preference".equals(method) && extras != null) {
-            String key = extras.getString("key");
-            Object value = extras.get("value");
-            if (key != null) {
-                var editor = prefs.edit();
-                if (value instanceof Boolean) editor.putBoolean(key, (Boolean) value);
-                else if (value instanceof String) editor.putString(key, (String) value);
-                else if (value instanceof Integer) editor.putInt(key, (Integer) value);
-                else if (value instanceof Long) editor.putLong(key, (Long) value);
-                else if (value instanceof Float) editor.putFloat(key, (Float) value);
-                editor.apply();
-                
-                // Also update the XSharedPreferences by making them readable if possible
-                // or rely on Xposed reloading them.
-                return android.os.Bundle.EMPTY;
-            }
-        }
         return super.call(method, arg, extras);
     }
 }
