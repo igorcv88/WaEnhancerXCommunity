@@ -357,8 +357,6 @@
     <string name="bootloader_spoofer_sum">Usa esto si has sido baneado y estás recibiendo el mensaje de WhatsApp no oficial</string>
     <string name="not_available">no disponible</string>
     <string name="select_all">Seleccionar Todo</string>
-    <string name="custom_colors_for_text_status">Personalizar colores de los textos en los estados</string>
-    <string name="custom_colors_for_text_status_sum">Mantén pulsado el selector de color en el estado para personalizar los colores</string>
     <string name="enable_wa_enhancer_button">Habilitar botón WaEnhancer Community</string>
     <string name="enable_wa_enhancer_button_sum">Añadir botón en la pantalla de inicio para abrir WaEnhancer Community</string>
     <string name="custom_privacy">Privacidad personalizada</string>
@@ -466,8 +464,6 @@
     <string name="search_no_results">No features found</string>
     <string name="search_try_different_keywords">Try different keywords or browse categories</string>
     <string name="search_start_typing">Start typing to search features</string>
-    <string name="enable_spy">Enable Spy Tool</string>
-    <string name="enable_spy_sum">Logs internal events to Xposed log for debugging.</string>
     <string name="no_deleted_messages">No deleted messages found</string>
     <string name="deleted_messages_title">Deleted By Me</string>
     <string name="restore_message">Restore</string>

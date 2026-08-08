@@ -359,8 +359,6 @@
     <string name="bootloader_spoofer_sum">הפעל את תכונה זו אם נחסמת מווצאפ ואתה מקבל הודעה שאתה משתמש בגרסה לא רשמית</string>
     <string name="not_available">לא זמין</string>
     <string name="select_all">בחר הכל</string>
-    <string name="custom_colors_for_text_status">צבעים מותאמים אישית עבור סטטוס טקסט</string>
-    <string name="custom_colors_for_text_status_sum">לחץ והחזק את בורר הצבעים בסטטוס כדי להתאים אותו אישית</string>
     <string name="enable_wa_enhancer_button">הפעל את לחצן WaEnhancer Community</string>
     <string name="enable_wa_enhancer_button_sum">הוסף כפתור במסך הבית כדי לפתוח את WaEnhancer Community</string>
     <string name="custom_privacy">פרטיות מותאמת אישית</string>
@@ -468,8 +466,6 @@
     <string name="search_no_results">No features found</string>
     <string name="search_try_different_keywords">Try different keywords or browse categories</string>
     <string name="search_start_typing">Start typing to search features</string>
-    <string name="enable_spy">Enable Spy Tool</string>
-    <string name="enable_spy_sum">Logs internal events to Xposed log for debugging.</string>
     <string name="no_deleted_messages">No deleted messages found</string>
     <string name="deleted_messages_title">Deleted By Me</string>
     <string name="restore_message">Restore</string>

@@ -357,8 +357,6 @@
     <string name="bootloader_spoofer_sum">استخدم هذا إذا تم حظرك وتلقيت رسالة واتساب غير رسمي</string>
     <string name="not_available">غير متوفر</string>
     <string name="select_all">تحديد الكل</string>
-    <string name="custom_colors_for_text_status">ألوان مخصصة لحالة النص</string>
-    <string name="custom_colors_for_text_status_sum">اضغط باستمرار على منتقي الألوان في الحالة لتخصيصه</string>
     <string name="enable_wa_enhancer_button">تمكين أيقونة لفتح إعدادات الوحدة</string>
     <string name="enable_wa_enhancer_button_sum">إظهار الأيقونة في الشاشة الرئيسية</string>
     <string name="custom_privacy">الخصوصية(المخصصة)</string>
@@ -466,8 +464,6 @@
     <string name="search_no_results">No features found</string>
     <string name="search_try_different_keywords">Try different keywords or browse categories</string>
     <string name="search_start_typing">Start typing to search features</string>
-    <string name="enable_spy">Enable Spy Tool</string>
-    <string name="enable_spy_sum">Logs internal events to Xposed log for debugging.</string>
     <string name="no_deleted_messages">No deleted messages found</string>
     <string name="deleted_messages_title">Deleted By Me</string>
     <string name="restore_message">Restore</string>

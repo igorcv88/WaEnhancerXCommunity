@@ -290,8 +290,6 @@
     <string name="other">Other</string>
     <string name="enable_media_preview">Enable Media Preview</string>
     <string name="enable_media_preview_sum">Add a button to preview media in a temporary file (without downloading it permanently)</string>
-    <string name="file_size_spoofer">File Size Spoofer</string>
-    <string name="file_size_spoofer_sum">Add a button in the send preview screen to spoof the displayed file size shown to the recipient</string>
     <string name="new_ui_group_filter">New UI Group Filter</string>
     <string name="new_ui_group_filter_sum">Disabled: This feature is currently incompatible with the latest WhatsApp build due to significant internal layout changes. It will be restored in a future update.</string>
     <string name="call_blocking_type">Call blocking type</string>
@@ -309,20 +307,10 @@
     <string name="customize_status_view_desc">Customize layout, hide bottom tiles/reactions, and control playback speed with gestures</string>
     <string name="remove_status_bottom_tile">Remove bottom visible tile</string>
     <string name="remove_status_bottom_tile_sum">Hides the visible reply bar, but keeps swipe up gesture functional</string>
-    <string name="disable_status_swipe_up">Disable Swipe Up to reply</string>
-    <string name="disable_status_swipe_up_sum">Disables the swipe up gesture that opens the reply bottom sheet in status view screen</string>
     <string name="remove_status_quick_reactions">Remove quick reactions row</string>
     <string name="remove_status_quick_reactions_sum">Remove the quick reactions emoji row on status view</string>
     <string name="remove_status_heart_button">Remove heart button</string>
     <string name="remove_status_heart_button_sum">Remove the heart status like button on status view bottom tile</string>
-    <string name="add_status_reply_menu_item">Add option to menu to open reply</string>
-    <string name="add_status_reply_menu_item_sum">Adds a "Reply" item in the playback three-dots menu to expand the reply panel manually</string>
-    <string name="status_video_fast_gesture">Long press to fast forward/rewind</string>
-    <string name="status_video_fast_gesture_sum">Long press the right side of a video status to fast-forward, or the left side to fast-rewind</string>
-    <string name="status_video_fast_speed">Playback speed</string>
-    <string name="status_video_fast_speed_sum">Choose the playback speed during fast forward/rewind</string>
-    <string name="status_bottom_play_pause_button">Show play/pause button in bottom bar</string>
-    <string name="status_bottom_play_pause_button_sum">Adds a play/pause toggle button next to the heart reaction button at the bottom of status playback</string>
     <string name="status_reply_menu_item">Reply</string>
     <string name="toast_on_viewed_status">Show toast on viewed your status</string>
     <string name="toast_on_viewed_status_sum">Shows a toast if someone views your status</string>
@@ -462,8 +450,6 @@
     <string name="bootloader_spoofer_sum">Use this if you have been banned and are receiving the unofficial Whatsapp message</string>
     <string name="not_available">not available</string>
     <string name="select_all">Select All</string>
-    <string name="custom_colors_for_text_status">Custom colors for text status</string>
-    <string name="custom_colors_for_text_status_sum">Press and hold on the color selector in the status to customize it</string>
     <string name="enable_wa_enhancer_button">Enable WaEnhancer Community Button</string>
     <string name="enable_wa_enhancer_button_sum">Add button in Home Screen to open WaEnhancer Community</string>
     <string name="custom_privacy">Custom Privacy</string>
@@ -558,8 +544,6 @@
     <string name="search_no_results">No features found</string>
     <string name="search_try_different_keywords">Try different keywords or browse categories</string>
     <string name="search_start_typing">Start typing to search features</string>
-    <string name="enable_spy">Enable Spy Tool</string>
-    <string name="enable_spy_sum">Logs internal events to Xposed log for debugging.</string>
     <string name="no_deleted_messages">No deleted messages found</string>
     <string name="deleted_messages_title">Deleted By Me</string>
     <string name="restore_message">Restore</string>
@@ -699,14 +683,6 @@ You can still try it, but please wait for a stable version — it will be launch
     <string name="timezone_s">Time Zone: %s</string>
     
     <!-- Pro Features -->
-    <string name="message_bomber">Message Bomber</string>
-    <string name="message_bomber_sum">Send multiple messages to a contact in rapid succession.</string>
-    <string name="delete_message_file">Delete message media file</string>
-    <string name="delete_message_file_sum">Add a menu option to delete downloaded media files from user storage.</string>
-    <string name="delete_message_file_sent">Also apply for my sent messages</string>
-    <string name="delete_message_file_sent_sum">Show the delete option for your own sent media messages as well.</string>
-    <string name="pro_status_splitter">Status Video Splitter</string>
-    <string name="pro_status_splitter_sum">Split long videos into 30/60/90 second clips for seamless posting on WhatsApp Status.</string>
 
     <!-- Smart Always Typing -->
     <string name="always_typing_mode">Always Typing Mode</string>
@@ -722,8 +698,6 @@ You can still try it, but please wait for a stable version — it will be launch
     <string name="always_typing_type">Simulated Status Kind</string>
     <string name="status_always_typing">Always Typing</string>
     <string name="status_always_recording">Always Recording Voice</string>
-    <string name="always_typing_global_type_title">Global Simulated Status Kind</string>
-    <string name="always_typing_global_type_sum">Select status type for globally picked contacts</string>
     <string name="always_typing_global_mode_title">Global Activation Mode</string>
     <string name="always_typing_global_mode_sum">Select when to simulate status for globally picked contacts</string>
     <string name="always_typing_category_title">Typing / Voice Recording Simulation</string>
@@ -733,14 +707,10 @@ You can still try it, but please wait for a stable version — it will be launch
     <string name="always_typing_target_specific">Specific Contacts</string>
 
     <!-- Send Audio as Voice Status -->
-    <string name="send_audio_as_voice_status">Send Audio as Voice Status</string>
-    <string name="send_audio_as_voice_status_sum">Enables picking and uploading local audio files as voice statuses</string>
     <string name="pick_audio_file">Pick Audio File</string>
     <string name="press_back_again_to_exit">Press back again to exit</string>
 
     <!-- Helper Plugin Installer -->
-    <string name="unlock_limited_free_title">Unlock Limited Free &amp; Pro Features</string>
-    <string name="unlock_limited_free_sum">Download and load the helper plugin pack to unlock features</string>
     <string name="agree_and_download">Agree &amp; Download</string>
     <string name="root_required_error">Root access is required to perform silent installation. Please grant root access and try again.</string>
     <string name="checking_root_access">Checking Root access...</string>
