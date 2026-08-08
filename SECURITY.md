@@ -39,21 +39,65 @@ The following rules apply to the Community fork:
 - backups must use an explicit allowlist and must not export secrets or internal paths;
 - migrations must preserve the source until the destination has been validated.
 
-## Known exposures pending Block C
+## Storage and IPC model
 
-These are documented rather than fixed, because the audited replacement belongs to the storage and
-IPC block. They are listed so no one treats the current baseline as fully hardened.
+Two preference files, with the rule for which one a key belongs to recorded in
+`PreferenceSchema`:
 
-- `HookProvider` (`${applicationId}.hookprovider`) is `exported="true"` with no permission and no
-  calling-UID check. Its `call()` interface exposes generic preference read, write, remove and
-  clear operations to any application installed on the device. Block C replaces this with a
-  read-only, UID-validated public configuration bridge.
-- `DeletedMessagesProvider` (`${applicationId}.provider`) is `exported="true"` and accepts inserts
-  without validating the caller.
-- `TaskerMessageSentReceiver` and `WAFReceiver` are exported and accept broadcasts from any sender.
+- **public store** — the default preference file, deliberately world-readable so
+  `XSharedPreferences` can serve the hooked WhatsApp process. It holds only keys a hook needs
+  and never holds a secret.
+- **private store** — `MODE_PRIVATE`, reachable only by the module's own UID. It holds user
+  secrets, caches and internal state.
 
-Until Block C lands, install this module only on a device where you trust the other installed
-applications, and treat module preferences as readable by them.
+A secret a hook genuinely needs is served on request through a UID-validated provider call and
+held only for the duration of the operation. It is never written to the world-readable file.
+
+Migration into this split is additive: values are copied and verified before anything is
+removed, `clear()` is never used as a migration step, and a snapshot is written first. Secrets
+leave the public file only after the copy has been verified and a reader exists for the hooked
+process.
+
+### Caller validation
+
+Cross-process entry points authorise by Binder calling UID resolved to installed packages, not
+by a package name carried in an extra. Accepted callers are the module itself and the WhatsApp
+packages it is scoped to.
+
+- `HookProvider` (`${applicationId}.hookprovider`) validates the caller before clearing the
+  calling identity, serves reads only for keys the schema marks public, accepts writes only for
+  keys the schema knows, and no longer implements a clear operation at all.
+- `DeletedMessagesProvider` (`${applicationId}.provider`) validates the caller on every
+  operation. Its generic preference methods were removed rather than guarded.
+- The quick-settings tiles are guarded by `BIND_QUICK_SETTINGS_TILE`.
+- `EmbeddedSettingsActivity`, `RecordingsActivity`, `ChangelogActivity`,
+  `SupportedVersionsActivity` and `BridgeService` are exported because the hooked WhatsApp
+  process launches them by name.
+
+### Automation integration
+
+The integration is off by default. When enabled, a request to send a message must present a
+per-installation token generated with a CSPRNG, kept in the private store, never exported in a
+backup, and compared in constant time. Requests are rate limited and de-duplicated.
+
+A broadcast carries no caller identity, so the package allowlist is defence in depth rather
+than a boundary; **the token is the boundary**. Outgoing events are explicit intents addressed
+only to allowlisted packages, and the message body is included only when the user opts in.
+
+A legacy unauthenticated mode exists for one release to ease migration of existing automation
+profiles. It is off by default and is insecure by design.
+
+### Backups
+
+Settings exports carry only what the schema marks exportable. Secrets, caches and internal state
+are never included, and the export states which secrets it left behind so their absence is not
+silent. Android cloud backup and device-to-device transfer are disabled for this application.
+
+### Updates
+
+A downloaded APK is verified before it reaches the installer: SHA-256 against the digest
+published with the release, the package name, the signing certificate against the installed
+application, and that the version is newer. A downgrade requires an explicit user action.
 
 ## Data-preservation rule
 
