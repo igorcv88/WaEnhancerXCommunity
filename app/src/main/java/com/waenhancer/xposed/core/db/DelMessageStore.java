@@ -28,9 +28,10 @@ public class DelMessageStore extends SQLiteOpenHelper {
      * Version 11 adds the owned-media index.  Never use a destructive fallback here: this
      * database is the only copy of a user's recovered-message history.
      */
-    private static final int DATABASE_VERSION = 11;
+    private static final int DATABASE_VERSION = 12;
     public static final String TABLE_DELETED_FOR_ME = "deleted_for_me";
     public static final String TABLE_DELETED_MEDIA = "deleted_media";
+    public static final String TABLE_DELETED_MEDIA_REFS = "deleted_media_refs";
 
     private DelMessageStore(@NonNull Context context) {
         super(context, "delmessages.db", null, DATABASE_VERSION);
@@ -100,6 +101,13 @@ public class DelMessageStore extends SQLiteOpenHelper {
             createDeletedMediaTable(sqLiteDatabase);
             createDeletedMediaIndexes(sqLiteDatabase);
         }
+        if (oldVersion < 12) {
+            createDeletedMediaReferenceTable(sqLiteDatabase);
+            // Version 11 stored one owner directly on the media row. Preserve every existing
+            // association before future records can share a single deduplicated file.
+            sqLiteDatabase.execSQL("INSERT OR IGNORE INTO " + TABLE_DELETED_MEDIA_REFS
+                    + " (media_id, message_id) SELECT _id, message_id FROM " + TABLE_DELETED_MEDIA);
+        }
     }
 
     @Override
@@ -145,6 +153,16 @@ public class DelMessageStore extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_deleted_media_message ON " + TABLE_DELETED_MEDIA + "(message_id)");
     }
 
+    private void createDeletedMediaReferenceTable(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_DELETED_MEDIA_REFS + " ("
+                + "media_id INTEGER NOT NULL, message_id INTEGER NOT NULL, "
+                + "PRIMARY KEY(media_id, message_id), "
+                + "FOREIGN KEY(media_id) REFERENCES " + TABLE_DELETED_MEDIA + "(_id) ON DELETE CASCADE, "
+                + "FOREIGN KEY(message_id) REFERENCES " + TABLE_DELETED_FOR_ME + "(_id) ON DELETE CASCADE)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_deleted_media_refs_message ON "
+                + TABLE_DELETED_MEDIA_REFS + "(message_id)");
+    }
+
     /** Inserts a media index row only after the private file was written and hashed. */
     public long insertDeletedMedia(long messageId, String storageId, String sha256, String mimeType, long sizeBytes) {
         ContentValues values = new ContentValues();
@@ -156,7 +174,21 @@ public class DelMessageStore extends SQLiteOpenHelper {
         values.put("size_bytes", sizeBytes);
         values.put("created_at", now);
         values.put("last_accessed_at", now);
-        return getWritableDatabase().insertOrThrow(TABLE_DELETED_MEDIA, null, values);
+        SQLiteDatabase db = getWritableDatabase();
+        long id = db.insertOrThrow(TABLE_DELETED_MEDIA, null, values);
+        attachMediaToMessage(db, id, messageId);
+        return id;
+    }
+
+    public void attachMediaToMessage(long mediaId, long messageId) {
+        attachMediaToMessage(getWritableDatabase(), mediaId, messageId);
+    }
+
+    private void attachMediaToMessage(SQLiteDatabase db, long mediaId, long messageId) {
+        ContentValues reference = new ContentValues();
+        reference.put("media_id", mediaId);
+        reference.put("message_id", messageId);
+        db.insertWithOnConflict(TABLE_DELETED_MEDIA_REFS, null, reference, SQLiteDatabase.CONFLICT_IGNORE);
     }
 
     public DeletedMediaRecord findMediaByHash(String sha256) {
@@ -177,6 +209,21 @@ public class DelMessageStore extends SQLiteOpenHelper {
 
     public int deleteDeletedMedia(String storageId) {
         return getWritableDatabase().delete(TABLE_DELETED_MEDIA, "storage_id=?", new String[] { storageId });
+    }
+
+    public boolean hasMediaReferences(long mediaId) {
+        try (Cursor cursor = getReadableDatabase().query(TABLE_DELETED_MEDIA_REFS,
+                new String[] { "media_id" }, "media_id=?", new String[] { String.valueOf(mediaId) },
+                null, null, null, "1")) {
+            return cursor.moveToFirst();
+        }
+    }
+
+    public long findMessageId(String keyId, String chatJid) {
+        try (Cursor cursor = getReadableDatabase().query(TABLE_DELETED_FOR_ME, new String[] { "_id" },
+                "key_id=? AND chat_jid=?", new String[] { keyId, chatJid }, null, null, null, "1")) {
+            return cursor.moveToFirst() ? cursor.getLong(0) : -1;
+        }
     }
 
     private DeletedMediaRecord mediaFromCursor(Cursor cursor) {
@@ -367,6 +414,13 @@ public class DelMessageStore extends SQLiteOpenHelper {
         createDeletedForMeTable(sqLiteDatabase);
         createDeletedMediaTable(sqLiteDatabase);
         createDeletedMediaIndexes(sqLiteDatabase);
+        createDeletedMediaReferenceTable(sqLiteDatabase);
+    }
+
+    @Override
+    public void onConfigure(SQLiteDatabase database) {
+        super.onConfigure(database);
+        database.setForeignKeyConstraintsEnabled(true);
     }
 
     @Override

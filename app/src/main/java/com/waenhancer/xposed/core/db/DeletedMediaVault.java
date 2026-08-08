@@ -36,7 +36,10 @@ public final class DeletedMediaVault {
         }
         String hash = sha256(canonicalSource);
         DeletedMediaRecord existing = store.findMediaByHash(hash);
-        if (existing != null) return existing;
+        if (existing != null) {
+            store.attachMediaToMessage(existing.id, messageId);
+            return existing;
+        }
 
         String storageId = UUID.randomUUID().toString();
         File target = new File(root, storageId);
@@ -77,6 +80,68 @@ public final class DeletedMediaVault {
         return target;
     }
 
+    /** Removes a file left by a rolled-back transaction only when it has no database row. */
+    public void discardUnindexed(String storageId) throws IOException {
+        if (storageId == null || !storageId.matches("[0-9a-fA-F-]{36}")) return;
+        try (android.database.Cursor cursor = store.getReadableDatabase().query(DelMessageStore.TABLE_DELETED_MEDIA,
+                new String[] { "_id" }, "storage_id=?", new String[] { storageId }, null, null, null, "1")) {
+            if (cursor.moveToFirst()) return;
+        }
+        File file = resolve(storageId);
+        if (file.exists() && !file.delete()) throw new IOException("Could not clean rolled-back media");
+    }
+
+    /** Returns a verified private media file for inclusion in an encrypted full backup. */
+    public byte[] readVerified(String storageId, String expectedSha256, long expectedSize) throws IOException {
+        File file = resolve(storageId);
+        if (file.length() != expectedSize || !sha256(file).equals(expectedSha256)) {
+            throw new IOException("Preserved media verification failed");
+        }
+        if (expectedSize > Integer.MAX_VALUE) throw new IOException("Preserved media is too large");
+        byte[] bytes = new byte[(int) expectedSize];
+        try (FileInputStream input = new FileInputStream(file)) {
+            int offset = 0;
+            while (offset < bytes.length) {
+                int read = input.read(bytes, offset, bytes.length - offset);
+                if (read < 0) throw new IOException("Preserved media is truncated");
+                offset += read;
+            }
+        }
+        return bytes;
+    }
+
+    /** Restores bytes that were authenticated and hash-validated before this call. */
+    public synchronized DeletedMediaRecord restore(long messageId, String sha256, String mimeType, byte[] bytes,
+                                                   long quotaBytes) throws IOException {
+        if (bytes == null || !sha256(bytes).equals(sha256)) throw new IOException("Restored media hash mismatch");
+        DeletedMediaRecord existing = store.findMediaByHash(sha256);
+        if (existing != null) {
+            store.attachMediaToMessage(existing.id, messageId);
+            return existing;
+        }
+        long quota = quotaBytes > 0 ? quotaBytes : DEFAULT_QUOTA_BYTES;
+        if (bytes.length > quota || usedBytes() > quota - bytes.length) throw new IOException("Deleted-media quota exceeded");
+        File root = mediaDirectory();
+        String storageId = UUID.randomUUID().toString();
+        File target = new File(root, storageId);
+        ensureChild(root, target);
+        try (FileOutputStream output = new FileOutputStream(target)) {
+            output.write(bytes);
+            output.getFD().sync();
+        }
+        if (!sha256(target).equals(sha256)) {
+            target.delete();
+            throw new IOException("Restored media verification failed");
+        }
+        try {
+            long id = store.insertDeletedMedia(messageId, storageId, sha256,
+                    mimeType == null || mimeType.isEmpty() ? "application/octet-stream" : mimeType, bytes.length);
+            return new DeletedMediaRecord(id, messageId, storageId, sha256, mimeType, bytes.length);
+        } finally {
+            if (store.findMediaByHash(sha256) == null) target.delete();
+        }
+    }
+
     private File mediaDirectory() throws IOException {
         File root = new File(context.getFilesDir(), DIRECTORY);
         if (!root.exists() && !root.mkdirs()) throw new IOException("Could not create media storage");
@@ -109,6 +174,18 @@ public final class DeletedMediaVault {
                 byte[] buffer = new byte[32 * 1024];
                 for (int read; (read = input.read(buffer)) != -1;) digest.update(buffer, 0, read);
             }
+            StringBuilder result = new StringBuilder(64);
+            for (byte value : digest.digest()) result.append(String.format(java.util.Locale.ROOT, "%02x", value));
+            return result.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IOException("SHA-256 is unavailable", exception);
+        }
+    }
+
+    private static String sha256(byte[] bytes) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(bytes);
             StringBuilder result = new StringBuilder(64);
             for (byte value : digest.digest()) result.append(String.format(java.util.Locale.ROOT, "%02x", value));
             return result.toString();

@@ -1,26 +1,36 @@
 package com.waenhancer.backup;
 
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.database.sqlite.SQLiteDatabase;
+import android.util.Base64;
 
 import com.waenhancer.config.PreferenceSchema;
 import com.waenhancer.config.PreferenceStores;
 import com.waenhancer.xposed.core.db.DelMessageStore;
 import com.waenhancer.xposed.core.db.DeletedMediaRecord;
+import com.waenhancer.xposed.core.db.DeletedMediaVault;
 import com.waenhancer.xposed.core.db.DeletedMessage;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Map;
 
-/** Full portable backup. All payload fields, including secrets, are inside AES-GCM encryption. */
+/** Portable, password-encrypted backup of deleted data and the schema-defined private secrets. */
 public final class FullBackupManager {
     public static final int FORMAT_VERSION = 1;
+    private static final int MAX_MESSAGE_RECORDS = 100_000;
+    private static final long MAX_MEDIA_BYTES = 1024L * 1024L * 1024L;
+
     private FullBackupManager() { }
 
     public static byte[] export(Context context, char[] password, boolean includeMedia) throws BackupCodec.BackupException {
@@ -31,60 +41,195 @@ public final class FullBackupManager {
             root.put("createdAt", System.currentTimeMillis());
             root.put("messages", messages(store));
             root.put("secrets", secrets(PreferenceStores.privateStore(context)));
-            root.put("media", media(store, includeMedia));
-            byte[] body = root.toString().getBytes(StandardCharsets.UTF_8);
-            return FullBackupCrypto.encrypt(body, password);
-        } catch (JSONException exception) { throw new BackupCodec.BackupException("Could not create full backup manifest.", exception); }
+            root.put("mediaIncluded", includeMedia);
+            root.put("media", media(context, store, includeMedia));
+            return FullBackupCrypto.encrypt(root.toString().getBytes(StandardCharsets.UTF_8), password);
+        } catch (JSONException | IOException exception) {
+            throw new BackupCodec.BackupException("Could not create full backup manifest.", exception);
+        }
     }
 
-    /** Validates every record before any preference or database write, then restores atomically. */
+    /** Validates the authenticated payload before changing preferences, rows, or private files. */
     public static RestoreReport restore(Context context, byte[] encrypted, char[] password) throws BackupCodec.BackupException {
         final JSONObject root;
         try {
             root = new JSONObject(new String(FullBackupCrypto.decrypt(encrypted, password), StandardCharsets.UTF_8));
-            if (root.optInt("formatVersion", -1) != FORMAT_VERSION) throw new BackupCodec.BackupException("Unsupported full backup version.");
-            validate(root);
-        } catch (JSONException exception) { throw new BackupCodec.BackupException("Full backup manifest is invalid.", exception); }
-        DelMessageStore store = DelMessageStore.getInstance(context);
-        SQLiteDatabase db = store.getWritableDatabase();
-        SharedPreferences privateStore = PreferenceStores.privateStore(context);
-        Map<String, ?> before = privateStore.getAll();
-        boolean preferencesChanged = false;
-        db.beginTransaction();
-        try {
-            JSONArray messages = root.getJSONArray("messages"); int inserted = 0;
-            for (int index = 0; index < messages.length(); index++) {
-                JSONObject value = messages.getJSONObject(index);
-                android.content.ContentValues row = new android.content.ContentValues();
-                row.put("key_id", value.getString("keyId")); row.put("chat_jid", value.getString("chatJid"));
-                row.put("sender_jid", value.optString("senderJid", null)); row.put("timestamp", value.getLong("timestamp"));
-                row.put("original_timestamp", value.optLong("originalTimestamp", 0)); row.put("media_type", value.optInt("mediaType", 0));
-                row.put("text_content", value.optString("text", null)); row.put("media_caption", value.optString("caption", null));
-                row.put("is_from_me", value.optBoolean("fromMe") ? 1 : 0); row.put("contact_name", value.optString("contact", null));
-                row.put("package_name", value.optString("package", null));
-                if (db.insertWithOnConflict(DelMessageStore.TABLE_DELETED_FOR_ME, null, row, SQLiteDatabase.CONFLICT_IGNORE) != -1) inserted++;
+            if (root.optInt("formatVersion", -1) != FORMAT_VERSION) {
+                throw new BackupCodec.BackupException("Unsupported full backup version.");
             }
-            SharedPreferences.Editor editor = privateStore.edit();
-            JSONObject secretValues = root.getJSONObject("secrets");
-            java.util.Iterator<String> keys = secretValues.keys(); int secrets = 0;
-            while (keys.hasNext()) { String key = keys.next(); editor.putString(key, secretValues.getString(key)); secrets++; }
-            if (!editor.commit()) throw new BackupCodec.BackupException("Could not persist restored secrets.");
-            preferencesChanged = true;
-            db.setTransactionSuccessful();
-            return new RestoreReport(inserted, secrets, root.getJSONArray("media").length());
-        } catch (JSONException | RuntimeException exception) {
-            if (preferencesChanged) restorePreferences(privateStore, before);
-            throw new BackupCodec.BackupException("Could not restore full backup.", exception);
-        } finally { db.endTransaction(); }
+            validate(root);
+        } catch (JSONException exception) {
+            throw new BackupCodec.BackupException("Full backup manifest is invalid.", exception);
+        }
+
+        DelMessageStore store = DelMessageStore.getInstance(context);
+        DeletedMediaVault vault = new DeletedMediaVault(context, store);
+        SharedPreferences privateStore = PreferenceStores.privateStore(context);
+        Map<String, ?> preferencesBefore = privateStore.getAll();
+        ArrayList<String> createdMedia = new ArrayList<>();
+        SQLiteDatabase database = store.getWritableDatabase();
+        RestoreReport report = null;
+        BackupCodec.BackupException failure = null;
+        database.beginTransaction();
+        try {
+            HashMap<Long, Long> messageIds = restoreMessages(store, database, root.getJSONArray("messages"));
+            int restoredMedia = restoreMedia(store, vault, root.getJSONArray("media"), messageIds, createdMedia);
+            int restoredSecrets = restoreSecrets(privateStore, root.getJSONObject("secrets"));
+            database.setTransactionSuccessful();
+            report = new RestoreReport(messageIds.size(), restoredSecrets, restoredMedia);
+        } catch (JSONException | IOException | RuntimeException | BackupCodec.BackupException exception) {
+            restorePreferences(privateStore, preferencesBefore);
+            failure = new BackupCodec.BackupException("Could not restore full backup; no source data was removed.", exception);
+        } finally {
+            database.endTransaction();
+        }
+        if (failure != null) {
+            for (String storageId : createdMedia) {
+                try { vault.discardUnindexed(storageId); } catch (IOException ignored) { }
+            }
+            throw failure;
+        }
+        return report;
+    }
+
+    private static HashMap<Long, Long> restoreMessages(DelMessageStore store, SQLiteDatabase database,
+                                                       JSONArray messages) throws JSONException {
+        HashMap<Long, Long> ids = new HashMap<>();
+        for (int index = 0; index < messages.length(); index++) {
+            JSONObject value = messages.getJSONObject(index);
+            ContentValues row = new ContentValues();
+            row.put("key_id", value.getString("keyId"));
+            row.put("chat_jid", value.getString("chatJid"));
+            row.put("sender_jid", value.optString("senderJid", null));
+            row.put("timestamp", value.getLong("timestamp"));
+            row.put("original_timestamp", value.optLong("originalTimestamp", 0));
+            row.put("media_type", value.optInt("mediaType", 0));
+            row.put("text_content", value.optString("text", null));
+            row.put("media_caption", value.optString("caption", null));
+            row.put("is_from_me", value.optBoolean("fromMe") ? 1 : 0);
+            row.put("contact_name", value.optString("contact", null));
+            row.put("package_name", value.optString("package", null));
+            database.insertWithOnConflict(DelMessageStore.TABLE_DELETED_FOR_ME, null, row, SQLiteDatabase.CONFLICT_IGNORE);
+            long destinationId = store.findMessageId(value.getString("keyId"), value.getString("chatJid"));
+            if (destinationId <= 0) throw new JSONException("Could not resolve restored message");
+            ids.put(value.getLong("id"), destinationId);
+        }
+        return ids;
+    }
+
+    private static int restoreMedia(DelMessageStore store, DeletedMediaVault vault, JSONArray media, Map<Long, Long> messageIds,
+                                    ArrayList<String> createdMedia) throws JSONException, IOException {
+        int restored = 0;
+        for (int index = 0; index < media.length(); index++) {
+            JSONObject item = media.getJSONObject(index);
+            Long messageId = messageIds.get(item.getLong("messageId"));
+            if (messageId == null) throw new IOException("Media record has no restored message");
+            byte[] bytes = Base64.decode(item.getString("data"), Base64.NO_WRAP);
+            boolean existed = store.findMediaByHash(item.getString("sha256")) != null;
+            DeletedMediaRecord record = vault.restore(messageId, item.getString("sha256"),
+                    item.getString("mimeType"), bytes, 0L);
+            if (!existed) createdMedia.add(record.storageId);
+            restored++;
+        }
+        return restored;
+    }
+
+    private static int restoreSecrets(SharedPreferences preferences, JSONObject values) throws JSONException, BackupCodec.BackupException {
+        SharedPreferences.Editor editor = preferences.edit();
+        int restored = 0;
+        java.util.Iterator<String> keys = values.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (!PreferenceSchema.isSecret(key)) throw new BackupCodec.BackupException("Unexpected private value.");
+            editor.putString(key, values.getString(key));
+            restored++;
+        }
+        if (!editor.commit()) throw new BackupCodec.BackupException("Could not persist restored secrets.");
+        return restored;
     }
 
     private static JSONArray messages(DelMessageStore store) throws JSONException {
-        JSONArray result = new JSONArray(); for (DeletedMessage m : store.getAllDeletedMessagesInternal()) { JSONObject o = new JSONObject();
-            o.put("keyId", m.getKeyId()); o.put("chatJid", m.getChatJid()); o.put("senderJid", m.getSenderJid()); o.put("timestamp", m.getTimestamp()); o.put("originalTimestamp", m.getOriginalTimestamp()); o.put("mediaType", m.getMediaType()); o.put("text", m.getTextContent()); o.put("caption", m.getMediaCaption()); o.put("fromMe", m.isFromMe()); o.put("contact", m.getContactName()); o.put("package", m.getPackageName()); result.put(o); } return result;
+        JSONArray result = new JSONArray();
+        for (DeletedMessage message : store.getAllDeletedMessagesInternal()) {
+            JSONObject item = new JSONObject();
+            item.put("id", message.getId());
+            item.put("keyId", message.getKeyId());
+            item.put("chatJid", message.getChatJid());
+            item.put("senderJid", message.getSenderJid());
+            item.put("timestamp", message.getTimestamp());
+            item.put("originalTimestamp", message.getOriginalTimestamp());
+            item.put("mediaType", message.getMediaType());
+            item.put("text", message.getTextContent());
+            item.put("caption", message.getMediaCaption());
+            item.put("fromMe", message.isFromMe());
+            item.put("contact", message.getContactName());
+            item.put("package", message.getPackageName());
+            result.put(item);
+        }
+        return result;
     }
-    private static JSONObject secrets(SharedPreferences prefs) throws JSONException { JSONObject result = new JSONObject(); for (String key : PreferenceSchema.secretKeys()) { Object value = prefs.getAll().get(key); if (value instanceof String && !((String) value).isEmpty()) result.put(key, value); } return result; }
-    private static JSONArray media(DelMessageStore store, boolean include) throws JSONException { JSONArray result = new JSONArray(); if (!include) return result; for (DeletedMediaRecord m : store.getDeletedMedia()) { JSONObject o = new JSONObject(); o.put("storageId", m.storageId); o.put("sha256", m.sha256); o.put("mimeType", m.mimeType); o.put("size", m.sizeBytes); result.put(o); } return result; }
-    private static void validate(JSONObject root) throws BackupCodec.BackupException, JSONException { JSONArray messages = root.getJSONArray("messages"); if (messages.length() > 100000) throw new BackupCodec.BackupException("Too many message records."); for (int i=0;i<messages.length();i++) { JSONObject m=messages.getJSONObject(i); if (m.optString("keyId").isEmpty() || m.optString("chatJid").isEmpty() || m.optLong("timestamp", -1)<0) throw new BackupCodec.BackupException("Invalid message record."); } JSONObject s=root.getJSONObject("secrets"); java.util.Iterator<String> it=s.keys(); while(it.hasNext()) if(!PreferenceSchema.isSecret(it.next())) throw new BackupCodec.BackupException("Unexpected private value."); }
+
+    private static JSONObject secrets(SharedPreferences preferences) throws JSONException {
+        JSONObject result = new JSONObject();
+        Map<String, ?> values = preferences.getAll();
+        for (String key : PreferenceSchema.secretKeys()) {
+            Object value = values.get(key);
+            if (value instanceof String && !((String) value).isEmpty()) result.put(key, value);
+        }
+        return result;
+    }
+
+    private static JSONArray media(Context context, DelMessageStore store, boolean include) throws JSONException, IOException {
+        JSONArray result = new JSONArray();
+        if (!include) return result;
+        DeletedMediaVault vault = new DeletedMediaVault(context, store);
+        long totalBytes = 0;
+        for (DeletedMediaRecord record : store.getDeletedMedia()) {
+            totalBytes += record.sizeBytes;
+            if (totalBytes > MAX_MEDIA_BYTES) throw new IOException("Selected media exceeds the full-backup limit");
+            byte[] bytes = vault.readVerified(record.storageId, record.sha256, record.sizeBytes);
+            JSONObject item = new JSONObject();
+            item.put("messageId", record.messageId);
+            item.put("sha256", record.sha256);
+            item.put("mimeType", record.mimeType);
+            item.put("size", record.sizeBytes);
+            item.put("data", Base64.encodeToString(bytes, Base64.NO_WRAP));
+            result.put(item);
+        }
+        return result;
+    }
+
+    private static void validate(JSONObject root) throws BackupCodec.BackupException, JSONException {
+        JSONArray messages = root.getJSONArray("messages");
+        if (messages.length() > MAX_MESSAGE_RECORDS) throw new BackupCodec.BackupException("Too many message records.");
+        for (int i = 0; i < messages.length(); i++) {
+            JSONObject message = messages.getJSONObject(i);
+            if (message.optLong("id", -1) < 0 || message.optString("keyId").isEmpty()
+                    || message.optString("chatJid").isEmpty() || message.optLong("timestamp", -1) < 0) {
+                throw new BackupCodec.BackupException("Invalid message record.");
+            }
+        }
+        JSONObject secrets = root.getJSONObject("secrets");
+        java.util.Iterator<String> keys = secrets.keys();
+        while (keys.hasNext()) if (!PreferenceSchema.isSecret(keys.next())) {
+            throw new BackupCodec.BackupException("Unexpected private value.");
+        }
+        long totalBytes = 0;
+        for (int i = 0; i < root.getJSONArray("media").length(); i++) {
+            JSONObject media = root.getJSONArray("media").getJSONObject(i);
+            long size = media.optLong("size", -1);
+            if (size < 0 || size > MAX_MEDIA_BYTES || !media.optString("sha256").matches("[0-9a-f]{64}")) {
+                throw new BackupCodec.BackupException("Invalid media manifest.");
+            }
+            byte[] bytes = Base64.decode(media.optString("data"), Base64.NO_WRAP);
+            if (bytes.length != size || !sha256(bytes).equals(media.getString("sha256"))) {
+                throw new BackupCodec.BackupException("Media checksum mismatch.");
+            }
+            totalBytes += size;
+            if (totalBytes > MAX_MEDIA_BYTES) throw new BackupCodec.BackupException("Full backup media is too large.");
+        }
+    }
+
     private static void restorePreferences(SharedPreferences preferences, Map<String, ?> before) {
         SharedPreferences.Editor editor = preferences.edit();
         for (String key : PreferenceSchema.secretKeys()) {
@@ -93,5 +238,26 @@ public final class FullBackupManager {
         }
         editor.commit();
     }
-    public static final class RestoreReport { public final int messages, secrets, mediaMetadata; RestoreReport(int messages, int secrets, int mediaMetadata) { this.messages=messages; this.secrets=secrets; this.mediaMetadata=mediaMetadata; } }
+
+    private static String sha256(byte[] bytes) throws BackupCodec.BackupException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            StringBuilder result = new StringBuilder(64);
+            for (byte value : digest.digest(bytes)) result.append(String.format(java.util.Locale.ROOT, "%02x", value));
+            return result.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new BackupCodec.BackupException("SHA-256 is unavailable.", exception);
+        }
+    }
+
+    public static final class RestoreReport {
+        public final int messages;
+        public final int secrets;
+        public final int media;
+        RestoreReport(int messages, int secrets, int media) {
+            this.messages = messages;
+            this.secrets = secrets;
+            this.media = media;
+        }
+    }
 }
