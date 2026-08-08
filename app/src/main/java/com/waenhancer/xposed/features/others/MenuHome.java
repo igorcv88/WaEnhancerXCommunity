@@ -73,7 +73,9 @@ public class MenuHome extends Feature {
         try {
             cachedRestartIcon = DesignUtils.getDrawable(R.drawable.refresh);
             
-            cachedWaeIcon = DesignUtils.getDrawableByName("ic_settings");
+            // Must not be WhatsApp's own "ic_settings" gear: the injected entry has to be
+            // distinguishable from the native Settings row.
+            cachedWaeIcon = DesignUtils.getDrawableByName("ic_waenhancer_entry");
             if (cachedWaeIcon != null) cachedWaeIcon.setTint(0xff8696a0);
 
             cachedGhostOnIcon = DesignUtils.getDrawable(R.drawable.ghost_enabled);
@@ -131,7 +133,8 @@ public class MenuHome extends Feature {
 
         String title = com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.waenhancer_settings, "WaEnhancerX Settings");
         var itemMenu = menu.add(0, MENU_ID_OPEN_WAEX, 0, title);
-        
+        if (cachedWaeIcon != null) itemMenu.setIcon(cachedWaeIcon);
+
         itemMenu.setOnMenuItemClickListener(item -> {
             Utils.openModule(activity);
             return true;
