@@ -69,16 +69,22 @@ public class InjectedIconAssetTest {
         }
     }
 
+    /**
+     * Every category and sub-screen must ship its own icon. Relying on the generic fallback means
+     * Calls, Automation and Optimization all render the same glyph.
+     */
     @Test
-    public void everyRegistryIconResolvesToAHostSafeAssetOrTheFallback() throws IOException {
+    public void everyRegistryScreenShipsItsOwnAsset() {
         for (String iconName : SettingsIconRegistry.mappings().values()) {
-            File asset = drawable(iconName);
-            if (!asset.isFile()) {
-                // Not shipped by the module: SettingsIconRegistry.resolve() falls back, so the
-                // fallback itself must exist and be host-safe.
-                assertTrue("fallback ic_general must exist", drawable("ic_general").isFile());
-                continue;
-            }
+            assertTrue("SettingsIconRegistry offers '" + iconName
+                    + "' but the module does not ship it, so the screen falls back to ic_general",
+                    drawable(iconName).isFile());
+        }
+    }
+
+    @Test
+    public void everyRegistryIconIsHostSafe() throws IOException {
+        for (String iconName : SettingsIconRegistry.mappings().values()) {
             assertFalse(iconName + " is offered by SettingsIconRegistry but depends on a theme "
                     + "attribute", markupOf(iconName).contains("?attr/"));
         }
