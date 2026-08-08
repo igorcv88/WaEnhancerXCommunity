@@ -7,6 +7,7 @@ import com.waenhancer.R;
 import com.waenhancer.activities.base.BaseActivity;
 import com.waenhancer.databinding.ActivityDeletedMessagesBinding;
 import com.waenhancer.ui.fragments.DeletedMessagesFragment;
+import com.waenhancer.ui.fragments.DeletedMediaFragment;
 
 public class DeletedMessagesActivity extends BaseActivity {
 
@@ -33,17 +34,18 @@ public class DeletedMessagesActivity extends BaseActivity {
             @androidx.annotation.NonNull
             @Override
             public androidx.fragment.app.Fragment createFragment(int position) {
+                if (position == 2) return new DeletedMediaFragment();
                 return DeletedMessagesFragment.newInstance(position == 1); // 0 = Individual, 1 = Group
             }
 
             @Override
             public int getItemCount() {
-                return 2;
+                return 3;
             }
         });
 
         new com.google.android.material.tabs.TabLayoutMediator(binding.tabLayout, binding.viewPager, (tab, position) -> {
-            tab.setText(position == 0 ? "Individuals" : "Groups");
+            tab.setText(position == 0 ? "Individuals" : position == 1 ? "Groups" : "Media");
         }).attach();
     }
 
