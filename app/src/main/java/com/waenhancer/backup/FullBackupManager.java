@@ -29,7 +29,13 @@ import java.util.Map;
 public final class FullBackupManager {
     public static final int FORMAT_VERSION = 1;
     private static final int MAX_MESSAGE_RECORDS = 100_000;
-    private static final long MAX_MEDIA_BYTES = 1024L * 1024L * 1024L;
+    /**
+     * The manifest is built, encrypted and validated wholly in memory, and media travels as
+     * Base64 (about 4/3 of its size) inside a JSON string. The cap is set by what a phone can
+     * actually hold at once, not by what the vault can store; anything larger must be exported
+     * as a media-free backup.
+     */
+    private static final long MAX_MEDIA_BYTES = 96L * 1024L * 1024L;
 
     private FullBackupManager() { }
 
@@ -43,7 +49,14 @@ public final class FullBackupManager {
             root.put("secrets", secrets(PreferenceStores.privateStore(context)));
             root.put("mediaIncluded", includeMedia);
             root.put("media", media(context, store, includeMedia));
-            return FullBackupCrypto.encrypt(root.toString().getBytes(StandardCharsets.UTF_8), password);
+            // The manifest holds the user's secrets in the clear. Overwrite the buffer as soon
+            // as it is sealed rather than leaving it for the collector.
+            byte[] plaintext = root.toString().getBytes(StandardCharsets.UTF_8);
+            try {
+                return FullBackupCrypto.encrypt(plaintext, password);
+            } finally {
+                java.util.Arrays.fill(plaintext, (byte) 0);
+            }
         } catch (JSONException | IOException exception) {
             throw new BackupCodec.BackupException("Could not create full backup manifest.", exception);
         }
@@ -126,8 +139,12 @@ public final class FullBackupManager {
             if (messageId == null) throw new IOException("Media record has no restored message");
             byte[] bytes = Base64.decode(item.getString("data"), Base64.NO_WRAP);
             boolean existed = store.findMediaByHash(item.getString("sha256")) != null;
+            // The vault's default quota is smaller than the backup limit, so a legitimate
+            // backup would be rejected halfway through. A restore of already-owned data is
+            // allowed to fill up to the size the manifest was capped at.
             DeletedMediaRecord record = vault.restore(messageId, item.getString("sha256"),
-                    item.getString("mimeType"), bytes, 0L);
+                    item.getString("mimeType"), bytes,
+                    Math.max(DeletedMediaVault.DEFAULT_QUOTA_BYTES, MAX_MEDIA_BYTES));
             if (!existed) createdMedia.add(record.storageId);
             restored++;
         }
@@ -233,8 +250,15 @@ public final class FullBackupManager {
     private static void restorePreferences(SharedPreferences preferences, Map<String, ?> before) {
         SharedPreferences.Editor editor = preferences.edit();
         for (String key : PreferenceSchema.secretKeys()) {
-            if (!before.containsKey(key)) editor.remove(key);
-            else editor.putString(key, String.valueOf(before.get(key)));
+            Object value = before.get(key);
+            // Only a genuinely absent key is removed. Coercing a non-string back with
+            // String.valueOf would silently rewrite the user's value into another type.
+            if (value == null) editor.remove(key);
+            else if (value instanceof String) editor.putString(key, (String) value);
+            else if (value instanceof Boolean) editor.putBoolean(key, (Boolean) value);
+            else if (value instanceof Integer) editor.putInt(key, (Integer) value);
+            else if (value instanceof Long) editor.putLong(key, (Long) value);
+            else if (value instanceof Float) editor.putFloat(key, (Float) value);
         }
         editor.commit();
     }

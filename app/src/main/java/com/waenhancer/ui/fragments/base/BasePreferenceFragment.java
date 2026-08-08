@@ -65,8 +65,31 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
                 ? new com.waenhancer.preference.SafeSharedPreferences(
                         com.waenhancer.config.PreferenceStores.privateStore(requireContext()))
                 : mPrefs;
+        if (resolved != mPrefs) adoptPublicValue(resolved, key);
         mSchemaPrefs.put(key, resolved);
         return resolved;
+    }
+
+    /**
+     * Copies a not-yet-migrated value into the private store so a private key is never read as
+     * absent. The public copy is deliberately left alone; removing it is the migration's job.
+     */
+    private void adoptPublicValue(SharedPreferences privateStore, String key) {
+        if (privateStore.getAll().containsKey(key)) return;
+        Object value = mPrefs.getAll().get(key);
+        if (value == null) return;
+        SharedPreferences.Editor editor = privateStore.edit();
+        if (value instanceof String) editor.putString(key, (String) value);
+        else if (value instanceof Boolean) editor.putBoolean(key, (Boolean) value);
+        else if (value instanceof Integer) editor.putInt(key, (Integer) value);
+        else if (value instanceof Long) editor.putLong(key, (Long) value);
+        else if (value instanceof Float) editor.putFloat(key, (Float) value);
+        else if (value instanceof Set) {
+            LinkedHashSet<String> copy = new LinkedHashSet<>();
+            for (Object item : (Set<?>) value) if (item != null) copy.add(String.valueOf(item));
+            editor.putStringSet(key, copy);
+        } else return;
+        editor.apply();
     }
     private boolean suppressRestartBroadcast;
     private final Handler restartBroadcastHandler = new Handler(Looper.getMainLooper());

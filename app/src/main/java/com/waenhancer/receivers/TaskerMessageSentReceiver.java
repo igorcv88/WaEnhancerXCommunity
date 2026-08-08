@@ -40,7 +40,14 @@ public class TaskerMessageSentReceiver extends BroadcastReceiver {
     public static final String EXTRA_TOKEN = "token";
     public static final String EXTRA_PACKAGE = "package";
 
-    private final TaskerGuard guard = new TaskerGuard();
+    /**
+     * Process-wide, not instance-owned. This receiver is manifest-declared, so Android builds a
+     * fresh instance per broadcast; an instance field would reset the rate-limit window and the
+     * duplicate history on every request and neither limit would ever be reached.
+     */
+    private static TaskerGuard guard() {
+        return TaskerGuard.shared();
+    }
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -58,7 +65,7 @@ public class TaskerMessageSentReceiver extends BroadcastReceiver {
         // The token lives in the private store; hand the guard a view that can see it.
         SharedPreferences view = new TokenAwarePreferences(preferences, secret);
 
-        TaskerGuard.Decision decision = guard.evaluate(view, declaredPackage, token,
+        TaskerGuard.Decision decision = guard().evaluate(view, declaredPackage, token,
                 number, message, System.currentTimeMillis());
         if (decision != TaskerGuard.Decision.ALLOWED) return;
 

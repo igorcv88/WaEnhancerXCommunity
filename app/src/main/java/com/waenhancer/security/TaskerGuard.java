@@ -56,6 +56,32 @@ public final class TaskerGuard {
     private String lastMessage;
     private long lastSendAt;
 
+    /**
+     * Process-wide decision state.
+     *
+     * <p>Android instantiates a manifest-declared {@code BroadcastReceiver} once per delivery
+     * and discards it afterwards, so a guard owned by the receiver instance would start every
+     * request with an empty window and neither the rate limit nor the deduplication would ever
+     * fire. Entry points that are re-created per request must share this instance.</p>
+     */
+    private static final TaskerGuard SHARED = new TaskerGuard();
+
+    public static TaskerGuard shared() {
+        return SHARED;
+    }
+
+    /**
+     * Forgets the rate-limit window and the last request. Called when the integration is
+     * reconfigured — a regenerated token or a changed allowlist starts a new client — so a
+     * previous client's burst does not throttle the new one.
+     */
+    public synchronized void reset() {
+        recentSends.clear();
+        lastNumber = null;
+        lastMessage = null;
+        lastSendAt = 0L;
+    }
+
     /** Generates the per-installation token. Never derived from anything guessable. */
     public static String newSecret() {
         byte[] raw = new byte[24];

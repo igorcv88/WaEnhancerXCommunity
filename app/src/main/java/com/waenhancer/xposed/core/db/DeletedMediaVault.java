@@ -30,6 +30,7 @@ public final class DeletedMediaVault {
         File root = mediaDirectory();
         File canonicalSource = source.getCanonicalFile();
         if (!canonicalSource.isFile()) throw new IOException("Media source is unavailable");
+        rejectOwnData(canonicalSource);
         long quota = quotaBytes > 0 ? quotaBytes : DEFAULT_QUOTA_BYTES;
         if (canonicalSource.length() > quota || usedBytes() > quota - canonicalSource.length()) {
             throw new IOException("Deleted-media quota exceeded");
@@ -49,26 +50,52 @@ public final class DeletedMediaVault {
             target.delete();
             throw new IOException("Media hash verification failed");
         }
+        String storedMime = normalizeMime(mimeType);
         SQLiteDatabase db = store.getWritableDatabase();
         db.beginTransaction();
         try {
-            long id = store.insertDeletedMedia(messageId, storageId, hash,
-                    mimeType == null || mimeType.isEmpty() ? "application/octet-stream" : mimeType, target.length());
+            long id = store.insertDeletedMedia(messageId, storageId, hash, storedMime, target.length());
             db.setTransactionSuccessful();
-            return new DeletedMediaRecord(id, messageId, storageId, hash, mimeType, target.length());
+            // The record must mirror what was stored, not what the caller passed.
+            return new DeletedMediaRecord(id, messageId, storageId, hash, storedMime, target.length());
         } finally {
             db.endTransaction();
             if (!target.exists() || store.findMediaByHash(hash) == null) target.delete();
         }
     }
 
+    /**
+     * Drops one message's claim on preserved media. The bytes survive while any other message
+     * still references them; only the last reference erases the file.
+     */
+    public synchronized boolean releaseReference(String storageId, long messageId) throws IOException {
+        if (storageId == null || !storageId.matches("[0-9a-fA-F-]{36}") || messageId <= 0) return false;
+        DeletedMediaRecord record = store.findMediaByStorageId(storageId);
+        if (record == null) return false;
+        if (store.detachMediaFromMessage(record.id, messageId) == 0) return false;
+        if (store.hasMediaReferences(record.id)) return true;
+        return permanentlyDelete(storageId);
+    }
+
+    /**
+     * Erases the bytes and the index row outright. Refuses while another message still
+     * references the same deduplicated file, so removing one message never destroys another's
+     * media.
+     */
     public synchronized boolean permanentlyDelete(String storageId) throws IOException {
         if (storageId == null || !storageId.matches("[0-9a-fA-F-]{36}")) return false;
+        DeletedMediaRecord record = store.findMediaByStorageId(storageId);
+        if (record != null && store.countMediaReferences(record.id) > 1) {
+            throw new IOException("Preserved media is still referenced by another message");
+        }
         File root = mediaDirectory();
         File target = new File(root, storageId);
         ensureChild(root, target);
+        // The index row goes first: a row without bytes is a visible, recoverable inconsistency,
+        // whereas bytes without a row are invisible and would leak the user's media forever.
+        int removed = store.deleteDeletedMedia(storageId);
         if (target.exists() && !target.delete()) throw new IOException("Could not delete preserved media");
-        return store.deleteDeletedMedia(storageId) > 0;
+        return removed > 0;
     }
 
     public File resolve(String storageId) throws IOException {
@@ -87,7 +114,10 @@ public final class DeletedMediaVault {
                 new String[] { "_id" }, "storage_id=?", new String[] { storageId }, null, null, null, "1")) {
             if (cursor.moveToFirst()) return;
         }
-        File file = resolve(storageId);
+        File root = mediaDirectory();
+        File file = new File(root, storageId);
+        ensureChild(root, file);
+        // Absent is the desired end state, not a failure: the rollback may have run already.
         if (file.exists() && !file.delete()) throw new IOException("Could not clean rolled-back media");
     }
 
@@ -133,10 +163,10 @@ public final class DeletedMediaVault {
             target.delete();
             throw new IOException("Restored media verification failed");
         }
+        String storedMime = normalizeMime(mimeType);
         try {
-            long id = store.insertDeletedMedia(messageId, storageId, sha256,
-                    mimeType == null || mimeType.isEmpty() ? "application/octet-stream" : mimeType, bytes.length);
-            return new DeletedMediaRecord(id, messageId, storageId, sha256, mimeType, bytes.length);
+            long id = store.insertDeletedMedia(messageId, storageId, sha256, storedMime, bytes.length);
+            return new DeletedMediaRecord(id, messageId, storageId, sha256, storedMime, bytes.length);
         } finally {
             if (store.findMediaByHash(sha256) == null) target.delete();
         }
@@ -152,6 +182,27 @@ public final class DeletedMediaVault {
         long total = 0;
         for (DeletedMediaRecord record : store.getDeletedMedia()) total += Math.max(0, record.sizeBytes);
         return total;
+    }
+
+    private static String normalizeMime(String mimeType) {
+        return mimeType == null || mimeType.isEmpty() ? "application/octet-stream" : mimeType;
+    }
+
+    /**
+     * Refuses to copy from the module's own data directory.
+     *
+     * <p>The source path arrives from the hooked WhatsApp process, which is a trusted caller and
+     * may also read preserved media back. Without this check that process could name
+     * {@code private_config.xml} or the message database as "media", have this module copy it
+     * into the vault, and then read the user's secrets out through the provider.</p>
+     */
+    private void rejectOwnData(File canonicalSource) throws IOException {
+        String path = canonicalSource.getPath();
+        for (File own : new File[] { context.getFilesDir(), context.getCacheDir(), context.getDataDir() }) {
+            if (own == null) continue;
+            String prefix = own.getCanonicalPath() + File.separator;
+            if (path.startsWith(prefix)) throw new IOException("Media source is not eligible");
+        }
     }
 
     private static void ensureChild(File root, File target) throws IOException {

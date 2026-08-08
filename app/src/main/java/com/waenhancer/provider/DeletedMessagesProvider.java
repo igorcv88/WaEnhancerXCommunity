@@ -66,19 +66,31 @@ public class DeletedMessagesProvider extends ContentProvider {
         if (!com.waenhancer.security.CallerAuthority.isTrustedCaller(getContext())) return null;
         if (uriMatcher.match(uri) == DELETED_MESSAGES && values != null) {
             SQLiteDatabase db = dbHelper.getWritableDatabase();
-            
-            // --- NEW: Propagate Contact Name to all messages in this chat ---
-            String chatJid = values.getAsString("chat_jid");
-            String contactName = values.getAsString("contact_name");
-            
-            if (chatJid != null && contactName != null && !contactName.isEmpty()) {
+
+            // Only schema columns are persisted. The caller controls this bundle, and an unknown
+            // key would otherwise reach SQLite and throw back across Binder into the hook.
+            ContentValues row = DelMessageStore.filterMessageColumns(values);
+            String chatJid = row.getAsString("chat_jid");
+            String keyId = row.getAsString("key_id");
+            if (keyId == null || chatJid == null) return null;
+
+            String contactName = row.getAsString("contact_name");
+            if (contactName != null && !contactName.isEmpty()) {
                 ContentValues updateValues = new ContentValues();
                 updateValues.put("contact_name", contactName);
                 db.update(DelMessageStore.TABLE_DELETED_FOR_ME, updateValues, "chat_jid = ?", new String[]{chatJid});
             }
-            // ----------------------------------------------------------------
-            
-            long id = db.insertWithOnConflict(DelMessageStore.TABLE_DELETED_FOR_ME, null, values, SQLiteDatabase.CONFLICT_REPLACE);
+
+            // Never CONFLICT_REPLACE: REPLACE deletes the conflicting row, and the media
+            // foreign key would cascade the preserved media of a message that is merely being
+            // re-recorded. Update in place so the row _id, and its media, survive.
+            long id = db.insertWithOnConflict(DelMessageStore.TABLE_DELETED_FOR_ME, null, row,
+                    SQLiteDatabase.CONFLICT_IGNORE);
+            if (id <= 0) {
+                db.update(DelMessageStore.TABLE_DELETED_FOR_ME, row, "key_id=? AND chat_jid=?",
+                        new String[]{keyId, chatJid});
+                id = dbHelper.findMessageId(keyId, chatJid);
+            }
             if (id > 0) {
                 // The hook sends this while the source is still reachable. A failed media copy
                 // must never discard the recovered message, so media is deliberately optional.
@@ -103,8 +115,19 @@ public class DeletedMessagesProvider extends ContentProvider {
     public int delete(@NonNull Uri uri, @Nullable String selection, @Nullable String[] selectionArgs) {
         if (!com.waenhancer.security.CallerAuthority.isSelf() || uriMatcher.match(uri) != MEDIA_ITEM) return 0;
         try {
-            return new com.waenhancer.xposed.core.db.DeletedMediaVault(getContext(), dbHelper)
-                    .permanentlyDelete(uri.getLastPathSegment()) ? 1 : 0;
+            // Deduplicated media can be shared by several messages. Detach this owner and only
+            // erase the bytes once nothing references them any more.
+            String owner = uri.getQueryParameter("message_id");
+            com.waenhancer.xposed.core.db.DeletedMediaVault vault =
+                    new com.waenhancer.xposed.core.db.DeletedMediaVault(getContext(), dbHelper);
+            if (owner != null) {
+                try {
+                    return vault.releaseReference(uri.getLastPathSegment(), Long.parseLong(owner)) ? 1 : 0;
+                } catch (NumberFormatException invalid) {
+                    return 0;
+                }
+            }
+            return vault.permanentlyDelete(uri.getLastPathSegment()) ? 1 : 0;
         } catch (java.io.IOException ignored) {
             return 0;
         }

@@ -25,8 +25,9 @@ public class DelMessageStore extends SQLiteOpenHelper {
     });
 
     /**
-     * Version 11 adds the owned-media index.  Never use a destructive fallback here: this
-     * database is the only copy of a user's recovered-message history.
+     * Version 11 adds the owned-media index; version 12 adds the media reference table that
+     * lets one deduplicated file belong to several messages.  Never use a destructive fallback
+     * here: this database is the only copy of a user's recovered-message history.
      */
     private static final int DATABASE_VERSION = 12;
     public static final String TABLE_DELETED_FOR_ME = "deleted_for_me";
@@ -50,6 +51,15 @@ public class DelMessageStore extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase sqLiteDatabase, int oldVersion, int newVersion) {
+        // MIGRATIONS.md: verify the file before altering it, and compare record counts after.
+        // The framework runs this inside a transaction, so throwing rolls the upgrade back and
+        // leaves the user's database exactly as it was.
+        try (Cursor check = sqLiteDatabase.rawQuery("PRAGMA integrity_check", null)) {
+            if (!check.moveToFirst() || !"ok".equalsIgnoreCase(check.getString(0))) {
+                throw new SQLiteException("Refusing to migrate a damaged deleted-data database");
+            }
+        }
+        long messagesBefore = countRows(sqLiteDatabase, TABLE_DELETED_FOR_ME);
         if (oldVersion < 4) {
             if (!checkColumnExists(sqLiteDatabase, "delmessages", "timestamp")) {
                 sqLiteDatabase.execSQL("ALTER TABLE delmessages ADD COLUMN timestamp INTEGER DEFAULT 0;");
@@ -107,6 +117,23 @@ public class DelMessageStore extends SQLiteOpenHelper {
             // association before future records can share a single deduplicated file.
             sqLiteDatabase.execSQL("INSERT OR IGNORE INTO " + TABLE_DELETED_MEDIA_REFS
                     + " (media_id, message_id) SELECT _id, message_id FROM " + TABLE_DELETED_MEDIA);
+            // MIGRATIONS.md requires a record-count comparison. Every version-11 media row must
+            // have carried its owner across, or the upgrade rolls back rather than leaving
+            // media that no message can reach.
+            if (countRows(sqLiteDatabase, TABLE_DELETED_MEDIA_REFS) < countRows(sqLiteDatabase, TABLE_DELETED_MEDIA)) {
+                throw new SQLiteException("Media ownership was not fully migrated");
+            }
+        }
+        if (countRows(sqLiteDatabase, TABLE_DELETED_FOR_ME) < messagesBefore) {
+            throw new SQLiteException("The upgrade would have lost recovered messages");
+        }
+    }
+
+    private static long countRows(SQLiteDatabase database, String table) {
+        try (Cursor cursor = database.rawQuery("SELECT COUNT(*) FROM " + table, null)) {
+            return cursor.moveToFirst() ? cursor.getLong(0) : 0L;
+        } catch (SQLiteException missingTable) {
+            return 0L;
         }
     }
 
@@ -209,6 +236,51 @@ public class DelMessageStore extends SQLiteOpenHelper {
 
     public int deleteDeletedMedia(String storageId) {
         return getWritableDatabase().delete(TABLE_DELETED_MEDIA, "storage_id=?", new String[] { storageId });
+    }
+
+    /** The columns {@link #TABLE_DELETED_FOR_ME} accepts from a cross-process caller. */
+    private static final java.util.List<String> MESSAGE_COLUMNS = Collections.unmodifiableList(
+            java.util.Arrays.asList("key_id", "chat_jid", "sender_jid", "timestamp",
+                    "original_timestamp", "media_type", "text_content", "media_path",
+                    "media_caption", "is_from_me", "contact_name", "package_name"));
+
+    /**
+     * Keeps only real columns. A caller-supplied bundle may carry side-channel keys such as the
+     * media MIME type or quota, and handing those to SQLite raises an exception that would
+     * travel back across Binder and abort the caller's own work.
+     */
+    public static ContentValues filterMessageColumns(ContentValues values) {
+        ContentValues filtered = new ContentValues();
+        for (String column : MESSAGE_COLUMNS) {
+            if (values.containsKey(column)) filtered.put(column, values.getAsString(column));
+        }
+        // Numeric columns must not be stringified.
+        for (String column : new String[] { "timestamp", "original_timestamp", "media_type", "is_from_me" }) {
+            Long number = values.getAsLong(column);
+            if (number != null) filtered.put(column, number);
+            else filtered.remove(column);
+        }
+        return filtered;
+    }
+
+    public DeletedMediaRecord findMediaByStorageId(String storageId) {
+        try (Cursor cursor = getReadableDatabase().query(TABLE_DELETED_MEDIA, null, "storage_id=?",
+                new String[] { storageId }, null, null, null, "1")) {
+            return cursor.moveToFirst() ? mediaFromCursor(cursor) : null;
+        }
+    }
+
+    public int detachMediaFromMessage(long mediaId, long messageId) {
+        return getWritableDatabase().delete(TABLE_DELETED_MEDIA_REFS, "media_id=? AND message_id=?",
+                new String[] { String.valueOf(mediaId), String.valueOf(messageId) });
+    }
+
+    public int countMediaReferences(long mediaId) {
+        try (Cursor cursor = getReadableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM " + TABLE_DELETED_MEDIA_REFS + " WHERE media_id=?",
+                new String[] { String.valueOf(mediaId) })) {
+            return cursor.moveToFirst() ? cursor.getInt(0) : 0;
+        }
     }
 
     public boolean hasMediaReferences(long mediaId) {
@@ -423,14 +495,31 @@ public class DelMessageStore extends SQLiteOpenHelper {
         database.setForeignKeyConstraintsEnabled(true);
     }
 
+    /** Set once the process has verified this database; the check is not worth repeating. */
+    private static volatile boolean integrityVerified;
+    /** Recorded rather than thrown, so a damaged file never makes the app unusable. */
+    private static volatile boolean integrityFailed;
+
+    /** True when the last check found structural damage. The UI warns; nothing is auto-deleted. */
+    public static boolean isIntegrityCompromised() {
+        return integrityFailed;
+    }
+
     @Override
     public void onOpen(SQLiteDatabase database) {
         super.onOpen(database);
-        try (Cursor result = database.rawQuery("PRAGMA integrity_check", null)) {
-            if (!result.moveToFirst() || !"ok".equalsIgnoreCase(result.getString(0))) {
-                throw new SQLiteException("Deleted-data integrity check failed");
-            }
+        if (database.isReadOnly() || integrityVerified) return;
+        integrityVerified = true;
+        // quick_check finds the corruption that matters here without the full-scan cost of
+        // integrity_check, which runs on the UI path every time the helper reopens.
+        try (Cursor result = database.rawQuery("PRAGMA quick_check(1)", null)) {
+            integrityFailed = !result.moveToFirst() || !"ok".equalsIgnoreCase(result.getString(0));
+        } catch (SQLiteException exception) {
+            integrityFailed = true;
         }
+        // Deliberately not thrown: this database is the only copy of the user's recovered
+        // history, and a helper that throws from onOpen makes every read fail for good. The
+        // damaged file is left untouched so it can still be salvaged or backed up.
     }
 
     public long getTimestampByMessageId(String msgid) {
