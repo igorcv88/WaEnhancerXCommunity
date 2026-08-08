@@ -12,9 +12,6 @@ import java.util.HashSet;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import com.waenhancer.utils.ContactHelper;
-import java.util.ArrayList;
-import java.util.List;
 
 public class DelMessageStore extends SQLiteOpenHelper {
     private static DelMessageStore mInstance;
@@ -25,9 +22,8 @@ public class DelMessageStore extends SQLiteOpenHelper {
         }
     });
 
-    private static final int DATABASE_VERSION = 11;
+    private static final int DATABASE_VERSION = 10;
     public static final String TABLE_DELETED_FOR_ME = "deleted_for_me";
-    public static final String TABLE_WA_CONTACTS = "wa_contacts";
 
     private DelMessageStore(@NonNull Context context) {
         super(context, "delmessages.db", null, DATABASE_VERSION);
@@ -93,17 +89,6 @@ public class DelMessageStore extends SQLiteOpenHelper {
                 }
             }
         }
-        if (oldVersion < 11) {
-            try {
-                sqLiteDatabase.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_WA_CONTACTS + " (" +
-                        "jid TEXT PRIMARY KEY, " +
-                        "display_name TEXT, " +
-                        "wa_name TEXT, " +
-                        "number TEXT)");
-            } catch (Exception e) {
-                // Ignore if fails
-            }
-        }
     }
 
     @Override
@@ -115,7 +100,6 @@ public class DelMessageStore extends SQLiteOpenHelper {
         ;
         sqLiteDatabase.execSQL("DROP TABLE IF EXISTS " + TABLE_DELETED_FOR_ME);
         sqLiteDatabase.execSQL("DROP TABLE IF EXISTS delmessages");
-        sqLiteDatabase.execSQL("DROP TABLE IF EXISTS " + TABLE_WA_CONTACTS);
         onCreate(sqLiteDatabase);
     }
 
@@ -166,8 +150,8 @@ public class DelMessageStore extends SQLiteOpenHelper {
         }
     }
 
-    public ArrayList<DeletedMessage> getDeletedMessagesByChat(String chatJid, String sortOrder) {
-        ArrayList<DeletedMessage> messages = new ArrayList<>();
+    public java.util.ArrayList<DeletedMessage> getDeletedMessagesByChat(String chatJid, String sortOrder) {
+        java.util.ArrayList<DeletedMessage> messages = new java.util.ArrayList<>();
         SQLiteDatabase dbReader = this.getReadableDatabase();
         try (Cursor cursor = dbReader.query(TABLE_DELETED_FOR_ME, null, "chat_jid=?", new String[] { chatJid }, null,
                 null, sortOrder)) {
@@ -198,12 +182,12 @@ public class DelMessageStore extends SQLiteOpenHelper {
         return messages;
     }
 
-    public ArrayList<DeletedMessage> getAllDeletedMessages() {
+    public java.util.ArrayList<DeletedMessage> getAllDeletedMessages() {
         return getDeletedMessages(false);
     }
 
-    public ArrayList<DeletedMessage> getDeletedMessages(boolean isGroup) {
-        ArrayList<DeletedMessage> messages = new ArrayList<>();
+    public java.util.ArrayList<DeletedMessage> getDeletedMessages(boolean isGroup) {
+        java.util.ArrayList<DeletedMessage> messages = new java.util.ArrayList<>();
         SQLiteDatabase dbReader = this.getReadableDatabase();
         String selection = isGroup ? "chat_jid LIKE '%@g.us'" : "chat_jid NOT LIKE '%@g.us'";
 
@@ -235,8 +219,8 @@ public class DelMessageStore extends SQLiteOpenHelper {
         return messages;
     }
 
-    public ArrayList<DeletedMessage> getAllDeletedMessagesInternal() {
-        ArrayList<DeletedMessage> messages = new ArrayList<>();
+    public java.util.ArrayList<DeletedMessage> getAllDeletedMessagesInternal() {
+        java.util.ArrayList<DeletedMessage> messages = new java.util.ArrayList<>();
         SQLiteDatabase dbReader = this.getReadableDatabase();
         try (dbReader;
                 Cursor cursor = dbReader.query(TABLE_DELETED_FOR_ME, null, null, null, null, null, "timestamp DESC")) {
@@ -272,7 +256,7 @@ public class DelMessageStore extends SQLiteOpenHelper {
         }
     }
 
-    public void deleteMessages(List<String> keyIds) {
+    public void deleteMessages(java.util.List<String> keyIds) {
         if (keyIds == null || keyIds.isEmpty())
             return;
         try (SQLiteDatabase dbWrite = this.getWritableDatabase()) {
@@ -314,11 +298,6 @@ public class DelMessageStore extends SQLiteOpenHelper {
         sqLiteDatabase.execSQL(
                 "CREATE TABLE IF NOT EXISTS delmessages (_id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT, msgid TEXT, timestamp INTEGER DEFAULT 0, UNIQUE(jid, msgid))");
         createDeletedForMeTable(sqLiteDatabase);
-        sqLiteDatabase.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_WA_CONTACTS + " (" +
-                "jid TEXT PRIMARY KEY, " +
-                "display_name TEXT, " +
-                "wa_name TEXT, " +
-                "number TEXT)");
     }
 
     public long getTimestampByMessageId(String msgid) {
@@ -352,52 +331,5 @@ public class DelMessageStore extends SQLiteOpenHelper {
         } catch (Exception ignored) {
         }
         return false;
-    }
-
-    public static class ContactInfo {
-        public String jid;
-        public String displayName;
-        public String waName;
-        public String number;
-    }
-
-    public ArrayList<ContactInfo> getWhatsAppContacts() {
-        ArrayList<ContactInfo> list = new ArrayList<>();
-        SQLiteDatabase dbReader = this.getReadableDatabase();
-        try (Cursor cursor = dbReader.query(TABLE_WA_CONTACTS, null, null, null, null, null, "display_name COLLATE NOCASE ASC, jid ASC")) {
-            if (cursor != null && cursor.moveToFirst()) {
-                int jidIdx = cursor.getColumnIndexOrThrow("jid");
-                int dispIdx = cursor.getColumnIndexOrThrow("display_name");
-                int waIdx = cursor.getColumnIndexOrThrow("wa_name");
-                int numIdx = cursor.getColumnIndexOrThrow("number");
-                do {
-                    ContactInfo info = new ContactInfo();
-                    info.jid = cursor.getString(jidIdx);
-                    info.displayName = cursor.getString(dispIdx);
-                    info.waName = cursor.getString(waIdx);
-                    info.number = cursor.getString(numIdx);
-                    list.add(info);
-                } while (cursor.moveToNext());
-            }
-        } catch (Throwable ignored) {}
-        return list;
-    }
-
-    public String getWhatsAppContactName(String jid) {
-        if (jid == null) return null;
-        String cleanJid = ContactHelper.normalizeJid(jid);
-        SQLiteDatabase dbReader = this.getReadableDatabase();
-        try (Cursor cursor = dbReader.query(TABLE_WA_CONTACTS, new String[]{"display_name", "wa_name"}, "jid=?", new String[]{cleanJid}, null, null, null)) {
-            if (cursor != null && cursor.moveToFirst()) {
-                String name = cursor.getString(0);
-                if (name == null || name.trim().isEmpty()) {
-                    name = cursor.getString(1); // Try wa_name fallback
-                }
-                if (name != null && !name.trim().isEmpty()) {
-                    return name.trim();
-                }
-            }
-        } catch (Throwable ignored) {}
-        return null;
     }
 }

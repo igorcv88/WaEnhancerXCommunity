@@ -63,12 +63,6 @@
 
         <rikka.material.preference.MaterialSwitchPreference
             app:defaultValue="false"
-            app:key="enable_crash_analytics"
-            app:title="@string/enable_crash_analytics"
-            app:summary="@string/enable_crash_analytics_sum" />
-
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
             app:key="bypass_version_check"
             app:summary="@string/disable_version_check_sum"
             app:title="@string/disable_version_check" />
@@ -86,7 +80,7 @@
             app:title="@string/manage_supported_versions">
             <intent
                 android:action="android.intent.action.VIEW"
-                android:targetPackage="com.waenhancer"
+                android:targetPackage="com.waenhancer.community"
                 android:targetClass="com.waenhancer.ui.fragments.SupportedVersionsActivity" />
         </Preference>
 

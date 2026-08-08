@@ -18,8 +18,6 @@ import com.waenhancer.R;
 
 import java.io.File;
 import java.io.IOException;
-import android.view.ViewGroup;
-import java.util.Locale;
 
 public class AudioPlayerDialog extends Dialog {
 
@@ -40,7 +38,7 @@ public class AudioPlayerDialog extends Dialog {
         if (getWindow() != null) {
             getWindow().setLayout(
                     (int) (context.getResources().getDisplayMetrics().widthPixels * 0.9f),
-                    ViewGroup.LayoutParams.WRAP_CONTENT
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT
             );
             getWindow().setBackgroundDrawableResource(android.R.color.transparent);
         }
@@ -163,8 +161,8 @@ public class AudioPlayerDialog extends Dialog {
         if (minutes >= 60) {
             int hours = minutes / 60;
             minutes %= 60;
-            return String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds);
+            return String.format(java.util.Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds);
         }
-        return String.format(Locale.getDefault(), "%d:%02d", minutes, seconds);
+        return String.format(java.util.Locale.getDefault(), "%d:%02d", minutes, seconds);
     }
 }

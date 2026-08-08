@@ -35,14 +35,6 @@ import java.util.List;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
-import android.content.Context;
-import android.graphics.drawable.GradientDrawable;
-import android.util.TypedValue;
-import android.view.LayoutInflater;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.Locale;
 
 public class ReleaseDetailsActivity extends BaseActivity {
 
@@ -144,17 +136,13 @@ public class ReleaseDetailsActivity extends BaseActivity {
                     .connectTimeout(15, TimeUnit.SECONDS)
                     .build();
 
-            // Fetch from mubashardev/WaEnhancer as requested
-            String url = "https://api.github.com/repos/mubashardev/WaEnhancer/releases/tags/" + tagName;
+            // Fetch from the Community repository
+            String url = "https://api.github.com/repos/igorcv88/WaEnhancerX/releases/tags/" + tagName;
 
             var requestBuilder = new Request.Builder()
                     .url(url)
                     .header("Accept", "application/vnd.github+json")
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-
-            if (BuildConfig.GH_PUBLIC_TOKEN != null && !BuildConfig.GH_PUBLIC_TOKEN.isEmpty()) {
-                requestBuilder.header("Authorization", "Bearer " + BuildConfig.GH_PUBLIC_TOKEN);
-            }
 
             Request request = requestBuilder.build();
 
@@ -200,19 +188,19 @@ public class ReleaseDetailsActivity extends BaseActivity {
             } else {
                 tvReleaseBody.setVisibility(View.GONE);
                 changelogItemsContainer.setVisibility(View.VISIBLE);
-                LayoutInflater inflater = LayoutInflater.from(this);
+                android.view.LayoutInflater inflater = android.view.LayoutInflater.from(this);
                 for (ParsedCategory category : parsedCategories) {
                     // 1. Inflate Category Header Row
-                    View headerRow = inflater.inflate(R.layout.item_changelog_row, changelogItemsContainer, false);
-                    MaterialTextView tvCatBadge = headerRow.findViewById(R.id.tv_item_badge);
-                    MaterialTextView tvCatText = headerRow.findViewById(R.id.tv_item_text);
+                    android.view.View headerRow = inflater.inflate(R.layout.item_changelog_row, changelogItemsContainer, false);
+                    com.google.android.material.textview.MaterialTextView tvCatBadge = headerRow.findViewById(R.id.tv_item_badge);
+                    com.google.android.material.textview.MaterialTextView tvCatText = headerRow.findViewById(R.id.tv_item_text);
                     
                     tvCatText.setVisibility(View.GONE);
-                    tvCatBadge.setText(category.name.toUpperCase(Locale.US));
+                    tvCatBadge.setText(category.name.toUpperCase(java.util.Locale.US));
                     
                     // Style the category badge based on category name
-                    GradientDrawable gd = new GradientDrawable();
-                    gd.setShape(GradientDrawable.RECTANGLE);
+                    android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+                    gd.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
                     gd.setCornerRadius(dpToPx(this, 6));
                     
                     int bgColor;
@@ -233,14 +221,14 @@ public class ReleaseDetailsActivity extends BaseActivity {
                     
                     // 2. Inflate Category Bullet Point Rows
                     for (String itemText : category.items) {
-                        View itemRow = inflater.inflate(R.layout.item_changelog_row, changelogItemsContainer, false);
-                        MaterialTextView tvItemBadge = itemRow.findViewById(R.id.tv_item_badge);
-                        MaterialTextView tvItemText = itemRow.findViewById(R.id.tv_item_text);
+                        android.view.View itemRow = inflater.inflate(R.layout.item_changelog_row, changelogItemsContainer, false);
+                        com.google.android.material.textview.MaterialTextView tvItemBadge = itemRow.findViewById(R.id.tv_item_badge);
+                        com.google.android.material.textview.MaterialTextView tvItemText = itemRow.findViewById(R.id.tv_item_text);
                         
                         tvItemBadge.setVisibility(View.GONE);
                         markwon.setMarkdown(tvItemText, "•  " + itemText);
                         
-                        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) tvItemText.getLayoutParams();
+                        android.widget.LinearLayout.LayoutParams lp = (android.widget.LinearLayout.LayoutParams) tvItemText.getLayoutParams();
                         lp.leftMargin = dpToPx(this, 16);
                         tvItemText.setLayoutParams(lp);
                         
@@ -286,10 +274,10 @@ public class ReleaseDetailsActivity extends BaseActivity {
     private String formatDate(String isoDate) {
         if (isoDate == null || isoDate.isEmpty()) return "";
         try {
-            SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
-            Date date = isoFormat.parse(isoDate);
+            java.text.SimpleDateFormat isoFormat = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US);
+            java.util.Date date = isoFormat.parse(isoDate);
             if (date != null) {
-                SimpleDateFormat displayFormat = new SimpleDateFormat("MMMM dd, yyyy", Locale.US);
+                java.text.SimpleDateFormat displayFormat = new java.text.SimpleDateFormat("MMMM dd, yyyy", java.util.Locale.US);
                 return displayFormat.format(date);
             }
         } catch (Exception ignored) {}
@@ -322,7 +310,7 @@ public class ReleaseDetailsActivity extends BaseActivity {
 
     private static class ParsedCategory {
         final String name;
-        final List<String> items = new ArrayList<>();
+        final List<String> items = new java.util.ArrayList<>();
 
         ParsedCategory(String name) {
             this.name = name;
@@ -330,7 +318,7 @@ public class ReleaseDetailsActivity extends BaseActivity {
     }
 
     private static List<ParsedCategory> parseBody(String body) {
-        List<ParsedCategory> categories = new ArrayList<>();
+        List<ParsedCategory> categories = new java.util.ArrayList<>();
         if (body == null || body.trim().isEmpty()) {
             return categories;
         }
@@ -386,9 +374,9 @@ public class ReleaseDetailsActivity extends BaseActivity {
         return newCat;
     }
 
-    private static int dpToPx(Context context, int dp) {
-        return (int) TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP,
+    private static int dpToPx(android.content.Context context, int dp) {
+        return (int) android.util.TypedValue.applyDimension(
+            android.util.TypedValue.COMPLEX_UNIT_DIP,
             dp,
             context.getResources().getDisplayMetrics()
         );

@@ -16,11 +16,6 @@ import com.waenhancer.xposed.core.db.DelMessageStore;
 import com.waenhancer.xposed.core.db.DeletedMessage;
 
 import java.util.List;
-import android.content.SharedPreferences;
-import android.view.Menu;
-import androidx.appcompat.view.ActionMode;
-import com.waenhancer.ui.helpers.BottomSheetHelper;
-import com.waenhancer.utils.ContactHelper;
 
 public class MessageListActivity extends BaseActivity implements MessageListAdapter.OnRestoreClickListener {
 
@@ -28,7 +23,7 @@ public class MessageListActivity extends BaseActivity implements MessageListAdap
     private MessageListAdapter adapter;
     private DelMessageStore delMessageStore;
     private String chatJid;
-    private SharedPreferences prefs;
+    private android.content.SharedPreferences prefs;
     private String currentSortOrder;
 
     private static final String PREF_SORT_ORDER = "message_list_sort_order";
@@ -50,14 +45,11 @@ public class MessageListActivity extends BaseActivity implements MessageListAdap
         setSupportActionBar(binding.toolbar);
         if (getSupportActionBar() != null) {
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-            String title = ContactHelper.getContactName(this, chatJid);
-            if (title == null || title.trim().isEmpty()) {
-                title = chatJid;
-                if (title != null) {
-                    title = title.replace("@s.whatsapp.net", "").replace("@g.us", "");
-                    if (title.contains("@"))
-                        title = title.split("@")[0];
-                }
+            String title = chatJid;
+            if (title != null) {
+                title = title.replace("@s.whatsapp.net", "").replace("@g.us", "");
+                if (title.contains("@"))
+                    title = title.split("@")[0];
             }
             getSupportActionBar().setTitle(title);
         }
@@ -100,7 +92,7 @@ public class MessageListActivity extends BaseActivity implements MessageListAdap
     }
 
     @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
+    public boolean onCreateOptionsMenu(android.view.Menu menu) {
         getMenuInflater().inflate(R.menu.menu_message_list, menu);
         return true;
     }
@@ -121,7 +113,7 @@ public class MessageListActivity extends BaseActivity implements MessageListAdap
             loadMessages();
             return true;
         } else if (item.getItemId() == R.id.action_info) {
-            BottomSheetHelper.showInfo(
+            com.waenhancer.ui.helpers.BottomSheetHelper.showInfo(
                     this,
                     "Chat Info",
                     "This identifier (JID) or number is shown because the contact name could not be resolved at the time of deletion.\n\n"
@@ -132,21 +124,21 @@ public class MessageListActivity extends BaseActivity implements MessageListAdap
         return super.onOptionsItemSelected(item);
     }
 
-    private ActionMode actionMode;
-    private final ActionMode.Callback actionModeCallback = new ActionMode.Callback() {
+    private androidx.appcompat.view.ActionMode actionMode;
+    private final androidx.appcompat.view.ActionMode.Callback actionModeCallback = new androidx.appcompat.view.ActionMode.Callback() {
         @Override
-        public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+        public boolean onCreateActionMode(androidx.appcompat.view.ActionMode mode, android.view.Menu menu) {
             mode.getMenuInflater().inflate(R.menu.menu_context_delete, menu);
             return true;
         }
 
         @Override
-        public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+        public boolean onPrepareActionMode(androidx.appcompat.view.ActionMode mode, android.view.Menu menu) {
             return false;
         }
 
         @Override
-        public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
+        public boolean onActionItemClicked(androidx.appcompat.view.ActionMode mode, android.view.MenuItem item) {
             if (item.getItemId() == R.id.action_delete) {
                 deleteSelectedMessages();
                 mode.finish();
@@ -156,7 +148,7 @@ public class MessageListActivity extends BaseActivity implements MessageListAdap
         }
 
         @Override
-        public void onDestroyActionMode(ActionMode mode) {
+        public void onDestroyActionMode(androidx.appcompat.view.ActionMode mode) {
             adapter.clearSelection();
             actionMode = null;
         }
@@ -167,7 +159,7 @@ public class MessageListActivity extends BaseActivity implements MessageListAdap
         if (selected.isEmpty())
             return;
 
-        BottomSheetHelper.showConfirmation(
+        com.waenhancer.ui.helpers.BottomSheetHelper.showConfirmation(
                 this,
                 "Delete Messages?",
                 "Are you sure you want to delete " + selected.size() + " message(s)?",

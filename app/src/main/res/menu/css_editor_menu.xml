@@ -6,6 +6,18 @@
         android:showAsAction="ifRoom"
         android:title="@string/save" />
     <item
+        android:id="@+id/menuitem_test_theme"
+        android:title="@string/css_menu_test_theme" />
+    <item
+        android:id="@+id/menuitem_rollback_theme"
+        android:title="@string/css_menu_rollback" />
+    <item
+        android:id="@+id/menuitem_css_safe_mode"
+        android:title="@string/css_menu_safe_mode_start" />
+    <item
+        android:id="@+id/menuitem_css_safe_mode_exit"
+        android:title="@string/css_menu_safe_mode_exit" />
+    <item
         android:id="@+id/menuitem_import_image"
         android:title="@string/import_image" />
     <item

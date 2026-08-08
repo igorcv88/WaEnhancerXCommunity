@@ -41,9 +41,6 @@ import okhttp3.Callback;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
-import android.content.SharedPreferences;
-import com.waenhancer.ui.helpers.BottomSheetHelper;
-import java.io.IOException;
 
 public class AboutActivity extends BaseActivity {
 
@@ -51,7 +48,7 @@ public class AboutActivity extends BaseActivity {
     private ContributorAdapter adapter;
     private List<Contributor> contributorList = new ArrayList<>();
 
-    private static final String API_URL = "https://api.github.com/repos/mubashardev/WaEnhancer/contributors";
+    private static final String API_URL = "https://api.github.com/repos/igorcv88/WaEnhancerX/contributors";
     private static final OkHttpClient client = new OkHttpClient();
 
     @Override
@@ -61,7 +58,7 @@ public class AboutActivity extends BaseActivity {
         setContentView(binding.getRoot());
 
         binding.btnTelegram.setOnClickListener(v -> openTelegramChannel());
-        binding.btnGithub.setOnClickListener(view -> openUrl("https://github.com/mubashardev/WaEnhancer/issues"));
+        binding.btnGithub.setOnClickListener(view -> openUrl("https://github.com/igorcv88/WaEnhancerX/issues"));
 
         adapter = new ContributorAdapter();
         binding.rvContributors.setAdapter(adapter);
@@ -88,7 +85,7 @@ public class AboutActivity extends BaseActivity {
     }
 
     private void fetchContributors() {
-        SharedPreferences prefs = getSharedPreferences("github_api_cache", MODE_PRIVATE);
+        android.content.SharedPreferences prefs = getSharedPreferences("github_api_cache", MODE_PRIVATE);
         long lastFetch = prefs.getLong("last_fetch", 0);
         String cachedJson = prefs.getString("contributors_json", null);
 
@@ -106,13 +103,13 @@ public class AboutActivity extends BaseActivity {
 
         Request request = new Request.Builder()
                 .url(API_URL)
-                .header("User-Agent", "WaEnhancer X-App")
+                .header("User-Agent", "WaEnhancer Community-App")
                 .header("Accept", "application/vnd.github.v3+json")
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
             @Override
-            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+            public void onFailure(@NonNull Call call, @NonNull java.io.IOException e) {
                 runOnUiThread(() -> {
                     // Fallback to cache if failed
                     if (cachedJson != null) {
@@ -127,7 +124,7 @@ public class AboutActivity extends BaseActivity {
             }
 
             @Override
-            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+            public void onResponse(@NonNull Call call, @NonNull Response response) throws java.io.IOException {
                 if (!response.isSuccessful() || response.body() == null) {
                     runOnUiThread(() -> {
                         if (cachedJson != null) {
@@ -221,12 +218,12 @@ public class AboutActivity extends BaseActivity {
             com.bumptech.glide.Glide.with(holder.itemView.getContext())
                     .load(new com.bumptech.glide.load.model.GlideUrl(c.avatarUrl,
                             new com.bumptech.glide.load.model.LazyHeaders.Builder()
-                                    .addHeader("User-Agent", "WaEnhancer X-App")
+                                    .addHeader("User-Agent", "WaEnhancer Community-App")
                                     .build()))
                     .placeholder(R.drawable.ic_github)
                     .into(holder.ivAvatar);
 
-            holder.ivAvatar.setOnClickListener(v -> BottomSheetHelper
+            holder.ivAvatar.setOnClickListener(v -> com.waenhancer.ui.helpers.BottomSheetHelper
                     .showUserProfile(AboutActivity.this, c.login, c.avatarUrl, c.htmlUrl, c.contributions));
         }
 

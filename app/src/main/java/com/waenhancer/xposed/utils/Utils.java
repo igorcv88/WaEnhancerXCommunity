@@ -29,6 +29,7 @@ import androidx.core.app.NotificationManagerCompat;
 import androidx.documentfile.provider.DocumentFile;
 
 import com.waenhancer.App;
+import com.waenhancer.BuildConfig;
 
 import com.waenhancer.xposed.core.FeatureLoader;
 import com.waenhancer.xposed.core.WppCore;
@@ -55,17 +56,11 @@ import android.content.SharedPreferences;
 import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
-import android.content.ContextWrapper;
-import android.view.View;
-import android.view.ViewGroup;
-import androidx.preference.PreferenceManager;
-import com.google.android.material.snackbar.Snackbar;
-import java.util.ArrayList;
 
 public class Utils {
 
     private static final ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
-    public static SharedPreferences xprefs;
+    public static android.content.SharedPreferences xprefs;
     private static final HashMap<String, Integer> ids = new HashMap<>();
     public static boolean DEBUG = false;
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -77,7 +72,7 @@ public class Utils {
     public static void init(ClassLoader loader) {
         var context = Utils.getApplication();
         var notificationManager = NotificationManagerCompat.from(context);
-        var channel = new NotificationChannel("waex", "Wa Enhancer X", NotificationManager.IMPORTANCE_HIGH);
+        var channel = new NotificationChannel("waex", "WaEnhancer Community", NotificationManager.IMPORTANCE_HIGH);
         notificationManager.createNotificationChannel(channel);
     }
 
@@ -97,31 +92,18 @@ public class Utils {
             SharedPreferences prefs = XPrefManager.getPref(context);
             String mode = prefs != null ? prefs.getString("open_settings_mode", "1") : "1";
             if ("1".equals(mode) && context instanceof Activity) {
-                // Embedded: launch WhatsApp's SettingsTabActivity hijacked by WaEnhancerX
-                try {
-                    Class<?> settingsActivityClass = Class.forName(
-                            "com.whatsapp.settings.ui.SettingsTabActivity", false, context.getClassLoader());
-                    Intent intent = new Intent(context, settingsActivityClass);
-                    intent.putExtra("waex_screen_id", "root");
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    context.startActivity(intent);
-                    return;
-                } catch (Throwable t) {
-                    // SettingsTabActivity not directly accessible — fall through to external
-                    XposedBridge.log(
-                            "[WaEnhancerX] openModule embedded fallback: " + t.getMessage());
+                com.waenhancer.xposed.features.others.EmbeddedSettingsDialogFragment.show((Activity) context);
+            } else {
+                Intent intent = context.getPackageManager().getLaunchIntentForPackage(BuildConfig.APPLICATION_ID);
+                if (intent == null) {
+                    intent = new Intent();
+                    intent.setComponent(new ComponentName(BuildConfig.APPLICATION_ID, "com.waenhancer.activities.MainActivity"));
                 }
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(intent);
             }
-            // External: open the WaEnhancerX module app
-            Intent intent = context.getPackageManager().getLaunchIntentForPackage("com.waenhancer");
-            if (intent == null) {
-                intent = new Intent();
-                intent.setComponent(new ComponentName("com.waenhancer", "com.waenhancer.activities.MainActivity"));
-            }
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            context.startActivity(intent);
         } catch (Exception e) {
-            Toast.makeText(context, "Error opening WaEnhancer X: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, "Error opening WaEnhancer Community: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -303,8 +285,8 @@ public class Utils {
             try {
                 var view = activity.findViewById(android.R.id.content);
                 if (view != null) {
-                    Snackbar.make(view, message,
-                            Snackbar.LENGTH_SHORT).show();
+                    com.google.android.material.snackbar.Snackbar.make(view, message,
+                            com.google.android.material.snackbar.Snackbar.LENGTH_SHORT).show();
                 }
             } catch (Throwable t) {
                 showToast(message, Toast.LENGTH_SHORT);
@@ -383,25 +365,26 @@ public class Utils {
     }
 
     public static Properties getProperties(SharedPreferences prefs, String key, String checkKey) {
+        boolean enabled = checkKey == null || prefs.getBoolean(checkKey, false);
+        return getPropertiesFromText(prefs.getString(key, ""), enabled);
+    }
+
+    public static Properties getPropertiesFromText(String text, boolean enabled) {
         Properties properties = new Properties();
-        if (checkKey != null && !prefs.getBoolean(checkKey, false))
-            return properties;
-        String text = prefs.getString(key, "");
+        if (!enabled || text == null) return properties;
         Pattern pattern = Pattern.compile("^/\\*\\s*(.*?)\\s*\\*/", Pattern.DOTALL);
         Matcher matcher = pattern.matcher(text);
+        if (!matcher.find()) return properties;
 
-        if (matcher.find()) {
-            String propertiesText = matcher.group(1);
-            String[] lines = propertiesText.split("\\s*\\n\\s*");
-
-            for (String line : lines) {
-                String[] keyValue = line.split("\\s*=\\s*");
-                String skey = keyValue[0].strip();
-                String value = keyValue[1].strip().replaceAll("^\"|\"$", ""); // Remove quotes, if any
-                properties.put(skey, value);
-            }
+        String[] lines = matcher.group(1).split("\\s*\\n\\s*");
+        for (String line : lines) {
+            if (line == null || line.isBlank() || !line.contains("=")) continue;
+            String[] keyValue = line.split("\\s*=\\s*", 2);
+            if (keyValue.length != 2) continue;
+            String propertyKey = keyValue[0].strip();
+            String value = keyValue[1].strip().replaceAll("^\"|\"$", "");
+            if (!propertyKey.isEmpty()) properties.put(propertyKey, value);
         }
-
         return properties;
     }
 
@@ -449,38 +432,15 @@ public class Utils {
     public static void showNotification(String title, String content) {
         var context = Utils.getApplication();
         var notificationManager = NotificationManagerCompat.from(context);
-        var channel = new NotificationChannel("waex", "Wa Enhancer X", NotificationManager.IMPORTANCE_HIGH);
+        var channel = new NotificationChannel("waex", "WaEnhancer Community", NotificationManager.IMPORTANCE_HIGH);
         notificationManager.createNotificationChannel(channel);
         var notification = new NotificationCompat.Builder(context, "waex")
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setSmallIcon(com.waenhancer.R.drawable.ic_notifications_black_24dp)
                 .setContentTitle(title)
                 .setContentText(content)
                 .setAutoCancel(true)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(content));
         notificationManager.notify(new Random().nextInt(), notification.build());
-    }
-
-    public static void handleSubscriptionDowngrade(Context context, String reasonMsg) {
-        if (context == null || reasonMsg == null) return;
-
-        // Save the pending message for MainActivity to display toast & bottom sheet
-        var sharedPrefs = PreferenceManager.getDefaultSharedPreferences(context);
-        sharedPrefs.edit()
-                .putString("pending_downgrade_reason_msg", reasonMsg)
-                .commit();
-
-        // Also make preferences world-readable
-        try {
-            Class<?> managerClass = Class.forName("com.waenhancer.xposed.utils.LicenseManager");
-            managerClass.getMethod("makePrefsWorldReadable", Context.class).invoke(null, context);
-        } catch (Exception ignored) {}
-
-        // Send push notification if allowed
-        try {
-            if (NotificationManagerCompat.from(context).areNotificationsEnabled()) {
-                showNotification("Subscription Downgraded", reasonMsg);
-            }
-        } catch (Exception ignored) {}
     }
 
     public static void openLink(Activity mActivity, String url) {
@@ -518,14 +478,14 @@ public class Utils {
         return null;
     }
 
-    public static void dumpViewHierarchy(View view, int depth) {
+    public static void dumpViewHierarchy(android.view.View view, int depth) {
         if (view == null) return;
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < depth; i++) sb.append("  ");
         
         String idName = "no_id";
         try {
-            if (view.getId() != View.NO_ID) {
+            if (view.getId() != android.view.View.NO_ID) {
                 idName = view.getResources().getResourceEntryName(view.getId());
             }
         } catch (Exception ignored) {}
@@ -536,22 +496,22 @@ public class Utils {
           
 //        XposedBridge.log("[WaEnhancerX] UI Dump: " + sb.toString());
         
-        if (view instanceof ViewGroup) {
-            ViewGroup group = (ViewGroup) view;
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) {
                 dumpViewHierarchy(group.getChildAt(i), depth + 1);
             }
         }
     }
 
-    public static Activity getActivityFromView(View view) {
+    public static Activity getActivityFromView(android.view.View view) {
         if (view == null) return null;
         Context context = view.getContext();
-        while (context instanceof ContextWrapper) {
+        while (context instanceof android.content.ContextWrapper) {
             if (context instanceof Activity) {
                 return (Activity) context;
             }
-            context = ((ContextWrapper) context).getBaseContext();
+            context = ((android.content.ContextWrapper) context).getBaseContext();
         }
         return null;
     }
@@ -562,18 +522,18 @@ public class Utils {
     }
 
     @SuppressWarnings("unchecked")
-    public static void setViewClickListener(View view, String key, View.OnClickListener listener) {
+    public static void setViewClickListener(android.view.View view, String key, android.view.View.OnClickListener listener) {
         if (view == null) return;
         
         synchronized (view) {
-            HashMap<String, View.OnClickListener> listeners = (HashMap<String, View.OnClickListener>) 
-                    XposedHelpers.getAdditionalInstanceField(view, "wae_click_listeners");
+            java.util.HashMap<String, android.view.View.OnClickListener> listeners = (java.util.HashMap<String, android.view.View.OnClickListener>) 
+                    de.robv.android.xposed.XposedHelpers.getAdditionalInstanceField(view, "wae_click_listeners");
             
             if (listeners == null) {
-                listeners = new HashMap<>();
-                XposedHelpers.setAdditionalInstanceField(view, "wae_click_listeners", listeners);
+                listeners = new java.util.HashMap<>();
+                de.robv.android.xposed.XposedHelpers.setAdditionalInstanceField(view, "wae_click_listeners", listeners);
                 
-                View.OnClickListener original = getCurrentClickListener(view);
+                android.view.View.OnClickListener original = getCurrentClickListener(view);
                 if (original != null && !isWaeClickListener(original)) {
                     listeners.put("original", original);
                 }
@@ -587,65 +547,65 @@ public class Utils {
             
             if (listeners.isEmpty()) {
                 view.setOnClickListener(null);
-                XposedHelpers.removeAdditionalInstanceField(view, "wae_click_listeners");
+                de.robv.android.xposed.XposedHelpers.removeAdditionalInstanceField(view, "wae_click_listeners");
             } else {
-                View.OnClickListener composite = v -> {
-                    HashMap<String, View.OnClickListener> map = (HashMap<String, View.OnClickListener>) 
-                            XposedHelpers.getAdditionalInstanceField(v, "wae_click_listeners");
+                android.view.View.OnClickListener composite = v -> {
+                    java.util.HashMap<String, android.view.View.OnClickListener> map = (java.util.HashMap<String, android.view.View.OnClickListener>) 
+                            de.robv.android.xposed.XposedHelpers.getAdditionalInstanceField(v, "wae_click_listeners");
                     if (map != null) {
-                        for (View.OnClickListener clickListener : new ArrayList<>(map.values())) {
+                        for (android.view.View.OnClickListener clickListener : new java.util.ArrayList<>(map.values())) {
                             if (clickListener != null) {
                                 try {
                                     clickListener.onClick(v);
                                 } catch (Throwable t) {
-                                    XposedBridge.log(t);
+                                    de.robv.android.xposed.XposedBridge.log(t);
                                 }
                             }
                         }
                     }
                 };
-                XposedHelpers.setAdditionalInstanceField(composite, "is_wae_click_listener", true);
+                de.robv.android.xposed.XposedHelpers.setAdditionalInstanceField(composite, "is_wae_click_listener", true);
                 view.setOnClickListener(composite);
             }
         }
     }
 
-    private static View.OnClickListener getCurrentClickListener(View view) {
+    private static android.view.View.OnClickListener getCurrentClickListener(android.view.View view) {
         try {
-            Object listenerInfo = XposedHelpers.callMethod(view, "getListenerInfo");
+            Object listenerInfo = de.robv.android.xposed.XposedHelpers.callMethod(view, "getListenerInfo");
             if (listenerInfo == null) return null;
-            return (View.OnClickListener) XposedHelpers.getObjectField(listenerInfo, "mOnClickListener");
+            return (android.view.View.OnClickListener) de.robv.android.xposed.XposedHelpers.getObjectField(listenerInfo, "mOnClickListener");
         } catch (Throwable ignored) {
             return null;
         }
     }
 
-    private static boolean isWaeClickListener(View.OnClickListener listener) {
+    private static boolean isWaeClickListener(android.view.View.OnClickListener listener) {
         if (listener == null) return false;
-        return Boolean.TRUE.equals(XposedHelpers.getAdditionalInstanceField(listener, "is_wae_click_listener"));
+        return Boolean.TRUE.equals(de.robv.android.xposed.XposedHelpers.getAdditionalInstanceField(listener, "is_wae_click_listener"));
     }
 
 
     public static int getDefaultTheme() {
         try {
-            Context context = getApplication();
+            android.content.Context context = getApplication();
             if (context == null) return 0;
             
-            var startup_prefs = context.getSharedPreferences("startup_prefs", Context.MODE_PRIVATE);
+            var startup_prefs = context.getSharedPreferences("startup_prefs", android.content.Context.MODE_PRIVATE);
             int mode = startup_prefs.getInt("night_mode", 0);
             if (mode != 0) {
                 return mode;
             }
 
             // Try com.whatsapp_preferences
-            var wa_prefs = context.getSharedPreferences(context.getPackageName() + "_preferences", Context.MODE_PRIVATE);
+            var wa_prefs = context.getSharedPreferences(context.getPackageName() + "_preferences", android.content.Context.MODE_PRIVATE);
             String theme = wa_prefs.getString("theme", "system");
             if ("dark".equals(theme)) return 2;
             if ("light".equals(theme)) return 1;
             if ("system".equals(theme) || "default".equals(theme)) return 0;
 
         } catch (Throwable t) {
-            Log.e("WAEX_UTILS", "Error reading theme prefs: " + t.getMessage());
+            android.util.Log.e("WAEX_UTILS", "Error reading theme prefs: " + t.getMessage());
         }
         return 0;
     }

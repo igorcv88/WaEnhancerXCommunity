@@ -50,8 +50,6 @@ import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedHelpers;
-import android.widget.ArrayAdapter;
-import com.waenhancer.xposed.core.FeatureLoader;
 
 public class CustomPrivacy extends Feature {
     private static final int MENU_ID_CUSTOM_PRIVACY = 0x7EAE0007;
@@ -95,8 +93,8 @@ public class CustomPrivacy extends Feature {
                         if (activity.findViewById(0x7f0a9999) != null) return;
                         int id = Utils.getID("contact_info_security_card_layout", "id");
                         ViewGroup infoLayout = activity.getWindow().findViewById(id);
-                        Drawable icon = DesignUtils.getDrawable(R.drawable.ic_privacy);
-                        View itemView = createItemView(activity, FeatureLoader.getModuleString(activity, R.string.custom_privacy, "Custom Privacy"), FeatureLoader.getModuleString(activity, R.string.custom_privacy_sum, "Enable/Disable Custom Privacy"), icon);
+                        Drawable icon = com.waenhancer.xposed.utils.DesignUtils.getDrawable(R.drawable.ic_privacy);
+                        View itemView = createItemView(activity, com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.custom_privacy, "Custom Privacy"), com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.custom_privacy_sum, "Enable/Disable Custom Privacy"), icon);
                         itemView.setId(0x7f0a9999);
                         itemView.setOnClickListener((v) -> showPrivacyDialog(activity, ContactInfoActivityClass.isInstance(activity)));
                         infoLayout.addView(itemView);
@@ -113,8 +111,8 @@ public class CustomPrivacy extends Feature {
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     var menu = (Menu) param.args[0];
                     var activity = (Activity) param.thisObject;
-                    var customPrivacy = menu.add(0, 0, 0, FeatureLoader.getModuleString(activity, com.waenhancer.R.string.custom_privacy, "Custom Privacy"));
-                    customPrivacy.setIcon(DesignUtils.getDrawable(R.drawable.ic_privacy));
+                    var customPrivacy = menu.add(0, 0, 0, com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, com.waenhancer.R.string.custom_privacy, "Custom Privacy"));
+                    customPrivacy.setIcon(com.waenhancer.xposed.utils.DesignUtils.getDrawable(R.drawable.ic_privacy));
                     customPrivacy.setOnMenuItemClickListener(item -> {
                         showPrivacyDialog(activity, ContactInfoActivityClass.isInstance(activity));
                         return true;
@@ -131,7 +129,7 @@ public class CustomPrivacy extends Feature {
         if (icon != null) icon.setTint(0xff8696a0);
         MenuHome.menuItems.add((menu, activity) -> {
             if (menu.findItem(MENU_ID_CUSTOM_PRIVACY) != null) return;
-            String title = FeatureLoader.getModuleString(activity, com.waenhancer.R.string.custom_privacy, "Custom Privacy");
+            String title = com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, com.waenhancer.R.string.custom_privacy, "Custom Privacy");
             if (title == null || title.isEmpty()) {
                 title = "Custom Privacy";
             }
@@ -224,12 +222,12 @@ public class CustomPrivacy extends Feature {
         }
 
         if (list.isEmpty()) {
-            Utils.showToast(FeatureLoader.getModuleString(activity, R.string.no_contact_with_custom_privacy, "No contact with custom privacy!"), Toast.LENGTH_SHORT);
+            Utils.showToast(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.no_contact_with_custom_privacy, "No contact with custom privacy!"), Toast.LENGTH_SHORT);
             return;
         }
 
         AlertDialogWpp builder = new AlertDialogWpp(activity);
-        builder.setTitle(FeatureLoader.getModuleString(activity, R.string.custom_privacy, "Custom Privacy"));
+        builder.setTitle(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.custom_privacy, "Custom Privacy"));
         ListView listView = new ListView(activity);
         listView.setAdapter(new CustomPrivacyAdapter(activity, pprefs, list, contactClass, groupClass));
         builder.setView(listView);
@@ -280,15 +278,15 @@ public class CustomPrivacy extends Feature {
     private AlertDialogWpp createPrivacyDialog(Activity activity, String number) {
         AlertDialogWpp builder = new AlertDialogWpp(activity);
         builder.setFullHeight(true);
-        builder.setTitle(FeatureLoader.getModuleString(activity, R.string.custom_privacy, "Custom Privacy"));
+        builder.setTitle(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.custom_privacy, "Custom Privacy"));
 
         String[] items = {
-                FeatureLoader.getModuleString(activity, R.string.hideread, "Hide Blue Ticks"),
-                FeatureLoader.getModuleString(activity, R.string.hidestatusview, "Hide Status View"),
-                FeatureLoader.getModuleString(activity, R.string.hidereceipt, "Hide Delivered"),
-                FeatureLoader.getModuleString(activity, R.string.ghostmode, "Hide Typing"),
-                FeatureLoader.getModuleString(activity, R.string.ghostmode_r, "Hide Recording Audio"),
-                FeatureLoader.getModuleString(activity, R.string.block_call, "Block Call")
+                com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.hideread, "Hide Blue Ticks"),
+                com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.hidestatusview, "Hide Status View"),
+                com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.hidereceipt, "Hide Delivered"),
+                com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.ghostmode, "Hide Typing"),
+                com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.ghostmode_r, "Hide Recording Audio"),
+                com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.block_call, "Block Call")
         };
 
         String[] itemsKeys = {
@@ -309,7 +307,7 @@ public class CustomPrivacy extends Feature {
         customLayout.setPadding(Utils.dipToPixels(20), Utils.dipToPixels(10), Utils.dipToPixels(20), Utils.dipToPixels(10));
 
         TextView labelView = new TextView(activity);
-        labelView.setText(FeatureLoader.getModuleString(activity, R.string.always_typing_mode, "Always Typing Mode"));
+        labelView.setText(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.always_typing_mode, "Always Typing Mode"));
         labelView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         labelView.setTextColor(DesignUtils.getPrimaryTextColor());
         labelView.setPadding(0, 0, 0, Utils.dipToPixels(8));
@@ -317,11 +315,11 @@ public class CustomPrivacy extends Feature {
 
         Spinner spinner = new Spinner(activity);
         String[] options = {
-                FeatureLoader.getModuleString(activity, R.string.always_typing_off, "Off"),
-                FeatureLoader.getModuleString(activity, R.string.always_typing_chat, "When in their chat (Safe & Active)"),
-                FeatureLoader.getModuleString(activity, R.string.always_typing_app, "Always when using WhatsApp [Max 2 contacts]")
+                com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.always_typing_off, "Off"),
+                com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.always_typing_chat, "When in their chat (Safe & Active)"),
+                com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.always_typing_app, "Always when using WhatsApp [Max 2 contacts]")
         };
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(
                 activity,
                 android.R.layout.simple_spinner_item,
                 options
@@ -332,7 +330,7 @@ public class CustomPrivacy extends Feature {
         customLayout.addView(spinner);
 
         TextView typeLabelView = new TextView(activity);
-        typeLabelView.setText(FeatureLoader.getModuleString(activity, R.string.always_typing_type, "Simulated Status Kind"));
+        typeLabelView.setText(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.always_typing_type, "Simulated Status Kind"));
         typeLabelView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         typeLabelView.setTextColor(DesignUtils.getPrimaryTextColor());
         typeLabelView.setPadding(0, Utils.dipToPixels(12), 0, Utils.dipToPixels(8));
@@ -341,10 +339,10 @@ public class CustomPrivacy extends Feature {
 
         Spinner typeSpinner = new Spinner(activity);
         String[] typeOptions = {
-                FeatureLoader.getModuleString(activity, R.string.status_always_typing, "Always Typing"),
-                FeatureLoader.getModuleString(activity, R.string.status_always_recording, "Always Recording Voice")
+                com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.status_always_typing, "Always Typing"),
+                com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.status_always_recording, "Always Recording Voice")
         };
-        ArrayAdapter<String> typeAdapter = new ArrayAdapter<>(
+        android.widget.ArrayAdapter<String> typeAdapter = new android.widget.ArrayAdapter<>(
                 activity,
                 android.R.layout.simple_spinner_item,
                 typeOptions
@@ -356,7 +354,7 @@ public class CustomPrivacy extends Feature {
         customLayout.addView(typeSpinner);
 
         TextView warningView = new TextView(activity);
-        warningView.setText(FeatureLoader.getModuleString(activity, R.string.always_typing_warning, "⚠️ Limit to at most 1–2 contacts to protect your account from server-side spam filters."));
+        warningView.setText(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.always_typing_warning, "⚠️ Limit to at most 1–2 contacts to protect your account from server-side spam filters."));
         warningView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         warningView.setTextColor(0xFFD32F2F); // Red warning color
         warningView.setPadding(0, Utils.dipToPixels(4), 0, 0);
@@ -364,16 +362,16 @@ public class CustomPrivacy extends Feature {
         customLayout.addView(warningView);
 
         TextView delayNoteView = new TextView(activity);
-        delayNoteView.setText(FeatureLoader.getModuleString(activity, R.string.always_typing_delay_note, "ℹ️ It will add random delays on the homepage to avoid being marked as spam by WhatsApp."));
+        delayNoteView.setText(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.always_typing_delay_note, "ℹ️ It will add random delays on the homepage to avoid being marked as spam by WhatsApp."));
         delayNoteView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         delayNoteView.setTextColor(0xFF757575); // Gray note color
         delayNoteView.setPadding(0, Utils.dipToPixels(4), 0, 0);
         delayNoteView.setVisibility(alwaysTypingVal == 2 ? View.VISIBLE : View.GONE);
         customLayout.addView(delayNoteView);
 
-        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+        spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+            public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
                 if (position == 0) {
                     typeLabelView.setVisibility(View.GONE);
                     typeSpinner.setVisibility(View.GONE);
@@ -387,8 +385,8 @@ public class CustomPrivacy extends Feature {
                         int currentCount = getAppScopedAlwaysTypingCount(pprefs, number);
                         if (currentCount >= 2) {
                             AlertDialogWpp limitBuilder = new AlertDialogWpp(activity);
-                            limitBuilder.setTitle(FeatureLoader.getModuleString(activity, R.string.always_typing_dialog_title, "Protect Your Account"));
-                            limitBuilder.setMessage(FeatureLoader.getModuleString(activity, R.string.always_typing_dialog_desc, "To prevent WhatsApp servers from flagging your account for concurrent typing patterns, Always Typing (App-Scoped) can only be enabled for up to 2 contacts at a time. Please disable it for another contact first."));
+                            limitBuilder.setTitle(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.always_typing_dialog_title, "Protect Your Account"));
+                            limitBuilder.setMessage(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.always_typing_dialog_desc, "To prevent WhatsApp servers from flagging your account for concurrent typing patterns, Always Typing (App-Scoped) can only be enabled for up to 2 contacts at a time. Please disable it for another contact first."));
                             limitBuilder.setPositiveButton("OK", null);
                             limitBuilder.show();
 
@@ -406,13 +404,13 @@ public class CustomPrivacy extends Feature {
             }
 
             @Override
-            public void onNothingSelected(AdapterView<?> parent) {}
+            public void onNothingSelected(android.widget.AdapterView<?> parent) {}
         });
 
         builder.setView(customLayout);
         builder.setMultiChoiceItems(items, checkedItems, (dialog, which, isChecked) -> checkedItems[which] = isChecked);
         builder.setPositiveButton("OK", (dialog, which) -> savePreferences(number, itemsKeys, checkedItems, spinner.getSelectedItemPosition(), typeSpinner.getSelectedItemPosition()));
-        builder.setNegativeButton(FeatureLoader.getModuleString(activity, R.string.cancel, "Cancel"), null);
+        builder.setNegativeButton(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.cancel, "Cancel"), null);
 
         return builder;
     }

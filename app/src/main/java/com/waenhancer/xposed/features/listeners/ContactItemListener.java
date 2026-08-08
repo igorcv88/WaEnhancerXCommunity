@@ -15,13 +15,12 @@ import de.robv.android.xposed.XC_MethodHook;
 import android.content.SharedPreferences;
 import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
-import java.lang.reflect.Field;
 
 public class ContactItemListener extends Feature {
 
     public static HashSet<OnContactItemListener> contactListeners = new HashSet<>();
 
-    private static Field cachedViewField;
+    private static java.lang.reflect.Field cachedViewField;
 
     public ContactItemListener(@NonNull ClassLoader loader, @NonNull SharedPreferences preferences) {
         super(loader, preferences);

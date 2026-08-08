@@ -14,7 +14,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import de.robv.android.xposed.XposedBridge;
-import android.text.TextUtils;
 
 public class MessageStore {
 
@@ -255,7 +254,7 @@ public class MessageStore {
 
     public synchronized MessageInfo getFirstMessageInfoByChatRawJid(String rawJid) {
         SQLiteDatabase db = getDatabase();
-        if (db == null || TextUtils.isEmpty(rawJid)) {
+        if (db == null || android.text.TextUtils.isEmpty(rawJid)) {
             return null;
         }
 

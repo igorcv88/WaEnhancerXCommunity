@@ -1,9 +1,5 @@
 package com.waenhancer.xposed.utils;
 
-import android.content.Context;
-import android.util.Log;
-import java.lang.reflect.Field;
-
 public class ResId {
 
     public static class drawable {
@@ -135,6 +131,17 @@ public class ResId {
         public static int fragment_privacy;
         public static int fragment_media;
         public static int fragment_customization;
+        public static int embedded_settings_root;
+        public static int embedded_settings_general;
+        public static int embedded_settings_home_screen;
+        public static int embedded_settings_conversation;
+        public static int embedded_settings_privacy;
+        public static int embedded_settings_status;
+        public static int embedded_settings_calls;
+        public static int embedded_settings_media;
+        public static int embedded_settings_audio;
+        public static int embedded_settings_appearance;
+        public static int embedded_settings_advanced;
     }
 
     public static class style {
@@ -154,46 +161,46 @@ public class ResId {
     public static class dimen {
     }
 
-    public static void initLocal(Context context) {
+    public static void initLocal(android.content.Context context) {
         if (string.app_name != 0) return; // Already initialized
         try {
             Class<?> rString = com.waenhancer.R.string.class;
-            for (Field field : string.class.getFields()) {
+            for (java.lang.reflect.Field field : string.class.getFields()) {
                 try {
-                    Field rField = rString.getField(field.getName());
+                    java.lang.reflect.Field rField = rString.getField(field.getName());
                     field.set(null, rField.getInt(null));
                 } catch (Exception ignored) {}
             }
             Class<?> rDrawable = com.waenhancer.R.drawable.class;
-            for (Field field : drawable.class.getFields()) {
+            for (java.lang.reflect.Field field : drawable.class.getFields()) {
                 try {
-                    Field rField = rDrawable.getField(field.getName());
+                    java.lang.reflect.Field rField = rDrawable.getField(field.getName());
                     field.set(null, rField.getInt(null));
                 } catch (Exception ignored) {}
             }
             Class<?> rXml = com.waenhancer.R.xml.class;
-            for (Field field : xml.class.getFields()) {
+            for (java.lang.reflect.Field field : xml.class.getFields()) {
                 try {
-                    Field rField = rXml.getField(field.getName());
+                    java.lang.reflect.Field rField = rXml.getField(field.getName());
                     field.set(null, rField.getInt(null));
                 } catch (Exception ignored) {}
             }
             Class<?> rStyle = com.waenhancer.R.style.class;
-            for (Field field : style.class.getFields()) {
+            for (java.lang.reflect.Field field : style.class.getFields()) {
                 try {
-                    Field rField = rStyle.getField(field.getName());
+                    java.lang.reflect.Field rField = rStyle.getField(field.getName());
                     field.set(null, rField.getInt(null));
                 } catch (Exception ignored) {}
             }
             Class<?> rArray = com.waenhancer.R.array.class;
-            for (Field field : array.class.getFields()) {
+            for (java.lang.reflect.Field field : array.class.getFields()) {
                 try {
-                    Field rField = rArray.getField(field.getName());
+                    java.lang.reflect.Field rField = rArray.getField(field.getName());
                     field.set(null, rField.getInt(null));
                 } catch (Exception ignored) {}
             }
         } catch (Exception e) {
-            Log.e("WAEX", "Local ResId init failed: " + e.getMessage());
+            android.util.Log.e("WAEX", "Local ResId init failed: " + e.getMessage());
         }
     }
 }

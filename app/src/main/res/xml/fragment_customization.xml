@@ -189,6 +189,12 @@
             app:summary="@string/menuwicon_sum"
             app:title="@string/menuwicon" />
 
+
+        <rikka.material.preference.MaterialSwitchPreference
+            app:key="novaconfig"
+            app:summary="@string/novaconfig_sum"
+            app:title="@string/novaconfig" />
+
     </PreferenceCategory>
 
     <PreferenceCategory
@@ -203,13 +209,8 @@
         <Preference
             app:dependency="floating_bottom_bar"
             app:key="floating_bottom_bar_customizer"
-            app:summary="@string/pill_customization_desc"
-            app:title="@string/pill_customization_title" />
-
-        <com.waenhancer.preference.ProSwitchPreference
-            app:key="unlock_premium_customization"
-            app:summary="@string/unlock_premium_customization_sum"
-            app:title="@string/unlock_premium_customization" />
+            app:summary="Configure size, glass, margins, FAB, selected indicator and presets"
+            app:title="Floating Bottom Bar settings" />
 
     </PreferenceCategory>
 

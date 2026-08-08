@@ -18,8 +18,6 @@ import com.waenhancer.utils.FeatureCatalog;
 
 import java.util.ArrayList;
 import java.util.List;
-import com.waenhancer.activities.UpdateSettingsActivity;
-import com.waenhancer.ui.fragments.SupportedVersionsActivity;
 
 /**
  * Activity for searching and navigating to app features.
@@ -117,25 +115,20 @@ public class SearchActivity extends BaseActivity implements SearchAdapter.OnFeat
 
     @Override
     public void onFeatureClick(SearchableFeature feature) {
-        String key = feature.getKey();
-        if (feature.getFragmentType() == SearchableFeature.FragmentType.ACTIVITY || "floating_bottom_bar_pill_design".equals(key) || "floating_bottom_bar_customizer".equals(key) || "filter_items".equals(key)) {
+        if (feature.getFragmentType() == SearchableFeature.FragmentType.ACTIVITY) {
             String parentKey = feature.getParentKey();
             Class<?> target = null;
-            if ("deleted_messages_activity".equals(key)) {
+            if ("deleted_messages_activity".equals(feature.getKey())) {
                 target = DeletedMessagesActivity.class;
-            } else if ("filter_items".equals(key)) {
-                target = FilterItemsActivity.class;
-            } else if ("floating_bottom_bar_pill_design".equals(key) || "floating_bottom_bar_customizer".equals(key)) {
-                target = BottomBarCustomizationActivity.class;
             } else if ("SupportedVersionsActivity".equals(parentKey)) {
-                target = SupportedVersionsActivity.class;
+                target = com.waenhancer.ui.fragments.SupportedVersionsActivity.class;
             } else if ("UpdateSettingsActivity".equals(parentKey)) {
-                target = UpdateSettingsActivity.class;
+                target = com.waenhancer.activities.UpdateSettingsActivity.class;
             }
             if (target != null) {
                 startActivity(new Intent(this, target));
-                return;
             }
+            return;
         }
 
         // Navigate back to MainActivity with feature information

@@ -1,6 +1,5 @@
 package com.waenhancer.xposed.features.customization;
 
-import java.lang.reflect.Method;
 import static com.waenhancer.utils.ColorReplacement.replaceColors;
 import static com.waenhancer.utils.DrawableColors.replaceColor;
 import static com.waenhancer.utils.IColors.alphacolors;
@@ -28,6 +27,7 @@ import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 
 import com.waenhancer.utils.IColors;
+import com.waenhancer.theme.CssSafetyManager;
 import com.waenhancer.views.WallpaperView;
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.PerfLogger;
@@ -49,8 +49,6 @@ import android.content.SharedPreferences;
 import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
-import java.util.Collections;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class CustomThemeV2 extends Feature {
 
@@ -60,9 +58,9 @@ public class CustomThemeV2 extends Feature {
     private Properties properties;
     // Pre-computed set of source color ints for O(1) rejection in hot hooks.
     // Populated after loadAndApplyColors() so hooks can skip unmatched colors instantly.
-    private static final Set<Integer> sourceColorInts = Collections.newSetFromMap(new ConcurrentHashMap<>());
-    private static final Set<Object> processedDrawableStates = Collections.newSetFromMap(new WeakHashMap<>());
-    private static final Set<View> processedWallpaperFrames = Collections.newSetFromMap(new WeakHashMap<>());
+    private static final Set<Integer> sourceColorInts = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+    private static final Set<Object> processedDrawableStates = java.util.Collections.newSetFromMap(new WeakHashMap<>());
+    private static final Set<View> processedWallpaperFrames = java.util.Collections.newSetFromMap(new WeakHashMap<>());
     // Cached ID for conversations_row_message_count to avoid repeated lookups
     private static int cachedMsgCountId = 0;
 
@@ -124,11 +122,25 @@ public class CustomThemeV2 extends Feature {
 
     @Override
     public void doHook() throws Throwable {
+        try {
+            applyTheme();
+            CssSafetyManager.clearFailureState(prefs);
+        } catch (Throwable failure) {
+            CssSafetyManager.recordThemeFailure(prefs);
+            throw failure;
+        }
+    }
+
+    private void applyTheme() throws Throwable {
         if (prefs.getBoolean("lite_mode", false)) {
             return;
         }
 
-        properties = Utils.getProperties(prefs, "custom_css", "custom_filters");
+        // Safe mode is scoped to CSS only: effectiveCss() already returns an empty sheet under
+        // safe mode, so colors and wallpaper keep working instead of being disabled wholesale.
+        properties = Utils.getPropertiesFromText(
+                CssSafetyManager.effectiveCss(prefs),
+                prefs.getBoolean("custom_filters", false));
 
         // PERFORMANCE OPTIMIZATION: Check if any theming features are enabled
         // Skip expensive hooks if no theming is active
@@ -331,7 +343,7 @@ public class CustomThemeV2 extends Feature {
                 // Without this, the exception propagates through the hook and crashes WhatsApp.
                 if (param.hasThrowable()) {
                     var throwable = param.getThrowable();
-                    if (throwable instanceof Resources.NotFoundException) {
+                    if (throwable instanceof android.content.res.Resources.NotFoundException) {
                         param.setResult(null);
                         param.setThrowable(null);
                     }

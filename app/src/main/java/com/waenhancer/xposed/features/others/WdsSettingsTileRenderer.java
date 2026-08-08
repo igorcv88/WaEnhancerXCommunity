@@ -24,23 +24,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import android.content.Intent;
-import android.content.res.ColorStateList;
-import android.content.res.Configuration;
-import android.content.res.Resources;
-import android.graphics.drawable.Drawable;
-import android.util.AttributeSet;
-import android.widget.CompoundButton;
-import android.widget.FrameLayout;
-import android.widget.Toast;
-import androidx.appcompat.widget.SwitchCompat;
-import com.waenhancer.xposed.core.WppCore;
-import com.waenhancer.xposed.utils.DesignUtils;
-import com.waenhancer.xposed.utils.ProHelper;
-import com.waenhancer.xposed.utils.XResManager;
-import de.robv.android.xposed.XposedBridge;
-import de.robv.android.xposed.XposedHelpers;
-import java.util.function.BiConsumer;
 
 public class WdsSettingsTileRenderer {
 
@@ -50,9 +33,10 @@ public class WdsSettingsTileRenderer {
 
     public static JSONObject loadSettingsMap(Context context) {
         try {
-            Resources res = XResManager.moduleResources;
+            android.content.res.Resources res = com.waenhancer.xposed.utils.XResManager.moduleResources;
             if (res == null) res = context.getResources();
-            int resId = res.getIdentifier("waex_settings_map", "raw", "com.waenhancer");
+            int resId = res.getIdentifier("waex_settings_map", "raw",
+                    com.waenhancer.BuildConfig.APPLICATION_ID);
             if (resId == 0) {
                 resId = res.getIdentifier("waex_settings_map", "raw", context.getPackageName());
             }
@@ -73,17 +57,17 @@ public class WdsSettingsTileRenderer {
         if (str.startsWith("@string/")) {
             try {
                 String name = str.substring(8);
-                Resources res = XResManager.moduleResources;
+                android.content.res.Resources res = com.waenhancer.xposed.utils.XResManager.moduleResources;
                 int id = 0;
                 if (res != null) {
-                    id = res.getIdentifier(name, "string", "com.waenhancer");
+                    id = res.getIdentifier(name, "string", com.waenhancer.BuildConfig.APPLICATION_ID);
                 }
                 if (id == 0) {
                     res = context.getResources();
                     id = res.getIdentifier(name, "string", context.getPackageName());
                 }
                 if (id == 0) {
-                    id = res.getIdentifier(name, "string", "com.waenhancer");
+                    id = res.getIdentifier(name, "string", com.waenhancer.BuildConfig.APPLICATION_ID);
                 }
                 if (id != 0) {
                     return res.getString(id);
@@ -110,27 +94,26 @@ public class WdsSettingsTileRenderer {
                 String title = cat.getString("title");
                 String summary = cat.optString("summary", "");
 
-                String iconName = cat.optString("icon", "ic_settings");
-                Drawable icon = DesignUtils.getDrawableByName(iconName);
-                if (icon == null) {
-                    icon = DesignUtils.getDrawableByName("ic_settings");
-                }
-                XposedBridge.log("[WAEX] Category id: " + id + ", iconName: " + iconName + ", icon: " + icon);
+                String iconName = SettingsIconRegistry.iconName(
+                        id, cat.optString("icon", ""));
+                android.graphics.drawable.Drawable icon =
+                        SettingsIconRegistry.resolve(activity, id, iconName);
+                de.robv.android.xposed.XposedBridge.log("[WAEX] Category id: " + id + ", iconName: " + iconName + ", icon: " + icon);
 
                 View row = createWdsRow(activity, title, summary, icon, iconName, v -> {
                     if ("optimization".equals(id)) {
                         try {
-                            Class<?> aboutClass = WppCore.getAboutActivityClass(activity.getClassLoader());
+                            Class<?> aboutClass = com.waenhancer.xposed.core.WppCore.getAboutActivityClass(activity.getClassLoader());
                             if (aboutClass != null) {
-                                Intent intent = new Intent(activity, aboutClass);
+                                android.content.Intent intent = new android.content.Intent(activity, aboutClass);
                                 intent.putExtra("wae_optimize_db", true);
                                 activity.startActivity(intent);
                             }
                         } catch (Throwable t) {
-                            XposedBridge.log("[WAEX] Failed to start optimization from settings: " + t.getMessage());
+                            de.robv.android.xposed.XposedBridge.log("[WAEX] Failed to start optimization from settings: " + t.getMessage());
                         }
                     } else {
-                        Intent intent = new Intent(activity, activity.getClass());
+                        android.content.Intent intent = new android.content.Intent(activity, activity.getClass());
                         intent.putExtra("waex_screen_id", id);
                         activity.startActivity(intent);
                     }
@@ -140,8 +123,6 @@ public class WdsSettingsTileRenderer {
         } catch (Exception ignored) {}
 
         ScrollView scrollView = new ScrollView(activity);
-        scrollView.setLayoutParams(new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         scrollView.addView(container);
         return scrollView;
     }
@@ -181,12 +162,10 @@ public class WdsSettingsTileRenderer {
 
         try {
             JSONArray prefsArray = sub.getJSONArray("prefs");
-            renderPrefsArray(activity, container, prefsArray, prefs, listener, false);
+            renderPrefsArray(activity, container, prefsArray, prefs, listener);
         } catch (Exception ignored) {}
 
         ScrollView scrollView = new ScrollView(activity);
-        scrollView.setLayoutParams(new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         scrollView.addView(container);
         return scrollView;
     }
@@ -211,7 +190,7 @@ public class WdsSettingsTileRenderer {
                 String subTitle = sub.getString("title");
                 String subSummary = sub.optString("summary", "Customize " + subTitle + " settings");
                 
-                Drawable icon = null;
+                android.graphics.drawable.Drawable icon = null;
                 String iconName = "";
                 if ("home_screen_main".equals(subId)) {
                     iconName = "ic_home_black_24dp";
@@ -220,14 +199,14 @@ public class WdsSettingsTileRenderer {
                 }
                 
                 if (!iconName.isEmpty()) {
-                    icon = DesignUtils.getDrawableByName(iconName);
+                    icon = com.waenhancer.xposed.utils.DesignUtils.getDrawableByName(iconName);
                 }
                 if (icon == null) {
-                    icon = DesignUtils.getDrawableByName("ic_chevron_right");
+                    icon = com.waenhancer.xposed.utils.DesignUtils.getDrawableByName("ic_chevron_right");
                 }
                 
                 View catTile = createWdsRow(activity, subTitle, subSummary, icon, iconName, v -> {
-                    Intent intent = new Intent(activity, activity.getClass());
+                    android.content.Intent intent = new android.content.Intent(activity, activity.getClass());
                     intent.putExtra("waex_screen_id", subId);
                     activity.startActivity(intent);
                 });
@@ -247,115 +226,49 @@ public class WdsSettingsTileRenderer {
             if (subScreens.length() > 0) {
                 JSONObject mainSub = subScreens.getJSONObject(0);
                 JSONArray prefsArray = mainSub.getJSONArray("prefs");
-                renderPrefsArray(activity, container, prefsArray, prefs, listener, false);
+                renderPrefsArray(activity, container, prefsArray, prefs, listener);
             }
         } catch (Exception ignored) {}
 
         ScrollView scrollView = new ScrollView(activity);
-        scrollView.setLayoutParams(new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         scrollView.addView(container);
         return scrollView;
     }
 
-    static void renderPrefsArray(Context context, LinearLayout container, JSONArray prefsArray, SharedPreferences prefs, PrefChangeListener listener, boolean isSearch) {
-        renderPrefsArray(context, container, prefsArray, prefs, listener, isSearch, null);
-    }
-
-    static void renderPrefsArray(Context context, LinearLayout container, JSONArray prefsArray, SharedPreferences prefs, PrefChangeListener listener, boolean isSearch, BiConsumer<String, String> navigateCallback) {
+    private static void renderPrefsArray(Context context, LinearLayout container, JSONArray prefsArray, SharedPreferences prefs, PrefChangeListener listener) {
         try {
             Map<String, View> tileViews = new HashMap<>();
-
+            
             for (int j = 0; j < prefsArray.length(); j++) {
                 JSONObject pref = prefsArray.getJSONObject(j);
                 String type = pref.getString("type");
                 String key = pref.getString("key");
                 String title = pref.getString("title");
-                
-                boolean isProKey = ProHelper.isProFeature(key);
-                boolean isProEnabled = ProHelper.isProEnabled();
-                boolean limitedFree = ProHelper.isLimitedFreePreferenceEnabled(key);
-                boolean isProLocked = isProKey && !isProEnabled && !limitedFree;
-
                 boolean isEnabled = pref.optBoolean("enabled", true);
-                if (isProLocked || !isEnabled) {
-                    title = title + " [Pro]";
+                if (!isEnabled) {
+                    title = title + " [Unavailable]";
                 }
                 String summary = pref.optString("summary", "");
 
                 View tile = null;
-
-                if (isSearch) {
-                    // In search mode: switch tiles get switch-only toggle + row navigates
-                    // All other tiles: row click navigates, no dialogs/inputs shown
-                    if ("switch".equals(type) && isEnabled && !isProLocked) {
-                        tile = createSearchSwitchTile(context, key, title, summary, pref.optBoolean("default", false), prefs, listener, navigateCallback);
-                    } else {
-                        // Simple navigation row for list/multi/text/action
-                        String activeValue = (isEnabled && !isProLocked) ? getActiveValueText(context, pref, prefs) : "";
-                        String displaySummary = summary;
-                        if (!TextUtils.isEmpty(activeValue) && !TextUtils.isEmpty(displaySummary)) {
-                            displaySummary = displaySummary;  // keep breadcrumb
+                if (!isEnabled) {
+                    final String displayTitle = title;
+                    tile = createWdsRow(context, title, summary, null, v -> {
+                        try {
+                            AlertDialogWpp builder = new AlertDialogWpp(context);
+                            builder.asBottomSheet();
+                            builder.setTitle(displayTitle);
+                            builder.setMessage("This feature is under development and will be available in the future updates. Stay tuned.");
+                            builder.setPositiveButton("Dismiss", null);
+                            builder.show();
+                        } catch (Throwable t) {
+                            de.robv.android.xposed.XposedBridge.log("[WAEX] Failed to show unavailable-feature sheet: " + t.getMessage());
                         }
-                        final String fKey = key;
-                        final String fActiveValue = activeValue;
-                        tile = createWdsRow(context, title, displaySummary, null, v -> {
-                            if (navigateCallback != null) navigateCallback.accept(fKey, "");
-                        });
-                        // Append active value as trailing text if possible
-                        if (!TextUtils.isEmpty(activeValue)) {
-                            try {
-                                boolean isDarkMode = DesignUtils.isNightMode();
-                                TextView trailingView = new TextView(context);
-                                trailingView.setText(fActiveValue);
-                                trailingView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-                                trailingView.setTextColor(isDarkMode ? 0xFF8696a0 : 0xFF667781);
-                                XposedHelpers.callMethod(tile, "setEndAddon", trailingView);
-                            } catch (Throwable ignored) {}
-                        }
-                    }
+                    });
                 } else {
-                    if (isProLocked) {
-                        final String displayTitle = title;
-                        tile = createWdsRow(context, title, summary, null, v -> {
-                            try {
-                                AlertDialogWpp builder = new AlertDialogWpp(context);
-                                builder.asBottomSheet();
-                                builder.setTitle(displayTitle);
-                                builder.setMessage("This is a Premium feature. Please install and activate the Helper Plugin to unlock it.");
-                                builder.setPositiveButton("Activate Pro", (dialog, which) -> {
-                                    try {
-                                        Class<?> clazz = Class.forName("com.waenhancer.activities.LicenseActivity");
-                                        Intent intent = new Intent(context, clazz);
-                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                        context.startActivity(intent);
-                                    } catch (Throwable t) {
-                                        Toast.makeText(context, "Pro license screen not available.", Toast.LENGTH_SHORT).show();
-                                    }
-                                });
-                                builder.setNegativeButton("Cancel", null);
-                                builder.show();
-                            } catch (Throwable t) {
-                                XposedBridge.log("[WAEX] Failed to show pro bottom sheet: " + t.getMessage());
-                            }
-                        });
-                    } else if (!isEnabled) {
-                        final String displayTitle = title;
-                        tile = createWdsRow(context, title, summary, null, v -> {
-                            try {
-                                AlertDialogWpp builder = new AlertDialogWpp(context);
-                                builder.asBottomSheet();
-                                builder.setTitle(displayTitle);
-                                builder.setMessage("This feature is under development and will be available in the future updates. Stay tuned.");
-                                builder.setPositiveButton("Dismiss", null);
-                                builder.show();
-                            } catch (Throwable t) {
-                                XposedBridge.log("[WAEX] Failed to show pro bottom sheet: " + t.getMessage());
-                            }
-                        });
-                    } else if ("switch".equals(type)) {
+                    if ("switch".equals(type)) {
                         boolean def = pref.optBoolean("default", false);
-                        tile = createSwitchTile(context, key, title, summary, def, prefs, listener, tileViews, prefsArray, false);
+                        tile = createSwitchTile(context, key, title, summary, def, prefs, listener, tileViews, prefsArray);
                     } else if ("list".equals(type)) {
                         tile = createListTile(context, pref, prefs, listener);
                     } else if ("multi".equals(type)) {
@@ -370,238 +283,20 @@ public class WdsSettingsTileRenderer {
                 }
 
                 if (tile != null) {
-                    tile.setTag(key);
                     tileViews.put(key, tile);
                     container.addView(tile);
                 }
             }
 
-            if (!isSearch) {
-                checkDependencies(prefsArray, prefs, tileViews);
-            }
+            checkDependencies(prefsArray, prefs, tileViews);
         } catch (Exception ignored) {}
     }
 
-    /**
-     * Search-mode switch tile: only the switch widget toggles the pref.
-     * Clicking anywhere else on the row fires the navigateCallback.
-     */
-    private static View createSearchSwitchTile(Context context, String key, String title, String summary, boolean defVal, SharedPreferences prefs, PrefChangeListener listener, BiConsumer<String, String> navigateCallback) {
-        // Build the row as a plain WDSListItem/fallback LinearLayout
-        LinearLayout row = new LinearLayout(context);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        float density = context.getResources().getDisplayMetrics().density;
-        row.setPadding((int)(16 * density), (int)(12 * density), (int)(16 * density), (int)(12 * density));
-
-        TypedValue outValue = new TypedValue();
-        context.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValue, true);
-        row.setBackgroundResource(outValue.resourceId);
-
-        boolean isDarkMode = DesignUtils.isNightMode();
-        int primaryColor = isDarkMode ? 0xFFe9edef : 0xFF111B21;
-        int secondaryColor = isDarkMode ? 0xFF8696a0 : 0xFF667781;
-
-        // Text block
-        LinearLayout textLayout = new LinearLayout(context);
-        textLayout.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams textLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        textLayout.setLayoutParams(textLp);
-
-        TextView titleView = createWdsTextView(context);
-        titleView.setText(resolveString(context, title));
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        titleView.setTextColor(primaryColor);
-        textLayout.addView(titleView);
-
-        if (!TextUtils.isEmpty(summary)) {
-            TextView summaryView = createWdsTextView(context);
-            summaryView.setText(resolveString(context, summary));
-            summaryView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-            summaryView.setTextColor(secondaryColor);
-            summaryView.setPadding(0, (int)(2 * density), 0, 0);
-            textLayout.addView(summaryView);
-        }
-        row.addView(textLayout);
-
-        // Switch widget — only this toggles the value
-        View wdsSwitch = createWdsSwitch(context);
-        boolean currentVal = prefs.getBoolean(key, defVal);
-        setSwitchChecked(wdsSwitch, currentVal);
-        wdsSwitch.setClickable(true);
-        wdsSwitch.setFocusable(true);
-        LinearLayout.LayoutParams switchLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        switchLp.setMarginStart((int)(8 * density));
-        wdsSwitch.setLayoutParams(switchLp);
-        wdsSwitch.setOnClickListener(v -> {
-            boolean newVal = !getSwitchChecked(wdsSwitch);
-            setSwitchChecked(wdsSwitch, newVal);
-            prefs.edit().putBoolean(key, newVal).apply();
-            if (listener != null) listener.onPrefChanged(key, newVal);
-        });
-        row.addView(wdsSwitch);
-
-        // Row click navigates (but not when touching switch area)
-        row.setOnClickListener(v -> {
-            if (navigateCallback != null) navigateCallback.accept(key, "");
-        });
-
-        return row;
-    }
-
-    public static String getActiveValueText(Context context, JSONObject pref, SharedPreferences prefs) {
-        try {
-            String type = pref.getString("type");
-            String key = pref.getString("key");
-            if ("switch".equals(type)) {
-                return "";
-            } else if ("list".equals(type)) {
-                String valueType = pref.optString("value_type", "string");
-                JSONArray entriesJson = pref.getJSONArray("entries");
-                String[] entries = new String[entriesJson.length()];
-                String[] values = new String[entriesJson.length()];
-                for (int i = 0; i < entriesJson.length(); i++) {
-                    JSONObject entryObj = entriesJson.getJSONObject(i);
-                    entries[i] = resolveString(context, entryObj.getString("label"));
-                    values[i] = String.valueOf(entryObj.get("value"));
-                }
-                int initialSelectedIndex = 0;
-                if ("int".equals(valueType)) {
-                    int defaultVal = pref.optInt("default", 0);
-                    int current = prefs.getInt(key, defaultVal);
-                    for (int i = 0; i < values.length; i++) {
-                        try {
-                            if (Integer.parseInt(values[i]) == current) {
-                                initialSelectedIndex = i;
-                                break;
-                            }
-                        } catch (Exception ignored) {}
-                    }
-                } else if ("boolean".equals(valueType)) {
-                    boolean defaultVal = pref.optBoolean("default", false);
-                    boolean current = prefs.getBoolean(key, defaultVal);
-                    for (int i = 0; i < values.length; i++) {
-                        if (Boolean.parseBoolean(values[i]) == current) {
-                            initialSelectedIndex = i;
-                            break;
-                        }
-                    }
-                } else {
-                    String defaultVal = pref.optString("default", "");
-                    String current = prefs.getString(key, defaultVal);
-                    for (int i = 0; i < values.length; i++) {
-                        if (values[i].equals(current)) {
-                            initialSelectedIndex = i;
-                            break;
-                        }
-                    }
-                }
-                return initialSelectedIndex < entries.length ? entries[initialSelectedIndex] : "";
-            } else if ("multi".equals(type)) {
-                JSONArray entriesJson = pref.getJSONArray("entries");
-                String[] entries = new String[entriesJson.length()];
-                String[] values = new String[entriesJson.length()];
-                for (int i = 0; i < entriesJson.length(); i++) {
-                    JSONObject entryObj = entriesJson.getJSONObject(i);
-                    entries[i] = resolveString(context, entryObj.getString("label"));
-                    values[i] = String.valueOf(entryObj.get("value"));
-                }
-                String current = prefs.getString(key, "");
-                if (current.isEmpty()) {
-                    return "None";
-                }
-                List<String> selectedLabels = new ArrayList<>();
-                String[] selectedValues = current.split(",");
-                for (String val : selectedValues) {
-                    for (int i = 0; i < values.length; i++) {
-                        if (values[i].equals(val.trim())) {
-                            selectedLabels.add(entries[i]);
-                            break;
-                        }
-                    }
-                }
-                return String.join(", ", selectedLabels);
-            } else if ("text".equals(type)) {
-                String valueType = pref.optString("value_type", "string");
-                if ("int".equals(valueType)) {
-                    return String.valueOf(prefs.getInt(key, pref.optInt("default", 0)));
-                } else {
-                    return prefs.getString(key, pref.optString("default", ""));
-                }
-            }
-        } catch (Exception ignored) {}
-        return "";
-    }
-
-    private static View createWdsRow(Context context, String title, String summary, Drawable icon, View.OnClickListener clickListener) {
+    private static View createWdsRow(Context context, String title, String summary, android.graphics.drawable.Drawable icon, View.OnClickListener clickListener) {
         return createWdsRow(context, title, summary, icon, null, clickListener);
     }
 
-    private static View createWdsRow(Context context, String title, String summary, Drawable icon, String iconName, View.OnClickListener clickListener) {
-        try {
-            Class<?> wdsListItemClass = context.getClassLoader().loadClass("com.whatsapp.ui.wds.components.list.listitem.WDSListItem");
-            View wdsListItem = (View) wdsListItemClass.getConstructor(Context.class, AttributeSet.class).newInstance(context, null);
-            
-            // Set text/title
-            XposedHelpers.callMethod(wdsListItem, "setText", resolveString(context, title));
-            
-            // Set subtext/summary
-            String resolvedSummary = resolveString(context, summary);
-            if (!TextUtils.isEmpty(resolvedSummary)) {
-                XposedHelpers.callMethod(wdsListItem, "setSubText", resolvedSummary);
-            }
-            
-            // Set icon
-            if (icon != null) {
-                try {
-                    float density = context.getResources().getDisplayMetrics().density;
-                    
-                    // Container FrameLayout of 40dp
-                    FrameLayout container = new FrameLayout(context);
-                    LinearLayout.LayoutParams containerLp = new LinearLayout.LayoutParams(
-                            (int) (40 * density), (int) (40 * density)
-                    );
-                    containerLp.gravity = Gravity.CENTER_VERTICAL;
-                    containerLp.setMarginStart(0);
-                    containerLp.setMarginEnd((int) (16 * density));
-                    container.setLayoutParams(containerLp);
-                    
-                    // ImageView centered inside container
-                    ImageView iconView = new ImageView(context);
-                    iconView.setImageDrawable(icon);
-                    
-                    boolean isNight = DesignUtils.isNightMode();
-                    iconView.setImageTintList(ColorStateList.valueOf(isNight ? 0xFF8696a0 : 0xFF667781));
-                    
-                    int iconSizeDp = 24;
-                    if ("ic_home_tab_status_unfilled".equals(iconName)) {
-                        iconSizeDp = 28;
-                    }
-                    FrameLayout.LayoutParams iconLp = new FrameLayout.LayoutParams(
-                            (int) (iconSizeDp * density), (int) (iconSizeDp * density)
-                    );
-                    iconLp.gravity = Gravity.CENTER;
-                    iconView.setLayoutParams(iconLp);
-                    
-                    container.addView(iconView);
-                    ((ViewGroup) wdsListItem).addView(container, 0);
-                } catch (Throwable t2) {
-                    XposedBridge.log("[WAEX] Failed to add leading icon view: " + t2.getMessage());
-                }
-            }
-            
-            if (clickListener != null) {
-                wdsListItem.setOnClickListener(clickListener);
-                wdsListItem.setClickable(true);
-                wdsListItem.setFocusable(true);
-            }
-            
-            return wdsListItem;
-        } catch (Throwable t) {
-            XposedBridge.log("[WAEX] Failed to instantiate WDSListItem, falling back: " + t.getMessage());
-        }
-
+    private static View createWdsRow(Context context, String title, String summary, android.graphics.drawable.Drawable icon, String iconName, View.OnClickListener clickListener) {
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -615,8 +310,8 @@ public class WdsSettingsTileRenderer {
         // Resolve theme colors dynamically
         boolean isDarkMode = false;
         try {
-            int nightModeFlags = context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
-            isDarkMode = nightModeFlags == Configuration.UI_MODE_NIGHT_YES;
+            int nightModeFlags = context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+            isDarkMode = nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES;
         } catch (Exception ignored) {}
         int primaryTextColor = isDarkMode ? 0xFFe9edef : 0xFF111B21;
         int secondaryTextColor = isDarkMode ? 0xFF8696a0 : 0xFF667781;
@@ -634,33 +329,19 @@ public class WdsSettingsTileRenderer {
         summary = resolveString(context, summary);
 
         if (icon != null) {
-            // Container FrameLayout of 40dp
-            FrameLayout container = new FrameLayout(context);
-            LinearLayout.LayoutParams containerLp = new LinearLayout.LayoutParams(
-                    (int) (40 * density), (int) (40 * density)
-            );
-            containerLp.gravity = Gravity.CENTER_VERTICAL;
-            containerLp.setMarginStart(0);
-            containerLp.setMarginEnd((int) (16 * density));
-            container.setLayoutParams(containerLp);
-            
-            // ImageView centered inside container
             ImageView iconView = new ImageView(context);
-            iconView.setImageDrawable(icon);
-            iconView.setImageTintList(ColorStateList.valueOf(secondaryTextColor));
-            
             int iconSizeDp = 24;
+            int marginEndDp = 20;
             if ("ic_home_tab_status_unfilled".equals(iconName)) {
-                iconSizeDp = 28;
+                iconSizeDp = 28; // Make status icon slightly larger to balance visual weight
+                marginEndDp = 16; // Keep the total spacing (iconSizeDp + marginEndDp = 44dp) constant for alignment
             }
-            FrameLayout.LayoutParams iconLp = new FrameLayout.LayoutParams(
-                    (int) (iconSizeDp * density), (int) (iconSizeDp * density)
-            );
-            iconLp.gravity = Gravity.CENTER;
-            iconView.setLayoutParams(iconLp);
-            
-            container.addView(iconView);
-            row.addView(container);
+            LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams((int) (iconSizeDp * density), (int) (iconSizeDp * density));
+            iconParams.setMarginEnd((int) (marginEndDp * density));
+            iconView.setLayoutParams(iconParams);
+            iconView.setImageDrawable(icon);
+            iconView.setImageTintList(android.content.res.ColorStateList.valueOf(secondaryTextColor));
+            row.addView(iconView);
         }
 
         LinearLayout textLayout = new LinearLayout(context);
@@ -694,12 +375,12 @@ public class WdsSettingsTileRenderer {
         return row;
     }
 
-    private static View createSwitchTile(Context context, String key, String title, String summary, boolean defVal, SharedPreferences prefs, PrefChangeListener listener, Map<String, View> tileViews, JSONArray prefsArray, boolean isSearch) {
+    private static View createSwitchTile(Context context, String key, String title, String summary, boolean defVal, SharedPreferences prefs, PrefChangeListener listener, Map<String, View> tileViews, JSONArray prefsArray) {
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         float density = context.getResources().getDisplayMetrics().density;
-        row.setPadding((int) (16 * density), (int) (12 * density), (int) (24 * density), (int) (12 * density));
+        row.setPadding((int) (24 * density), (int) (12 * density), (int) (24 * density), (int) (12 * density));
 
         TypedValue outValue = new TypedValue();
         context.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValue, true);
@@ -708,8 +389,8 @@ public class WdsSettingsTileRenderer {
         // Resolve theme colors dynamically
         boolean isDarkMode = false;
         try {
-            int nightModeFlags = context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
-            isDarkMode = nightModeFlags == Configuration.UI_MODE_NIGHT_YES;
+            int nightModeFlags = context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+            isDarkMode = nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES;
         } catch (Exception ignored) {}
         int primaryTextColor = isDarkMode ? 0xFFe9edef : 0xFF111B21;
         int secondaryTextColor = isDarkMode ? 0xFF8696a0 : 0xFF667781;
@@ -750,26 +431,13 @@ public class WdsSettingsTileRenderer {
         setSwitchChecked(wdsSwitch, currentVal);
 
         final View finalSwitch = wdsSwitch;
-        if (isSearch) {
-            wdsSwitch.setClickable(true);
-            wdsSwitch.setFocusable(true);
-            wdsSwitch.setOnClickListener(v -> {
-                boolean newVal = !getSwitchChecked(finalSwitch);
-                setSwitchChecked(finalSwitch, newVal);
-                prefs.edit().putBoolean(key, newVal).apply();
-                if (listener != null) listener.onPrefChanged(key, newVal);
-            });
-        } else {
-            wdsSwitch.setClickable(false);
-            wdsSwitch.setFocusable(false);
-            row.setOnClickListener(v -> {
-                boolean newVal = !getSwitchChecked(finalSwitch);
-                setSwitchChecked(finalSwitch, newVal);
-                prefs.edit().putBoolean(key, newVal).apply();
-                if (listener != null) listener.onPrefChanged(key, newVal);
-                checkDependencies(prefsArray, prefs, tileViews);
-            });
-        }
+        row.setOnClickListener(v -> {
+            boolean newVal = !getSwitchChecked(finalSwitch);
+            setSwitchChecked(finalSwitch, newVal);
+            prefs.edit().putBoolean(key, newVal).apply();
+            if (listener != null) listener.onPrefChanged(key, newVal);
+            checkDependencies(prefsArray, prefs, tileViews);
+        });
 
         row.addView(wdsSwitch);
         return row;
@@ -1022,7 +690,7 @@ public class WdsSettingsTileRenderer {
             return createWdsRow(context, title, summary, null, v -> {
                 if ("open_deleted_messages".equals(key)) {
                     try {
-                        Intent intent = new Intent();
+                        android.content.Intent intent = new android.content.Intent();
                         intent.setClassName(context.getPackageName(), "com.waenhancer.activities.DeletedMessagesActivity");
                         context.startActivity(intent);
                     } catch (Exception ignored) {}
@@ -1035,20 +703,20 @@ public class WdsSettingsTileRenderer {
 
     private static void setSwitchChecked(View view, boolean checked) {
         try {
-            XposedHelpers.callMethod(view, "setChecked", checked);
+            de.robv.android.xposed.XposedHelpers.callMethod(view, "setChecked", checked);
         } catch (Throwable ignored) {
-            if (view instanceof CompoundButton) {
-                ((CompoundButton) view).setChecked(checked);
+            if (view instanceof android.widget.CompoundButton) {
+                ((android.widget.CompoundButton) view).setChecked(checked);
             }
         }
     }
 
     private static boolean getSwitchChecked(View view) {
         try {
-            return (boolean) XposedHelpers.callMethod(view, "isChecked");
+            return (boolean) de.robv.android.xposed.XposedHelpers.callMethod(view, "isChecked");
         } catch (Throwable ignored) {
-            if (view instanceof CompoundButton) {
-                return ((CompoundButton) view).isChecked();
+            if (view instanceof android.widget.CompoundButton) {
+                return ((android.widget.CompoundButton) view).isChecked();
             }
             return false;
         }
@@ -1074,7 +742,7 @@ public class WdsSettingsTileRenderer {
     private static TextView createWdsTextView(Context context) {
         try {
             Class<?> wdsTvClass = context.getClassLoader().loadClass("com.whatsapp.ui.wds.components.textview.WDSTextView");
-            return (TextView) wdsTvClass.getConstructor(Context.class, AttributeSet.class).newInstance(context, null);
+            return (TextView) wdsTvClass.getConstructor(Context.class, android.util.AttributeSet.class).newInstance(context, null);
         } catch (Throwable t) {
             return new TextView(context);
         }
@@ -1083,13 +751,13 @@ public class WdsSettingsTileRenderer {
     private static View createWdsSwitch(Context context) {
         try {
             Class<?> wdsSwitchClass = context.getClassLoader().loadClass("com.whatsapp.ui.wds.components.toggle.WDSSwitch");
-            return (View) wdsSwitchClass.getConstructor(Context.class, AttributeSet.class).newInstance(context, null);
+            return (View) wdsSwitchClass.getConstructor(Context.class, android.util.AttributeSet.class).newInstance(context, null);
         } catch (Throwable t) {
             try {
                 Class<?> switchClass = Class.forName("X.0xb", true, context.getClassLoader());
-                return (View) switchClass.getConstructor(Context.class, AttributeSet.class).newInstance(context, null);
+                return (View) switchClass.getConstructor(Context.class, android.util.AttributeSet.class).newInstance(context, null);
             } catch (Throwable t2) {
-                return new SwitchCompat(context);
+                return new androidx.appcompat.widget.SwitchCompat(context);
             }
         }
     }

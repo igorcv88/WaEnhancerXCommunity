@@ -3,16 +3,14 @@ package com.waenhancer.ui.fragments;
 import android.content.Intent;
 import android.os.Bundle;
 
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceManager;
 
 import com.waenhancer.R;
+import com.waenhancer.activities.BottomBarCustomizationActivity;
 import com.waenhancer.activities.FilterItemsActivity;
 import com.waenhancer.ui.fragments.base.BasePreferenceFragment;
-import com.waenhancer.activities.BottomBarCustomizationActivity;
-import org.json.JSONArray;
 
 public class CustomizationFragment extends BasePreferenceFragment {
     @Override
@@ -23,17 +21,15 @@ public class CustomizationFragment extends BasePreferenceFragment {
         Preference filterItemsPref = findPreference("filter_items");
         if (filterItemsPref != null) {
             filterItemsPref.setOnPreferenceClickListener(preference -> {
-                Intent intent = new Intent(requireContext(), FilterItemsActivity.class);
-                startActivity(intent);
+                startActivity(new Intent(requireContext(), FilterItemsActivity.class));
                 return true;
             });
         }
 
-        Preference pillCustomizerPref = findPreference("floating_bottom_bar_customizer");
-        if (pillCustomizerPref != null) {
-            pillCustomizerPref.setOnPreferenceClickListener(preference -> {
-                Intent intent = new Intent(requireContext(), BottomBarCustomizationActivity.class);
-                startActivity(intent);
+        Preference bottomBarPref = findPreference("floating_bottom_bar_customizer");
+        if (bottomBarPref != null) {
+            bottomBarPref.setOnPreferenceClickListener(preference -> {
+                startActivity(new Intent(requireContext(), BottomBarCustomizationActivity.class));
                 return true;
             });
         }
@@ -48,31 +44,28 @@ public class CustomizationFragment extends BasePreferenceFragment {
 
     private void updateFilterItemsSummary() {
         Preference filterItemsPref = findPreference("filter_items");
-        if (filterItemsPref != null) {
-            String rawFilters = PreferenceManager.getDefaultSharedPreferences(requireContext())
-                    .getString("filter_items", "");
-            if (rawFilters == null || rawFilters.trim().isEmpty()) {
-                filterItemsPref.setSummary(R.string.filters_summary_empty);
-            } else {
-                int count = 0;
-                if (rawFilters.trim().startsWith("[")) {
-                    try {
-                        count = new JSONArray(rawFilters).length();
-                    } catch (Exception ignored) {}
-                } else {
-                    String[] items = rawFilters.split("\n");
-                    for (String item : items) {
-                        if (!item.trim().isEmpty()) {
-                            count++;
-                        }
-                    }
-                }
-                if (count == 0) {
-                    filterItemsPref.setSummary(R.string.filters_summary_empty);
-                } else {
-                    filterItemsPref.setSummary(getString(R.string.filters_summary_count, count));
-                }
+        if (filterItemsPref == null) return;
+
+        String rawFilters = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getString("filter_items", "");
+        if (rawFilters == null || rawFilters.trim().isEmpty()) {
+            filterItemsPref.setSummary(R.string.filters_summary_empty);
+            return;
+        }
+
+        int count = 0;
+        if (rawFilters.trim().startsWith("[")) {
+            try {
+                count = new org.json.JSONArray(rawFilters).length();
+            } catch (Exception ignored) {
+            }
+        } else {
+            for (String item : rawFilters.split("\n")) {
+                if (!item.trim().isEmpty()) count++;
             }
         }
+        filterItemsPref.setSummary(count == 0
+                ? getString(R.string.filters_summary_empty)
+                : getString(R.string.filters_summary_count, count));
     }
 }

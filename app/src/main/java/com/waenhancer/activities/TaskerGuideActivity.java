@@ -1,6 +1,5 @@
 package com.waenhancer.activities;
 
-import java.lang.reflect.Method;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -20,7 +19,6 @@ import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.waenhancer.R;
 import com.waenhancer.activities.base.BaseActivity;
-import android.widget.TextView;
 
 public class TaskerGuideActivity extends BaseActivity {
 
@@ -126,7 +124,7 @@ public class TaskerGuideActivity extends BaseActivity {
                 // A variable row is a horizontal LinearLayout whose first child
                 // is a TextView with monospace font and a badge background.
                 View first = row.getChildCount() > 0 ? row.getChildAt(0) : null;
-                if (first instanceof TextView badge
+                if (first instanceof android.widget.TextView badge
                         && badge.getBackground() != null
                         && badge.getText() != null
                         && badge.getText().length() > 0) {

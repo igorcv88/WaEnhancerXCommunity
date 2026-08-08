@@ -32,9 +32,6 @@ import android.content.SharedPreferences;
 import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
-import android.content.res.Configuration;
-import android.graphics.drawable.GradientDrawable;
-import java.lang.reflect.Field;
 
 public class ShowOnline extends Feature {
 
@@ -43,7 +40,7 @@ public class ShowOnline extends Feature {
     private Method sendPresenceMethod;
     private Method tcTokenMethod;
     private Method getStatusUser;
-    private Field fieldTokenDBInstance;
+    private java.lang.reflect.Field fieldTokenDBInstance;
     private Class<?> tokenClass;
 
     public ShowOnline(@NonNull ClassLoader loader, @NonNull SharedPreferences preferences) {
@@ -138,11 +135,11 @@ public class ShowOnline extends Feature {
                         params2.bottomMargin = Utils.dipToPixels(1.5f);
                         imageView.setLayoutParams(params2);
 
-                        GradientDrawable dotDrawable = new GradientDrawable();
-                        dotDrawable.setShape(GradientDrawable.OVAL);
+                        android.graphics.drawable.GradientDrawable dotDrawable = new android.graphics.drawable.GradientDrawable();
+                        dotDrawable.setShape(android.graphics.drawable.GradientDrawable.OVAL);
                         dotDrawable.setColor(0xFF25D366); // WhatsApp Green
-                        boolean isDark = (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) 
-                                == Configuration.UI_MODE_NIGHT_YES;
+                        boolean isDark = (context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) 
+                                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
                         int strokeColor = isDark ? 0xFF121212 : Color.WHITE;
                         dotDrawable.setStroke(Utils.dipToPixels(1.5f), strokeColor);
 
@@ -174,11 +171,11 @@ public class ShowOnline extends Feature {
                         params2.bottomMargin = Utils.dipToPixels(1.5f);
                         imageView.setLayoutParams(params2);
 
-                        GradientDrawable dotDrawable = new GradientDrawable();
-                        dotDrawable.setShape(GradientDrawable.OVAL);
+                        android.graphics.drawable.GradientDrawable dotDrawable = new android.graphics.drawable.GradientDrawable();
+                        dotDrawable.setShape(android.graphics.drawable.GradientDrawable.OVAL);
                         dotDrawable.setColor(0xFF25D366); // WhatsApp Green
-                        boolean isDark = (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) 
-                                == Configuration.UI_MODE_NIGHT_YES;
+                        boolean isDark = (context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) 
+                                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
                         int strokeColor = isDark ? 0xFF121212 : Color.WHITE;
                         dotDrawable.setStroke(Utils.dipToPixels(1.5f), strokeColor);
 

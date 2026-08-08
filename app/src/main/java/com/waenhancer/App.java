@@ -15,7 +15,7 @@ import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.app.ActivityCompat;
 import androidx.preference.PreferenceManager;
 
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.waenhancer.diagnostics.LocalDiagnostics;
 
 import java.io.File;
 import java.util.Locale;
@@ -23,22 +23,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import rikka.material.app.LocaleDelegate;
-import android.Manifest;
-import android.provider.Settings;
-import android.util.Log;
-import com.waenhancer.ui.helpers.BottomSheetHelper;
-import com.waenhancer.xposed.utils.LicenseManager;
-import com.waenhancer.xposed.utils.ProHelper;
-import com.waenhancer.xposed.utils.Utils;
 
 public class App extends Application {
 
     private static App instance;
     private static final ExecutorService executorService = Executors.newCachedThreadPool();
-    private static final Handler MainHandler = new Handler(Looper.getMainLooper());
+    private static final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     public static void showRequestStoragePermission(Activity activity) {
-        BottomSheetHelper.showConfirmation(
+        com.waenhancer.ui.helpers.BottomSheetHelper.showConfirmation(
                 activity,
                 activity.getString(R.string.storage_permission),
                 activity.getString(R.string.permission_storage),
@@ -47,14 +40,16 @@ public class App extends Application {
                 () -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         Intent intent = new Intent(
-                                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                                android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
                         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                         intent.setData(Uri.fromParts("package", activity.getPackageName(), null));
                         activity.startActivity(intent);
                     } else {
                         ActivityCompat.requestPermissions(activity,
-                                new String[] { Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                                        Manifest.permission.READ_EXTERNAL_STORAGE },
+                                new String[]{
+                                        android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                                        android.Manifest.permission.READ_EXTERNAL_STORAGE
+                                },
                                 0);
                     }
                 });
@@ -65,141 +60,53 @@ public class App extends Application {
     public void onCreate() {
         super.onCreate();
         instance = this;
-        
-        if (Application.getProcessName().equals(BuildConfig.APPLICATION_ID)) {
-            // Re-apply Firebase consent state from the saved preference.
-            // FirebaseInitProvider (restored in the manifest) auto-inits the Firebase App object,
-            // but collection stays OFF (manifest default = false) until we explicitly enable it.
-            // This block re-enables collection on subsequent launches for users who already consented.
-            if (BuildConfig.FIREBASE_ENABLED && !BuildConfig.DEBUG) {
-                try {
-                    boolean consented = PreferenceManager.getDefaultSharedPreferences(this)
-                            .getBoolean("enable_crash_analytics", false);
-                    applyFirebaseConsent(this, consented);
-                } catch (Throwable e) {
-                    if (BuildConfig.DEBUG) Log.e("WaeX-Firebase", "Failed to apply Firebase consent state", e);
-                }
-            }
+        LocalDiagnostics.record(this, "lifecycle", "Manager process started");
 
-
-            // Local expiration check (offline fail-safe)
-            try {
-                var sharedPrefs = PreferenceManager.getDefaultSharedPreferences(App.this);
-                long expiresAt = 0;
-                try {
-                    expiresAt = sharedPrefs.getLong("expires_at", 0);
-                } catch (ClassCastException e) {
-                    try {
-                        String expiresStr = sharedPrefs.getString("expires_at", "0");
-                        expiresAt = Long.parseLong(expiresStr);
-                    } catch (Exception ignored) {}
-                }
-                boolean isProVerified = sharedPrefs.getBoolean("is_pro_verified", false);
-                if (isProVerified && expiresAt > 0 && expiresAt < System.currentTimeMillis()) {
-                    sharedPrefs.edit()
-                            .putBoolean("is_pro_verified", false)
-                            .remove("encrypted_config")
-                            .putBoolean("message_bomber", false)
-                            .putBoolean("delete_message_file", false)
-                            .putBoolean("delete_message_file_sent", false)
-                            .putString("floating_bottom_bar_pill_design", "regular")
-                            .commit();
-                    ProHelper.setForceFree(true);
-                    
-                    Utils.handleSubscriptionDowngrade(App.this, "Your subscription plan has expired.");
-                    
-                    try {
-                        LicenseManager.makePrefsWorldReadable(App.this);
-                    } catch (Exception ignored) {}
-
-                    try {
-                        restartApp("com.whatsapp");
-                    } catch (Exception ignored) {}
-                    try {
-                        restartApp("com.whatsapp.w4b");
-                    } catch (Exception ignored) {}
-                }
-            } catch (Throwable ignored) {}
-
-            // Perform silent background license re-verification at startup
-            try {
-                LicenseManager.silentCheck(App.this);
-            } catch (Exception e) {
-                Log.e("WaeX-App", "Failed to invoke silentCheck", e);
-            }
-        }
-        
         var sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
         if (sharedPreferences.getBoolean("verify_blocked_contact", false)) {
             sharedPreferences.edit().putBoolean("verify_blocked_contact", false).apply();
         }
 
-        // Resolve and store the Pro plugin APK path so that Xposed hooks can load it
-        try {
-            var pm = getPackageManager();
-            var info = pm.getApplicationInfo("com.waex.helper", 0);
-            if (info.sourceDir != null && new File(info.sourceDir).exists()) {
-                sharedPreferences.edit()
-                    .putString("pro_plugin_path", info.sourceDir)
-                    .putString("pro_plugin_lib_path", info.nativeLibraryDir)
-                    .apply();
-                try {
-                    LicenseManager.makePrefsWorldReadable(this);
-                } catch (Exception ignored) {}
-            }
-        } catch (Throwable t) {
-            Log.e("WaeX-App", "Failed to resolve companion APK path", t);
-        }
-
-        // Initialize limited-free feature config. Run unconditionally — the pro plugin is now a
-        // separate APK (com.waex.helper), so HAS_PRO_FEATURES may be false even when it is installed.
-        // initLimitedFree() handles the "not available" case gracefully.
-        try {
-            ProHelper.initLimitedFree(this, sharedPreferences);
-        } catch (Throwable t) {
-            Log.e("WaeX-App", "Failed to initialize LimitedFreeManager", t);
-        }
-        
-        // Force create the preferences file if it doesn't exist so LSPosed file watcher doesn't fail
-        File prefFile = new File(getApplicationInfo().dataDir, "shared_prefs/" + getPackageName() + "_preferences.xml");
+        // Keep the legacy preference bridge operational until Block C performs the
+        // audited public/private storage migration.
+        File prefFile = new File(
+                getApplicationInfo().dataDir,
+                "shared_prefs/" + getPackageName() + "_preferences.xml");
         if (!prefFile.exists()) {
             sharedPreferences.edit().putBoolean("init_prefs_creation", true).commit();
         }
-        
-        var mode = Integer.parseInt(sharedPreferences.getString("thememode", "0"));
+
+        int mode;
+        try {
+            mode = Integer.parseInt(sharedPreferences.getString("thememode", "0"));
+        } catch (RuntimeException ignored) {
+            mode = 0;
+        }
         setThemeMode(mode);
         changeLanguage(this);
-        
-        // Notify ContentProvider when preferences change locally
+
         sharedPreferences.registerOnSharedPreferenceChangeListener((prefs, key) -> {
             try {
                 getContentResolver().notifyChange(
-                    Uri.parse("content://" + BuildConfig.APPLICATION_ID + ".hookprovider/preferences"), 
-                    null
-                );
-            } catch (Exception ignored) {}
+                        Uri.parse("content://" + BuildConfig.APPLICATION_ID + ".hookprovider/preferences"),
+                        null);
+            } catch (RuntimeException ignored) {
+            }
         });
 
-        // Suppress DeadSystemException/DeadSystemRuntimeException crashes from system server restarts
-        final Thread.UncaughtExceptionHandler originalHandler = Thread.getDefaultUncaughtExceptionHandler();
+        final Thread.UncaughtExceptionHandler originalHandler =
+                Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
-            Throwable t = throwable;
-            boolean isDeadSystem = false;
-            while (t != null) {
-                String className = t.getClass().getName();
-                if ("android.os.DeadSystemRuntimeException".equals(className) ||
-                    "android.os.DeadSystemException".equals(className) ||
-                    "android.os.DeadObjectException".equals(className)) {
-                    isDeadSystem = true;
-                    break;
+            Throwable current = throwable;
+            while (current != null) {
+                String className = current.getClass().getName();
+                if ("android.os.DeadSystemRuntimeException".equals(className)
+                        || "android.os.DeadSystemException".equals(className)
+                        || "android.os.DeadObjectException".equals(className)) {
+                    System.exit(0);
+                    return;
                 }
-                t = t.getCause();
-            }
-
-            if (isDeadSystem) {
-                /* Log removed */
-                System.exit(0);
-                return;
+                current = current.getCause();
             }
 
             if (originalHandler != null) {
@@ -210,14 +117,15 @@ public class App extends Application {
 
     public static void setThemeMode(int mode) {
         switch (mode) {
-            case 0:
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
-                break;
             case 1:
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
                 break;
             case 2:
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
+                break;
+            case 0:
+            default:
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
                 break;
         }
     }
@@ -231,7 +139,7 @@ public class App extends Application {
     }
 
     public static Handler getMainHandler() {
-        return MainHandler;
+        return mainHandler;
     }
 
     public void restartApp(String packageWpp) {
@@ -240,61 +148,27 @@ public class App extends Application {
         sendBroadcast(intent);
     }
 
-    /**
-     * Enables or disables Firebase Analytics and Crashlytics collection at runtime.
-     * Should only be called when {@link BuildConfig#FIREBASE_ENABLED} is {@code true}.
-     * Uses reflection so the code compiles even when Firebase is not on the classpath
-     * (i.e. when building without google-services.json).
-     *
-     * @param context  any valid Context
-     * @param enabled  {@code true} = user has consented; {@code false} = user has declined or revoked
-     */
-    public static void applyFirebaseConsent(Context context, boolean enabled) {
-        try {
-            Class<?> analyticsClass = Class.forName("com.google.firebase.analytics.FirebaseAnalytics");
-            Object analyticsInstance = analyticsClass
-                    .getMethod("getInstance", Context.class)
-                    .invoke(null, context.getApplicationContext());
-            analyticsClass
-                    .getMethod("setAnalyticsCollectionEnabled", boolean.class)
-                    .invoke(analyticsInstance, enabled);
-        } catch (Throwable e) {
-            if (BuildConfig.DEBUG) Log.e("WaeX-Firebase", "Analytics consent apply failed", e);
-        }
-        try {
-            Class<?> crashlyticsClass = Class.forName("com.google.firebase.crashlytics.FirebaseCrashlytics");
-            Object crashlyticsInstance = crashlyticsClass
-                    .getMethod("getInstance")
-                    .invoke(null);
-            crashlyticsClass
-                    .getMethod("setCrashlyticsCollectionEnabled", boolean.class)
-                    .invoke(crashlyticsInstance, enabled);
-        } catch (Throwable e) {
-            if (BuildConfig.DEBUG) Log.e("WaeX-Firebase", "Crashlytics consent apply failed", e);
-        }
-    }
-
     public static void changeLanguage(Context context) {
-        var force = PreferenceManager.getDefaultSharedPreferences(context).getBoolean("force_english", false);
-        LocaleDelegate.setDefaultLocale(force ? Locale.ENGLISH : Locale.getDefault());
-        var res = context.getResources();
-        var config = res.getConfiguration();
-        config.setLocale(LocaleDelegate.getDefaultLocale());
-        // noinspection deprecation
-        res.updateConfiguration(config, res.getDisplayMetrics());
+        boolean forceEnglish = PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean("force_english", false);
+        LocaleDelegate.setDefaultLocale(forceEnglish ? Locale.ENGLISH : Locale.getDefault());
+        var resources = context.getResources();
+        var configuration = resources.getConfiguration();
+        configuration.setLocale(LocaleDelegate.getDefaultLocale());
+        //noinspection deprecation
+        resources.updateConfiguration(configuration, resources.getDisplayMetrics());
     }
 
     public static File getWaEnhancerFolder() {
-        var download = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-        var waEnhancerFolder = new File(download, "WaEnhancerX");
-        if (!waEnhancerFolder.exists())
-            waEnhancerFolder.mkdirs();
-        return waEnhancerFolder;
+        File downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+        File folder = new File(downloads, "WaEnhancerCommunity");
+        if (!folder.exists()) {
+            folder.mkdirs();
+        }
+        return folder;
     }
 
     public static boolean isOriginalPackage() {
-        // Allow the official package and any debug build
-        return BuildConfig.APPLICATION_ID.equals("com.waenhancer") || BuildConfig.DEBUG;
+        return BuildConfig.APPLICATION_ID.equals("com.waenhancer.community") || BuildConfig.DEBUG;
     }
-
 }

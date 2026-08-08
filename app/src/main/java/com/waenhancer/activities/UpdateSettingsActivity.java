@@ -12,8 +12,6 @@ import com.google.android.material.materialswitch.MaterialSwitch;
 import com.waenhancer.R;
 import com.waenhancer.activities.base.BaseActivity;
 import com.waenhancer.utils.RootUtils;
-import android.widget.ArrayAdapter;
-import android.widget.AutoCompleteTextView;
 
 public class UpdateSettingsActivity extends BaseActivity {
 
@@ -83,11 +81,11 @@ public class UpdateSettingsActivity extends BaseActivity {
         });
 
         // Update Alert Frequency Dropdown
-        AutoCompleteTextView freqDropdown = findViewById(R.id.auto_complete_update_frequency);
+        android.widget.AutoCompleteTextView freqDropdown = findViewById(R.id.auto_complete_update_frequency);
         String[] freqEntries = getResources().getStringArray(R.array.update_frequency_entries);
         String[] freqValues = getResources().getStringArray(R.array.update_frequency_values);
         
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_dropdown_item_1line, freqEntries);
+        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(this, android.R.layout.simple_dropdown_item_1line, freqEntries);
         freqDropdown.setAdapter(adapter);
 
         String currentFreq = prefs.getString(PREF_UPDATE_FREQ, "restart");

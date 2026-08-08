@@ -37,33 +37,6 @@ import eightbitlab.com.blurview.BlurAlgorithm;
 import eightbitlab.com.blurview.BlurView;
 import eightbitlab.com.blurview.RenderEffectBlur;
 import eightbitlab.com.blurview.RenderScriptBlur;
-import android.app.Activity;
-import android.content.Context;
-import android.content.ContextWrapper;
-import android.graphics.Color;
-import android.util.TypedValue;
-import android.view.Gravity;
-import android.view.MenuItem;
-import android.view.ViewOutlineProvider;
-import android.view.ViewTreeObserver;
-import android.view.Window;
-import android.view.WindowInsets;
-import android.view.animation.AccelerateDecelerateInterpolator;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.RelativeLayout;
-import android.widget.TextView;
-import com.waenhancer.xposed.utils.ProHelper;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.lang.reflect.Proxy;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 
 public class FloatingBottomBar extends Feature {
 
@@ -74,7 +47,7 @@ public class FloatingBottomBar extends Feature {
     private static final float PILL_ELEVATION_DP = 12f;
     private static final float PILL_TRANSLATION_Z_DP = 8f;
     private static final WeakHashMap<View, Boolean> styledBottomBars = new WeakHashMap<>();
-    private static final Set<Class<?>> hookedItemClasses = new HashSet<>();
+    private static final java.util.Set<Class<?>> hookedItemClasses = new java.util.HashSet<>();
     private static final WeakHashMap<View, Boolean> registeredScrollListeners = new WeakHashMap<>();
     private static final WeakHashMap<View, Float> targetTranslations = new WeakHashMap<>();
     private static final WeakHashMap<View, Integer> originalBottomPaddings = new WeakHashMap<>();
@@ -82,20 +55,19 @@ public class FloatingBottomBar extends Feature {
     private static final WeakHashMap<View, FrameLayout> glassHosts = new WeakHashMap<>();
     private static final WeakHashMap<View, BlurView> glassBlurViews = new WeakHashMap<>();
     private static boolean scrollHideEnabled = true;
-    private static String scrollHideMode = "downward";
-    private static final WeakHashMap<View, Boolean> targetHideStates = new WeakHashMap<>();
+    private static String scrollHideMode = "tabs";
     private static boolean glassEnabled = false;
     private static float glassOpacity = 35f;
     private static int glassFillColor = 0;
-    private static boolean pillDesignPro = true;
-    private static boolean pillDesignIos = false;
-    private static int userBottomMarginDp = 22;
-    private static int userSideMarginDp = 16;
-    private static int userFabOffsetDp = 80;
-    private static int userIconSizeDp = 24;
-    private static int userTextSizeSp = 12;
-    private static int userVerticalPaddingDp = 6;
-    private static int userIconLabelSpacingDp = 2;
+    private static int pillRadiusDp = 28;
+    private static int pillSideMarginDp = PILL_SIDE_MARGIN_DP;
+    private static int pillBottomMarginDp = PILL_BOTTOM_MARGIN_DP;
+    private static int pillManualHeightDp = 64;
+    private static boolean pillManualHeight = false;
+    private static int fabVisibleOffsetDp = FAB_VISIBLE_OFFSET_DP;
+    private static String fabMode = "default";
+    private static boolean indicatorVisible = false;
+    private static SharedPreferences activePrefs;
 
     public FloatingBottomBar(@NonNull ClassLoader loader, @NonNull SharedPreferences preferences) {
         super(loader, preferences);
@@ -103,26 +75,25 @@ public class FloatingBottomBar extends Feature {
 
     @Override
     public void doHook() throws Throwable {
+        activePrefs = prefs;
         if (!prefs.getBoolean("floating_bottom_bar", false)) return;
 
-        scrollHideEnabled = prefs.getBoolean("floating_bottom_bar_scroll_hide", true);
-        scrollHideMode = prefs.getString("floating_bottom_bar_scroll_hide_mode", "downward");
+        scrollHideMode = getPrefString(activePrefs, "floating_bottom_bar_scroll_hide_mode",
+                prefs.getBoolean("floating_bottom_bar_scroll_hide", true) ? "tabs" : "off");
+        scrollHideEnabled = !"off".equals(scrollHideMode);
         glassEnabled = prefs.getBoolean("floating_bottom_bar_glass", true);
-        glassOpacity = getPrefFloat(prefs, "floating_bottom_bar_glass_opacity", 35f);
-        glassFillColor = getPrefColor(prefs, "floating_bottom_bar_fill_color", 0);
-        // Read pref — default to "regular" so new installs/free users get Classic
-        String designPref = prefs.getString("floating_bottom_bar_pill_design", "regular");
-        boolean prefWantsPro = "pro".equals(designPref);
-        boolean prefWantsIos = "ios_glass".equals(designPref);
-        pillDesignPro = prefWantsPro && ProHelper.isPillDesignProEnabled();
-        pillDesignIos = prefWantsIos && ProHelper.isPillDesignProEnabled();
-        userBottomMarginDp = prefs.getInt("floating_bottom_bar_margin_bottom", 22);
-        userSideMarginDp = prefs.getInt("floating_bottom_bar_margin_horizontal", 16);
-        userFabOffsetDp = prefs.getInt("floating_bottom_bar_fab_offset", 80);
-        userIconSizeDp = prefs.getInt("floating_bottom_bar_icon_size", 24);
-        userTextSizeSp = prefs.getInt("floating_bottom_bar_text_size", 12);
-        userVerticalPaddingDp = prefs.getInt("floating_bottom_bar_padding_vertical", 6);
-        userIconLabelSpacingDp = prefs.getInt("floating_bottom_bar_icon_label_spacing", 2);
+        glassOpacity = normalized("floating_bottom_bar_glass_opacity");
+        glassFillColor = getPrefColor(activePrefs, "floating_bottom_bar_fill_color", 0);
+        pillRadiusDp = prefs.getBoolean("floating_bottom_bar_fully_rounded", false)
+                ? 1000 : Math.round(normalized("floating_bottom_bar_radius"));
+        pillSideMarginDp = Math.round(normalized("floating_bottom_bar_horizontal_margin"));
+        pillBottomMarginDp = Math.round(normalized("floating_bottom_bar_bottom_margin"));
+        pillManualHeight = "manual".equals(getPrefString(
+                prefs, "floating_bottom_bar_height_mode", "automatic"));
+        pillManualHeightDp = Math.round(normalized("floating_bottom_bar_manual_height"));
+        fabVisibleOffsetDp = Math.round(normalized("floating_bottom_bar_fab_offset"));
+        fabMode = getPrefString(activePrefs, "floating_bottom_bar_fab_mode", "default");
+        indicatorVisible = prefs.getBoolean("floating_bottom_bar_indicator_visible", false);
 
 
         // Hook the tab frame container
@@ -203,13 +174,11 @@ public class FloatingBottomBar extends Feature {
                         }
 
                         float density = view.getContext().getResources().getDisplayMetrics().density;
-                        int userRadius = prefs.getInt("floating_bottom_bar_radius", 28);
-                        float finalRadius = userRadius * density;
 
                         // Create rounded shape background matching the theme surface/card color
                         GradientDrawable shape = new GradientDrawable();
                         shape.setShape(GradientDrawable.RECTANGLE);
-                        shape.setCornerRadius(finalRadius);
+                        shape.setCornerRadius(pillRadiusDp * density);
 
                         boolean isNight = DesignUtils.isNightMode(view.getContext());
                         int bgColor = isNight ? 0xff1f2c34 : 0xffffffff;
@@ -218,7 +187,7 @@ public class FloatingBottomBar extends Feature {
                         } else if (prefs.getBoolean("changecolor", false)) {
                             int customBg = DesignUtils.getPrimarySurfaceColor();
                             if (customBg != 0 && customBg != -1) {
-                                  bgColor = customBg;
+                                bgColor = customBg;
                             }
                         }
                         
@@ -227,7 +196,7 @@ public class FloatingBottomBar extends Feature {
                         shape.setStroke(Math.max(1, (int) (0.6f * density)), isNight ? 0x18FFFFFF : 0x22000000);
 
                         // Prevent system tints from overriding our custom background shape
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                             view.setBackgroundTintList(null);
                         }
 
@@ -235,7 +204,7 @@ public class FloatingBottomBar extends Feature {
                             ((ViewGroup) view).setClipChildren(false);
                             ((ViewGroup) view).setClipToPadding(false);
                         }
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                             view.setClipToOutline(false);
                         }
 
@@ -244,30 +213,27 @@ public class FloatingBottomBar extends Feature {
                         } else {
                             view.setBackground(shape);
                             applyPillShadow(view, density);
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                                view.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                                view.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
                             }
                         }
 
                         // Clear backgrounds of immediate children to prevent solid white rectangular overlays
                         makeChildrenTransparent(view);
 
-                        if (pillDesignPro || pillDesignIos) {
-                            try {
-                                ClassLoader pluginLoader = (ClassLoader) System.getProperties().get("com.waex.helper.classloader");
-                                if (pluginLoader != null) {
-                                    Class<?> pillProClass = Class.forName("com.waex.helper.PillDesignPro", true, pluginLoader);
-                                    String style = pillDesignIos ? "ios_glass" : "pro";
-                                    pillProClass.getMethod("applyProDesign", View.class, float.class, String.class).invoke(null, view, density, style);
-                                }
-                            } catch (Throwable t) {
-                                XposedBridge.log("Failed to load PillDesignPro: " + t.getMessage());
+                        // Adjust padding to center items within floating pill
+                        // Pro: tighter 3dp; Regular: original 6dp
+                        int paddingVertical = dp(density,
+                                Math.round(normalized("floating_bottom_bar_padding_vertical")));
+                        view.setPadding(view.getPaddingLeft(), paddingVertical,
+                                view.getPaddingRight(), paddingVertical);
+                        if (pillManualHeight) {
+                            ViewGroup.LayoutParams heightParams = view.getLayoutParams();
+                            if (heightParams != null) {
+                                heightParams.height = dp(density, pillManualHeightDp);
+                                view.setLayoutParams(heightParams);
                             }
                         }
-
-                        // Adjust padding dynamically to center items within floating pill
-                        int paddingVertical = (int) (userVerticalPaddingDp * density);
-                        view.setPadding(view.getPaddingLeft(), paddingVertical, view.getPaddingRight(), paddingVertical);
 
                         // Attach LayoutChangeListener to enforce margins, overriding parent-forced layout passes
                         view.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
@@ -279,38 +245,18 @@ public class FloatingBottomBar extends Feature {
                                 if (isUpdating) return;
                                 isUpdating = true;
                                 try {
-                                    // Material BottomNavigationView has a hardcoded minHeight (56dp/80dp).
-                                    // If we don't strip it, the pill stays artificially tall, adding
-                                    // massive empty padding below the labels when spacing is set to 0.
-                                    if (v.getMinimumHeight() != 0) {
-                                        v.setMinimumHeight(0);
-                                    }
-                                    
-                                    View targetLayoutView = v;
-                                    FrameLayout host = glassHosts.get(v);
-                                    if (host != null) {
-                                        targetLayoutView = host;
-                                    }
-                                    ViewGroup.LayoutParams lp = targetLayoutView.getLayoutParams();
+                                    ViewGroup.LayoutParams lp = v.getLayoutParams();
                                     if (lp instanceof ViewGroup.MarginLayoutParams) {
                                         ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
-                                        int marginSide = dp(density, userSideMarginDp);
-                                        
-                                        int systemInsetBottom = getSystemInsetBottomSafely(v);
-                                        int marginBottom = dp(density, userBottomMarginDp) + systemInsetBottom;
-                                        
-                                        float textHeightDp = userTextSizeSp * 1.35f;
-                                        int calculatedHeightDp = (int) (userIconSizeDp + textHeightDp + userIconLabelSpacingDp + (2 * userVerticalPaddingDp));
-                                        int targetHeight = (int) (calculatedHeightDp * density);
-
-                                        if (mlp.leftMargin != marginSide || mlp.rightMargin != marginSide || mlp.bottomMargin != marginBottom || mlp.height != targetHeight) {
+                                        int marginSide = dp(density, pillSideMarginDp);
+                                        int marginBottom = dp(density, pillBottomMarginDp);
+                                        if (glassHosts.containsKey(v)) return;
+                                        if (mlp.leftMargin != marginSide || mlp.rightMargin != marginSide || mlp.bottomMargin != marginBottom) {
                                             mlp.leftMargin = marginSide;
                                             mlp.rightMargin = marginSide;
                                             mlp.bottomMargin = marginBottom;
-                                            mlp.height = targetHeight;
-                                            targetLayoutView.setLayoutParams(mlp);
+                                            v.setLayoutParams(mlp);
                                         }
-                                        applyCustomSizesAndPaddings(findMenuView(v), density);
                                     }
                                 } finally {
                                     isUpdating = false;
@@ -319,30 +265,16 @@ public class FloatingBottomBar extends Feature {
                         });
 
                         // Initial layout params update to force immediate layout
-                        View targetLayoutView = view;
-                        FrameLayout host = glassHosts.get(view);
-                        if (host != null) {
-                            targetLayoutView = host;
-                        }
-                        ViewGroup.LayoutParams lp = targetLayoutView.getLayoutParams();
+                        ViewGroup.LayoutParams lp = view.getLayoutParams();
                         if (lp instanceof ViewGroup.MarginLayoutParams) {
                             ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
-                            int marginSide = dp(density, userSideMarginDp);
-                            int systemInsetBottom = getSystemInsetBottomSafely(view);
-                            int marginBottom = dp(density, userBottomMarginDp) + systemInsetBottom;
-                            
-                            float textHeightDp = userTextSizeSp * 1.35f;
-                            int calculatedHeightDp = (int) (userIconSizeDp + textHeightDp + userIconLabelSpacingDp + (2 * userVerticalPaddingDp));
-                            int targetHeight = (int) (calculatedHeightDp * density);
-                            
+                            int marginSide = dp(density, pillSideMarginDp);
+                            int marginBottom = dp(density, pillBottomMarginDp);
                             mlp.leftMargin = marginSide;
                             mlp.rightMargin = marginSide;
                             mlp.bottomMargin = marginBottom;
-                            mlp.height = targetHeight;
-                            targetLayoutView.setLayoutParams(mlp);
+                            view.setLayoutParams(mlp);
                         }
-
-                        applyCustomSizesAndPaddings(findMenuView(view), density);
 
                         // Make layouts overlap and hide adjacent divider lines
                         adjustLayoutOverlap(view, density);
@@ -371,7 +303,7 @@ public class FloatingBottomBar extends Feature {
                             try {
                                 if (hasSetPadding) return;
                                 if (v.getHeight() > 0 && v.getWidth() > 0) {
-                                    if (isMainTabScrollable(v)) {
+                                    if ("all".equals(scrollHideMode) || isMainTabScrollable(v)) {
                                         View bottomNav = findBottomNavForScrollable(v);
                                         if (bottomNav != null) {
                                             float density = v.getContext().getResources().getDisplayMetrics().density;
@@ -391,12 +323,12 @@ public class FloatingBottomBar extends Feature {
             });
 
             // Hook dispatchOnScrolled candidate methods in RecyclerView
-            List<Method> candidateMethods = new ArrayList<>();
-            for (Method m : recyclerViewClass.getDeclaredMethods()) {
+            java.util.List<java.lang.reflect.Method> candidateMethods = new java.util.ArrayList<>();
+            for (java.lang.reflect.Method m : recyclerViewClass.getDeclaredMethods()) {
                 Class<?>[] paramTypes = m.getParameterTypes();
                 if (paramTypes.length == 2 && paramTypes[0] == int.class && paramTypes[1] == int.class && m.getReturnType() == void.class) {
                     String name = m.getName();
-                    if (Modifier.isStatic(m.getModifiers())) continue;
+                    if (java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
                     if (name.equals("scrollBy") || name.equals("scrollTo") || name.equals("onMeasure") || name.equals("onSizeChanged") || name.equals("onLayout") || name.equals("setMeasuredDimension")) {
                         continue;
                     }
@@ -404,7 +336,7 @@ public class FloatingBottomBar extends Feature {
                 }
             }
 
-            for (Method m : candidateMethods) {
+            for (java.lang.reflect.Method m : candidateMethods) {
                 XposedBridge.hookMethod(m, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
@@ -429,6 +361,13 @@ public class FloatingBottomBar extends Feature {
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     final View fab = (View) param.thisObject;
                     if (fab == null) return;
+                    if ("hidden".equals(fabMode)) {
+                        fab.setVisibility(View.GONE);
+                        return;
+                    }
+                    if ("minimal".equals(fabMode)) {
+                        applyMinimalFab(fab);
+                    }
                     fab.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
                         @Override
                         public void onViewAttachedToWindow(View v) {
@@ -441,7 +380,7 @@ public class FloatingBottomBar extends Feature {
                                     v.setTranslationY(getFabVisibleTranslation(density));
                                     
                                     v.setElevation(20 * density);
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                                         v.setTranslationZ(12 * density);
                                     }
                                     
@@ -455,7 +394,7 @@ public class FloatingBottomBar extends Feature {
                                                 view.setTranslationY(getFabVisibleTranslation(d));
                                                 
                                                 view.setElevation(20 * d);
-                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                                                     view.setTranslationZ(12 * d);
                                                 }
                                             } catch (Throwable ignored) {}
@@ -516,8 +455,8 @@ public class FloatingBottomBar extends Feature {
 
         // Hook the tab item selection listener of BottomNavigationView to capture tab taps/clicks
         try {
-            Method targetSetListenerMethod = null;
-            for (Method m : loadTabFrameClass.getMethods()) {
+            java.lang.reflect.Method targetSetListenerMethod = null;
+            for (java.lang.reflect.Method m : loadTabFrameClass.getMethods()) {
                 String name = m.getName();
                 if ((name.equals("setOnItemSelectedListener") || name.equals("setOnNavigationItemSelectedListener")) 
                     && m.getParameterCount() == 1) {
@@ -535,16 +474,16 @@ public class FloatingBottomBar extends Feature {
                         try {
                             final Object originalListener = param.args[0];
                             if (originalListener == null) return;
-                            if (Proxy.isProxyClass(originalListener.getClass())) return;
+                            if (java.lang.reflect.Proxy.isProxyClass(originalListener.getClass())) return;
                             
                             final View bottomNav = (View) param.thisObject;
                             
-                            Object listenerProxy = Proxy.newProxyInstance(
+                            Object listenerProxy = java.lang.reflect.Proxy.newProxyInstance(
                                 listenerInterface.getClassLoader(),
                                 new Class<?>[]{listenerInterface},
-                                new InvocationHandler() {
+                                new java.lang.reflect.InvocationHandler() {
                                     @Override
-                                    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                                    public Object invoke(Object proxy, java.lang.reflect.Method method, Object[] args) throws Throwable {
                                         String methodName = method.getName();
                                         if ("equals".equals(methodName)) {
                                             return proxy == args[0];
@@ -556,8 +495,8 @@ public class FloatingBottomBar extends Feature {
                                             return "NavigationBarOnItemSelectedListenerProxy@" + Integer.toHexString(System.identityHashCode(proxy));
                                         }
                                         
-                                        if (args != null && args.length == 1 && args[0] instanceof MenuItem) {
-                                            MenuItem item = (MenuItem) args[0];
+                                        if (args != null && args.length == 1 && args[0] instanceof android.view.MenuItem) {
+                                            android.view.MenuItem item = (android.view.MenuItem) args[0];
                                             int tabId = item.getItemId();
                                             handleTabSelectionChanged(bottomNav, tabId);
                                         }
@@ -586,7 +525,7 @@ public class FloatingBottomBar extends Feature {
                 View child = group.getChildAt(i);
                 child.setBackground(null);
                 child.setBackgroundColor(0);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                     child.setBackgroundTintList(null);
                 }
                 
@@ -665,54 +604,43 @@ public class FloatingBottomBar extends Feature {
                         }
                     }
 
-                    int marginSide = dp(density, userSideMarginDp);
-                    int systemInsetBottom = 0;
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        WindowInsets insets = bottomNav.getRootWindowInsets();
-                        if (insets != null) {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                systemInsetBottom = insets.getInsets(WindowInsets.Type.systemBars()).bottom;
-                            } else {
-                                systemInsetBottom = insets.getSystemWindowInsetBottom();
-                            }
-                        }
-                    }
-                    int marginBottom = dp(density, userBottomMarginDp) + systemInsetBottom;
-                    ViewGroup.LayoutParams newLp = null;
+                    int marginSide = dp(density, pillSideMarginDp);
+                    int marginBottom = dp(density, pillBottomMarginDp);
+                        ViewGroup.LayoutParams newLp = null;
 
-                        if (targetRoot instanceof FrameLayout) {
-                        FrameLayout.LayoutParams flp = new FrameLayout.LayoutParams(
+                        if (targetRoot instanceof android.widget.FrameLayout) {
+                            android.widget.FrameLayout.LayoutParams flp = new android.widget.FrameLayout.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.WRAP_CONTENT
                             );
-                            flp.gravity = Gravity.BOTTOM;
+                            flp.gravity = android.view.Gravity.BOTTOM;
                             newLp = flp;
                         } else if (targetRoot.getClass().getName().contains("CoordinatorLayout")) {
                             try {
                                 Class<?> clLpClass = Class.forName("androidx.coordinatorlayout.widget.CoordinatorLayout$LayoutParams");
-                                Constructor<?> ctor = clLpClass.getConstructor(int.class, int.class);
+                                java.lang.reflect.Constructor<?> ctor = clLpClass.getConstructor(int.class, int.class);
                                 Object clLp = ctor.newInstance(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                                Field gravityField = clLpClass.getField("gravity");
-                                gravityField.set(clLp, Gravity.BOTTOM);
+                                java.lang.reflect.Field gravityField = clLpClass.getField("gravity");
+                                gravityField.set(clLp, android.view.Gravity.BOTTOM);
                                 newLp = (ViewGroup.LayoutParams) clLp;
                             } catch (Throwable ignored) {}
-                        } else if (targetRoot instanceof RelativeLayout) {
-                            RelativeLayout.LayoutParams rlp = new RelativeLayout.LayoutParams(
+                        } else if (targetRoot instanceof android.widget.RelativeLayout) {
+                            android.widget.RelativeLayout.LayoutParams rlp = new android.widget.RelativeLayout.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.WRAP_CONTENT
                             );
-                            rlp.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
+                            rlp.addRule(android.widget.RelativeLayout.ALIGN_PARENT_BOTTOM);
                             newLp = rlp;
                         } else if (targetRoot.getClass().getName().contains("ConstraintLayout")) {
                             try {
                                 Class<?> clLpClass = Class.forName("androidx.constraintlayout.widget.ConstraintLayout$LayoutParams");
-                                Constructor<?> ctor = clLpClass.getConstructor(int.class, int.class);
+                                java.lang.reflect.Constructor<?> ctor = clLpClass.getConstructor(int.class, int.class);
                                 Object clLp = ctor.newInstance(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                                Field bottomToBottomField = clLpClass.getField("bottomToBottom");
+                                java.lang.reflect.Field bottomToBottomField = clLpClass.getField("bottomToBottom");
                                 bottomToBottomField.set(clLp, 0); // 0 is PARENT_ID
-                                Field leftToLeftField = clLpClass.getField("leftToLeft");
+                                java.lang.reflect.Field leftToLeftField = clLpClass.getField("leftToLeft");
                                 leftToLeftField.set(clLp, 0);
-                                Field rightToRightField = clLpClass.getField("rightToRight");
+                                java.lang.reflect.Field rightToRightField = clLpClass.getField("rightToRight");
                                 rightToRightField.set(clLp, 0);
                                 newLp = (ViewGroup.LayoutParams) clLp;
                             } catch (Throwable ignored) {}
@@ -724,17 +652,9 @@ public class FloatingBottomBar extends Feature {
 
                         if (newLp instanceof ViewGroup.MarginLayoutParams) {
                             ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) newLp;
-                            
-                            // Dynamically calculate the exact required pill height to tightly wrap contents
-                            // icon size + text size + spacing + (2 * vertical padding)
-                            float textHeightDp = userTextSizeSp * 1.35f; // Approx height of text in dp
-                            int calculatedHeightDp = (int) (userIconSizeDp + textHeightDp + userIconLabelSpacingDp + (2 * userVerticalPaddingDp));
-                            int targetHeight = (int) (calculatedHeightDp * density);
-                            
                             mlp.leftMargin = marginSide;
                             mlp.rightMargin = marginSide;
                             mlp.bottomMargin = marginBottom;
-                            mlp.height = targetHeight;
                         }
 
                     View barOverlay;
@@ -759,7 +679,7 @@ public class FloatingBottomBar extends Feature {
 
                     final View animTarget = getBarAnimationTarget(bottomNav);
                     final ViewGroup finalParentGroup = parentGroup;
-                    bottomNav.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+                    bottomNav.getViewTreeObserver().addOnGlobalLayoutListener(new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
                         @Override
                         public void onGlobalLayout() {
                             try {
@@ -801,7 +721,7 @@ public class FloatingBottomBar extends Feature {
             // 5. Adjust initial position of FABs to float above the pill
             rootLayout.postDelayed(() -> {
                 try {
-                    List<View> fabs = findFabs(rootLayout);
+                    java.util.List<View> fabs = findFabs(rootLayout);
                     for (View fab : fabs) {
                         fab.setTranslationY(getFabVisibleTranslation(density));
                     }
@@ -838,7 +758,8 @@ public class FloatingBottomBar extends Feature {
                     final View scrollView = child;
                     scrollView.post(() -> {
                         try {
-                            if (!isMainTabScrollable(scrollView)) {
+                            if (!"all".equals(scrollHideMode)
+                                    && !isMainTabScrollable(scrollView)) {
                                 restoreOriginalBottomPadding(scrollView);
                                 return;
                             }
@@ -847,7 +768,7 @@ public class FloatingBottomBar extends Feature {
                             String scrollClassName = scrollView.getClass().getName();
                             if (scrollClassName.contains("ScrollView") && scrollView instanceof ViewGroup) {
                                 ViewGroup vg = (ViewGroup) scrollView;
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
                                     if (!registeredScrollListeners.containsKey(vg)) {
                                         vg.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
                                             onViewScrolled(bottomNav, scrollY - oldScrollY);
@@ -898,7 +819,7 @@ public class FloatingBottomBar extends Feature {
             if (Math.abs(dy) > 50000) return; // Ignore layout measureSpec triggers (e.g. 1073743008)
             if (Math.abs(dy) < 5) return;
             if (!rv.isShown()) return; // Ignore background scrolls
-            if (!isMainTabScrollable(rv)) return;
+            if (!"all".equals(scrollHideMode) && !isMainTabScrollable(rv)) return;
 
             View bottomNav = findBottomNavForScrollable(rv);
             if (bottomNav == null) return;
@@ -913,17 +834,16 @@ public class FloatingBottomBar extends Feature {
         if (isMetaAiTabActive(bottomNav)) return;
         
         View barTarget = getBarAnimationTarget(bottomNav);
+        if (!barTarget.isShown()) return; // Do not animate if bottom bar is hidden on screen
+        
         float density = bottomNav.getContext().getResources().getDisplayMetrics().density;
         
         // Use cached preference to prevent disk I/O in hot scroll path
         if (!scrollHideEnabled) {
-            Boolean lastHide = targetHideStates.get(barTarget);
             Float lastTarget = targetTranslations.get(barTarget);
-            if ((lastHide != null && lastHide) || (lastTarget != null && lastTarget != 0f) || barTarget.getVisibility() != View.VISIBLE) {
-                targetHideStates.put(barTarget, false);
+            if (lastTarget == null || lastTarget != 0f) {
                 targetTranslations.put(barTarget, 0f);
-                barTarget.setVisibility(View.VISIBLE);
-                barTarget.animate().translationY(0f).alpha(1f).scaleX(1f).scaleY(1f).setDuration(200).start();
+                barTarget.animate().translationY(0).setDuration(200).start();
                 animateFabs(bottomNav, false, density);
             }
             return;
@@ -931,78 +851,35 @@ public class FloatingBottomBar extends Feature {
 
         if (Math.abs(dy) < 5) return; // Skip minor/jitter scroll actions
 
-        boolean hide = dy > 0;
-
-        if ("invisible".equalsIgnoreCase(scrollHideMode)) {
-            Boolean lastHide = targetHideStates.get(barTarget);
-            if (lastHide != null && lastHide == hide) {
-                return;
-            }
-            targetHideStates.put(barTarget, hide);
-
-            if (hide) {
-                barTarget.animate()
-                    .alpha(0f)
-                    .scaleX(0.95f)
-                    .scaleY(0.95f)
-                    .setDuration(200)
-                    .setInterpolator(new AccelerateDecelerateInterpolator())
-                    .withEndAction(() -> {
-                        Boolean currentHide = targetHideStates.get(barTarget);
-                        if (currentHide != null && currentHide) {
-                            barTarget.setVisibility(View.GONE);
-                        }
-                    })
-                    .start();
-            } else {
-                barTarget.setVisibility(View.VISIBLE);
-                barTarget.animate()
-                    .alpha(1f)
-                    .scaleX(1f)
-                    .scaleY(1f)
-                    .setDuration(200)
-                    .setInterpolator(new AccelerateDecelerateInterpolator())
-                    .withEndAction(null)
-                    .start();
-            }
-            animateFabs(bottomNav, hide, density);
-        } else {
-            float targetTranslationY;
-            int height = barTarget.getHeight();
-            if (height <= 0) {
-                height = bottomNav.getHeight();
-            }
-            if (height <= 0) {
-                height = (int) (80 * density);
-            }
-
-            if (hide) {
-                targetTranslationY = height + (userBottomMarginDp * density) + (24 * density);
-            } else {
-                targetTranslationY = 0;
-            }
-
-            Float lastTarget = targetTranslations.get(barTarget);
-            if (lastTarget != null && lastTarget == targetTranslationY && barTarget.getVisibility() == View.VISIBLE) {
-                return;
-            }
-            targetTranslations.put(barTarget, targetTranslationY);
-            targetHideStates.put(barTarget, hide);
-
-            if (barTarget.getVisibility() != View.VISIBLE) {
-                barTarget.setVisibility(View.VISIBLE);
-                barTarget.setAlpha(1f);
-                barTarget.setScaleX(1f);
-                barTarget.setScaleY(1f);
-            }
-
-            barTarget.animate()
-                .translationY(targetTranslationY)
-                .setDuration(250)
-                .setInterpolator(new AccelerateDecelerateInterpolator())
-                .start();
-            animateFabs(bottomNav, hide, density);
+        float targetTranslationY;
+        int height = barTarget.getHeight();
+        if (height <= 0) {
+            height = bottomNav.getHeight();
         }
+        if (height <= 0) {
+            height = (int) (80 * density);
+        }
+
+        if (dy > 0) {
+            targetTranslationY = height + (24 * density);
+        } else {
+            targetTranslationY = 0;
+        }
+
+        Float lastTarget = targetTranslations.get(barTarget);
+        if (lastTarget != null && lastTarget == targetTranslationY) {
+            // Already animating to this target, avoid thrashing
+            return;
+        }
+        targetTranslations.put(barTarget, targetTranslationY);
+
+        barTarget.animate()
+            .translationY(targetTranslationY)
+            .setDuration(250)
+            .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
+            .start();
+        // Animate FABs in sync
+        animateFabs(bottomNav, dy > 0, density);
     }
 
     private static void animateFabs(View bottomNav, boolean hide, float density) {
@@ -1010,7 +887,7 @@ public class FloatingBottomBar extends Feature {
             ViewGroup root = getRootLayout(bottomNav);
             if (root == null) return;
             
-            List<View> fabs = findFabs(root);
+            java.util.List<View> fabs = findFabs(root);
             for (View fab : fabs) {
                 float targetTranslationY = hide ? 0f : getFabVisibleTranslation(density);
                 Float lastFabTarget = targetTranslations.get(fab);
@@ -1021,19 +898,19 @@ public class FloatingBottomBar extends Feature {
                 fab.animate()
                     .translationY(targetTranslationY)
                     .setDuration(250)
-                    .setInterpolator(new AccelerateDecelerateInterpolator())
+                    .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
                     .start();
             }
         } catch (Throwable ignored) {}
     }
 
-    private static List<View> findFabs(ViewGroup root) {
-        List<View> fabs = new ArrayList<>();
+    private static java.util.List<View> findFabs(ViewGroup root) {
+        java.util.List<View> fabs = new java.util.ArrayList<>();
         findFabsRecursive(root, fabs);
         return fabs;
     }
 
-    private static void findFabsRecursive(View view, List<View> fabs) {
+    private static void findFabsRecursive(View view, java.util.List<View> fabs) {
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) {
@@ -1269,7 +1146,7 @@ public class FloatingBottomBar extends Feature {
     }
 
     private static float getFabVisibleTranslation(float density) {
-        return -dp(density, userFabOffsetDp);
+        return -dp(density, fabVisibleOffsetDp);
     }
 
     private static View getBarAnimationTarget(View bottomNav) {
@@ -1303,7 +1180,7 @@ public class FloatingBottomBar extends Feature {
         ViewParent parent = parentGroup.getParent();
         if (parent instanceof ViewGroup) {
             ViewGroup directParent = (ViewGroup) parent;
-            if (!(directParent instanceof LinearLayout)) {
+            if (!(directParent instanceof android.widget.LinearLayout)) {
                 return directParent;
             }
         }
@@ -1316,7 +1193,7 @@ public class FloatingBottomBar extends Feature {
         try {
             removeGlassHost(bottomNav);
 
-            Context ctx = bottomNav.getContext();
+            android.content.Context ctx = bottomNav.getContext();
             FrameLayout host = new FrameLayout(ctx);
             host.setClipChildren(false);
             host.setClipToPadding(false);
@@ -1324,14 +1201,14 @@ public class FloatingBottomBar extends Feature {
             applyPillShadow(host, density);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 host.setClipToOutline(false);
-                host.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+                host.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
             }
 
             BlurView blurView = new BlurView(ctx);
             blurView.setBackground(createGlassShape(ctx, density, true));
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 blurView.setClipToOutline(true);
-                blurView.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+                blurView.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
             }
 
             FrameLayout.LayoutParams blurLp = new FrameLayout.LayoutParams(
@@ -1348,17 +1225,13 @@ public class FloatingBottomBar extends Feature {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 bottomNav.setBackgroundTintList(null);
                 bottomNav.setClipToOutline(false);
-                bottomNav.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+                bottomNav.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
             }
-
-            float textHeightDp = userTextSizeSp * 1.35f;
-            int calculatedHeightDp = (int) (userIconSizeDp + textHeightDp + userIconLabelSpacingDp + (2 * userVerticalPaddingDp));
-            int targetHeight = (int) (calculatedHeightDp * density);
 
             FrameLayout.LayoutParams navLp = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    targetHeight,
-                    Gravity.BOTTOM
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    android.view.Gravity.BOTTOM
             );
             glassHosts.put(bottomNav, host);
             glassBlurViews.put(bottomNav, blurView);
@@ -1379,11 +1252,11 @@ public class FloatingBottomBar extends Feature {
 
     private void setupBlurView(BlurView blurView, ViewGroup blurRoot, View bottomNav) {
         try {
-            Context ctx = bottomNav.getContext();
+            android.content.Context ctx = bottomNav.getContext();
             BlurAlgorithm algorithm = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                     ? new RenderEffectBlur()
                     : new RenderScriptBlur(ctx);
-            Drawable windowBg = null;
+            android.graphics.drawable.Drawable windowBg = null;
             View rootView = bottomNav.getRootView();
             if (rootView != null) {
                 windowBg = rootView.getBackground();
@@ -1419,7 +1292,7 @@ public class FloatingBottomBar extends Feature {
      */
     private void applyGlassmorphism(final View bottomNav, final float density) {
         try {
-            final Context ctx = bottomNav.getContext();
+            final android.content.Context ctx = bottomNav.getContext();
             if (ctx == null) return;
 
             bottomNav.setBackground(createGlassShape(ctx, density, true));
@@ -1429,7 +1302,7 @@ public class FloatingBottomBar extends Feature {
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 bottomNav.setBackgroundTintList(null);
-                bottomNav.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+                bottomNav.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
                 bottomNav.setClipToOutline(false);
             }
             applyPillShadow(bottomNav, density);
@@ -1459,6 +1332,84 @@ public class FloatingBottomBar extends Feature {
         return null;
     }
 
+    /** Original tab appearance captured before the indicator ever touched it. */
+    private static final class TabState {
+        Drawable background;
+        float translationY;
+        int paddingLeft;
+        int paddingTop;
+        int paddingRight;
+        int paddingBottom;
+        int layoutWidth;
+        int layoutHeight;
+    }
+
+    private static final WeakHashMap<View, TabState> originalTabStates = new WeakHashMap<>();
+
+    private static void rememberOriginalTabState(View item) {
+        if (originalTabStates.containsKey(item)) return;
+        TabState state = new TabState();
+        state.background = item.getBackground();
+        state.translationY = item.getTranslationY();
+        state.paddingLeft = item.getPaddingLeft();
+        state.paddingTop = item.getPaddingTop();
+        state.paddingRight = item.getPaddingRight();
+        state.paddingBottom = item.getPaddingBottom();
+        ViewGroup.LayoutParams params = item.getLayoutParams();
+        if (params != null) {
+            state.layoutWidth = params.width;
+            state.layoutHeight = params.height;
+        }
+        originalTabStates.put(item, state);
+    }
+
+    private static void restoreOriginalTabState(View item) {
+        TabState state = originalTabStates.get(item);
+        if (state == null) {
+            item.setBackground(null);
+            return;
+        }
+        // Restore WhatsApp's own ripple, offset, padding and measured size instead of leaving the
+        // indicator's values behind on every tab the user has visited.
+        item.setBackground(state.background);
+        item.setTranslationY(state.translationY);
+        item.setPadding(state.paddingLeft, state.paddingTop,
+                state.paddingRight, state.paddingBottom);
+        ViewGroup.LayoutParams params = item.getLayoutParams();
+        if (params != null
+                && (params.width != state.layoutWidth || params.height != state.layoutHeight)) {
+            params.width = state.layoutWidth;
+            params.height = state.layoutHeight;
+            item.setLayoutParams(params);
+        }
+    }
+
+    private static float normalized(String key) {
+        try {
+            if (activePrefs != null) {
+                return com.waenhancer.config.BottomBarPreferenceSchema.read(activePrefs, key);
+            }
+        } catch (Throwable ignored) {
+        }
+        // Never fall back to 0: for sizes such as manual_height (48-96) or minimal_fab_size
+        // (32-72) that would collapse the element instead of degrading to a sane default.
+        try {
+            return com.waenhancer.config.BottomBarPreferenceSchema.spec(key).defaultValue;
+        } catch (Throwable ignored) {
+            return 0f;
+        }
+    }
+
+    private static String getPrefString(SharedPreferences preferences,
+                                        String key, String defaultValue) {
+        try {
+            Object raw = preferences.getAll().get(key);
+            return raw == null ? defaultValue : String.valueOf(raw);
+        } catch (Throwable ignored) {
+            return defaultValue;
+        }
+    }
+
     private static float getPrefFloat(SharedPreferences prefs, String key, float defaultValue) {
         try {
             return prefs.getFloat(key, defaultValue);
@@ -1478,49 +1429,45 @@ public class FloatingBottomBar extends Feature {
         } catch (Throwable ignored) {
             try {
                 String value = prefs.getString(key, null);
-                return value != null ? Color.parseColor(value) : defaultValue;
+                return value != null ? android.graphics.Color.parseColor(value) : defaultValue;
             } catch (Throwable ignoredToo) {
                 return defaultValue;
             }
         }
     }
 
-    private GradientDrawable createGlassShape(Context ctx, float density, boolean includeFill) {
-        int userRadius = prefs.getInt("floating_bottom_bar_radius", 28);
-        float finalRadius = userRadius * density;
-        GradientDrawable glassShape = new GradientDrawable();
-        glassShape.setShape(GradientDrawable.RECTANGLE);
-        glassShape.setCornerRadius(finalRadius);
+    private static android.graphics.drawable.GradientDrawable createGlassShape(android.content.Context ctx, float density, boolean includeFill) {
+        android.graphics.drawable.GradientDrawable glassShape = new android.graphics.drawable.GradientDrawable();
+        glassShape.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        glassShape.setCornerRadius(pillRadiusDp * density);
         glassShape.setColor(includeFill ? getGlassOverlayColor(ctx) : 0x00000000);
         glassShape.setStroke(Math.max(1, (int) (0.6f * density)), getGlassStrokeColor(ctx));
         return glassShape;
     }
 
-    private GradientDrawable createGlassOutlineShape(Context ctx, float density) {
-        int userRadius = prefs.getInt("floating_bottom_bar_radius", 28);
-        float finalRadius = userRadius * density;
-        GradientDrawable shape = new GradientDrawable();
-        shape.setShape(GradientDrawable.RECTANGLE);
-        shape.setCornerRadius(finalRadius);
+    private static android.graphics.drawable.GradientDrawable createGlassOutlineShape(android.content.Context ctx, float density) {
+        android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
+        shape.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        shape.setCornerRadius(pillRadiusDp * density);
         shape.setColor(0x00000000);
         return shape;
     }
 
-    private static int getGlassOverlayColor(Context ctx) {
+    private static int getGlassOverlayColor(android.content.Context ctx) {
         int alpha = Math.max(0, Math.min(255, Math.round((glassOpacity / 100f) * 255f)));
         int rgb = resolveGlassFillColor(ctx) & 0x00FFFFFF;
         return (alpha << 24) | rgb;
     }
 
-    private static int resolveGlassFillColor(Context ctx) {
+    private static int resolveGlassFillColor(android.content.Context ctx) {
         if (glassFillColor != 0) {
             return glassFillColor;
         }
-        return DesignUtils.isNightMode(ctx) ? 0xff1f2c34 : 0xffffffff;
+        return com.waenhancer.xposed.utils.DesignUtils.isNightMode(ctx) ? 0xff1f2c34 : 0xffffffff;
     }
 
-    private static int getGlassStrokeColor(Context ctx) {
-        return DesignUtils.isNightMode(ctx) ? 0x22FFFFFF : 0x26000000;
+    private static int getGlassStrokeColor(android.content.Context ctx) {
+        return com.waenhancer.xposed.utils.DesignUtils.isNightMode(ctx) ? 0x22FFFFFF : 0x26000000;
     }
 
     private static ViewGroup findMenuView(View tabFrame) {
@@ -1548,6 +1495,7 @@ public class FloatingBottomBar extends Feature {
             if (height <= 0) height = (int) (80 * density);
 
             boolean isMetaAiActive = isMetaAiTabActive(bottomNav);
+            applySelectedIndicator(bottomNav, tabId, density);
 
             if (tabId == 1000 || tabId == 1100 || isMetaAiActive) {
                 float targetTranslationY = height + (24 * density);
@@ -1555,7 +1503,7 @@ public class FloatingBottomBar extends Feature {
                 barTarget.animate()
                     .translationY(targetTranslationY)
                     .setDuration(250)
-                    .setInterpolator(new AccelerateDecelerateInterpolator())
+                    .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
                     .start();
                 animateFabs(bottomNav, true, density);
             } else {
@@ -1563,13 +1511,87 @@ public class FloatingBottomBar extends Feature {
                 barTarget.animate()
                     .translationY(0)
                     .setDuration(250)
-                    .setInterpolator(new AccelerateDecelerateInterpolator())
+                    .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
                     .start();
                 animateFabs(bottomNav, false, density);
             }
-            applyCustomSizesAndPaddings(findMenuView(bottomNav), density);
         } catch (Throwable t) {
             XposedBridge.log("[WAEX-FBB] Error handling tab selection: " + t);
+        }
+    }
+
+    private static void applySelectedIndicator(View bottomNav, int selectedId, float density) {
+        if (!indicatorVisible) return;
+        try {
+            ViewGroup menu = findMenuView(bottomNav);
+            if (menu == null) return;
+            for (int i = 0; i < menu.getChildCount(); i++) {
+                View item = menu.getChildAt(i);
+                rememberOriginalTabState(item);
+                if (item.getId() != selectedId) {
+                    restoreOriginalTabState(item);
+                    continue;
+                }
+                GradientDrawable indicator = new GradientDrawable();
+                int color = getPrefColor(activePrefs,
+                        "floating_bottom_bar_indicator_color", 0);
+                if (color == 0) color = DesignUtils.getPrimaryColor();
+                int opacity = Math.round(normalized(
+                        "floating_bottom_bar_indicator_opacity"));
+                indicator.setColor((Math.max(0, Math.min(255,
+                        Math.round(opacity * 2.55f))) << 24) | (color & 0x00FFFFFF));
+                indicator.setCornerRadius(normalized(
+                        "floating_bottom_bar_indicator_radius") * density);
+                item.setBackground(indicator);
+                item.setTranslationY(normalized(
+                        "floating_bottom_bar_indicator_offset") * density);
+                int horizontal = Math.round(normalized(
+                        "floating_bottom_bar_indicator_padding_horizontal") * density);
+                int vertical = Math.round(normalized(
+                        "floating_bottom_bar_indicator_padding_vertical") * density);
+                item.setPadding(horizontal, vertical, horizontal, vertical);
+                if ("manual".equals(getPrefString(activePrefs,
+                        "floating_bottom_bar_indicator_width_mode", "automatic"))) {
+                    ViewGroup.LayoutParams params = item.getLayoutParams();
+                    params.width = Math.round(normalized(
+                            "floating_bottom_bar_indicator_width") * density);
+                    if ("manual".equals(getPrefString(activePrefs,
+                            "floating_bottom_bar_indicator_height_mode", "automatic"))) {
+                        params.height = Math.round(normalized(
+                                "floating_bottom_bar_indicator_height") * density);
+                    }
+                    item.setLayoutParams(params);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void applyMinimalFab(View fab) {
+        try {
+            float density = fab.getResources().getDisplayMetrics().density;
+            int size = Math.round(normalized("floating_bottom_bar_minimal_fab_size") * density);
+            ViewGroup.LayoutParams params = fab.getLayoutParams();
+            if (params != null) {
+                params.width = size;
+                params.height = size;
+                fab.setLayoutParams(params);
+            }
+            GradientDrawable background = new GradientDrawable();
+            int color = getPrefColor(activePrefs, "floating_bottom_bar_minimal_fab_color", 0);
+            if (color == 0) color = DesignUtils.getPrimaryColor();
+            int opacity = Math.round(normalized("floating_bottom_bar_minimal_fab_opacity"));
+            background.setColor((Math.max(0, Math.min(255, Math.round(opacity * 2.55f))) << 24)
+                    | (color & 0x00FFFFFF));
+            background.setCornerRadius(normalized(
+                    "floating_bottom_bar_minimal_fab_radius") * density);
+            fab.setBackground(background);
+            if (fab instanceof android.widget.ImageView) {
+                ((android.widget.ImageView) fab).setImageTintList(ColorStateList.valueOf(
+                        getPrefColor(activePrefs,
+                                "floating_bottom_bar_minimal_fab_icon_color", 0xffffffff)));
+            }
+        } catch (Throwable ignored) {
         }
     }
 
@@ -1578,7 +1600,7 @@ public class FloatingBottomBar extends Feature {
             Object menu = XposedHelpers.callMethod(bottomNav, "getMenu");
             if (menu != null) {
                 int size = (int) XposedHelpers.callMethod(menu, "size");
-                List<Integer> visibleIds = new ArrayList<>();
+                java.util.List<Integer> visibleIds = new java.util.ArrayList<>();
                 for (int i = 0; i < size; i++) {
                     Object menuItem = XposedHelpers.callMethod(menu, "getItem", i);
                     if (menuItem != null && (boolean) XposedHelpers.callMethod(menuItem, "isVisible")) {
@@ -1623,11 +1645,11 @@ public class FloatingBottomBar extends Feature {
 
     private static View.OnClickListener getOnClickListener(View view) {
         try {
-            Field listenerInfoField = View.class.getDeclaredField("mListenerInfo");
+            java.lang.reflect.Field listenerInfoField = View.class.getDeclaredField("mListenerInfo");
             listenerInfoField.setAccessible(true);
             Object listenerInfo = listenerInfoField.get(view);
             if (listenerInfo != null) {
-                Field onClickListenerField = listenerInfo.getClass().getDeclaredField("mOnClickListener");
+                java.lang.reflect.Field onClickListenerField = listenerInfo.getClass().getDeclaredField("mOnClickListener");
                 onClickListenerField.setAccessible(true);
                 return (View.OnClickListener) onClickListenerField.get(listenerInfo);
             }
@@ -1671,207 +1693,6 @@ public class FloatingBottomBar extends Feature {
             }
         } catch (Throwable ignored) {}
         return false;
-    }
-
-    private static int iconContainerId = -1;
-    private static int labelsGroupId = -1;
-    private static int iconViewId = -1;
-    private static boolean idsFetched = false;
-
-    private static void fetchIds(Context ctx) {
-        if (!idsFetched && ctx != null) {
-            iconContainerId = ctx.getResources().getIdentifier("navigation_bar_item_icon_container", "id", ctx.getPackageName());
-            labelsGroupId = ctx.getResources().getIdentifier("navigation_bar_item_labels_group", "id", ctx.getPackageName());
-            iconViewId = ctx.getResources().getIdentifier("navigation_bar_item_icon_view", "id", ctx.getPackageName());
-            idsFetched = true;
-        }
-    }
-
-    private static void applyCustomSizesAndPaddings(ViewGroup menuView, float density) {
-        if (menuView == null) return;
-        try {
-            // Strip any padding injected by Material's WindowInsets on the menuView itself
-            menuView.setPadding(0, 0, 0, 0);
-            menuView.setMinimumHeight(0);
-
-            int maxExactHeight = 0;
-            for (int i = 0; i < menuView.getChildCount(); i++) {
-                View itemView = menuView.getChildAt(i);
-                itemView.setMinimumHeight(0);
-                if (itemView instanceof ViewGroup) {
-                    int exactH = adjustIconAndText((ViewGroup) itemView, density);
-                    if (exactH > maxExactHeight) {
-                        maxExactHeight = exactH;
-                    }
-                }
-            }
-
-            if (maxExactHeight > 0) {
-                View bottomNav = (View) menuView.getParent();
-                if (bottomNav != null) {
-                    int verticalPadding = (int) (userVerticalPaddingDp * density);
-                    int targetPillHeight = maxExactHeight + (2 * verticalPadding);
-
-                    ViewGroup.LayoutParams navLp = bottomNav.getLayoutParams();
-                    if (navLp != null && navLp.height != targetPillHeight) {
-                        navLp.height = targetPillHeight;
-                        bottomNav.setLayoutParams(navLp);
-                    }
-
-                    FrameLayout host = glassHosts.get(bottomNav);
-                    if (host != null) {
-                        ViewGroup.LayoutParams hostLp = host.getLayoutParams();
-                        if (hostLp != null && hostLp.height != targetPillHeight) {
-                            hostLp.height = targetPillHeight;
-                            host.setLayoutParams(hostLp);
-                        }
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            XposedBridge.log("[WAEX-FBB] Error styling custom sizes: " + t);
-        }
-    }
-
-    private static int adjustIconAndText(ViewGroup group, float density) {
-        fetchIds(group.getContext());
-
-        group.setPadding(0, 0, 0, 0);
-
-        View iconContainer = null;
-        View labelsGroup = null;
-
-        for (int i = 0; i < group.getChildCount(); i++) {
-            View child = group.getChildAt(i);
-
-            if (iconContainerId != 0 && child.getId() == iconContainerId) {
-                iconContainer = child;
-                child.setPadding(0, 0, 0, 0);
-                ViewGroup.LayoutParams lp = child.getLayoutParams();
-                if (lp instanceof ViewGroup.MarginLayoutParams) {
-                    ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
-                    mlp.topMargin = 0;
-                    mlp.bottomMargin = 0;
-                    mlp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-                    child.setLayoutParams(mlp);
-                }
-            } else if (labelsGroupId != 0 && child.getId() == labelsGroupId) {
-                labelsGroup = child;
-                child.setPadding(0, 0, 0, 0);
-                ViewGroup.LayoutParams lp = child.getLayoutParams();
-                if (lp instanceof ViewGroup.MarginLayoutParams) {
-                    ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
-                    mlp.topMargin = 0;
-                    mlp.bottomMargin = 0;
-                    child.setLayoutParams(mlp);
-                }
-            }
-
-            if (child instanceof ImageView) {
-                child.setPadding(0, 0, 0, 0);
-                if (userIconSizeDp != 24 && iconViewId != 0 && child.getId() == iconViewId) {
-                    ImageView iv = (ImageView) child;
-                    ViewGroup.LayoutParams lp = iv.getLayoutParams();
-                    int targetSize = (int) (userIconSizeDp * density);
-                    if (lp.width != targetSize || lp.height != targetSize) {
-                        lp.width = targetSize;
-                        lp.height = targetSize;
-                        iv.setLayoutParams(lp);
-                    }
-                }
-            } else if (child instanceof TextView) {
-                TextView tv = (TextView) child;
-                tv.setIncludeFontPadding(false);
-                tv.setPadding(0, 0, 0, 0);
-                ViewGroup.LayoutParams lp = tv.getLayoutParams();
-                if (lp instanceof ViewGroup.MarginLayoutParams) {
-                    ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
-                    mlp.topMargin = 0;
-                    mlp.bottomMargin = 0;
-                    tv.setLayoutParams(mlp);
-                }
-                if (userTextSizeSp != 12) {
-                    tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, userTextSizeSp);
-                }
-            } else if (child instanceof ViewGroup) {
-                adjustIconAndText((ViewGroup) child, density);
-            }
-        }
-
-        // Override NavigationBarItemView's hardcoded onLayout calculations
-        if (iconContainer != null && labelsGroup != null) {
-            int spacing = (int) (userIconLabelSpacingDp * density);
-            
-            // Calculate exactly where the text should sit (right below the container)
-            int targetLabelTop = iconContainer.getBottom() + spacing;
-            int offset = targetLabelTop - labelsGroup.getTop();
-            
-            // Move it visually
-            labelsGroup.setTranslationY(offset);
-
-            int exactHeight = labelsGroup.getBottom() + offset;
-            
-            if (iconContainer.getBottom() > 0 && exactHeight > 0) {
-                ViewGroup.LayoutParams groupLp = group.getLayoutParams();
-                if (groupLp != null && groupLp.height != exactHeight) {
-                    groupLp.height = exactHeight;
-                    group.setLayoutParams(groupLp);
-                }
-                return exactHeight;
-            }
-        }
-        return 0;
-    }
-
-    private static int getSystemInsetBottomSafely(View view) {
-        int systemInsetBottom = 0;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            WindowInsets insets = view.getRootWindowInsets();
-            if (insets != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    systemInsetBottom = insets.getInsets(WindowInsets.Type.systemBars()).bottom;
-                } else {
-                    systemInsetBottom = insets.getSystemWindowInsetBottom();
-                }
-            }
-            if (systemInsetBottom == 0) {
-                // Try from the Window DecorView
-                try {
-                    Context context = view.getContext();
-                    while (context instanceof ContextWrapper) {
-                        if (context instanceof Activity) {
-                            break;
-                        }
-                        context = ((ContextWrapper) context).getBaseContext();
-                    }
-                    if (context instanceof Activity) {
-                        Window window = ((Activity) context).getWindow();
-                        if (window != null) {
-                            View decorView = window.getDecorView();
-                            if (decorView != null) {
-                                WindowInsets decInsets = decorView.getRootWindowInsets();
-                                if (decInsets != null) {
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                        systemInsetBottom = decInsets.getInsets(WindowInsets.Type.systemBars()).bottom;
-                                    } else {
-                                        systemInsetBottom = decInsets.getSystemWindowInsetBottom();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } catch (Throwable ignored) {}
-            }
-        }
-        if (systemInsetBottom == 0) {
-            try {
-                int resourceId = view.getContext().getResources().getIdentifier("navigation_bar_height", "dimen", "android");
-                if (resourceId > 0) {
-                    systemInsetBottom = view.getContext().getResources().getDimensionPixelSize(resourceId);
-                }
-            } catch (Throwable ignored) {}
-        }
-        return systemInsetBottom;
     }
 
     @NonNull

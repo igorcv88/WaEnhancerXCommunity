@@ -64,12 +64,6 @@
 
         <rikka.material.preference.MaterialSwitchPreference
             app:defaultValue="false"
-            app:key="enable_crash_analytics"
-            app:title="@string/enable_crash_analytics"
-            app:summary="@string/enable_crash_analytics_sum" />
-
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
             app:key="bypass_version_check"
             app:summary="@string/disable_version_check_sum"
             app:title="@string/disable_version_check" />
@@ -87,7 +81,7 @@
             app:title="@string/manage_supported_versions">
             <intent
                 android:action="android.intent.action.VIEW"
-                android:targetPackage="com.waenhancer"
+                android:targetPackage="com.waenhancer.community"
                 android:targetClass="com.waenhancer.ui.fragments.SupportedVersionsActivity" />
         </Preference>
 
@@ -106,11 +100,6 @@
             android:dependency="bootloader_spoofer_custom"
             android:title="Use Custom keybox.xml file"
             android:summary="No file selected" />
-
-        <Preference
-            android:key="bootloader_spoofer_verify"
-            android:title="Verify Spoofer"
-            android:summary="Check spoofer trust chain, keys, and expiration" />
 
         <rikka.material.preference.MaterialSwitchPreference
             app:key="ampm"
@@ -159,84 +148,16 @@
             app:summary="@string/enable_spy_sum"
             app:title="@string/enable_spy" />
 
-        <com.waenhancer.preference.ProSwitchPreference
-            app:defaultValue="false"
-            app:key="send_audio_as_voice_status"
-            app:summary="@string/send_audio_as_voice_status_sum"
-            app:title="@string/send_audio_as_voice_status" />
-
     </PreferenceCategory>
 
-    <com.waenhancer.preference.ProPreferenceCategory
-        app:key="customize_status_view_category"
-        app:iconSpaceReserved="false"
-        app:title="@string/customize_status_view_title">
 
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="remove_status_bottom_tile"
-            app:summary="@string/remove_status_bottom_tile_sum"
-            app:title="@string/remove_status_bottom_tile" />
-
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="disable_status_swipe_up"
-            app:summary="@string/disable_status_swipe_up_sum"
-            app:title="@string/disable_status_swipe_up" />
-
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="remove_status_quick_reactions"
-            app:summary="@string/remove_status_quick_reactions_sum"
-            app:title="@string/remove_status_quick_reactions" />
-
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="remove_status_heart_button"
-            app:summary="@string/remove_status_heart_button_sum"
-            app:title="@string/remove_status_heart_button" />
-
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="status_bottom_play_pause_button"
-            app:summary="@string/status_bottom_play_pause_button_sum"
-            app:title="@string/status_bottom_play_pause_button" />
-
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="add_status_reply_menu_item"
-            app:summary="@string/add_status_reply_menu_item_sum"
-            app:title="@string/add_status_reply_menu_item" />
-
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="status_video_fast_gesture"
-            app:summary="@string/status_video_fast_gesture_sum"
-            app:title="@string/status_video_fast_gesture" />
-
-        <ListPreference
-            android:defaultValue="2.0"
-            android:entries="@array/status_fast_speed_entries"
-            android:entryValues="@array/status_fast_speed_values"
-            app:dependency="status_video_fast_gesture"
-            app:key="status_video_fast_speed"
-            app:summary="@string/status_video_fast_speed_sum"
-            app:title="@string/status_video_fast_speed" />
-
-    </com.waenhancer.preference.ProPreferenceCategory>
-
-    <PreferenceCategory
-        android:key="plugin_pack_category"
-        app:title="@string/extended_plugin_pack"
-        app:iconSpaceReserved="false">
-        <Preference
-            android:key="unlock_limited_free"
-            android:title="@string/unlock_limited_free_title"
-            android:summary="@string/unlock_limited_free_sum" />
-        <Preference
-            android:key="pro_plugin_updates"
-            android:title="Plugin Updates &amp; Changelog"
-            android:summary="Check for updates and view the helper plugin changelog" />
-    </PreferenceCategory>
+    <Preference
+        android:key="local_diagnostics"
+        android:summary="Preview and share redacted local diagnostics. No automatic upload."
+        android:title="Local diagnostics">
+        <intent
+            android:targetClass="com.waenhancer.activities.DiagnosticsActivity"
+            android:targetPackage="com.waenhancer.community" />
+    </Preference>
 
 </PreferenceScreen>

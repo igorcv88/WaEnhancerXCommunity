@@ -45,20 +45,6 @@ import androidx.recyclerview.widget.RecyclerView;
 import androidx.core.widget.NestedScrollView;
 import android.view.animation.AccelerateInterpolator;
 import android.view.animation.OvershootInterpolator;
-import android.content.ComponentName;
-import android.content.SharedPreferences;
-import android.view.LayoutInflater;
-import android.widget.Toast;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-import androidx.preference.PreferenceManager;
-import com.google.android.material.bottomsheet.BottomSheetDialog;
-import com.google.android.material.button.MaterialButton;
-import com.google.android.material.textview.MaterialTextView;
-import com.waenhancer.utils.KeyboxFetcher;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.lang.reflect.Method;
 
 public class MainActivity extends BaseActivity {
 
@@ -243,9 +229,6 @@ public class MainActivity extends BaseActivity {
         binding.viewPager.setCurrentItem(2, false);
         createMainDir();
         FilePicker.registerFilePicker(this);
-        try {
-            KeyboxFetcher.syncKeyboxAsync(this);
-        } catch (Throwable ignored) {}
 
         // Wire up custom header action buttons
         binding.btnSearch.setOnClickListener(v -> {
@@ -274,7 +257,7 @@ public class MainActivity extends BaseActivity {
         // Hide battery button if already optimized
         var powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         if (powerManager.isIgnoringBatteryOptimizations(getPackageName())) {
-            binding.btnBattery.setVisibility(View.GONE);
+            binding.btnBattery.setVisibility(android.view.View.GONE);
         }
 
         // Handle incoming navigation from search
@@ -283,8 +266,8 @@ public class MainActivity extends BaseActivity {
         // Request notification permission if needed (Android 13+)
         if (Build.VERSION.SDK_INT >= 33) {
             String permission = "android.permission.POST_NOTIFICATIONS";
-            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, new String[]{permission}, 101);
+            if (androidx.core.content.ContextCompat.checkSelfPermission(this, permission) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                androidx.core.app.ActivityCompat.requestPermissions(this, new String[]{permission}, 101);
             }
         }
     }
@@ -315,7 +298,7 @@ public class MainActivity extends BaseActivity {
         }
 
         if ("android.service.quicksettings.action.QS_TILE_PREFERENCES".equals(intent.getAction())) {
-            ComponentName component = intent.getParcelableExtra(Intent.EXTRA_COMPONENT_NAME);
+            android.content.ComponentName component = intent.getParcelableExtra(Intent.EXTRA_COMPONENT_NAME);
             if (component != null) {
                 String className = component.getClassName();
                 int fragmentPos = -1;
@@ -531,21 +514,20 @@ public class MainActivity extends BaseActivity {
         // (e.g. after granting exemption from system settings)
         var powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         if (powerManager.isIgnoringBatteryOptimizations(getPackageName())) {
-            binding.btnBattery.setVisibility(View.GONE);
+            binding.btnBattery.setVisibility(android.view.View.GONE);
         }
 
         // Check if device was unlinked due to stable reversion
-        SharedPreferences rawPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+        android.content.SharedPreferences rawPrefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this);
         if (rawPrefs.getBoolean("unlinked_reverted_to_stable", false)) {
             rawPrefs.edit().putBoolean("unlinked_reverted_to_stable", false).apply();
-            showReversionBottomSheet();
+
         }
 
         // Check if there is a pending downgrade reason to show
-        String downgradeMsg = rawPrefs.getString("pending_downgrade_reason_msg", null);
+        String downgradeMsg = rawPrefs.getString("obsolete_downgrade_notice", null);
         if (downgradeMsg != null) {
-            Toast.makeText(this, downgradeMsg, Toast.LENGTH_LONG).show();
-            showDowngradeBottomSheet(downgradeMsg);
+            android.widget.Toast.makeText(this, downgradeMsg, android.widget.Toast.LENGTH_LONG).show();
         }
 
         // Remote notices (cached + rate-limited)
@@ -590,7 +572,7 @@ public class MainActivity extends BaseActivity {
         // 1. System property written by our own initZygote — most reliable signal when in-scope or system allows.
         try {
             Class<?> sp = Class.forName("android.os.SystemProperties");
-            Method get = sp.getMethod("get", String.class, String.class);
+            java.lang.reflect.Method get = sp.getMethod("get", String.class, String.class);
             String val = (String) get.invoke(null, "debug.waenhancer.lsposed", "0");
             if ("1".equals(val)) {
                 /* Log removed */
@@ -609,7 +591,7 @@ public class MainActivity extends BaseActivity {
             for (String cmd : commands) {
                 Process process = Runtime.getRuntime().exec(cmd);
                 int exitCode = process.waitFor();
-                BufferedReader stdErr = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+                java.io.BufferedReader stdErr = new java.io.BufferedReader(new java.io.InputStreamReader(process.getErrorStream()));
                 String line = stdErr.readLine();
                 if (exitCode == 0 || (line != null && line.contains("Permission denied"))) {
                     /* Log removed */
@@ -657,7 +639,7 @@ public class MainActivity extends BaseActivity {
         if (backPressedTime + 2000 > System.currentTimeMillis()) {
             super.onBackPressed();
         } else {
-            Toast.makeText(this, R.string.press_back_again_to_exit, Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, R.string.press_back_again_to_exit, android.widget.Toast.LENGTH_SHORT).show();
             backPressedTime = System.currentTimeMillis();
         }
     }
@@ -672,7 +654,7 @@ public class MainActivity extends BaseActivity {
         private static final float MIN_SCALE = 0.85f;
 
         @Override
-        public void transformPage(@NonNull View page, float position) {
+        public void transformPage(@NonNull android.view.View page, float position) {
             int pageWidth = page.getWidth();
 
             if (position < -1) {
@@ -694,78 +676,5 @@ public class MainActivity extends BaseActivity {
                 page.setAlpha(0f);
             }
         }
-    }
-
-    private void showReversionBottomSheet() {
-        try {
-            BottomSheetDialog dialog = new BottomSheetDialog(this);
-            View view = LayoutInflater.from(this).inflate(R.layout.bottom_sheet_action, null);
-            dialog.setContentView(view);
-            dialog.setCancelable(true);
-
-            ((MaterialTextView) view.findViewById(R.id.bs_title)).setText("Reverted to Stable");
-            ((MaterialTextView) view.findViewById(R.id.bs_message)).setText(
-                    "Your device has been unlinked and Pro configurations cleared because you are running the Stable version of the module. Active Pro trial features are only whitelisted on the Beta update channel for now.");
-
-            MaterialButton joinBtn = view.findViewById(R.id.bs_confirm_btn);
-            joinBtn.setText("Join Beta Channel");
-            joinBtn.setOnClickListener(v -> {
-                dialog.dismiss();
-                Intent intent = new Intent(this, ChangelogActivity.class);
-                intent.putExtra("target_channel", "beta");
-                startActivity(intent);
-            });
-
-            MaterialButton dismissBtn = view.findViewById(R.id.bs_cancel_btn);
-            dismissBtn.setText("Dismiss");
-            dismissBtn.setOnClickListener(v -> dialog.dismiss());
-
-            View bottomSheet = dialog.findViewById(com.google.android.material.R.id.design_bottom_sheet);
-            if (bottomSheet != null) {
-                bottomSheet.setBackgroundResource(android.R.color.transparent);
-            }
-            dialog.show();
-        } catch (Exception ignored) {}
-    }
-
-    private void showDowngradeBottomSheet(String message) {
-        try {
-            BottomSheetDialog dialog = new BottomSheetDialog(this);
-            View view = LayoutInflater.from(this).inflate(R.layout.bottom_sheet_action, null);
-            dialog.setContentView(view);
-            dialog.setCancelable(false);
-            dialog.setCanceledOnTouchOutside(false);
-
-            ((MaterialTextView) view.findViewById(R.id.bs_title)).setText("Downgraded to Free");
-            ((MaterialTextView) view.findViewById(R.id.bs_message)).setText(message);
-
-            MaterialButton actionBtn = view.findViewById(R.id.bs_confirm_btn);
-            actionBtn.setText("Upgrade to Pro");
-            actionBtn.setOnClickListener(v -> {
-                SharedPreferences rawPrefs = PreferenceManager.getDefaultSharedPreferences(this);
-                rawPrefs.edit().remove("pending_downgrade_reason_msg").apply();
-                
-                dialog.dismiss();
-                try {
-                    Class<?> clazz = Class.forName("com.waenhancer.activities.LicenseActivity");
-                    startActivity(new Intent(this, clazz));
-                } catch (Exception ignored) {}
-            });
-
-            MaterialButton dismissBtn = view.findViewById(R.id.bs_cancel_btn);
-            dismissBtn.setText("Dismiss");
-            dismissBtn.setOnClickListener(v -> {
-                SharedPreferences rawPrefs = PreferenceManager.getDefaultSharedPreferences(this);
-                rawPrefs.edit().remove("pending_downgrade_reason_msg").apply();
-                
-                dialog.dismiss();
-            });
-
-            View bottomSheet = dialog.findViewById(com.google.android.material.R.id.design_bottom_sheet);
-            if (bottomSheet != null) {
-                bottomSheet.setBackgroundResource(android.R.color.transparent);
-            }
-            dialog.show();
-        } catch (Exception ignored) {}
     }
 }

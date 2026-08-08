@@ -42,20 +42,6 @@ import io.noties.markwon.html.HtmlPlugin;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
-import android.content.Context;
-import android.graphics.drawable.GradientDrawable;
-import android.net.Uri;
-import android.util.TypedValue;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
-import com.google.android.material.button.MaterialButton;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-import com.google.android.material.textview.MaterialTextView;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.Locale;
-import java.util.Set;
 
 public class ChangelogActivity extends BaseActivity {
 
@@ -69,7 +55,7 @@ public class ChangelogActivity extends BaseActivity {
     private final List<JSONObject> stableReleases = new ArrayList<>();
     private final List<JSONObject> betaReleases = new ArrayList<>();
     private boolean downgradesEnabled = false;
-    private static final String RELEASES_API = "https://api.github.com/repos/mubashardev/WaEnhancer/releases";
+    private static final String RELEASES_API = "https://api.github.com/repos/igorcv88/WaEnhancerX/releases";
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -139,7 +125,7 @@ public class ChangelogActivity extends BaseActivity {
     }
 
     @Override
-    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+    public boolean onOptionsItemSelected(@NonNull android.view.MenuItem item) {
         if (item.getItemId() == android.R.id.home) {
             // navigateToHome();
             onBackPressed();
@@ -185,10 +171,6 @@ public class ChangelogActivity extends BaseActivity {
                     .url(RELEASES_API)
                     .header("Accept", "application/vnd.github+json")
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-
-            if (BuildConfig.GH_PUBLIC_TOKEN != null && !BuildConfig.GH_PUBLIC_TOKEN.isEmpty()) {
-                requestBuilder.header("Authorization", "Bearer " + BuildConfig.GH_PUBLIC_TOKEN);
-            }
 
             Request request = requestBuilder.build();
 
@@ -261,7 +243,7 @@ public class ChangelogActivity extends BaseActivity {
         private final String currentVersion;
         private boolean downgradesEnabled = false;
         private Markwon markwon;
-        private final Set<String> expandedTags = new HashSet<>();
+        private final java.util.Set<String> expandedTags = new java.util.HashSet<>();
 
         public ChangelogAdapter(String currentVersion) {
             this.currentVersion = currentVersion;
@@ -303,17 +285,17 @@ public class ChangelogActivity extends BaseActivity {
 
     private static class ChangelogViewHolder extends RecyclerView.ViewHolder {
 
-        private final MaterialTextView tvVersion;
-        private final MaterialTextView tvDate;
-        private final MaterialTextView tvBadge;
-        private final MaterialTextView tvInstalledBadge;
-        private final MaterialTextView tvBody;
-        private final MaterialButton btnUpdate;
-        private final MaterialButton btnGithub;
-        private final View btnUpdateSpacer;
-        private final ImageView ivExpandArrow;
-        private final View layoutCollapsible;
-        private final LinearLayout changelogItemsContainer;
+        private final com.google.android.material.textview.MaterialTextView tvVersion;
+        private final com.google.android.material.textview.MaterialTextView tvDate;
+        private final com.google.android.material.textview.MaterialTextView tvBadge;
+        private final com.google.android.material.textview.MaterialTextView tvInstalledBadge;
+        private final com.google.android.material.textview.MaterialTextView tvBody;
+        private final com.google.android.material.button.MaterialButton btnUpdate;
+        private final com.google.android.material.button.MaterialButton btnGithub;
+        private final android.view.View btnUpdateSpacer;
+        private final android.widget.ImageView ivExpandArrow;
+        private final android.view.View layoutCollapsible;
+        private final android.widget.LinearLayout changelogItemsContainer;
         private final Markwon markwon;
         private final String currentVersion;
 
@@ -337,7 +319,7 @@ public class ChangelogActivity extends BaseActivity {
         private static class ParsedCategory {
 
             final String name;
-            final List<String> items = new ArrayList<>();
+            final List<String> items = new java.util.ArrayList<>();
 
             ParsedCategory(String name) {
                 this.name = name;
@@ -345,7 +327,7 @@ public class ChangelogActivity extends BaseActivity {
         }
 
         private static List<ParsedCategory> parseBody(String body) {
-            List<ParsedCategory> categories = new ArrayList<>();
+            List<ParsedCategory> categories = new java.util.ArrayList<>();
             if (body == null || body.trim().isEmpty()) {
                 return categories;
             }
@@ -401,9 +383,9 @@ public class ChangelogActivity extends BaseActivity {
             return newCat;
         }
 
-        private static int dpToPx(Context context, int dp) {
-            return (int) TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP,
+        private static int dpToPx(android.content.Context context, int dp) {
+            return (int) android.util.TypedValue.applyDimension(
+                    android.util.TypedValue.COMPLEX_UNIT_DIP,
                     dp,
                     context.getResources().getDisplayMetrics()
             );
@@ -412,14 +394,14 @@ public class ChangelogActivity extends BaseActivity {
         private static String formatSize(long bytes) {
             if (bytes <= 0) return "Unknown size";
             double mb = bytes / (1024.0 * 1024.0);
-            return String.format(Locale.US, "%.2f MB", mb);
+            return String.format(java.util.Locale.US, "%.2f MB", mb);
         }
 
         public void bind(JSONObject release) {
-            bind(release, false, new HashSet<>());
+            bind(release, false, new java.util.HashSet<>());
         }
 
-        public void bind(JSONObject release, boolean downgradesEnabled, Set<String> expandedTags) {
+        public void bind(JSONObject release, boolean downgradesEnabled, java.util.Set<String> expandedTags) {
             String tagName = release.optString("tag_name", "Unknown");
             String publishedAt = release.optString("published_at", "");
             String body = release.optString("body", "No description available.");
@@ -438,7 +420,7 @@ public class ChangelogActivity extends BaseActivity {
 
             if (isInstalled) {
                 tvInstalledBadge.setVisibility(View.VISIBLE);
-                if (BuildConfig.DEBUG) {
+                if (com.waenhancer.BuildConfig.DEBUG) {
                     tvInstalledBadge.setText("Installed (Debug)");
                 } else {
                     tvInstalledBadge.setText("Installed (Release)");
@@ -473,19 +455,19 @@ public class ChangelogActivity extends BaseActivity {
                 markwon.setMarkdown(tvBody, body.trim());
             } else {
                 tvBody.setVisibility(View.GONE);
-                LayoutInflater inflater = LayoutInflater.from(itemView.getContext());
+                android.view.LayoutInflater inflater = android.view.LayoutInflater.from(itemView.getContext());
                 for (ParsedCategory category : parsedCategories) {
                     // 1. Inflate Category Header Row
-                    View headerRow = inflater.inflate(R.layout.item_changelog_row, changelogItemsContainer, false);
-                    MaterialTextView tvCatBadge = headerRow.findViewById(R.id.tv_item_badge);
-                    MaterialTextView tvCatText = headerRow.findViewById(R.id.tv_item_text);
+                    android.view.View headerRow = inflater.inflate(R.layout.item_changelog_row, changelogItemsContainer, false);
+                    com.google.android.material.textview.MaterialTextView tvCatBadge = headerRow.findViewById(R.id.tv_item_badge);
+                    com.google.android.material.textview.MaterialTextView tvCatText = headerRow.findViewById(R.id.tv_item_text);
 
                     tvCatText.setVisibility(View.GONE);
-                    tvCatBadge.setText(category.name.toUpperCase(Locale.US));
+                    tvCatBadge.setText(category.name.toUpperCase(java.util.Locale.US));
 
                     // Style the category badge based on category name
-                    GradientDrawable gd = new GradientDrawable();
-                    gd.setShape(GradientDrawable.RECTANGLE);
+                    android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+                    gd.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
                     gd.setCornerRadius(dpToPx(itemView.getContext(), 6));
 
                     int bgColor;
@@ -506,14 +488,14 @@ public class ChangelogActivity extends BaseActivity {
 
                     // 2. Inflate Category Bullet Point Rows
                     for (String itemText : category.items) {
-                        View itemRow = inflater.inflate(R.layout.item_changelog_row, changelogItemsContainer, false);
-                        MaterialTextView tvItemBadge = itemRow.findViewById(R.id.tv_item_badge);
-                        MaterialTextView tvItemText = itemRow.findViewById(R.id.tv_item_text);
+                        android.view.View itemRow = inflater.inflate(R.layout.item_changelog_row, changelogItemsContainer, false);
+                        com.google.android.material.textview.MaterialTextView tvItemBadge = itemRow.findViewById(R.id.tv_item_badge);
+                        com.google.android.material.textview.MaterialTextView tvItemText = itemRow.findViewById(R.id.tv_item_text);
 
                         tvItemBadge.setVisibility(View.GONE);
                         markwon.setMarkdown(tvItemText, "•  " + itemText);
 
-                        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) tvItemText.getLayoutParams();
+                        android.widget.LinearLayout.LayoutParams lp = (android.widget.LinearLayout.LayoutParams) tvItemText.getLayoutParams();
                         lp.leftMargin = dpToPx(itemView.getContext(), 16);
                         tvItemText.setLayoutParams(lp);
 
@@ -553,7 +535,7 @@ public class ChangelogActivity extends BaseActivity {
             String switchText = "";
 
             if (isInstalled) {
-                if (BuildConfig.DEBUG) {
+                if (com.waenhancer.BuildConfig.DEBUG) {
                     if (hasReleaseApk) {
                         isSwitchingAvailable = true;
                         switchAsset = releaseAsset;
@@ -597,9 +579,9 @@ public class ChangelogActivity extends BaseActivity {
 
                 if (apkAssets.isEmpty()) {
                     try {
-                        Context context = v.getContext();
-                        Intent intent = new Intent(Intent.ACTION_VIEW,
-                                Uri.parse("https://github.com/mubashardev/WaEnhancer/releases"));
+                        android.content.Context context = v.getContext();
+                        android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse("https://github.com/igorcv88/WaEnhancerX/releases"));
                         context.startActivity(intent);
                     } catch (Exception ignored) {
                     }
@@ -633,7 +615,7 @@ public class ChangelogActivity extends BaseActivity {
                         }
                     }
 
-                    new MaterialAlertDialogBuilder(v.getContext())
+                    new com.google.android.material.dialog.MaterialAlertDialogBuilder(v.getContext())
                             .setTitle("Select Build Type")
                             .setItems(items.toArray(new String[0]), (dialog, which) -> {
                                 JSONObject selectedAsset = choices.get(which);
@@ -645,12 +627,12 @@ public class ChangelogActivity extends BaseActivity {
                 }
             });
 
-            String htmlUrl = release.optString("html_url", "https://github.com/mubashardev/WaEnhancer/releases");
+            String htmlUrl = release.optString("html_url", "https://github.com/igorcv88/WaEnhancerX/releases");
             btnGithub.setOnClickListener(v -> {
                 try {
-                    Context context = v.getContext();
-                    Intent intent = new Intent(Intent.ACTION_VIEW,
-                            Uri.parse(htmlUrl));
+                    android.content.Context context = v.getContext();
+                    android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(htmlUrl));
                     context.startActivity(intent);
                 } catch (Exception ignored) {
                 }
@@ -662,10 +644,10 @@ public class ChangelogActivity extends BaseActivity {
                 return "";
             }
             try {
-                SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
-                Date date = isoFormat.parse(isoDate);
+                java.text.SimpleDateFormat isoFormat = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US);
+                java.util.Date date = isoFormat.parse(isoDate);
                 if (date != null) {
-                    SimpleDateFormat displayFormat = new SimpleDateFormat("MMMM dd, yyyy", Locale.US);
+                    java.text.SimpleDateFormat displayFormat = new java.text.SimpleDateFormat("MMMM dd, yyyy", java.util.Locale.US);
                     return displayFormat.format(date);
                 }
             } catch (Exception ignored) {
@@ -676,7 +658,7 @@ public class ChangelogActivity extends BaseActivity {
 
     private String getCurrentVersion() {
         try {
-            return normalizeVersion(BuildConfig.VERSION_NAME);
+            return normalizeVersion(com.waenhancer.BuildConfig.VERSION_NAME);
         } catch (Exception e) {
             return "";
         }

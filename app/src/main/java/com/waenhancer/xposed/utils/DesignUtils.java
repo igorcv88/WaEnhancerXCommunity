@@ -23,19 +23,16 @@ import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
 import com.waenhancer.xposed.core.WppCore;
+import com.waenhancer.theme.SemanticTheme;
 
 import java.util.HashMap;
 import java.util.Map;
-import android.content.Context;
-import android.content.res.Configuration;
-import android.util.TypedValue;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class DesignUtils {
 
     private static SharedPreferences mPrefs;
 
-    private static final ConcurrentHashMap<Integer, Drawable.ConstantState> drawableCache = new ConcurrentHashMap<>();
+    private static final java.util.concurrent.ConcurrentHashMap<Integer, Drawable.ConstantState> drawableCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     @SuppressLint("UseCompatLoadingForDrawables")
     public static Drawable getDrawable(int id) {
@@ -74,7 +71,8 @@ public class DesignUtils {
         }
         if (XResManager.moduleResources != null) {
             try {
-                int moduleId = XResManager.moduleResources.getIdentifier(name, "drawable", "com.waenhancer");
+                int moduleId = XResManager.moduleResources.getIdentifier(
+                        name, "drawable", com.waenhancer.BuildConfig.APPLICATION_ID);
                 if (moduleId > 0) {
                     return XResManager.moduleResources.getDrawable(moduleId, null);
                 }
@@ -154,58 +152,61 @@ public class DesignUtils {
     public static int getPrimaryTextColor() {
         try {
             if (mPrefs == null) return isNightMode() ? 0xfffffffe : 0xff000001;
-            var textColor = mPrefs.getInt("text_color", 0);
+            if (!mPrefs.getBoolean("changecolor", false)) {
+                return isNightMode() ? 0xfffffffe : 0xff000001;
+            }
+            int explicit = mPrefs.getInt("text_color", 0);
             if (shouldUseMonetColors()) {
-                var monetTextColor = resolveMonetColor(isNightMode() ? "system_neutral1_100" : "system_neutral1_900");
-                if (monetTextColor != 0) {
-                    textColor = monetTextColor;
-                }
+                int monet = resolveMonetColor(isNightMode()
+                        ? "system_neutral1_100" : "system_neutral1_900");
+                if (monet != 0) explicit = monet;
             }
-            if (textColor == 0 || !mPrefs.getBoolean("changecolor", false)) {
-                return DesignUtils.isNightMode() ? 0xfffffffe : 0xff000001;
-            }
-            return textColor;
-        } catch (Throwable t) {
+            return explicit != 0 ? explicit : semanticToken("onSurface");
+        } catch (Throwable ignored) {
             return isNightMode() ? 0xfffffffe : 0xff000001;
         }
     }
 
     public static int getUnSeenColor() {
         try {
-            if (mPrefs == null) return 0xFF25d366;
-            var primaryColor = mPrefs.getInt("primary_color", 0);
+            if (mPrefs == null || !mPrefs.getBoolean("changecolor", false)) return 0xFF25d366;
+            int explicit = mPrefs.getInt("primary_color", 0);
             if (shouldUseMonetColors()) {
-                var monetPrimaryColor = resolveMonetColor(isNightMode() ? "system_accent1_300" : "system_accent1_600");
-                if (monetPrimaryColor != 0) {
-                    primaryColor = monetPrimaryColor;
-                }
+                int monet = resolveMonetColor(isNightMode()
+                        ? "system_accent1_300" : "system_accent1_600");
+                if (monet != 0) explicit = monet;
             }
-            if (primaryColor == 0 || !mPrefs.getBoolean("changecolor", false)) {
-                return 0xFF25d366;
-            }
-            return primaryColor;
-        } catch (Throwable t) {
+            return explicit != 0 ? explicit : semanticToken("primary");
+        } catch (Throwable ignored) {
             return 0xFF25d366;
         }
     }
 
+    public static int getPrimaryColor() {
+        return getUnSeenColor();
+    }
+
     public static int getPrimarySurfaceColor() {
         try {
-            if (mPrefs == null) return isNightMode() ? 0xff121212 : 0xfffffffe;
-            var backgroundColor = mPrefs.getInt("background_color", 0);
+            if (mPrefs == null || !mPrefs.getBoolean("changecolor", false)) {
+                return isNightMode() ? 0xff121212 : 0xfffffffe;
+            }
+            int explicit = mPrefs.getInt("background_color", 0);
             if (shouldUseMonetColors()) {
-                var monetBackgroundColor = resolveMonetColor(isNightMode() ? "system_neutral1_900" : "system_neutral1_10");
-                if (monetBackgroundColor != 0) {
-                    backgroundColor = monetBackgroundColor;
-                }
+                int monet = resolveMonetColor(isNightMode()
+                        ? "system_neutral1_900" : "system_neutral1_10");
+                if (monet != 0) explicit = monet;
             }
-            if (backgroundColor == 0 || !mPrefs.getBoolean("changecolor", false)) {
-                return DesignUtils.isNightMode() ? 0xff121212 : 0xfffffffe;
-            }
-            return backgroundColor;
-        } catch (Throwable t) {
+            return explicit != 0 ? explicit : semanticToken("surface");
+        } catch (Throwable ignored) {
             return isNightMode() ? 0xff121212 : 0xfffffffe;
         }
+    }
+
+    private static int semanticToken(String token) {
+        String preset = mPrefs == null ? "green"
+                : mPrefs.getString("wae_color_preset", "green");
+        return SemanticTheme.fromPreset(preset, isNightMode()).get(token);
     }
 
     public static Drawable generatePrimaryColorDrawable(Drawable drawable) {
@@ -236,7 +237,7 @@ public class DesignUtils {
         return isNightMode(Utils.getApplication());
     }
 
-    public static boolean isNightMode(Context context) {
+    public static boolean isNightMode(android.content.Context context) {
         try {
             if (context == null) {
                 boolean systemNight = isNightModeBySystem();
@@ -246,11 +247,11 @@ public class DesignUtils {
             }
             
             // Check context configuration first (most accurate for the current activity)
-            int uiMode = context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
-            if (uiMode == Configuration.UI_MODE_NIGHT_YES) {
+            int uiMode = context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+            if (uiMode == android.content.res.Configuration.UI_MODE_NIGHT_YES) {
                 return true;
             }
-            if (uiMode == Configuration.UI_MODE_NIGHT_NO) {
+            if (uiMode == android.content.res.Configuration.UI_MODE_NIGHT_NO) {
                 // If it's explicitly NO, we might still want to check WhatsApp theme
             }
 
@@ -267,9 +268,9 @@ public class DesignUtils {
     }
 
     public static boolean isNightModeBySystem() {
-        Context context = Utils.getApplication();
+        android.content.Context context = Utils.getApplication();
         if (context == null) return false;
-        return (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        return (context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES;
     }
 
     public static void setPrefs(SharedPreferences mPrefs) {
@@ -393,16 +394,16 @@ public class DesignUtils {
         return new BitmapDrawable(Utils.getApplication().getResources(), bitmap);
     }
 
-    public static Drawable getSelectableItemBackground(Context context) {
-        TypedValue outValue = new TypedValue();
+    public static Drawable getSelectableItemBackground(android.content.Context context) {
+        android.util.TypedValue outValue = new android.util.TypedValue();
         context.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValue, true);
         return ContextCompat.getDrawable(context, outValue.resourceId);
     }
 
-    public static int resolveColorAttr(Context context, int attr) {
-        TypedValue outValue = new TypedValue();
+    public static int resolveColorAttr(android.content.Context context, int attr) {
+        android.util.TypedValue outValue = new android.util.TypedValue();
         if (context.getTheme().resolveAttribute(attr, outValue, true)) {
-            if (outValue.type >= TypedValue.TYPE_FIRST_COLOR_INT && outValue.type <= TypedValue.TYPE_LAST_COLOR_INT) {
+            if (outValue.type >= android.util.TypedValue.TYPE_FIRST_COLOR_INT && outValue.type <= android.util.TypedValue.TYPE_LAST_COLOR_INT) {
                 return outValue.data;
             } else {
                 return ContextCompat.getColor(context, outValue.resourceId);
@@ -411,25 +412,25 @@ public class DesignUtils {
         return 0;
     }
 
-    public static int getThemeBackgroundColor(Context context) {
+    public static int getThemeBackgroundColor(android.content.Context context) {
         int color = resolveColorAttr(context, android.R.attr.windowBackground);
         if (color == 0) return isNightMode() ? 0xff0b141a : 0xffffffff;
         return color;
     }
 
-    public static int getThemeTextColorPrimary(Context context) {
+    public static int getThemeTextColorPrimary(android.content.Context context) {
         int color = resolveColorAttr(context, android.R.attr.textColorPrimary);
         if (color == 0) return isNightMode() ? 0xffffffff : 0xff000000;
         return color;
     }
 
-    public static int getThemeTextColorSecondary(Context context) {
+    public static int getThemeTextColorSecondary(android.content.Context context) {
         int color = resolveColorAttr(context, android.R.attr.textColorSecondary);
         if (color == 0) return isNightMode() ? 0xff8696a0 : 0xff667781;
         return color;
     }
 
-    public static int getThemeHeaderColor(Context context) {
+    public static int getThemeHeaderColor(android.content.Context context) {
         // Try to find a header-like color or fallback to windowBackground
         int color = resolveColorAttr(context, android.R.attr.colorPrimary);
         if (color == 0) color = resolveColorAttr(context, android.R.attr.background);
@@ -437,9 +438,11 @@ public class DesignUtils {
         return color;
     }
 
-    public static int getThemeAccentColor(Context context) {
+    public static int getThemeAccentColor(android.content.Context context) {
+        if (mPrefs != null && mPrefs.getBoolean("changecolor", false)) {
+            return getPrimaryColor();
+        }
         int color = resolveColorAttr(context, android.R.attr.colorAccent);
-        if (color == 0) return 0xff25d366; // WhatsApp Green
-        return color;
+        return color == 0 ? 0xff25d366 : color;
     }
 }

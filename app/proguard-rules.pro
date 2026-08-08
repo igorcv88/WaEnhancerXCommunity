@@ -43,7 +43,7 @@
     public <init>(java.lang.ClassLoader, android.content.SharedPreferences);
 }
 
-# Keep classes referenced by the Pro submodule to prevent NoClassDefFoundError/ClassNotFoundException at runtime
+
 -keep class com.waenhancer.xposed.core.Feature { *; }
 -keep class com.waenhancer.xposed.core.FeatureLoader { *; }
 -keep class com.waenhancer.xposed.core.WppCore { *; }
@@ -60,8 +60,6 @@
 -keep class com.waenhancer.R { *; }
 -keep class com.waenhancer.R$* { *; }
 -keep class com.waenhancer.ui.helpers.BottomSheetHelper { *; }
--keep class com.waenhancer.utils.KeyboxValidator { *; }
--keep class com.waenhancer.utils.KeyboxValidator$* { *; }
 -keep class com.waenhancer.App { *; }
 -keep class com.waenhancer.BuildConfig { *; }
 -keep class com.waenhancer.preference.SafeSharedPreferences { *; }
@@ -69,40 +67,11 @@
 -keep class com.waenhancer.xposed.utils.XResManager { *; }
 -keep class com.waenhancer.model.FilterItem { *; }
 
-# Keep all classes and members in the pro package (except the obfuscated module) to prevent reflection and JNI issues in release mode
--keep class !com.waenhancer.pro.FileSizeSpooferPro,com.waenhancer.pro.** { *; }
 
-# Keep only the reflection entry point of the obfuscated module so its internal logic, methods, and fields can be obfuscated
--keep class com.waenhancer.pro.FileSizeSpooferPro {
-    public static void applyHooks(java.lang.ClassLoader, android.content.SharedPreferences);
-}
 
 # Keep all IPC bridge stub and AIDL classes intact to maintain process stability
 -keep class com.waenhancer.xposed.bridge.** { *; }
 
-# Keep the plugin API interfaces and support classes intact for helper/pro plugins
--keep class com.waex.api.** { *; }
-
-# Keep the plugin context implementation classes — the pro helper calls back into these
-# through the IPlugin/IPluginContext/ICoreBridge/IHookService API at runtime.
-# R8's -repackageclasses would move these to package 'Z' and rename their members,
-# causing NoSuchMethodError / AbstractMethodError when the helper plugin calls back.
--keep class com.waenhancer.xposed.core.plugins.PluginContextImpl { *; }
--keep class com.waenhancer.xposed.core.plugins.IsolatedParentClassLoader { *; }
--keep class com.waenhancer.xposed.core.plugins.impl.CoreBridgeImpl { *; }
--keep class com.waenhancer.xposed.core.plugins.impl.HookServiceImpl { *; }
--keep class com.waenhancer.xposed.core.plugins.impl.ObfuscationServiceImpl { *; }
--keep class com.waenhancer.xposed.core.plugins.impl.StateServiceImpl { *; }
-
-# =============================================================================
-# 3. LICENSING LAYER REFLECTION SAFETY (GAP CLOSED)
-# =============================================================================
-# Keep the names and reflective entrypoints of LicenseManager to ensure dynamic lookups succeed.
--keep class com.waenhancer.xposed.utils.LicenseManager {
-    public static void makePrefsWorldReadable(android.content.Context);
-    public static void silentCheck(android.content.Context);
-    public <init>(...);
-}
 
 # =============================================================================
 # 4. FLAT PACKAGING (REPACKAGING CLASSES TO MATCH COMPETITOR)
@@ -128,13 +97,10 @@
 -keepclassmembers class * extends androidx.preference.PreferenceFragmentCompat {
     protected *** mPrefs;
     private *** getDefaultSpooferXml();
-    private *** updateKeyboxVerifySummary();
 }
 
 
-# Keep the CSS parser library (jStyleParser) intact to prevent NoSuchFieldException during reflective enum/field lookups
--keep class cz.vutbr.web.** { *; }
--keep class org.w3c.css.sac.** { *; }
+# Suppress warnings for jStyleParser and CSS
 -dontwarn cz.vutbr.web.**
 -dontwarn org.w3c.css.sac.**
 
@@ -159,11 +125,6 @@
 -dontwarn org.bouncycastle.**
 -dontwarn org.slf4j.**
 
-# Firebase keep rules — required because App.java and HomeFragment.java access Firebase
-# via reflection (Class.forName / getMethod). Without these, R8 renames or removes
-# the classes and the reflection fails silently with ClassNotFoundException.
--keep class com.google.firebase.** { *; }
--keep class com.google.android.gms.** { *; }
 
 # Markwon and Commonmark warning suppression
 -dontwarn org.commonmark.**
@@ -177,3 +138,8 @@
 -keep public class * extends androidx.fragment.app.Fragment {
     public <init>();
 }
+# jStyleParser uses reflective enum and grammar lookups. These names must survive R8.
+-keep class cz.vutbr.web.css.** { *; }
+-keep class cz.vutbr.web.csskit.** { *; }
+-keepclassmembers enum * { public static **[] values(); public static ** valueOf(java.lang.String); }
+-keepattributes Signature,InnerClasses,EnclosingMethod

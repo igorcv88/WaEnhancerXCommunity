@@ -28,22 +28,6 @@ import java.lang.ref.WeakReference;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
-import android.app.Dialog;
-import android.content.Context;
-import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
-import android.telephony.TelephonyManager;
-import android.text.InputFilter;
-import android.text.Spanned;
-import android.util.Log;
-import android.widget.Toast;
-import com.waenhancer.xposed.utils.ProHelper;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.util.List;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class NewChat extends Feature {
 
@@ -62,7 +46,6 @@ public class NewChat extends Feature {
     private static WeakReference<EditText> activeCcEditRef;
     private static WeakReference<EditText> activePhoneEditRef;
     private static String activeIso = "US";
-    private static int activePhoneMaxLength = -1;
     private static boolean isSelfUpdating = false;
 
     public NewChat(@NonNull ClassLoader loader, @NonNull SharedPreferences preferences) {
@@ -180,7 +163,7 @@ public class NewChat extends Feature {
         String defaultIso = "US";
         String defaultCc = "1";
         try {
-            TelephonyManager tm = (TelephonyManager) activity.getSystemService(Context.TELEPHONY_SERVICE);
+            android.telephony.TelephonyManager tm = (android.telephony.TelephonyManager) activity.getSystemService(android.content.Context.TELEPHONY_SERVICE);
             if (tm != null) {
                 String simCountry = tm.getSimCountryIso();
                 if (simCountry != null && !simCountry.isEmpty()) {
@@ -215,9 +198,9 @@ public class NewChat extends Feature {
         tvCountry.setTextColor(0xffffffff);
         tvCountry.setGravity(Gravity.CENTER_VERTICAL);
         
-        GradientDrawable selectorBg = new GradientDrawable();
+        android.graphics.drawable.GradientDrawable selectorBg = new android.graphics.drawable.GradientDrawable();
         selectorBg.setCornerRadius(8 * density);
-        selectorBg.setColor(Color.parseColor("#1f8696a0"));
+        selectorBg.setColor(android.graphics.Color.parseColor("#1f8696a0"));
         tvCountry.setBackground(selectorBg);
         int padPx = (int) (14 * density);
         tvCountry.setPadding(padPx, padPx, padPx, padPx);
@@ -237,7 +220,7 @@ public class NewChat extends Feature {
                 intent.putExtra("country_display_name", tvCountry.getText().toString());
                 activity.startActivityForResult(intent, REQUEST_CODE_COUNTRY_PICKER);
             } catch (Throwable t) {
-                Utils.showToast("Error opening country picker", Toast.LENGTH_SHORT);
+                Utils.showToast("Error opening country picker", android.widget.Toast.LENGTH_SHORT);
             }
         });
 
@@ -326,42 +309,6 @@ public class NewChat extends Feature {
             }
         });
 
-        edtPhone.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {}
-
-            @Override
-            public void afterTextChanged(Editable s) {
-                if (isSelfUpdating) return;
-                String text = s.toString();
-                if (text.isEmpty()) return;
-
-                // 1. Remove hyphens and formatting characters
-                String cleaned = text.replaceAll("[+\\-()/\\s]", "");
-
-                // 2. Remove leading zeroes
-                cleaned = cleaned.replaceFirst("^0+", "");
-
-                // 3. Limit to max length if defined
-                if (activePhoneMaxLength > 0 && cleaned.length() > activePhoneMaxLength) {
-                    cleaned = cleaned.substring(0, activePhoneMaxLength);
-                }
-
-                if (!cleaned.equals(text)) {
-                    isSelfUpdating = true;
-                    try {
-                        edtPhone.setText(cleaned);
-                        edtPhone.setSelection(edtPhone.getText().length());
-                    } finally {
-                        isSelfUpdating = false;
-                    }
-                }
-            }
-        });
-
         // 3. Create and show AlertDialogWpp bottom sheet
         AlertDialogWpp alert = new AlertDialogWpp(activity);
         alert.setTitle("New Chat");
@@ -372,7 +319,7 @@ public class NewChat extends Feature {
         alert.setPositiveButton("Message", null);
         alert.setNegativeButton("Cancel", (dialogInterface, which) -> dialogInterface.dismiss());
 
-        Dialog dialog = alert.show();
+        android.app.Dialog dialog = alert.show();
         if (dialog != null) {
             TextView btnMessage = alert.getPositiveButton();
 
@@ -390,62 +337,9 @@ public class NewChat extends Feature {
 
                     String fullNumber = cc + phone;
                     String validationNumber = "+" + cc + phone;
-                    boolean isValid = true;
+                    // Local conservative E.164 validation. WhatsApp performs the final account check.
+                    boolean isValid = validationNumber.matches("\\+[1-9]\\d{7,14}");
 
-                    // Final validation guard before starting the chat
-                    try {
-                        ClassLoader proClassLoader = ProHelper.getPluginClassLoader(activity);
-                        if (proClassLoader != null) {
-                            Class<?> validatorClass = proClassLoader.loadClass("com.waex.helper.utils.PhoneNumberValidator");
-
-                            Field instanceField = validatorClass.getDeclaredField("INSTANCE");
-                            instanceField.setAccessible(true);
-                            Object validatorInstance = instanceField.get(null);
-
-                            Method phoneCodeRegexesMethod = validatorClass.getMethod("phoneCodeRegexes");
-                            Set<String> keys = (Set<String>) phoneCodeRegexesMethod.invoke(validatorInstance);
-
-                            String matchingKey = null;
-                            if (keys != null) {
-                                for (String key : keys) {
-                                    try {
-                                        if (Pattern.compile(key).matcher("+" + cc).matches()) {
-                                            matchingKey = key;
-                                            break;
-                                        }
-                                    } catch (Throwable ignored) {}
-                                }
-                            }
-                            /* Log removed */
-
-                            boolean validated = false;
-                            if (matchingKey != null) {
-                                Method isValidForPhoneCodeRegexMethod = validatorClass.getMethod(
-                                    "isValidForPhoneCodeRegex", String.class, String.class
-                                );
-                                isValid = (boolean) isValidForPhoneCodeRegexMethod.invoke(validatorInstance, validationNumber, matchingKey);
-                                /* Log removed */
-                                validated = true;
-                            }
-
-                            if (!validated) {
-                                String englishCountryName = new Locale("", activeIso).getDisplayCountry(Locale.ENGLISH);
-                                Method isValidForCountryMethod = validatorClass.getMethod(
-                                    "isValidForCountry", String.class, String.class, boolean.class
-                                );
-                                isValid = (boolean) isValidForCountryMethod.invoke(validatorInstance, validationNumber, englishCountryName, true);
-                                /* Log removed */
-                            }
-                        } else {
-                            /* Log removed */
-                        }
-                    } catch (Throwable t) {
-                        Log.e("NewChat", "Error in Message button validation: " + t.getMessage(), t);
-                        // Validator not available — allow without validation
-                        isValid = true;
-                    }
-
-                    /* Log removed */
                     if (!isValid) {
                         edtPhone.setError("Invalid phone number for this country");
                         return;
@@ -462,146 +356,34 @@ public class NewChat extends Feature {
         }
     }
 
-
     private static boolean isValidatorLoaded(Activity activity) {
-        try {
-            ClassLoader proClassLoader = ProHelper.getPluginClassLoader(activity);
-            if (proClassLoader != null) {
-                proClassLoader.loadClass("com.waex.helper.utils.PhoneNumberValidator");
-                return true;
-            }
-        } catch (Throwable ignored) {}
-        return false;
+        return true;
     }
 
     private static String getCountryHint(Activity activity, String cc, String activeIso) {
-        /* Log removed */
-        try {
-            ClassLoader proClassLoader = ProHelper.getPluginClassLoader(activity);
-            if (proClassLoader == null) {
-                /* Log removed */
-                return "Phone Number";
-            }
-            Class<?> validatorClass = proClassLoader.loadClass("com.waex.helper.utils.PhoneNumberValidator");
-
-            // Use the singleton INSTANCE to safely invoke @JvmStatic methods
-            Field instanceField = validatorClass.getDeclaredField("INSTANCE");
-            instanceField.setAccessible(true);
-            Object validatorInstance = instanceField.get(null);
-
-            Method phoneCodeRegexesMethod = validatorClass.getMethod("phoneCodeRegexes");
-            Set<String> keys = (Set<String>) phoneCodeRegexesMethod.invoke(validatorInstance);
-            /* Log removed */
-
-            String matchingKey = null;
-            if (keys != null) {
-                for (String key : keys) {
-                    try {
-                        if (Pattern.compile(key).matcher("+" + cc).matches()) {
-                            matchingKey = key;
-                            break;
-                        }
-                    } catch (Throwable t) {
-                        Log.w("NewChat", "Error matching key " + key + ": " + t.getMessage());
-                    }
-                }
-            }
-            /* Log removed */
-
-            if (matchingKey != null) {
-                Method countriesForPhoneCodeRegexMethod = validatorClass.getMethod(
-                    "countriesForPhoneCodeRegex", String.class
-                );
-                List<?> countryPatterns =
-                    (List<?>) countriesForPhoneCodeRegexMethod.invoke(validatorInstance, matchingKey);
-                /* Log removed */
-                if (countryPatterns != null && !countryPatterns.isEmpty()) {
-                    Object countryPattern = countryPatterns.get(0);
-                    try {
-                        Method getPhoneHintMethod =
-                            countryPattern.getClass().getMethod("getPhoneHint");
-                        String hint = (String) getPhoneHintMethod.invoke(countryPattern);
-                        /* Log removed */
-                        return hint;
-                    } catch (Throwable t) {
-                        Log.w("NewChat", "getPhoneHint method missing/failed, trying fallback: " + t.getMessage());
-                        Method getPhonePatternMethod =
-                            countryPattern.getClass().getMethod("getPhonePattern");
-                        String phonePattern = (String) getPhonePatternMethod.invoke(countryPattern);
-                        String hint = formatPatternToHint(phonePattern, matchingKey);
-                        Log.d("NewChat", "fallback hint: " + hint);
-                        return hint;
-                    }
-                }
-            } else {
-                /* Log removed */
-            }
-        } catch (Throwable t) {
-            Log.e("NewChat", "Error in getCountryHint: " + t.getMessage(), t);
-        }
-        return "Phone Number";
+        String country = getCountryName(activeIso);
+        return country == null || country.isBlank()
+                ? "Phone number"
+                : country + " phone number";
     }
 
     private static int getCountryPhoneLength(Activity activity, String cc) {
-        /* Log removed */
-        try {
-            ClassLoader proClassLoader = ProHelper.getPluginClassLoader(activity);
-            if (proClassLoader == null) {
-                return -1;
-            }
-            Class<?> validatorClass = proClassLoader.loadClass("com.waex.helper.utils.PhoneNumberValidator");
-
-            // Use the singleton INSTANCE to safely invoke @JvmStatic methods
-            Field instanceField = validatorClass.getDeclaredField("INSTANCE");
-            instanceField.setAccessible(true);
-            Object validatorInstance = instanceField.get(null);
-
-            Method phoneCodeRegexesMethod = validatorClass.getMethod("phoneCodeRegexes");
-            Set<String> keys = (Set<String>) phoneCodeRegexesMethod.invoke(validatorInstance);
-
-            String matchingKey = null;
-            if (keys != null) {
-                for (String key : keys) {
-                    try {
-                        if (Pattern.compile(key).matcher("+" + cc).matches()) {
-                            matchingKey = key;
-                            break;
-                        }
-                    } catch (Throwable ignored) {}
-                }
-            }
-
-            if (matchingKey != null) {
-                Method countriesForPhoneCodeRegexMethod = validatorClass.getMethod(
-                    "countriesForPhoneCodeRegex", String.class
-                );
-                List<?> countryPatterns =
-                    (List<?>) countriesForPhoneCodeRegexMethod.invoke(validatorInstance, matchingKey);
-                if (countryPatterns != null && !countryPatterns.isEmpty()) {
-                    Object countryPattern = countryPatterns.get(0);
-                    try {
-                        Method getPhoneLengthMethod =
-                            countryPattern.getClass().getMethod("getPhoneLength");
-                        int len = (int) getPhoneLengthMethod.invoke(countryPattern);
-                        /* Log removed */
-                        return len;
-                    } catch (Throwable t) {
-                        Log.w("NewChat", "Error getting phone length: " + t.getMessage(), t);
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            Log.e("NewChat", "Error in getCountryPhoneLength: " + t.getMessage(), t);
-        }
-        return -1;
+        int countryCodeLength = cc == null ? 0 : cc.replaceAll("\\D", "").length();
+        return Math.max(4, Math.min(14, 15 - countryCodeLength));
     }
 
     private static void updatePhoneHintAndLength(Activity activity, EditText edtPhone, String cc, String activeIso) {
+        /* Log removed */
         if (edtPhone == null) return;
         String hint = getCountryHint(activity, cc, activeIso);
         edtPhone.setHint(hint);
-        activePhoneMaxLength = getCountryPhoneLength(activity, cc);
-        edtPhone.setFilters(new InputFilter[0]);
+        int length = getCountryPhoneLength(activity, cc);
+        /* Log removed */
+        if (length > 0) {
+            edtPhone.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(length)});
+        } else {
+            edtPhone.setFilters(new android.text.InputFilter[0]);
+        }
     }
 
     /**
@@ -651,7 +433,7 @@ public class NewChat extends Feature {
         clean = clean.replace("\\d", "X");
 
         // Expand X{N} to N 'X' characters
-        Matcher matcher = Pattern.compile("X\\{(\\d+)\\}").matcher(clean);
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("X\\{(\\d+)\\}").matcher(clean);
         StringBuilder sb = new StringBuilder();
         while (matcher.find()) {
             int count = Integer.parseInt(matcher.group(1));

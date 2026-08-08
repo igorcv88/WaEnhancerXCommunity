@@ -13,7 +13,6 @@ import java.util.Set;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedHelpers;
-import java.util.HashMap;
 
 public class SharedPreferencesWrapper implements SharedPreferences {
 
@@ -185,7 +184,7 @@ public class SharedPreferencesWrapper implements SharedPreferences {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> result = (Map<String, Object>) param.getResult();
                 if (result == null || result.isEmpty()) return;
-                var updated = new HashMap<String, Object>(result.size());
+                var updated = new java.util.HashMap<String, Object>(result.size());
                 for (var entry : result.entrySet()) {
                     updated.put(entry.getKey(), applyHook(entry.getKey(), entry.getValue()));
                 }

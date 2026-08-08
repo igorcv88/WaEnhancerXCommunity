@@ -1,870 +1,435 @@
 package com.waenhancer.activities;
 
-import android.content.Intent;
-import android.content.res.ColorStateList;
 import android.content.SharedPreferences;
-import com.waenhancer.BuildConfig;
-import java.util.ArrayList;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
-import android.view.MenuItem;
+import android.text.InputType;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.RadioButton;
-import android.widget.RadioGroup;
-import android.widget.RelativeLayout;
-import android.widget.Toast;
+import android.widget.ScrollView;
+import android.widget.TextView;
 
-import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
 import androidx.preference.PreferenceManager;
 
-import com.google.android.material.slider.Slider;
+import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.button.MaterialButton;
 import com.google.android.material.materialswitch.MaterialSwitch;
-import com.waenhancer.R;
-import com.waenhancer.activities.base.BaseActivity;
-import com.waenhancer.views.dialog.SimpleColorPickerDialog;
-import android.util.TypedValue;
-import android.view.Menu;
-import android.widget.ImageView;
-import android.widget.TextView;
-import androidx.appcompat.widget.Toolbar;
-import com.waenhancer.xposed.utils.ProHelper;
-import android.graphics.Paint;
-import android.graphics.Rect;
-import android.graphics.RectF;
-import android.graphics.Shader;
-import android.graphics.LinearGradient;
-import android.graphics.Path;
-import android.graphics.PixelFormat;
-import android.graphics.drawable.Drawable;
-import android.graphics.ColorFilter;
-import android.content.Context;
-import android.content.res.Configuration;
-import androidx.annotation.Nullable;
-import android.graphics.Canvas;
-import android.os.Build;
-import android.view.ViewParent;
+import com.google.android.material.slider.Slider;
+import com.google.android.material.textfield.MaterialAutoCompleteTextView;
+import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
+import com.waenhancer.BuildConfig;
+import com.waenhancer.config.BottomBarPreferenceSchema;
 
-public class BottomBarCustomizationActivity extends BaseActivity {
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+
+/** Complete open-source editor for the classic floating bottom bar. */
+public class BottomBarCustomizationActivity extends AppCompatActivity {
 
     private SharedPreferences prefs;
-    private MaterialSwitch switchFloating;
-    private View layoutCustomizationControls;
-    private RadioGroup pillDesignGroup;
-    private RadioButton radioDesignRegular;
-    private RadioButton radioDesignPro;
-    private RadioButton radioDesignIosGlass;
-    private MaterialSwitch switchGlass;
-    private LinearLayout btnSelectColor;
-    private View colorPreviewCircle;
-    private Slider sliderRadius;
-    private Slider sliderMargin;
-    private Slider sliderMarginHorizontal;
-    private Slider sliderFab;
-    private Slider sliderOpacity;
-    private Slider sliderIconSize;
-    private Slider sliderTextSize;
-    private Slider sliderPaddingVertical;
-    private Slider sliderIconLabelSpacing;
-    private View layoutGlassOpacity;
-    private MaterialSwitch switchScrollHide;
-    private View layoutScrollHideMode;
-    private RadioGroup scrollHideModeGroup;
-    private RadioButton radioHideDownward;
-    private RadioButton radioHideInvisible;
-    
-    private TextView txtRadiusVal;
-    private TextView txtMarginVal;
-    private TextView txtMarginHorizontalVal;
-    private TextView txtFabVal;
-    private TextView txtOpacityVal;
-    private TextView txtIconSizeVal;
-    private TextView txtTextSizeVal;
-    private TextView txtPaddingVerticalVal;
-    private TextView txtIconLabelSpacingVal;
-
-    // Preview views
-    private View previewFab;
-    private LinearLayout previewBottomBar;
-    private View previewActiveIndicator;
-    private ImageView previewChatsIcon;
-
-    private int selectedColor = 0; // 0 represents default
-    private float density;
+    private LinearLayout controls;
+    private LinearLayout previewPill;
+    private MaterialButton previewFab;
+    private final Map<String, Slider> sliders = new LinkedHashMap<>();
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_bottom_bar_customization);
-
-        Toolbar toolbar = findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
-        if (getSupportActionBar() != null) {
-            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-            getSupportActionBar().setTitle(R.string.pill_customization_title);
-        }
-
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        density = getResources().getDisplayMetrics().density;
+        BottomBarPreferenceSchema.normalizePersistedValues(prefs);
+        setContentView(buildContent());
+        refreshPreview();
+    }
 
-        // Initialize UI Elements
-        switchFloating = findViewById(R.id.switch_floating);
-        layoutCustomizationControls = findViewById(R.id.layout_customization_controls);
-        pillDesignGroup = findViewById(R.id.pill_design_group);
-        radioDesignRegular = findViewById(R.id.radio_design_regular);
-        radioDesignPro = findViewById(R.id.radio_design_pro);
-        radioDesignIosGlass = findViewById(R.id.radio_design_ios_glass);
-        switchGlass = findViewById(R.id.switch_glass);
-        btnSelectColor = findViewById(R.id.btn_select_color);
-        colorPreviewCircle = findViewById(R.id.color_preview_circle);
-        sliderRadius = findViewById(R.id.slider_radius);
-        sliderMargin = findViewById(R.id.slider_margin);
-        sliderMarginHorizontal = findViewById(R.id.slider_margin_horizontal);
-        sliderFab = findViewById(R.id.slider_fab);
-        sliderOpacity = findViewById(R.id.slider_opacity);
-        sliderIconSize = findViewById(R.id.slider_icon_size);
-        sliderTextSize = findViewById(R.id.slider_text_size);
-        sliderPaddingVertical = findViewById(R.id.slider_padding_vertical);
-        sliderIconLabelSpacing = findViewById(R.id.slider_icon_label_spacing);
-        layoutGlassOpacity = findViewById(R.id.layout_glass_opacity);
+    private View buildContent() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setLayoutParams(new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        txtRadiusVal = findViewById(R.id.txt_radius_val);
-        txtMarginVal = findViewById(R.id.txt_margin_val);
-        txtMarginHorizontalVal = findViewById(R.id.txt_margin_horizontal_val);
-        txtFabVal = findViewById(R.id.txt_fab_val);
-        txtOpacityVal = findViewById(R.id.txt_opacity_val);
-        txtIconSizeVal = findViewById(R.id.txt_icon_size_val);
-        txtTextSizeVal = findViewById(R.id.txt_text_size_val);
-        txtPaddingVerticalVal = findViewById(R.id.txt_padding_vertical_val);
-        txtIconLabelSpacingVal = findViewById(R.id.txt_icon_label_spacing_val);
+        MaterialToolbar toolbar = new MaterialToolbar(this);
+        toolbar.setTitle("Floating Bottom Bar");
+        toolbar.setNavigationIcon(android.R.drawable.ic_media_previous);
+        toolbar.setNavigationOnClickListener(v -> finish());
+        root.addView(toolbar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
 
-        previewFab = findViewById(R.id.preview_fab);
-        previewBottomBar = findViewById(R.id.preview_bottom_bar);
-        previewActiveIndicator = findViewById(R.id.preview_active_indicator);
-        previewChatsIcon = findViewById(R.id.preview_chats_icon);
+        ScrollView scroll = new ScrollView(this);
+        controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        controls.setPadding(dp(20), dp(12), dp(20), dp(40));
+        scroll.addView(controls, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        // Load values from Preferences
-        boolean floatingEnabled = prefs.getBoolean("floating_bottom_bar", false);
-        switchFloating.setChecked(floatingEnabled);
-        layoutCustomizationControls.setVisibility(floatingEnabled ? View.VISIBLE : View.GONE);
+        addPreview();
+        addSection("Core");
+        addSwitch("Enable floating bar", "floating_bottom_bar", false);
+        addSwitch("Glassmorphism", "floating_bottom_bar_glass", true);
+        addColorField("Fill color", "floating_bottom_bar_fill_color", 0);
+        addSwitch("Fully rounded", "floating_bottom_bar_fully_rounded", false);
+        addSlider("Corner radius", "floating_bottom_bar_radius");
+        addSlider("Bottom margin", "floating_bottom_bar_bottom_margin");
+        addSlider("Horizontal margin", "floating_bottom_bar_horizontal_margin");
+        addSlider("Glass opacity", "floating_bottom_bar_glass_opacity");
+        addSlider("Icon size", "floating_bottom_bar_icon_size");
+        addSlider("Text size", "floating_bottom_bar_text_size");
+        addSlider("Vertical padding", "floating_bottom_bar_padding_vertical");
+        addSlider("Icon-label spacing", "floating_bottom_bar_icon_label_spacing");
+        addDropdown("Pill height", "floating_bottom_bar_height_mode",
+                new String[]{"Automatic", "Manual"}, new String[]{"automatic", "manual"}, "automatic");
+        addSlider("Manual pill height", "floating_bottom_bar_manual_height");
+        addDropdown("Hide while scrolling", "floating_bottom_bar_scroll_hide_mode",
+                new String[]{"Off", "Main tabs", "All scrollable views"},
+                new String[]{"off", "tabs", "all"}, "tabs");
 
-        boolean isProActive = ProHelper.isProEnabled();
-        if (!isProActive) {
-            radioDesignPro.setEnabled(false);
-            radioDesignIosGlass.setEnabled(false);
-            radioDesignRegular.setChecked(true);
-        } else {
-            String pillDesign = prefs.getString("floating_bottom_bar_pill_design", "regular");
-            if ("pro".equals(pillDesign)) {
-                radioDesignPro.setChecked(true);
-            } else if ("ios_glass".equals(pillDesign)) {
-                radioDesignIosGlass.setChecked(true);
-            } else {
-                radioDesignRegular.setChecked(true);
+        addSection("Floating action button");
+        addDropdown("FAB mode", "floating_bottom_bar_fab_mode",
+                new String[]{"Default", "Minimal", "Hidden"},
+                new String[]{"default", "minimal", "hidden"}, "default");
+        addSlider("FAB vertical offset", "floating_bottom_bar_fab_offset");
+        addSlider("Minimal FAB size", "floating_bottom_bar_minimal_fab_size");
+        addSlider("Minimal FAB radius", "floating_bottom_bar_minimal_fab_radius");
+        addSlider("Minimal FAB opacity", "floating_bottom_bar_minimal_fab_opacity");
+        addSlider("Minimal FAB side margin", "floating_bottom_bar_minimal_fab_margin");
+        addColorField("Minimal FAB background", "floating_bottom_bar_minimal_fab_color", 0);
+        addColorField("Minimal FAB icon", "floating_bottom_bar_minimal_fab_icon_color", Color.WHITE);
+
+        addSection("Selected tab indicator");
+        addSwitch("Show indicator", "floating_bottom_bar_indicator_visible", false);
+        addDropdown("Indicator width", "floating_bottom_bar_indicator_width_mode",
+                new String[]{"Automatic", "Manual"}, new String[]{"automatic", "manual"}, "automatic");
+        addDropdown("Indicator height", "floating_bottom_bar_indicator_height_mode",
+                new String[]{"Automatic", "Manual"}, new String[]{"automatic", "manual"}, "automatic");
+        addSlider("Indicator width", "floating_bottom_bar_indicator_width");
+        addSlider("Indicator height", "floating_bottom_bar_indicator_height");
+        addSlider("Indicator radius", "floating_bottom_bar_indicator_radius");
+        addSlider("Horizontal padding", "floating_bottom_bar_indicator_padding_horizontal");
+        addSlider("Vertical padding", "floating_bottom_bar_indicator_padding_vertical");
+        addSlider("Vertical offset", "floating_bottom_bar_indicator_offset");
+        addSlider("Indicator opacity", "floating_bottom_bar_indicator_opacity");
+        addColorField("Indicator color", "floating_bottom_bar_indicator_color", 0);
+
+        addSection("Presets");
+        LinearLayout presetRow = new LinearLayout(this);
+        presetRow.setOrientation(LinearLayout.HORIZONTAL);
+        presetRow.setWeightSum(3f);
+        presetRow.addView(presetButton("Stable Glass", "stable_glass"), weighted());
+        presetRow.addView(presetButton("Compact", "compact"), weighted());
+        presetRow.addView(presetButton("Accessibility", "accessibility"), weighted());
+        controls.addView(presetRow);
+
+        MaterialButton reset = new MaterialButton(this);
+        reset.setText("Reset floating bar only");
+        reset.setOnClickListener(v -> resetBottomBar());
+        LinearLayout.LayoutParams resetParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        resetParams.topMargin = dp(12);
+        controls.addView(reset, resetParams);
+
+        return root;
+    }
+
+    private void addPreview() {
+        addSection("Live preview");
+        FrameLayout stage = new FrameLayout(this);
+        stage.setPadding(dp(16), dp(20), dp(16), dp(20));
+        stage.setBackgroundColor(resolveSurfaceVariant());
+
+        previewPill = new LinearLayout(this);
+        previewPill.setOrientation(LinearLayout.HORIZONTAL);
+        previewPill.setGravity(Gravity.CENTER);
+        String[] labels = {"Chats", "Updates", "Communities", "Calls"};
+        for (String label : labels) {
+            TextView item = new TextView(this);
+            item.setText(label);
+            item.setGravity(Gravity.CENTER);
+            item.setCompoundDrawablesWithIntrinsicBounds(0, android.R.drawable.presence_invisible, 0, 0);
+            previewPill.addView(item, new LinearLayout.LayoutParams(0, dp(52), 1f));
+        }
+        FrameLayout.LayoutParams pillParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM);
+        stage.addView(previewPill, pillParams);
+
+        previewFab = new MaterialButton(this);
+        previewFab.setText("+");
+        previewFab.setTextSize(24);
+        previewFab.setInsetTop(0);
+        previewFab.setInsetBottom(0);
+        FrameLayout.LayoutParams fabParams = new FrameLayout.LayoutParams(dp(56), dp(56),
+                Gravity.END | Gravity.BOTTOM);
+        fabParams.setMargins(0, 0, dp(12), dp(68));
+        stage.addView(previewFab, fabParams);
+
+        controls.addView(stage, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(190)));
+    }
+
+    private void addSection(String title) {
+        TextView view = new TextView(this);
+        view.setText(title);
+        view.setTextSize(18);
+        view.setTextColor(resolvePrimary());
+        view.setPadding(0, dp(22), 0, dp(8));
+        controls.addView(view);
+    }
+
+    private void addSwitch(String title, String key, boolean defaultValue) {
+        MaterialSwitch control = new MaterialSwitch(this);
+        control.setText(title);
+        control.setChecked(prefs.getBoolean(key, defaultValue));
+        control.setPadding(0, dp(6), 0, dp(6));
+        control.setOnCheckedChangeListener((button, checked) -> {
+            prefs.edit().putBoolean(key, checked).apply();
+            notifyChanged();
+        });
+        controls.addView(control, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    private void addSlider(String title, String key) {
+        BottomBarPreferenceSchema.Spec spec = BottomBarPreferenceSchema.spec(key);
+        TextView label = new TextView(this);
+        label.setText(title + ": " + format(BottomBarPreferenceSchema.read(prefs, key)));
+        label.setPadding(0, dp(8), 0, 0);
+        controls.addView(label);
+
+        Slider slider = new Slider(this);
+        slider.setValueFrom(spec.min);
+        slider.setValueTo(spec.max);
+        slider.setStepSize(spec.step);
+        slider.setValue(BottomBarPreferenceSchema.read(prefs, key));
+        slider.addOnChangeListener((control, value, fromUser) -> {
+            if (!fromUser) return;
+            float normalized = BottomBarPreferenceSchema.normalize(key, value);
+            prefs.edit().putFloat(key, normalized).apply();
+            label.setText(title + ": " + format(normalized));
+            notifyChanged();
+        });
+        sliders.put(key, slider);
+        controls.addView(slider);
+    }
+
+    private void addDropdown(String title, String key, String[] entries, String[] values,
+                             String defaultValue) {
+        TextInputLayout layout = new TextInputLayout(this);
+        layout.setHint(title);
+        MaterialAutoCompleteTextView input = new MaterialAutoCompleteTextView(this);
+        input.setInputType(InputType.TYPE_NULL);
+        input.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_dropdown_item_1line, entries));
+        String current = prefs.getString(key, defaultValue);
+        int selected = indexOf(values, current);
+        input.setText(entries[Math.max(0, selected)], false);
+        input.setOnItemClickListener((parent, view, position, id) -> {
+            prefs.edit().putString(key, values[position]).apply();
+            notifyChanged();
+        });
+        layout.addView(input);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(8);
+        controls.addView(layout, params);
+    }
+
+    private void addColorField(String title, String key, int defaultValue) {
+        TextInputLayout layout = new TextInputLayout(this);
+        layout.setHint(title + " (#AARRGGBB, 0 = automatic)");
+        TextInputEditText input = new TextInputEditText(this);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        int current = safeColor(key, defaultValue);
+        input.setText(current == 0 ? "0" : String.format(Locale.US, "#%08X", current));
+        input.setOnFocusChangeListener((view, hasFocus) -> {
+            if (!hasFocus) {
+                Integer parsed = parseColor(input.getText() == null ? "" : input.getText().toString());
+                if (parsed == null) {
+                    input.setError("Use #RRGGBB, #AARRGGBB, or 0");
+                } else {
+                    prefs.edit().putInt(key, parsed).apply();
+                    notifyChanged();
+                }
             }
-        }
-
-        boolean glassEnabled = prefs.getBoolean("floating_bottom_bar_glass", true);
-        switchGlass.setChecked(glassEnabled);
-        layoutGlassOpacity.setVisibility(glassEnabled ? View.VISIBLE : View.GONE);
-
-        selectedColor = prefs.getInt("floating_bottom_bar_fill_color", 0);
-        updateColorPreviewCircle();
-
-        int radius = prefs.getInt("floating_bottom_bar_radius", 28);
-        sliderRadius.setValue(radius);
-        txtRadiusVal.setText(radius + "dp");
-
-        int marginBottom = prefs.getInt("floating_bottom_bar_margin_bottom", 22);
-        sliderMargin.setValue(marginBottom);
-        txtMarginVal.setText(marginBottom + "dp");
-
-        int marginHorizontal = prefs.getInt("floating_bottom_bar_margin_horizontal", 16);
-        sliderMarginHorizontal.setValue(marginHorizontal);
-        txtMarginHorizontalVal.setText(marginHorizontal + "dp");
-
-        int fabOffset = prefs.getInt("floating_bottom_bar_fab_offset", 80);
-        sliderFab.setValue(fabOffset);
-        txtFabVal.setText(fabOffset + "dp");
-
-        int opacity = (int) prefs.getFloat("floating_bottom_bar_glass_opacity", 35f);
-        sliderOpacity.setValue(opacity);
-        txtOpacityVal.setText(opacity + "%");
-
-        int iconSize = prefs.getInt("floating_bottom_bar_icon_size", 24);
-        sliderIconSize.setValue(iconSize);
-        txtIconSizeVal.setText(iconSize + "dp");
-
-        int textSize = prefs.getInt("floating_bottom_bar_text_size", 12);
-        sliderTextSize.setValue(textSize);
-        txtTextSizeVal.setText(textSize + "sp");
-
-        int paddingVertical = prefs.getInt("floating_bottom_bar_padding_vertical", 6);
-        sliderPaddingVertical.setValue(paddingVertical);
-        txtPaddingVerticalVal.setText(paddingVertical + "dp");
-
-        int iconLabelSpacing = prefs.getInt("floating_bottom_bar_icon_label_spacing", 2);
-        sliderIconLabelSpacing.setValue(iconLabelSpacing);
-        txtIconLabelSpacingVal.setText(iconLabelSpacing + "dp");
-
-        switchScrollHide = findViewById(R.id.switch_scroll_hide);
-        layoutScrollHideMode = findViewById(R.id.layout_scroll_hide_mode);
-        scrollHideModeGroup = findViewById(R.id.scroll_hide_mode_group);
-        radioHideDownward = findViewById(R.id.radio_hide_downward);
-        radioHideInvisible = findViewById(R.id.radio_hide_invisible);
-
-        boolean scrollHideEnabled = prefs.getBoolean("floating_bottom_bar_scroll_hide", true);
-        switchScrollHide.setChecked(scrollHideEnabled);
-        layoutScrollHideMode.setVisibility(scrollHideEnabled ? View.VISIBLE : View.GONE);
-
-        String scrollHideMode = prefs.getString("floating_bottom_bar_scroll_hide_mode", "downward");
-        if ("invisible".equals(scrollHideMode)) {
-            radioHideInvisible.setChecked(true);
-        } else {
-            radioHideDownward.setChecked(true);
-        }
-
-        // Set Listeners & Bind to Preview Real-Time Updates
-        switchFloating.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            layoutCustomizationControls.setVisibility(isChecked ? View.VISIBLE : View.GONE);
-            updateLivePreview();
         });
-
-        switchScrollHide.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            layoutScrollHideMode.setVisibility(isChecked ? View.VISIBLE : View.GONE);
-        });
-
-        pillDesignGroup.setOnCheckedChangeListener((group, checkedId) -> updateLivePreview());
-
-        switchGlass.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            layoutGlassOpacity.setVisibility(isChecked ? View.VISIBLE : View.GONE);
-            updateLivePreview();
-        });
-
-        btnSelectColor.setOnClickListener(v -> {
-            int initialColor = selectedColor != 0 ? selectedColor : 0xFF1F2C34;
-            new SimpleColorPickerDialog(this, initialColor, color -> {
-                selectedColor = color;
-                updateColorPreviewCircle();
-                updateLivePreview();
-            }).show();
-        });
-
-        sliderRadius.addOnChangeListener((slider, value, fromUser) -> {
-            txtRadiusVal.setText((int) value + "dp");
-            updateLivePreview();
-        });
-
-        sliderMargin.addOnChangeListener((slider, value, fromUser) -> {
-            txtMarginVal.setText((int) value + "dp");
-            updateLivePreview();
-        });
-
-        sliderMarginHorizontal.addOnChangeListener((slider, value, fromUser) -> {
-            txtMarginHorizontalVal.setText((int) value + "dp");
-            updateLivePreview();
-        });
-
-        sliderFab.addOnChangeListener((slider, value, fromUser) -> {
-            txtFabVal.setText((int) value + "dp");
-            updateLivePreview();
-        });
-
-        sliderOpacity.addOnChangeListener((slider, value, fromUser) -> {
-            txtOpacityVal.setText((int) value + "%");
-            updateLivePreview();
-        });
-
-        sliderIconSize.addOnChangeListener((slider, value, fromUser) -> {
-            txtIconSizeVal.setText((int) value + "dp");
-            updateLivePreview();
-        });
-
-        sliderTextSize.addOnChangeListener((slider, value, fromUser) -> {
-            txtTextSizeVal.setText((int) value + "sp");
-            updateLivePreview();
-        });
-
-        sliderPaddingVertical.addOnChangeListener((slider, value, fromUser) -> {
-            txtPaddingVerticalVal.setText((int) value + "dp");
-            updateLivePreview();
-        });
-
-        sliderIconLabelSpacing.addOnChangeListener((slider, value, fromUser) -> {
-            txtIconLabelSpacingVal.setText((int) value + "dp");
-            updateLivePreview();
-        });
-
-        // Perform initial preview layout
-        updateLivePreview();
+        layout.addView(input);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(8);
+        controls.addView(layout, params);
     }
 
-    private void updateColorPreviewCircle() {
-        GradientDrawable shape = new GradientDrawable();
-        shape.setShape(GradientDrawable.OVAL);
-        if (selectedColor != 0) {
-            shape.setColor(selectedColor);
-        } else {
-            shape.setColor(0x00000000); // transparent (default)
-        }
-        shape.setStroke((int) (1 * density), 0x44FFFFFF);
-        colorPreviewCircle.setBackground(shape);
+    private MaterialButton presetButton(String label, String preset) {
+        MaterialButton button = new MaterialButton(this);
+        button.setText(label);
+        button.setTextSize(11);
+        button.setOnClickListener(v -> applyPreset(preset));
+        return button;
     }
 
-    private void updateLivePreview() {
+    private void applyPreset(String preset) {
+        SharedPreferences.Editor editor = prefs.edit();
+        for (Map.Entry<String, Float> value : BottomBarPreferenceSchema.preset(preset).entrySet()) {
+            editor.putFloat(value.getKey(), value.getValue());
+        }
+        editor.putBoolean("floating_bottom_bar", true);
+        editor.putBoolean("floating_bottom_bar_glass", true);
+        editor.putString("floating_bottom_bar_height_mode",
+                "accessibility".equals(preset) ? "manual" : "automatic");
+        editor.apply();
+        recreate();
+        notifyChanged();
+    }
+
+    private void resetBottomBar() {
+        SharedPreferences.Editor editor = prefs.edit();
+        for (String key : BottomBarPreferenceSchema.all().keySet()) editor.remove(key);
+        String[] keys = {
+                "floating_bottom_bar", "floating_bottom_bar_glass",
+                "floating_bottom_bar_fill_color", "floating_bottom_bar_fully_rounded",
+                "floating_bottom_bar_height_mode", "floating_bottom_bar_scroll_hide_mode",
+                "floating_bottom_bar_fab_mode", "floating_bottom_bar_minimal_fab_color",
+                "floating_bottom_bar_minimal_fab_icon_color",
+                "floating_bottom_bar_indicator_visible",
+                "floating_bottom_bar_indicator_width_mode",
+                "floating_bottom_bar_indicator_height_mode",
+                "floating_bottom_bar_indicator_color"
+        };
+        for (String key : keys) editor.remove(key);
+        editor.apply();
+        recreate();
+        notifyChanged();
+    }
+
+    private void notifyChanged() {
+        getContentResolver().notifyChange(
+                android.net.Uri.parse("content://" + BuildConfig.APPLICATION_ID
+                        + ".hookprovider/preferences"), null);
+        refreshPreview();
+    }
+
+    private void refreshPreview() {
+        if (previewPill == null || prefs == null) return;
+        float density = getResources().getDisplayMetrics().density;
+        int radius = prefs.getBoolean("floating_bottom_bar_fully_rounded", false)
+                ? 1000 : BottomBarPreferenceSchema.readInt(prefs, "floating_bottom_bar_radius");
+        int fill = safeColor("floating_bottom_bar_fill_color", 0);
+        if (fill == 0) fill = resolveSurface();
+        int opacity = BottomBarPreferenceSchema.readInt(prefs,
+                "floating_bottom_bar_glass_opacity");
+        if (prefs.getBoolean("floating_bottom_bar_glass", true)) {
+            fill = Color.argb(Math.round(255f * opacity / 100f),
+                    Color.red(fill), Color.green(fill), Color.blue(fill));
+        }
+        GradientDrawable pill = new GradientDrawable();
+        pill.setColor(fill);
+        pill.setCornerRadius(radius * density);
+        pill.setStroke(dp(1), withAlpha(resolvePrimary(), 0.30f));
+        previewPill.setBackground(pill);
+        int vertical = BottomBarPreferenceSchema.readInt(prefs,
+                "floating_bottom_bar_padding_vertical");
+        previewPill.setPadding(dp(4), dp(vertical), dp(4), dp(vertical));
+
+        String fabMode = prefs.getString("floating_bottom_bar_fab_mode", "default");
+        previewFab.setVisibility("hidden".equals(fabMode) ? View.GONE : View.VISIBLE);
+        if ("minimal".equals(fabMode)) {
+            int size = BottomBarPreferenceSchema.readInt(prefs,
+                    "floating_bottom_bar_minimal_fab_size");
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) previewFab.getLayoutParams();
+            params.width = dp(size);
+            params.height = dp(size);
+            previewFab.setLayoutParams(params);
+            int color = safeColor("floating_bottom_bar_minimal_fab_color", resolvePrimary());
+            int alpha = BottomBarPreferenceSchema.readInt(prefs,
+                    "floating_bottom_bar_minimal_fab_opacity");
+            previewFab.setBackgroundTintList(ColorStateList.valueOf(withAlpha(color, alpha / 100f)));
+            previewFab.setTextColor(safeColor("floating_bottom_bar_minimal_fab_icon_color", Color.WHITE));
+            previewFab.setCornerRadius(dp(BottomBarPreferenceSchema.readInt(prefs,
+                    "floating_bottom_bar_minimal_fab_radius")));
+        } else {
+            previewFab.setBackgroundTintList(ColorStateList.valueOf(resolvePrimary()));
+            previewFab.setTextColor(Color.WHITE);
+        }
+    }
+
+    private LinearLayout.LayoutParams weighted() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        params.setMargins(dp(2), 0, dp(2), 0);
+        return params;
+    }
+
+    private int safeColor(String key, int fallback) {
+        Object raw = prefs.getAll().get(key);
+        if (raw instanceof Number) return ((Number) raw).intValue();
+        if (raw instanceof String) {
+            Integer parsed = parseColor((String) raw);
+            return parsed == null ? fallback : parsed;
+        }
+        return fallback;
+    }
+
+    private static Integer parseColor(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        if (value.isEmpty() || "0".equals(value)) return 0;
         try {
-            boolean isFloating = switchFloating.isChecked();
-            boolean isPro = radioDesignPro.isChecked();
-            boolean isIosGlass = radioDesignIosGlass.isChecked();
-            boolean isGlass = switchGlass.isChecked();
-            int radius = (int) sliderRadius.getValue();
-            int marginBottom = (int) sliderMargin.getValue();
-            int marginHorizontal = (int) sliderMarginHorizontal.getValue();
-            int fabOffset = (int) sliderFab.getValue();
-            int opacity = (int) sliderOpacity.getValue();
-            int iconLabelSpacing = (int) sliderIconLabelSpacing.getValue();
-
-            // 1. Update Preview Pill Layout Params & Margins
-            ViewGroup.LayoutParams lp = previewBottomBar.getLayoutParams();
-            if (lp instanceof ViewGroup.MarginLayoutParams) {
-                ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
-                if (isFloating) {
-                    mlp.leftMargin = (int) (marginHorizontal * density);
-                    mlp.rightMargin = (int) (marginHorizontal * density);
-                    mlp.bottomMargin = (int) (marginBottom * density);
-                    mlp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-                } else {
-                    mlp.leftMargin = 0;
-                    mlp.rightMargin = 0;
-                    mlp.bottomMargin = 0;
-                    mlp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-                }
-                previewBottomBar.setLayoutParams(mlp);
-            }
-
-            // 2. Update Preview Pill Background & Corners
-            GradientDrawable shape = new GradientDrawable();
-            shape.setShape(GradientDrawable.RECTANGLE);
-
-            // Disable clipping so the glow/oval can render outside the pill boundaries
-            previewBottomBar.setClipChildren(false);
-            previewBottomBar.setClipToPadding(false);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                previewBottomBar.setClipToOutline(false);
-            }
-            ViewParent previewParent = previewBottomBar.getParent();
-            if (previewParent instanceof ViewGroup) {
-                ViewGroup vgParent = (ViewGroup) previewParent;
-                vgParent.setClipChildren(false);
-                vgParent.setClipToPadding(false);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    vgParent.setClipToOutline(false);
-                }
-            }
-
-            if (isFloating) {
-                shape.setCornerRadius(radius * density);
-                int baseBgColor = selectedColor != 0 ? selectedColor : 0xFF1F2C34;
-                if (isGlass || isIosGlass) {
-                    int alpha = Math.round((opacity / 100f) * 255f);
-                    if (isIosGlass) {
-                        alpha = Math.round(0.18f * 255f); // Beautiful frosted translucency for iOS Glass
-                    }
-                    int rgb = baseBgColor & 0x00FFFFFF;
-                    shape.setColor((alpha << 24) | rgb);
-                    shape.setStroke((int) (0.8f * density), isIosGlass ? 0x48FFFFFF : 0x18FFFFFF);
-                } else {
-                    shape.setColor(baseBgColor);
-                    shape.setStroke((int) (0.6f * density), 0x18FFFFFF);
-                }
-                
-                if (isPro || isIosGlass) {
-                    previewActiveIndicator.setBackground(null);
-                    
-                    View chatsTab = previewBottomBar.getChildAt(0);
-                    if (chatsTab != null) {
-                        if (isIosGlass) {
-                            chatsTab.setBackground(new IosLiquidGlassDrawable(this, density));
-                        } else {
-                            chatsTab.setBackground(new LiquidOvalDrawable(this, density));
-                        }
-                        chatsTab.setPadding(0, 0, 0, 0);
-                    }
-                    previewChatsIcon.setImageTintList(ColorStateList.valueOf(0xFFFFFFFF));
-                } else {
-                    previewActiveIndicator.setBackgroundResource(R.drawable.wa_active_indicator);
-                    previewChatsIcon.setImageTintList(ColorStateList.valueOf(0xFF00A884));
-                    View chatsTab = previewBottomBar.getChildAt(0);
-                    if (chatsTab != null) {
-                        chatsTab.setBackground(null);
-                        chatsTab.setPadding(0, 0, 0, 0);
-                    }
-                }
-                
-                // Adjust vertical padding inside the pill
-                int verticalPadding = (int) (sliderPaddingVertical.getValue() * density);
-                previewBottomBar.setPadding(
-                        previewBottomBar.getPaddingLeft(),
-                        verticalPadding,
-                        previewBottomBar.getPaddingRight(),
-                        verticalPadding
-                );
-            } else {
-                shape.setCornerRadius(0);
-                shape.setColor(0xFF121B22); // WhatsApp Dark Mode standard bottom bar color
-                shape.setStroke(0, 0);
-                
-                // WhatsApp shows the active indicator in its stock bar too
-                previewActiveIndicator.setBackgroundResource(R.drawable.wa_active_indicator);
-                previewChatsIcon.setImageTintList(ColorStateList.valueOf(0xFF00A884));
-                
-                // Reset padding to normal
-                int verticalPadding = (int) (12 * density);
-                previewBottomBar.setPadding(
-                        previewBottomBar.getPaddingLeft(),
-                        verticalPadding,
-                        previewBottomBar.getPaddingRight(),
-                        verticalPadding
-                );
-            }
-            previewBottomBar.setBackground(shape);
-
-            // Translate mock tab views to match the Pro floating bar layout structure
-            for (int i = 0; i < previewBottomBar.getChildCount(); i++) {
-                View tab = previewBottomBar.getChildAt(i);
-                if (tab instanceof ViewGroup) {
-                    ViewGroup tabGroup = (ViewGroup) tab;
-                    
-                    tabGroup.setClipChildren(false);
-                    tabGroup.setClipToPadding(false);
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                        tabGroup.setClipToOutline(false);
-                    }
-                    
-                    if (!isPro || !isFloating || i != 0) {
-                        tabGroup.setBackground(null);
-                        tabGroup.setPadding(0, 0, 0, 0);
-                    }
-                    
-                    if (tabGroup.getChildCount() >= 2) {
-                        View iconContainer = tabGroup.getChildAt(0);
-                        View labelView = tabGroup.getChildAt(1);
-                        // Reset translationY — we use padding/margins now, not translation hacks
-                        if (iconContainer != null) iconContainer.setTranslationY(0);
-                        if (labelView != null) {
-                            labelView.setTranslationY(0);
-                            // Apply icon-label spacing as marginTop on the label
-                            ViewGroup.LayoutParams labelLp = labelView.getLayoutParams();
-                            if (labelLp instanceof ViewGroup.MarginLayoutParams) {
-                                ViewGroup.MarginLayoutParams labelMlp = (ViewGroup.MarginLayoutParams) labelLp;
-                                labelMlp.topMargin = (int) (iconLabelSpacing * density);
-                                labelView.setLayoutParams(labelMlp);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 3. Update Preview FAB margins
-            ViewGroup.LayoutParams fabLp = previewFab.getLayoutParams();
-            if (fabLp instanceof RelativeLayout.LayoutParams) {
-                RelativeLayout.LayoutParams rlp = (RelativeLayout.LayoutParams) fabLp;
-                if (isFloating) {
-                    // Position is default padding + user offset (matches WhatsApp exactly)
-                    rlp.bottomMargin = (int) ((16 + fabOffset) * density);
-                } else {
-                    // Classic position: classic bottom bar (80dp) + FAB padding (16dp) = 96dp
-                    rlp.bottomMargin = (int) (96 * density);
-                }
-                previewFab.setLayoutParams(rlp);
-            }
-
-            // 4. Update Preview Label Text Size & Icon Size dynamically
-            int iconSize = (int) sliderIconSize.getValue();
-            int textSize = (int) sliderTextSize.getValue();
-            applyCustomSizesToPreview(previewBottomBar, iconSize, textSize);
-
-        } catch (Throwable ignored) {}
-    }
-
-    private void applyCustomSizesToPreview(ViewGroup viewGroup, int iconSizeDp, int textSizeSp) {
-        for (int i = 0; i < viewGroup.getChildCount(); i++) {
-            View child = viewGroup.getChildAt(i);
-            if (child instanceof ImageView) {
-                ViewGroup.LayoutParams lp = child.getLayoutParams();
-                lp.width = (int) (iconSizeDp * density);
-                lp.height = (int) (iconSizeDp * density);
-                child.setLayoutParams(lp);
-            } else if (child instanceof TextView) {
-                ((TextView) child).setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp);
-            } else if (child instanceof ViewGroup) {
-                applyCustomSizesToPreview((ViewGroup) child, iconSizeDp, textSizeSp);
-            }
+            if (!value.startsWith("#")) value = "#" + value;
+            if (value.length() == 7) value = "#FF" + value.substring(1);
+            if (value.length() != 9) return null;
+            return (int) Long.parseLong(value.substring(1), 16);
+        } catch (RuntimeException ignored) {
+            return null;
         }
     }
 
-    private void savePreferencesAndExit() {
-        boolean floatingEnabled = switchFloating.isChecked();
-        String pillDesign = "regular";
-        if (radioDesignPro.isChecked()) {
-            pillDesign = "pro";
-        } else if (radioDesignIosGlass.isChecked()) {
-            pillDesign = "ios_glass";
-        }
-        boolean glassEnabled = switchGlass.isChecked();
-        int radius = (int) sliderRadius.getValue();
-        int marginBottom = (int) sliderMargin.getValue();
-        int marginHorizontal = (int) sliderMarginHorizontal.getValue();
-        int fabOffset = (int) sliderFab.getValue();
-        float opacity = sliderOpacity.getValue();
-        int iconSize = (int) sliderIconSize.getValue();
-        int textSize = (int) sliderTextSize.getValue();
-        int paddingVertical = (int) sliderPaddingVertical.getValue();
-        int iconLabelSpacing = (int) sliderIconLabelSpacing.getValue();
-
-        boolean scrollHideEnabled = switchScrollHide.isChecked();
-        String scrollHideMode = radioHideInvisible.isChecked() ? "invisible" : "downward";
-
-        prefs.edit()
-                .putBoolean("floating_bottom_bar", floatingEnabled)
-                .putString("floating_bottom_bar_pill_design", pillDesign)
-                .putBoolean("floating_bottom_bar_scroll_hide", scrollHideEnabled)
-                .putString("floating_bottom_bar_scroll_hide_mode", scrollHideMode)
-                .putBoolean("floating_bottom_bar_glass", glassEnabled)
-                .putInt("floating_bottom_bar_radius", radius)
-                .putInt("floating_bottom_bar_margin_bottom", marginBottom)
-                .putInt("floating_bottom_bar_margin_horizontal", marginHorizontal)
-                .putInt("floating_bottom_bar_fab_offset", fabOffset)
-                .putFloat("floating_bottom_bar_glass_opacity", opacity)
-                .putInt("floating_bottom_bar_fill_color", selectedColor)
-                .putInt("floating_bottom_bar_icon_size", iconSize)
-                .putInt("floating_bottom_bar_text_size", textSize)
-                .putInt("floating_bottom_bar_padding_vertical", paddingVertical)
-                .putInt("floating_bottom_bar_icon_label_spacing", iconLabelSpacing)
-                .apply();
-
-        // Broadcast preference change & manual restart prompt
-        try {
-            ArrayList<String> titles = new ArrayList<>();
-            titles.add(getString(R.string.pill_customization_title));
-
-            for (String pkg : new String[]{"com.whatsapp", "com.whatsapp.w4b"}) {
-                Intent prefsIntent = new Intent(BuildConfig.APPLICATION_ID + ".PREFS_CHANGED");
-                prefsIntent.setPackage(pkg);
-                sendBroadcast(prefsIntent);
-
-                Intent restartIntent = new Intent(BuildConfig.APPLICATION_ID + ".MANUAL_RESTART");
-                restartIntent.setPackage(pkg);
-                restartIntent.putStringArrayListExtra("changed_titles", titles);
-                sendBroadcast(restartIntent);
-            }
-        } catch (Exception ignored) {}
-
-        Toast.makeText(this, R.string.configs_saved, Toast.LENGTH_SHORT).show();
-        finish();
+    private int resolvePrimary() {
+        android.util.TypedValue value = new android.util.TypedValue();
+        return getTheme().resolveAttribute(android.R.attr.colorAccent, value, true)
+                ? value.data : Color.rgb(79, 175, 80);
     }
 
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        getMenuInflater().inflate(R.menu.menu_pill_customization, menu);
-        return true;
+    private int resolveSurface() {
+        android.util.TypedValue value = new android.util.TypedValue();
+        return getTheme().resolveAttribute(com.google.android.material.R.attr.colorSurface, value, true)
+                ? value.data : Color.WHITE;
     }
 
-    @Override
-    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
-        int id = item.getItemId();
-        if (id == android.R.id.home) {
-            finish();
-            return true;
-        } else if (id == R.id.action_reset) {
-            resetToDefaultValues();
-            return true;
-        } else if (id == R.id.action_save) {
-            savePreferencesAndExit();
-            return true;
-        }
-        return super.onOptionsItemSelected(item);
+    private int resolveSurfaceVariant() {
+        android.util.TypedValue value = new android.util.TypedValue();
+        return getTheme().resolveAttribute(com.google.android.material.R.attr.colorSurfaceVariant, value, true)
+                ? value.data : Color.LTGRAY;
     }
 
-    private void resetToDefaultValues() {
-        switchFloating.setChecked(false);
-        switchScrollHide.setChecked(true);
-        radioHideDownward.setChecked(true);
-        layoutScrollHideMode.setVisibility(View.VISIBLE);
-        radioDesignRegular.setChecked(true);
-        switchGlass.setChecked(true);
-        selectedColor = 0;
-        updateColorPreviewCircle();
-        
-        sliderRadius.setValue(28);
-        txtRadiusVal.setText("28dp");
-        
-        sliderMargin.setValue(22);
-        txtMarginVal.setText("22dp");
-        
-        sliderMarginHorizontal.setValue(16);
-        txtMarginHorizontalVal.setText("16dp");
-        
-        sliderFab.setValue(80);
-        txtFabVal.setText("80dp");
-        
-        sliderOpacity.setValue(35);
-        txtOpacityVal.setText("35%");
-        
-        sliderIconSize.setValue(24);
-        txtIconSizeVal.setText("24dp");
-        
-        sliderTextSize.setValue(12);
-        txtTextSizeVal.setText("12sp");
-        
-        sliderPaddingVertical.setValue(6);
-        txtPaddingVerticalVal.setText("6dp");
-        
-        sliderIconLabelSpacing.setValue(2);
-        txtIconLabelSpacingVal.setText("2dp");
-        
-        updateLivePreview();
-        Toast.makeText(this, "Reset to default values", Toast.LENGTH_SHORT).show();
+    private static int withAlpha(int color, float alpha) {
+        return Color.argb(Math.round(Math.max(0f, Math.min(1f, alpha)) * 255),
+                Color.red(color), Color.green(color), Color.blue(color));
     }
 
-    private static class LiquidOvalDrawable extends Drawable {
-        private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint glowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint topRainbow = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint bottomRainbow = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final boolean isNight;
-        private final int accentColor;
-        private final float density;
-
-        public LiquidOvalDrawable(Context ctx, float density) {
-            this.density = density;
-            this.isNight = isNightMode(ctx);
-            this.accentColor = getThemeAccentColor(ctx);
-            
-            fillPaint.setStyle(Paint.Style.FILL);
-            
-            strokePaint.setStyle(Paint.Style.STROKE);
-            strokePaint.setStrokeWidth(1.0f * density);
-            strokePaint.setColor(isNight ? 0x45FFFFFF : 0x25000000);
-            
-            glowPaint.setStyle(Paint.Style.STROKE);
-            glowPaint.setStrokeWidth(1.2f * density);
-            
-            topRainbow.setStyle(Paint.Style.STROKE);
-            topRainbow.setStrokeWidth(0.8f * density);
-            
-            bottomRainbow.setStyle(Paint.Style.STROKE);
-            bottomRainbow.setStrokeWidth(0.8f * density);
-
-            shadowPaint.setStyle(Paint.Style.FILL);
-            shadowPaint.setColor(isNight ? 0x66000000 : 0x2C000000);
+    private static int indexOf(String[] values, String current) {
+        for (int i = 0; i < values.length; i++) {
+            if (values[i].equals(current)) return i;
         }
-
-        @Override
-        public void draw(@NonNull Canvas canvas) {
-            Rect bounds = getBounds();
-            if (bounds.isEmpty()) return;
-
-            float cx = bounds.exactCenterX();
-            float cy = bounds.exactCenterY();
-
-            float ovalWidth = bounds.width() * 0.78f;
-            float ovalHeight = bounds.height() + 16 * density;
-
-            float left = cx - ovalWidth / 2f;
-            float right = cx + ovalWidth / 2f;
-            float top = cy - ovalHeight / 2f;
-            float bottom = cy + ovalHeight / 2f;
-
-            RectF rectF = new RectF(left, top, right, bottom);
-            float cornerRadius = ovalWidth / 2f;
-
-            canvas.drawRoundRect(new RectF(left, top + 1.5f * density, right, bottom + 1.5f * density), cornerRadius, cornerRadius, shadowPaint);
-
-            int startColor = isNight ? 0x2DFFFFFF : 0x70FFFFFF;
-            int midColor = isNight ? 0x15FFFFFF : 0x40FFFFFF;
-            int endColor = isNight ? 0x22FFFFFF : 0x55FFFFFF;
-            
-            LinearGradient fillGradient = new LinearGradient(
-                    cx, top, cx, bottom,
-                    new int[]{startColor, midColor, endColor},
-                    new float[]{0f, 0.5f, 1f},
-                    Shader.TileMode.CLAMP
-            );
-            fillPaint.setShader(fillGradient);
-            canvas.drawRoundRect(rectF, cornerRadius, cornerRadius, fillPaint);
-
-            canvas.save();
-            Path clipPath = new Path();
-            clipPath.addRoundRect(rectF, cornerRadius, cornerRadius, Path.Direction.CW);
-            canvas.clipPath(clipPath);
-
-            LinearGradient glowGradient = new LinearGradient(
-                    left, top, right, top + 10 * density,
-                    new int[]{0x00FFFFFF, isNight ? 0x77FFFFFF : 0x55FFFFFF, 0x00FFFFFF},
-                    new float[]{0f, 0.5f, 1f},
-                    Shader.TileMode.CLAMP
-            );
-            glowPaint.setShader(glowGradient);
-            canvas.drawArc(new RectF(left + 1f, top + 1f, right - 1f, top + 15 * density), 200, 140, false, glowPaint);
-
-            LinearGradient topGrad = new LinearGradient(
-                    left + 8 * density, top, right - 8 * density, top,
-                    new int[]{0x00FFFFFF, 0xB8FFFFFF, 0xEEFFFFFF, 0xB8FFFFFF, 0x00FFFFFF},
-                    new float[]{0f, 0.25f, 0.5f, 0.75f, 1f},
-                    Shader.TileMode.CLAMP
-            );
-            topRainbow.setShader(topGrad);
-            canvas.drawArc(new RectF(left, top, right, top + 16 * density), 210, 120, false, topRainbow);
-
-            LinearGradient bottomGrad = new LinearGradient(
-                    left + 8 * density, bottom, right - 8 * density, bottom,
-                    new int[]{0x00FFFFFF, 0x68FFFFFF, 0x9EFFFFFF, 0x68FFFFFF, 0x00FFFFFF},
-                    new float[]{0f, 0.25f, 0.5f, 0.75f, 1f},
-                    Shader.TileMode.CLAMP
-            );
-            bottomRainbow.setShader(bottomGrad);
-            canvas.drawArc(new RectF(left, bottom - 16 * density, right, bottom), 30, 120, false, bottomRainbow);
-
-            canvas.restore();
-
-            canvas.drawRoundRect(rectF, cornerRadius, cornerRadius, strokePaint);
-        }
-
-        @Override
-        public void setAlpha(int alpha) {
-            fillPaint.setAlpha(alpha);
-            strokePaint.setAlpha(alpha);
-            glowPaint.setAlpha(alpha);
-            topRainbow.setAlpha(alpha);
-            bottomRainbow.setAlpha(alpha);
-            shadowPaint.setAlpha(alpha);
-        }
-
-        @Override
-        public void setColorFilter(@Nullable ColorFilter colorFilter) {}
-
-        @Override
-        public int getOpacity() {
-            return PixelFormat.TRANSLUCENT;
-        }
-
-        private static boolean isNightMode(Context context) {
-            try {
-                if (context == null) return false;
-                int uiMode = context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
-                return uiMode == Configuration.UI_MODE_NIGHT_YES;
-            } catch (Throwable ignored) {
-                return false;
-            }
-        }
-
-        private static int getThemeAccentColor(Context context) {
-            try {
-                TypedValue outValue = new TypedValue();
-                if (context.getTheme().resolveAttribute(android.R.attr.colorAccent, outValue, true)) {
-                    if (outValue.type >= TypedValue.TYPE_FIRST_COLOR_INT && outValue.type <= TypedValue.TYPE_LAST_COLOR_INT) {
-                        return outValue.data;
-                    } else {
-                        return context.getResources().getColor(outValue.resourceId);
-                    }
-                }
-            } catch (Throwable ignored) {}
-            return 0xff25d366; // WhatsApp Green
-        }
+        return 0;
     }
 
-    private static class IosLiquidGlassDrawable extends Drawable {
-        private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint specularPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final boolean isNight;
-        private final float density;
+    private static String format(float value) {
+        return Math.abs(value - Math.round(value)) < 0.001f
+                ? Integer.toString(Math.round(value))
+                : String.format(Locale.US, "%.1f", value);
+    }
 
-        public IosLiquidGlassDrawable(Context ctx, float density) {
-            this.density = density;
-            this.isNight = isNightMode(ctx);
-
-            fillPaint.setStyle(Paint.Style.FILL);
-
-            strokePaint.setStyle(Paint.Style.STROKE);
-            strokePaint.setStrokeWidth(1.0f * density);
-            strokePaint.setColor(isNight ? 0x55FFFFFF : 0x28000000);
-
-            specularPaint.setStyle(Paint.Style.FILL);
-
-            shadowPaint.setStyle(Paint.Style.FILL);
-            shadowPaint.setColor(isNight ? 0x33000000 : 0x14000000);
-        }
-
-        @Override
-        public void draw(@NonNull Canvas canvas) {
-            Rect bounds = getBounds();
-            if (bounds.isEmpty()) return;
-
-            float cx = bounds.exactCenterX();
-            float cy = bounds.exactCenterY();
-
-            float w = bounds.width() * 0.82f;
-            float h = bounds.height() - 8 * density;
-
-            float left = cx - w / 2f;
-            float right = cx + w / 2f;
-            float top = cy - h / 2f;
-            float bottom = cy + h / 2f;
-
-            RectF rectF = new RectF(left, top, right, bottom);
-            float rx = h / 2f;
-
-            // Subtle drop shadow
-            canvas.drawRoundRect(new RectF(left, top + 1.5f * density, right, bottom + 1.5f * density), rx, rx, shadowPaint);
-
-            // Frosted glass fill gradient
-            int startColor = isNight ? 0x22FFFFFF : 0x80FFFFFF;
-            int endColor = isNight ? 0x06FFFFFF : 0x2AFFFFFF;
-            LinearGradient fillGrad = new LinearGradient(cx, top, cx, bottom, startColor, endColor, Shader.TileMode.CLAMP);
-            fillPaint.setShader(fillGrad);
-            canvas.drawRoundRect(rectF, rx, rx, fillPaint);
-
-            // Specular reflection at the top
-            RectF specRect = new RectF(left + 2 * density, top + 1 * density, right - 2 * density, top + h * 0.38f);
-            LinearGradient specGrad = new LinearGradient(cx, top, cx, top + h * 0.38f, 0x65FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP);
-            specularPaint.setShader(specGrad);
-            canvas.drawRoundRect(specRect, rx * 0.8f, rx * 0.8f, specularPaint);
-
-            // Stroke border
-            canvas.drawRoundRect(rectF, rx, rx, strokePaint);
-        }
-
-        @Override
-        public void setAlpha(int alpha) {
-            fillPaint.setAlpha(alpha);
-            strokePaint.setAlpha(alpha);
-            specularPaint.setAlpha(alpha);
-            shadowPaint.setAlpha(alpha);
-        }
-
-        @Override
-        public void setColorFilter(@Nullable ColorFilter colorFilter) {}
-
-        @Override
-        public int getOpacity() {
-            return PixelFormat.TRANSLUCENT;
-        }
-
-        private static boolean isNightMode(Context context) {
-            try {
-                if (context == null) return false;
-                int uiMode = context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
-                return uiMode == Configuration.UI_MODE_NIGHT_YES;
-            } catch (Throwable ignored) {
-                return false;
-            }
-        }
+    private int dp(float value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 }

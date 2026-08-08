@@ -5,7 +5,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import java.util.ArrayDeque;
-import de.robv.android.xposed.XposedHelpers;
 
 public class WdsSettingsNavigator {
     private final Activity activity;
@@ -71,9 +70,9 @@ public class WdsSettingsNavigator {
         } catch (Throwable ignored) {}
         try {
             // Support action bar reflection if needed
-            Object actionBar = XposedHelpers.callMethod(activity, "getSupportActionBar");
+            Object actionBar = de.robv.android.xposed.XposedHelpers.callMethod(activity, "getSupportActionBar");
             if (actionBar != null) {
-                XposedHelpers.callMethod(actionBar, "setTitle", title);
+                de.robv.android.xposed.XposedHelpers.callMethod(actionBar, "setTitle", title);
             }
         } catch (Throwable ignored) {}
     }

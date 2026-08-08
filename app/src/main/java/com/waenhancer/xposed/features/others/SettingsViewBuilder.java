@@ -15,7 +15,6 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import com.waenhancer.xposed.utils.ThemeUtils;
-import android.os.Build;
 
 public final class SettingsViewBuilder {
 
@@ -106,7 +105,7 @@ public final class SettingsViewBuilder {
         subtitleView.setLayoutParams(subtitleParams);
         subtitleView.setTextColor(textSecondary);
         subtitleView.setTextSize(14);
-        subtitleView.setText("WaEnhancer X Premium");
+        subtitleView.setText("WaEnhancer Community");
         subtitleView.setAlpha(0.7f);
 
         header.addView(titleView);
@@ -123,7 +122,7 @@ public final class SettingsViewBuilder {
         container.setLayoutParams(containerParams);
         
         // Add a subtle top radius to the settings container if in dark mode for "sheet" look
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
             container.setElevation(dp(context, 2));
         }
         

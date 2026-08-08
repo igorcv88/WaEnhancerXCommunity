@@ -32,6 +32,7 @@ import com.waenhancer.xposed.utils.ReflectionUtils;
 import com.waenhancer.xposed.core.components.AlertDialogWpp;
 import com.waenhancer.R;
 import com.waenhancer.xposed.utils.Utils;
+import com.waenhancer.theme.CssSafetyManager;
 import com.waenhancer.model.FilterItem;
 
 import org.json.JSONObject;
@@ -79,11 +80,8 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.function.Consumer;
 import org.json.JSONArray;
-import com.waenhancer.xposed.utils.ProHelper;
 import com.waenhancer.xposed.core.FeatureLoader;
 import com.waenhancer.xposed.features.customization.SeparateGroup;
-import android.graphics.Canvas;
-import android.graphics.Paint;
 
 public class Others extends Feature {
 
@@ -115,9 +113,11 @@ public class Others extends Feature {
         }
 
         // receivedIncomingTimestamp
-        properties = Utils.getProperties(prefs, "custom_css", "custom_filters");
+        properties = Utils.getPropertiesFromText(
+                CssSafetyManager.effectiveCss(prefs), prefs.getBoolean("custom_filters", false));
 
         var menuWIcons = prefs.getBoolean("menuwicon", false);
+        var newSettings = prefs.getBoolean("novaconfig", false);
         var filterChats = prefs.getString("chatfilter", "2");
         var filterSeen = prefs.getBoolean("filterseen", false);
         var status_style = Integer.parseInt(prefs.getString("status_style", "1"));
@@ -144,7 +144,9 @@ public class Others extends Feature {
         propsBoolean.put(11528, false);
 
         propsBoolean.put(4497, menuWIcons);
-        // propsBoolean.put(4023, false);
+        propsBoolean.put(4023, false);
+        propsBoolean.put(14862, newSettings);
+        propsInteger.put(18564, newSettings ? 1 : 0);
 
         propsBoolean.put(2889, floatingMenu);
 
@@ -766,7 +768,7 @@ public class Others extends Feature {
             } catch (Throwable ignored) {
             }
         }
-        if ("com.waenhancer".equals(currentPkg)) {
+        if (com.waenhancer.BuildConfig.APPLICATION_ID.equals(currentPkg)) {
             return;
         }
 
@@ -879,7 +881,7 @@ public class Others extends Feature {
         XposedBridge.log("[WAEX] disablePhotoProfileStatus: field=" + (field != null ? field.getName() : "null"));
         if (field == null) {
             XposedBridge.log("[WAEX] disablePhotoProfileStatus: field is null, dumping all fields of convClass:");
-            for (Field f : convClass.getDeclaredFields()) {
+            for (java.lang.reflect.Field f : convClass.getDeclaredFields()) {
                 XposedBridge.log("[WAEX] convClass field: " + f.getName() + " of type " + f.getType().getName());
             }
             XposedBridge.log("[WAEX] disablePhotoProfileStatus: field is null, returning early!");
@@ -945,8 +947,8 @@ public class Others extends Feature {
                     CompletableFuture.runAsync(() -> {
                         try {
                             showCallInformation(param.args[0], userJid);
-                        } catch (Throwable t) {
-                            logDebug(t);
+                        } catch (Exception e) {
+                            logDebug(e);
                         }
                     });
                 }
@@ -954,15 +956,7 @@ public class Others extends Feature {
         });
     }
 
-    private static Object getObjectFieldSafe(Object obj, String fieldName) {
-        try {
-            return XposedHelpers.getObjectField(obj, fieldName);
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    private void showCallInformation(Object wamCall, FMessageWpp.UserJid userJid) throws Throwable {
+    private void showCallInformation(Object wamCall, FMessageWpp.UserJid userJid) throws Exception {
         if (userJid.isGroup()) {
             return;
         }
@@ -973,47 +967,38 @@ public class Others extends Feature {
             sb.append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.contact_s, "Contact: %s"), contact)).append("\n");
         }
         sb.append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.phone_number_s, "Number: +%s"), number)).append("\n");
-        
-        var ip = (String) getObjectFieldSafe(wamCall, "callPeerIpStr");
+        var ip = (String) XposedHelpers.getObjectField(wamCall, "callPeerIpStr");
         if (ip != null) {
-            try {
-                var client = new OkHttpClient.Builder().build();
-                var url = "http://ip-api.com/json/" + ip;
-                var request = new Request.Builder().url(url).build();
-                var content = client.newCall(request).execute().body().string();
-                var json = new JSONObject(content);
-                var country = json.optString("country", "Unknown");
-                var city = json.optString("city", "Unknown");
-                var isp = json.optString("isp", "null");
-                var region = json.optString("regionName", "null");
-                var timeZone = json.optString("timezone", "null");
-                if (!"null".equals(isp)) {
-                    sb.append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.isp_s, "ISP: %s"), isp)).append("\n");
-                }
-                if (!"null".equals(region)) {
-                    sb.append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.region_s, "Region: %s"), region)).append("\n");
-                }
-                if (!"null".equals(timeZone)) {
-                    sb.append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.timezone_s, "Timezone: %s"), timeZone)).append("\n");
-                }
-                sb.append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.country_s, "Country: %s"), country)).append("\n")
-                  .append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.city_s, "City: %s"), city)).append("\n")
-                  .append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.ip_s, "IP: %s"), ip)).append("\n");
-            } catch (Throwable e) {
-                sb.append("IP: ").append(ip).append("\n");
+            var client = new OkHttpClient.Builder().build();
+            var url = "http://ip-api.com/json/" + ip;
+            var request = new Request.Builder().url(url).build();
+            var content = client.newCall(request).execute().body().string();
+            var json = new JSONObject(content);
+            var country = json.getString("country");
+            var city = json.getString("city");
+            var isp = json.getString("isp");
+            var region = json.getString("regionName");
+            var timeZone = json.getString("timezone");
+            if (isp != "null") {
+                sb.append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.isp_s, "ISP: %s"), isp)).append("\n");
             }
+            if (region != "null") {
+                sb.append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.region_s, "Region: %s"), region)).append("\n");
+            }
+            if (timeZone != "null") {
+                sb.append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.timezone_s, "Timezone: %s"), timeZone)).append("\n");
+            }
+
+            sb.append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.country_s, "Country: %s"), country)).append("\n").append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.city_s, "City: %s"), city)).append("\n").append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.ip_s, "IP: %s"), ip)).append("\n");
         }
-        
-        var platform = (String) getObjectFieldSafe(wamCall, "callPeerPlatform");
+        var platform = (String) XposedHelpers.getObjectField(wamCall, "callPeerPlatform");
         if (platform != null) {
             sb.append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.platform_s, "Platform: %s"), platform)).append("\n");
         }
-        var wppVersion = (String) getObjectFieldSafe(wamCall, "callPeerAppVersion");
+        var wppVersion = (String) XposedHelpers.getObjectField(wamCall, "callPeerAppVersion");
         if (wppVersion != null) {
             sb.append(String.format(FeatureLoader.getModuleString(Utils.getApplication(), R.string.wpp_version_s, "WhatsApp Version: %s"), wppVersion)).append("\n");
         }
-        
-        XposedBridge.log("[WAEX] Call Info: " + sb.toString().replace("\n", ", "));
         Utils.showNotification(FeatureLoader.getModuleString(Utils.getApplication(), R.string.call_information, "Call Information"), sb.toString());
     }
 
@@ -1443,93 +1428,10 @@ public class Others extends Feature {
                 }
                 var mediaType = results.get(0);
                 var audioType = results.get(1);
-                if (audio_type == 2) {
-                    // Transcode local audio to Opus before sending as voice note
-                    Uri originalUri = null;
-                    int uriArgIndex = -1;
-
-                    var uris = ReflectionUtils.findInstancesOfType(param.args, Uri.class);
-                    if (!uris.isEmpty()) {
-                        originalUri = uris.get(0).second;
-                        uriArgIndex = uris.get(0).first;
-                    }
-
-                    Field fileField = null;
-                    Object fileFieldContainer = null;
-                    File originalFile = null;
-
-                    if (originalUri == null) {
-                        // Scan arguments for a non-null java.io.File field
-                        for (Object arg : param.args) {
-                            if (arg == null) {
-                                continue;
-                            }
-                            Class<?> clazz = arg.getClass();
-                            while (clazz != null && clazz != Object.class) {
-                                try {
-                                    for (Field f : clazz.getDeclaredFields()) {
-                                        if (f.getType() == File.class) {
-                                            f.setAccessible(true);
-                                            File fileVal = (File) f.get(arg);
-                                            if (fileVal != null) {
-                                                originalFile = fileVal;
-                                                fileField = f;
-                                                fileFieldContainer = arg;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                } catch (Throwable ignored) {
-                                }
-                                if (originalFile != null) {
-                                    break;
-                                }
-                                clazz = clazz.getSuperclass();
-                            }
-                            if (originalFile != null) {
-                                break;
-                            }
-                        }
-                        if (originalFile != null) {
-                            originalUri = Uri.fromFile(originalFile);
-                        }
-                    }
-
-                    if (originalUri != null) {
-                        Context context = Utils.getApplication();
-                        if (context != null) {
-                            File transcodedFile = ProHelper.convertAudioToOpus(context, originalUri);
-                            if (transcodedFile != null && transcodedFile.exists()) {
-                                boolean replacedOnDisk = false;
-                                if (originalFile != null && originalFile.exists()) {
-                                    try {
-                                        copyFile(transcodedFile, originalFile);
-                                        replacedOnDisk = true;
-                                    } catch (Throwable t) {
-                                        XposedBridge.log("[WAEX-AudioToOpus] Error overwriting original file: " + t.toString());
-                                    }
-                                }
-
-                                if (!replacedOnDisk) {
-                                    if (uriArgIndex != -1) {
-                                        param.args[uriArgIndex] = Uri.fromFile(transcodedFile);
-                                    }
-                                    if (fileField != null && fileFieldContainer != null) {
-                                        try {
-                                            fileField.set(fileFieldContainer, transcodedFile);
-                                        } catch (Throwable t) {
-                                            XposedBridge.log("[WAEX-AudioToOpus] Error replacing File field: " + t.toString());
-                                        }
-                                    }
-                                }
-                                param.args[audioType.first] = 1; // 1 = voice notes
-                                return;
-                            }
-                        }
-                    }
-                }
-
-                param.args[audioType.first] = audio_type - 1; // 1 = voice notes || 0 = audio voice
+                // The former value 2 depended on a closed external transcoder. Degrade it
+                // to ordinary audio instead of mislabelling an incompatible file as Opus.
+                int effectiveAudioType = audio_type == 2 ? 1 : audio_type;
+                param.args[audioType.first] = effectiveAudioType - 1; // 1 = voice notes || 0 = audio voice
             }
         });
 
@@ -1581,14 +1483,14 @@ public class Others extends Feature {
             for (var spanClass : spanClasses) {
                 /* Log removed */
                 try {
-                    if (Modifier.isAbstract(spanClass.getModifiers())) {
+                    if (java.lang.reflect.Modifier.isAbstract(spanClass.getModifiers())) {
                         /* Log removed */
                         continue;
                     }
                     var methods = ReflectionUtils.findAllMethodsUsingFilter(spanClass, method -> 
                         method.getName().equals("draw") && 
                         method.getParameterCount() == 9 &&
-                        !Modifier.isAbstract(method.getModifiers())
+                        !java.lang.reflect.Modifier.isAbstract(method.getModifiers())
                     );
                     /* Log removed */
                     for (var method : methods) {
@@ -1596,7 +1498,7 @@ public class Others extends Feature {
                         XposedBridge.hookMethod(method, new XC_MethodHook() {
                             @Override
                             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                                Canvas canvas = (Canvas) param.args[0];
+                                android.graphics.Canvas canvas = (android.graphics.Canvas) param.args[0];
                                 CharSequence text = (CharSequence) param.args[1];
                                 int start = (int) param.args[2];
                                 int end = (int) param.args[3];
@@ -1604,7 +1506,7 @@ public class Others extends Feature {
                                 int top = (int) param.args[5];
                                 int y = (int) param.args[6];
                                 int bottom = (int) param.args[7];
-                                Paint paint = (Paint) param.args[8];
+                                android.graphics.Paint paint = (android.graphics.Paint) param.args[8];
 
                                 if (text != null && start >= 0 && end > start && end <= text.length()) {
                                     CharSequence emoji = text.subSequence(start, end);

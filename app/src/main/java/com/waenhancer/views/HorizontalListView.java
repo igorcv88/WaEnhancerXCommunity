@@ -17,7 +17,6 @@ import androidx.annotation.NonNull;
 
 import java.util.LinkedList;
 import java.util.Queue;
-import com.waenhancer.xposed.utils.Utils;
 
 public class HorizontalListView extends AdapterView<ListAdapter> {
 
@@ -49,7 +48,7 @@ public class HorizontalListView extends AdapterView<ListAdapter> {
     private synchronized void initView() {
         mLeftViewIndex = -1;
         mRightViewIndex = 0;
-        mDisplayOffset = Utils.dipToPixels(16);
+        mDisplayOffset = com.waenhancer.xposed.utils.Utils.dipToPixels(16);
         mCurrentX = 0;
         mNextX = 0;
         mMaxX = Integer.MAX_VALUE;

@@ -27,45 +27,14 @@ import android.content.SharedPreferences;
 import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
-import android.app.AlertDialog;
-import android.content.Context;
-import android.content.res.Configuration;
-import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.os.SystemClock;
-import android.widget.AbsListView;
-import android.widget.FrameLayout;
-import android.widget.HeaderViewListAdapter;
-import android.widget.ListAdapter;
-import android.widget.ListView;
-import com.waenhancer.xposed.core.components.FMessageWpp;
-import java.io.File;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.Locale;
-import java.util.Map;
-import java.util.WeakHashMap;
-import org.luckypray.dexkit.DexKitBridge;
-import org.luckypray.dexkit.query.FindClass;
-import org.luckypray.dexkit.query.FindMethod;
-import org.luckypray.dexkit.query.enums.StringMatchType;
-import org.luckypray.dexkit.query.matchers.ClassMatcher;
-import org.luckypray.dexkit.query.matchers.MethodMatcher;
 
 public class VideoNoteAttachment extends Feature {
 
     public static final int REQUEST_PICK_VIDEO_NOTE = 0x8891;
     private static final long PENDING_VIDEO_NOTE_TTL_MS = 120_000L;
-    private static final WeakHashMap<Object, Boolean> fakeVideoNotes = new WeakHashMap<>();
-    private static final Map<String, Long> pendingVideoNoteMarkers = Collections
-            .synchronizedMap(new LinkedHashMap<>());
+    private static final java.util.WeakHashMap<Object, Boolean> fakeVideoNotes = new java.util.WeakHashMap<>();
+    private static final java.util.Map<String, Long> pendingVideoNoteMarkers = java.util.Collections
+            .synchronizedMap(new java.util.LinkedHashMap<>());
     private static volatile boolean FORCE_NEXT_VIDEO_AS_PTV = false;
     private static volatile long pendingVideoNoteRequestAt = 0L;
     private static volatile String pendingVideoNoteJid = null;
@@ -174,7 +143,7 @@ public class VideoNoteAttachment extends Feature {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                         Object fMessage = param.thisObject;
-                        FMessageWpp wrappedMsg = new FMessageWpp(
+                        com.waenhancer.xposed.core.components.FMessageWpp wrappedMsg = new com.waenhancer.xposed.core.components.FMessageWpp(
                                 fMessage);
 
                         if (!wrappedMsg.isMediaFile())
@@ -188,7 +157,7 @@ public class VideoNoteAttachment extends Feature {
                         // we'll check if it's meant to be a Video Note (e.g. via our "Video Note"
                         // button or the global preference)
                         if (mediaType == 3) {
-                            FMessageWpp.Key messageKey = wrappedMsg.getKey();
+                            com.waenhancer.xposed.core.components.FMessageWpp.Key messageKey = wrappedMsg.getKey();
                             logVideoNote("constructor video messageKey="
                                     + (messageKey != null ? messageKey.toString() : "null")
                                     + ", mediaFile="
@@ -202,14 +171,14 @@ public class VideoNoteAttachment extends Feature {
                                 return;
                             }
 
-                            File mediaFile = wrappedMsg.getMediaFile();
+                            java.io.File mediaFile = wrappedMsg.getMediaFile();
                             boolean matchedByFile = shouldForceVideoNote(mediaFile, messageKey);
                             boolean matchedByFlag = false;
                             if (!matchedByFile) {
                                 matchedByFlag = shouldForceNextVideoAsPtv();
                             }
                             if (matchedByFile || matchedByFlag) {
-                                Field mediaTypeField = Unobfuscator.loadMediaTypeField(classLoader);
+                                java.lang.reflect.Field mediaTypeField = Unobfuscator.loadMediaTypeField(classLoader);
                                 mediaTypeField.setAccessible(true);
                                 mediaTypeField.setInt(fMessage, 81);
                                 fakeVideoNotes.put(fMessage, true);
@@ -232,30 +201,30 @@ public class VideoNoteAttachment extends Feature {
         // to FMessageVideoNote and crashes. We catch the exception in the adapter and
         // return a dummy view.
         try {
-            XposedHelpers.findAndHookMethod(ListView.class, "setAdapter",
-                    ListAdapter.class, new XC_MethodHook() {
+            XposedHelpers.findAndHookMethod(android.widget.ListView.class, "setAdapter",
+                    android.widget.ListAdapter.class, new XC_MethodHook() {
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                             Activity activity = WppCore.getCurrentActivity();
                             if (activity == null || !activity.getClass().getSimpleName().equals("Conversation"))
                                 return;
 
-                            ListView listView = (ListView) param.thisObject;
+                            android.widget.ListView listView = (android.widget.ListView) param.thisObject;
                             if (listView.getId() != android.R.id.list)
                                 return;
 
-                            ListAdapter adapter = (ListAdapter) param.args[0];
-                            if (adapter instanceof HeaderViewListAdapter) {
-                                adapter = ((HeaderViewListAdapter) adapter).getWrappedAdapter();
+                            android.widget.ListAdapter adapter = (android.widget.ListAdapter) param.args[0];
+                            if (adapter instanceof android.widget.HeaderViewListAdapter) {
+                                adapter = ((android.widget.HeaderViewListAdapter) adapter).getWrappedAdapter();
                             }
                             if (adapter == null)
                                 return;
 
-                            final ListAdapter finalAdapter = adapter;
+                            final android.widget.ListAdapter finalAdapter = adapter;
                             try {
-                                Method getViewMethod = finalAdapter.getClass().getDeclaredMethod(
-                                        "getView", int.class, View.class, ViewGroup.class);
-                                Method getItemViewTypeMethod = null;
+                                java.lang.reflect.Method getViewMethod = finalAdapter.getClass().getDeclaredMethod(
+                                        "getView", int.class, android.view.View.class, android.view.ViewGroup.class);
+                                java.lang.reflect.Method getItemViewTypeMethod = null;
                                 try {
                                     getItemViewTypeMethod = finalAdapter.getClass().getDeclaredMethod("getItemViewType",
                                             int.class);
@@ -274,12 +243,12 @@ public class VideoNoteAttachment extends Feature {
                                             int position = (int) param2.args[0];
                                             Object fMessage = finalAdapter.getItem(position);
                                             if (fMessage != null) {
-                                                FMessageWpp wrapped = new FMessageWpp(
+                                                com.waenhancer.xposed.core.components.FMessageWpp wrapped = new com.waenhancer.xposed.core.components.FMessageWpp(
                                                         fMessage);
                                                 int mediaType = wrapped.getMediaType();
                                                 // Only camouflage our artificially faked Video Notes in memory
                                                 if (mediaType == 81 && fakeVideoNotes.containsKey(fMessage)) {
-                                                    Field mediaTypeField = Unobfuscator
+                                                    java.lang.reflect.Field mediaTypeField = Unobfuscator
                                                             .loadMediaTypeField(classLoader);
                                                     mediaTypeField.setAccessible(true);
                                                     mediaTypeField.setInt(fMessage, 3);
@@ -295,7 +264,7 @@ public class VideoNoteAttachment extends Feature {
                                         try {
                                             Object fMessage = tempPtvMessage.get();
                                             if (fMessage != null) {
-                                                Field mediaTypeField = Unobfuscator
+                                                java.lang.reflect.Field mediaTypeField = Unobfuscator
                                                         .loadMediaTypeField(classLoader);
                                                 mediaTypeField.setAccessible(true);
                                                 mediaTypeField.setInt(fMessage, 81);
@@ -327,15 +296,15 @@ public class VideoNoteAttachment extends Feature {
                                                     }
                                                     param2.setThrowable(null);
 
-                                                    Context ctx = activity;
+                                                    android.content.Context ctx = activity;
                                                     if (param2.args[2] != null) {
-                                                        ctx = ((View) param2.args[2]).getContext();
+                                                        ctx = ((android.view.View) param2.args[2]).getContext();
                                                     }
 
-                                                    FrameLayout dummy = new FrameLayout(
+                                                    android.widget.FrameLayout dummy = new android.widget.FrameLayout(
                                                             ctx);
-                                                    dummy.setLayoutParams(new AbsListView.LayoutParams(
-                                                            ViewGroup.LayoutParams.MATCH_PARENT, 1));
+                                                    dummy.setLayoutParams(new android.widget.AbsListView.LayoutParams(
+                                                            android.view.ViewGroup.LayoutParams.MATCH_PARENT, 1));
                                                     dummy.setBackgroundColor(Color.TRANSPARENT);
                                                     param2.setResult(dummy);
                                                 }
@@ -359,18 +328,18 @@ public class VideoNoteAttachment extends Feature {
         // ── 5. Bypass preview screen ────────────
         try {
             XposedHelpers.findAndHookMethod("com.whatsapp.mediacomposer.ui.app.MediaComposerActivity", classLoader,
-                    "onCreate", Bundle.class, new XC_MethodHook() {
+                    "onCreate", android.os.Bundle.class, new XC_MethodHook() {
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                             Activity activity = (Activity) param.thisObject;
                             Intent intent = activity.getIntent();
                             if (intent != null && intent.getBooleanExtra("is_media_ptv", false)) {
                                 logVideoNote("MediaComposerActivity opened with is_media_ptv=true");
-                                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                                     try {
                                         int sendId = activity.getResources().getIdentifier("send", "id",
                                                 activity.getPackageName());
-                                        View sendBtn = activity.findViewById(sendId);
+                                        android.view.View sendBtn = activity.findViewById(sendId);
                                         if (sendBtn != null) {
                                             sendBtn.performClick();
                                         }
@@ -390,15 +359,15 @@ public class VideoNoteAttachment extends Feature {
         // We find the method that throws the Exception, and if the argument is a Video
         // trying to be a VideoNote, we swap it.
         try {
-            String apkPath = Utils.getApplication().getApplicationInfo().sourceDir;
-            var dexkit = DexKitBridge.create(apkPath);
-            var methodDataList = dexkit.findMethod(FindMethod.create()
-                    .matcher(MethodMatcher.create()
+            String apkPath = com.waenhancer.xposed.utils.Utils.getApplication().getApplicationInfo().sourceDir;
+            var dexkit = org.luckypray.dexkit.DexKitBridge.create(apkPath);
+            var methodDataList = dexkit.findMethod(org.luckypray.dexkit.query.FindMethod.create()
+                    .matcher(org.luckypray.dexkit.query.matchers.MethodMatcher.create()
                             .addUsingString("FMessagePushToVideoProtobuf: message type is not supported ",
-                                    StringMatchType.Contains)));
+                                    org.luckypray.dexkit.query.enums.StringMatchType.Contains)));
             if (!methodDataList.isEmpty()) {
                 var methodData = methodDataList.get(0);
-                Method protoBuilderMethod = methodData.getMethodInstance(classLoader);
+                java.lang.reflect.Method protoBuilderMethod = methodData.getMethodInstance(classLoader);
 
                 // Find FMessageVideoNote class
                 if (targetVideoNoteClass == null) {
@@ -412,7 +381,7 @@ public class VideoNoteAttachment extends Feature {
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                         Object fMessage = param.args[0];
                         if (fMessage != null) {
-                            FMessageWpp wrapped = new FMessageWpp(
+                            com.waenhancer.xposed.core.components.FMessageWpp wrapped = new com.waenhancer.xposed.core.components.FMessageWpp(
                                     fMessage);
                             if (wrapped.getMediaType() == 81) {
                                 if (targetVideoNoteClass == null || fMessage.getClass() != targetVideoNoteClass) {
@@ -446,13 +415,13 @@ public class VideoNoteAttachment extends Feature {
             Class<?> searchClass = fMessage.getClass();
             while (searchClass != null && searchClass != Object.class) {
                 try {
-                    Field kf = searchClass.getDeclaredField("key");
+                    java.lang.reflect.Field kf = searchClass.getDeclaredField("key");
                     kf.setAccessible(true);
                     key = kf.get(fMessage);
                 } catch (NoSuchFieldException ignored) {
                 }
                 try {
-                    Field tf = searchClass.getDeclaredField("timestamp");
+                    java.lang.reflect.Field tf = searchClass.getDeclaredField("timestamp");
                     tf.setAccessible(true);
                     timestamp = (long) tf.get(fMessage);
                 } catch (NoSuchFieldException ignored) {
@@ -463,13 +432,13 @@ public class VideoNoteAttachment extends Feature {
             }
 
             Object newVideoNote = null;
-            Field mediaTypeField = Unobfuscator.loadMediaTypeField(classLoader);
+            java.lang.reflect.Field mediaTypeField = Unobfuscator.loadMediaTypeField(classLoader);
             mediaTypeField.setAccessible(true);
 
             if (targetVideoNoteClass != null) {
                 try {
-                    Constructor<?>[] constructors = targetVideoNoteClass.getDeclaredConstructors();
-                    for (Constructor<?> c : constructors) {
+                    java.lang.reflect.Constructor<?>[] constructors = targetVideoNoteClass.getDeclaredConstructors();
+                    for (java.lang.reflect.Constructor<?> c : constructors) {
                         Class<?>[] pTypes = c.getParameterTypes();
                         if (pTypes.length == 2 && pTypes[1] == long.class) {
                             c.setAccessible(true);
@@ -483,10 +452,10 @@ public class VideoNoteAttachment extends Feature {
 
             if (newVideoNote == null) {
                 // Find all subclasses of abstractMediaMessageClass
-                String apkP = Utils.getApplication().getApplicationInfo().sourceDir;
-                var dk = DexKitBridge.create(apkP);
-                var subclasses = dk.findClass(FindClass.create()
-                        .matcher(ClassMatcher.create()
+                String apkP = com.waenhancer.xposed.utils.Utils.getApplication().getApplicationInfo().sourceDir;
+                var dk = org.luckypray.dexkit.DexKitBridge.create(apkP);
+                var subclasses = dk.findClass(org.luckypray.dexkit.query.FindClass.create()
+                        .matcher(org.luckypray.dexkit.query.matchers.ClassMatcher.create()
                                 .superClass(abstractMediaMessageClass.getName())));
 
                 for (var clsData : subclasses) {
@@ -496,8 +465,8 @@ public class VideoNoteAttachment extends Feature {
                     if (cls != null) {
                         try {
                             // Find constructor (Key, timestamp)
-                            Constructor<?>[] constructors = cls.getDeclaredConstructors();
-                            for (Constructor<?> c : constructors) {
+                            java.lang.reflect.Constructor<?>[] constructors = cls.getDeclaredConstructors();
+                            for (java.lang.reflect.Constructor<?> c : constructors) {
                                 Class<?>[] pTypes = c.getParameterTypes();
                                 if (pTypes.length == 2 && pTypes[1] == long.class) {
                                     c.setAccessible(true);
@@ -523,8 +492,8 @@ public class VideoNoteAttachment extends Feature {
                 // Deep copy fields from parents to ensure file paths, bytes, etc. are passed
                 Class<?> currentClass = fMessage.getClass();
                 while (currentClass != null && currentClass != Object.class) {
-                    for (Field field : currentClass.getDeclaredFields()) {
-                        if (!Modifier.isStatic(field.getModifiers())) {
+                    for (java.lang.reflect.Field field : currentClass.getDeclaredFields()) {
+                        if (!java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
                             field.setAccessible(true);
                             try {
                                 Object val = field.get(fMessage);
@@ -535,7 +504,7 @@ public class VideoNoteAttachment extends Feature {
                                 Class<?> targetSearchClass = targetVideoNoteClass;
                                 while (targetSearchClass != null) {
                                     try {
-                                        Field tf = targetSearchClass
+                                        java.lang.reflect.Field tf = targetSearchClass
                                                 .getDeclaredField(field.getName());
                                         tf.setAccessible(true);
                                         tf.set(newVideoNote, val);
@@ -558,7 +527,7 @@ public class VideoNoteAttachment extends Feature {
         }
     }
 
-    private static XC_MethodHook.Unhook crashPreventHook;
+    private static de.robv.android.xposed.XC_MethodHook.Unhook crashPreventHook;
     private static Class<?> targetVideoNoteClass = null;
     // ── Inject our item into the last row ──────────────────────────────────────
     private void injectVideoNoteItem(ViewGroup row, int btnW, int btnH) {
@@ -567,7 +536,7 @@ public class VideoNoteAttachment extends Feature {
             return;
 
         boolean isDark = (row.getContext().getResources().getConfiguration().uiMode
-                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+                & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES;
         int bgColor = isDark ? Color.parseColor("#233138") : Color.WHITE;
         int strokeColor = isDark ? Color.parseColor("#344A55") : Color.parseColor("#E1E4E8");
         int textColor = isDark ? Color.parseColor("#E9EDF0") : Color.parseColor("#4B5563");
@@ -627,7 +596,7 @@ public class VideoNoteAttachment extends Feature {
         item.addView(label);
 
         item.setOnClickListener(v -> {
-            new AlertDialog.Builder(activity)
+            new android.app.AlertDialog.Builder(activity)
                     .setTitle("Experimental Feature")
                     .setMessage(
                             "The Video Note feature is currently under development and may cause crashes. Do you want to continue?")
@@ -708,8 +677,8 @@ public class VideoNoteAttachment extends Feature {
             sendVideoToConversation(activity, videoUri);
     }
 
-    private static boolean shouldForceVideoNote(File mediaFile,
-            FMessageWpp.Key messageKey) {
+    private static boolean shouldForceVideoNote(java.io.File mediaFile,
+            com.waenhancer.xposed.core.components.FMessageWpp.Key messageKey) {
         pruneExpiredPendingMarkers();
         if (mediaFile != null) {
             String fullPath = normalizeMarker(mediaFile.getAbsolutePath());
@@ -719,9 +688,9 @@ public class VideoNoteAttachment extends Feature {
                     : null;
 
             synchronized (pendingVideoNoteMarkers) {
-                Iterator<Map.Entry<String, Long>> iterator = pendingVideoNoteMarkers.entrySet().iterator();
+                java.util.Iterator<java.util.Map.Entry<String, Long>> iterator = pendingVideoNoteMarkers.entrySet().iterator();
                 while (iterator.hasNext()) {
-                    Map.Entry<String, Long> entry = iterator.next();
+                    java.util.Map.Entry<String, Long> entry = iterator.next();
                     String marker = entry.getKey();
                     if (matchesMarker(marker, fullPath, fileName, parentPath)) {
                         iterator.remove();
@@ -761,7 +730,7 @@ public class VideoNoteAttachment extends Feature {
 
     private static void rememberPendingVideoNote(Activity activity, Uri videoUri, String jid) {
         FORCE_NEXT_VIDEO_AS_PTV = true;
-        pendingVideoNoteRequestAt = SystemClock.elapsedRealtime();
+        pendingVideoNoteRequestAt = android.os.SystemClock.elapsedRealtime();
         pendingVideoNoteJid = normalizeMarker(jid);
         logVideoNote("armed request uri=" + videoUri + ", jid=" + pendingVideoNoteJid);
         addPendingMarker(videoUri != null ? videoUri.toString() : null);
@@ -771,7 +740,7 @@ public class VideoNoteAttachment extends Feature {
             String realPath = RealPathUtil.getRealFilePath(activity, videoUri);
             addPendingMarker(realPath);
             if (!TextUtils.isEmpty(realPath)) {
-                addPendingMarker(new File(realPath).getName());
+                addPendingMarker(new java.io.File(realPath).getName());
             }
             logVideoNote("resolved realPath=" + realPath);
         } catch (Throwable ignored) {
@@ -784,19 +753,19 @@ public class VideoNoteAttachment extends Feature {
         if (TextUtils.isEmpty(normalized)) {
             return;
         }
-        pendingVideoNoteMarkers.put(normalized, SystemClock.elapsedRealtime());
+        pendingVideoNoteMarkers.put(normalized, android.os.SystemClock.elapsedRealtime());
         logVideoNote("added pending marker=" + normalized);
     }
 
     private static void pruneExpiredPendingMarkers() {
-        long now = SystemClock.elapsedRealtime();
+        long now = android.os.SystemClock.elapsedRealtime();
         if (pendingVideoNoteRequestAt > 0 && now - pendingVideoNoteRequestAt > PENDING_VIDEO_NOTE_TTL_MS) {
             clearPendingVideoNoteRequest();
         }
         synchronized (pendingVideoNoteMarkers) {
-            Iterator<Map.Entry<String, Long>> iterator = pendingVideoNoteMarkers.entrySet().iterator();
+            java.util.Iterator<java.util.Map.Entry<String, Long>> iterator = pendingVideoNoteMarkers.entrySet().iterator();
             while (iterator.hasNext()) {
-                Map.Entry<String, Long> entry = iterator.next();
+                java.util.Map.Entry<String, Long> entry = iterator.next();
                 if (now - entry.getValue() > PENDING_VIDEO_NOTE_TTL_MS) {
                     iterator.remove();
                 }
@@ -805,12 +774,12 @@ public class VideoNoteAttachment extends Feature {
     }
 
     private static boolean hasActivePendingVideoNoteRequest(
-            FMessageWpp.Key messageKey) {
+            com.waenhancer.xposed.core.components.FMessageWpp.Key messageKey) {
         long requestAt = pendingVideoNoteRequestAt;
         if (requestAt <= 0) {
             return false;
         }
-        long ageMs = SystemClock.elapsedRealtime() - requestAt;
+        long ageMs = android.os.SystemClock.elapsedRealtime() - requestAt;
         if (ageMs > PENDING_VIDEO_NOTE_TTL_MS) {
             clearPendingVideoNoteRequest();
             return false;
@@ -868,7 +837,7 @@ public class VideoNoteAttachment extends Feature {
         }
 
         try {
-            ArrayList<String> jids = intent.getStringArrayListExtra("jids");
+            java.util.ArrayList<String> jids = intent.getStringArrayListExtra("jids");
             if (jids != null) {
                 for (String jid : jids) {
                     if ("status@broadcast".equals(normalizeMarker(jid))) {
@@ -881,8 +850,8 @@ public class VideoNoteAttachment extends Feature {
 
         try {
             Object rawExtra = intent.getExtras() != null ? intent.getExtras().get("jids") : null;
-            if (rawExtra instanceof ArrayList<?>) {
-                for (Object item : (ArrayList<?>) rawExtra) {
+            if (rawExtra instanceof java.util.ArrayList<?>) {
+                for (Object item : (java.util.ArrayList<?>) rawExtra) {
                     if (item instanceof String && "status@broadcast".equals(normalizeMarker((String) item))) {
                         return true;
                     }
@@ -899,14 +868,14 @@ public class VideoNoteAttachment extends Feature {
         if (requestAt <= 0) {
             return false;
         }
-        if (SystemClock.elapsedRealtime() - requestAt > PENDING_VIDEO_NOTE_TTL_MS) {
+        if (android.os.SystemClock.elapsedRealtime() - requestAt > PENDING_VIDEO_NOTE_TTL_MS) {
             clearPendingVideoNoteRequest();
             return false;
         }
         return true;
     }
 
-    private static String normalizeMessageJid(FMessageWpp.Key messageKey) {
+    private static String normalizeMessageJid(com.waenhancer.xposed.core.components.FMessageWpp.Key messageKey) {
         if (messageKey == null || messageKey.remoteJid == null) {
             return null;
         }
@@ -917,7 +886,7 @@ public class VideoNoteAttachment extends Feature {
         return normalizeMarker(raw);
     }
 
-    private static boolean isStatusVideoMessage(FMessageWpp.Key messageKey) {
+    private static boolean isStatusVideoMessage(com.waenhancer.xposed.core.components.FMessageWpp.Key messageKey) {
         if (messageKey != null && messageKey.remoteJid != null && messageKey.remoteJid.isStatus()) {
             return true;
         }
@@ -939,7 +908,7 @@ public class VideoNoteAttachment extends Feature {
         if (TextUtils.isEmpty(value)) {
             return null;
         }
-        return value.trim().toLowerCase(Locale.ROOT);
+        return value.trim().toLowerCase(java.util.Locale.ROOT);
     }
 
     @NonNull

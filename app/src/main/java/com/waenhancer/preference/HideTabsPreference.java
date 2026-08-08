@@ -14,7 +14,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.HashSet;
 import java.util.Set;
-import androidx.appcompat.app.AlertDialog;
 
 public class HideTabsPreference extends MultiSelectListPreference {
 
@@ -85,7 +84,7 @@ public class HideTabsPreference extends MultiSelectListPreference {
             public void onClick(DialogInterface dialog, int which, boolean isChecked) {
                 if (disableMetaAI && which == metaAiIndex) {
                     // Prevent unchecking by resetting the checked state in the Dialog's ListView
-                    AlertDialog alertDialog = (AlertDialog) dialog;
+                    androidx.appcompat.app.AlertDialog alertDialog = (androidx.appcompat.app.AlertDialog) dialog;
                     alertDialog.getListView().setItemChecked(metaAiIndex, true);
                     checkedItems[metaAiIndex] = true;
                     return;

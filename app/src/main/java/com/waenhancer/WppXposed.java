@@ -30,10 +30,6 @@ import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_InitPackageResources;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
-import android.content.SharedPreferences;
-import com.waenhancer.xposed.spoofer.HookBL;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 
 public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackageResources, IXposedHookZygoteInit {
 
@@ -75,12 +71,12 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
                         "onCreate", new XC_MethodHook() {
                             @Override
                             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                                Context context = (Context) param.thisObject;
+                                android.content.Context context = (android.content.Context) param.thisObject;
                                 try {
                                     int apiVersion = XposedBridge.getXposedVersion();
                                     Class<?> prefMgr = Class.forName("androidx.preference.PreferenceManager", true, context.getClassLoader());
-                                    Method getPrefs = prefMgr.getMethod("getDefaultSharedPreferences", Context.class);
-                                    SharedPreferences localPrefs = (SharedPreferences) getPrefs.invoke(null, context);
+                                    java.lang.reflect.Method getPrefs = prefMgr.getMethod("getDefaultSharedPreferences", android.content.Context.class);
+                                    android.content.SharedPreferences localPrefs = (android.content.SharedPreferences) getPrefs.invoke(null, context);
                                     localPrefs.edit().putInt("active_xposed_api_version", apiVersion).commit();
                                     /* Log removed */
                                 } catch (Throwable t) {
@@ -119,7 +115,7 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
             // Inject Bootloader Spoofer in the manager app itself for live verification
             if (getPref().getBoolean("bootloader_spoofer", false)) {
                 try {
-                    HookBL.hook(lpparam.classLoader, getPref());
+                    com.waenhancer.xposed.spoofer.HookBL.hook(lpparam.classLoader, getPref());
                 } catch (Throwable t) {
                     XposedBridge.log("[WAEX] Failed to hook Bootloader Spoofer in settings app: " + t.getMessage());
                 }
@@ -193,7 +189,7 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
         try {
             Class<?> rClass = com.waenhancer.R.class;
             for (Class<?> subClass : rClass.getDeclaredClasses()) {
-                for (Field field : subClass.getFields()) {
+                for (java.lang.reflect.Field field : subClass.getFields()) {
                     try {
                         XResManager.validModuleIds.add(field.getInt(null));
                     } catch (Exception ignored) {}
@@ -213,7 +209,7 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
                 if (type.equals("id") || type.equals("styleable") || type.equals("attr")) {
                     continue;
                 }
-                for (Field field : subClass.getDeclaredFields()) {
+                for (java.lang.reflect.Field field : subClass.getDeclaredFields()) {
                     try {
                         field.setAccessible(true);
                         if (field.getType() == int.class) {
@@ -228,7 +224,7 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
                                 // Also update ResId fields for backward compatibility
                                 try {
                                     Class<?> resIdSubClass = Class.forName("com.waenhancer.xposed.utils.ResId$" + type);
-                                    Field resIdField = resIdSubClass.getField(field.getName());
+                                    java.lang.reflect.Field resIdField = resIdSubClass.getField(field.getName());
                                     resIdField.setAccessible(true);
                                     resIdField.set(null, hostId);
                                 } catch (Exception ignored) {}
@@ -253,10 +249,10 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
         // that initZygote runs under.
         try {
             Class<?> sysProp = Class.forName("android.os.SystemProperties");
-            Method set = sysProp.getMethod("set", String.class, String.class);
+            java.lang.reflect.Method set = sysProp.getMethod("set", String.class, String.class);
             set.invoke(null, "debug.waenhancer.lsposed", "1");
             try {
-                int apiVersion = XposedBridge.getXposedVersion();
+                int apiVersion = de.robv.android.xposed.XposedBridge.getXposedVersion();
                 set.invoke(null, "debug.waenhancer.lsposed.api", String.valueOf(apiVersion));
                 /* Log removed */
             } catch (Throwable t2) {
@@ -269,18 +265,18 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
 
 
     public void disableSecureFlag() {
-        XposedHelpers.findAndHookMethod(Window.class, "setFlags", int.class, int.class, new XC_MethodHook() {
+        XposedHelpers.findAndHookMethod(android.view.Window.class, "setFlags", int.class, int.class, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                param.args[0] = (int) param.args[0] & ~WindowManager.LayoutParams.FLAG_SECURE;
-                param.args[1] = (int) param.args[1] & ~WindowManager.LayoutParams.FLAG_SECURE;
+                param.args[0] = (int) param.args[0] & ~android.view.WindowManager.LayoutParams.FLAG_SECURE;
+                param.args[1] = (int) param.args[1] & ~android.view.WindowManager.LayoutParams.FLAG_SECURE;
             }
         });
 
-        XposedHelpers.findAndHookMethod(Window.class, "addFlags", int.class, new XC_MethodHook() {
+        XposedHelpers.findAndHookMethod(android.view.Window.class, "addFlags", int.class, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                param.args[0] = (int) param.args[0] & ~WindowManager.LayoutParams.FLAG_SECURE;
+                param.args[0] = (int) param.args[0] & ~android.view.WindowManager.LayoutParams.FLAG_SECURE;
                 if ((int) param.args[0] == 0) {
                     param.setResult(null);
                 }

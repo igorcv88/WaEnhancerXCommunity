@@ -44,13 +44,6 @@ import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
-import android.app.Notification;
-import android.app.NotificationManager;
-import android.app.RemoteInput;
-import android.content.Intent;
-import android.os.Bundle;
-import android.service.notification.StatusBarNotification;
-import com.waenhancer.xposed.core.components.FStatusWpp;
 
 public class WppCore {
 
@@ -60,7 +53,7 @@ public class WppCore {
     private static Method mGenJidMethod;
     private static Class bottomDialog;
     private static SharedPreferences privPrefs;
-    public static SharedPreferences waePrefs;
+    public static android.content.SharedPreferences waePrefs;
     private static Object mStartUpConfig;
     private static Object mActionUser;
     private static SQLiteDatabase mWaDatabase;
@@ -81,7 +74,7 @@ public class WppCore {
     private static Method statusToMessageMethod;
     private static Object statusToMessageMapper;
 
-    public static void Initialize(ClassLoader loader, SharedPreferences pref) throws Exception {
+    public static void Initialize(ClassLoader loader, android.content.SharedPreferences pref) throws Exception {
         waePrefs = pref;
         privPrefs = Utils.getApplication().getSharedPreferences("WaGlobal", Context.MODE_PRIVATE);
 
@@ -158,7 +151,7 @@ public class WppCore {
         hookStatusToMessageMapper(loader);
 
         if (!pref.getBoolean("lite_mode", false)) {
-            FStatusWpp.initialize(loader);
+            com.waenhancer.xposed.core.components.FStatusWpp.initialize(loader);
             CompletableFuture.runAsync(() -> {
                 try {
                     initBridge(Utils.getApplication());
@@ -285,14 +278,14 @@ public class WppCore {
     @SuppressWarnings("deprecation")
     public static boolean sendMessageViaNotification(String contactName, String message) {
         try {
-            NotificationManager nm = (NotificationManager) Utils.getApplication()
+            android.app.NotificationManager nm = (android.app.NotificationManager) Utils.getApplication()
                     .getSystemService(Context.NOTIFICATION_SERVICE);
-            StatusBarNotification[] notifications = nm.getActiveNotifications();
+            android.service.notification.StatusBarNotification[] notifications = nm.getActiveNotifications();
 
-            for (StatusBarNotification sbn : notifications) {
+            for (android.service.notification.StatusBarNotification sbn : notifications) {
                 if (!sbn.getPackageName().contains("whatsapp"))
                     continue;
-                Notification notif = sbn.getNotification();
+                android.app.Notification notif = sbn.getNotification();
                 if (notif.actions == null)
                     continue;
 
@@ -301,15 +294,15 @@ public class WppCore {
                 if (title == null || !title.equalsIgnoreCase(contactName))
                     continue;
 
-                for (Notification.Action action : notif.actions) {
+                for (android.app.Notification.Action action : notif.actions) {
                     if (action.getRemoteInputs() != null && action.getRemoteInputs().length > 0) {
-                        RemoteInput[] remoteInputs = action.getRemoteInputs();
-                        Intent fillIn = new Intent();
-                        Bundle results = new Bundle();
-                        for (RemoteInput ri : remoteInputs) {
+                        android.app.RemoteInput[] remoteInputs = action.getRemoteInputs();
+                        android.content.Intent fillIn = new android.content.Intent();
+                        android.os.Bundle results = new android.os.Bundle();
+                        for (android.app.RemoteInput ri : remoteInputs) {
                             results.putCharSequence(ri.getResultKey(), message);
                         }
-                        RemoteInput.addResultsToIntent(remoteInputs, fillIn, results);
+                        android.app.RemoteInput.addResultsToIntent(remoteInputs, fillIn, results);
                         action.actionIntent.send(Utils.getApplication(), 0, fillIn);
                         if (Utils.DEBUG) {
                             ;
@@ -329,14 +322,14 @@ public class WppCore {
 
     public static boolean sendMessage(String jidOrNumber, String message) {
         try {
-            NotificationManager nm = (NotificationManager) Utils.getApplication()
+            android.app.NotificationManager nm = (android.app.NotificationManager) Utils.getApplication()
                     .getSystemService(Context.NOTIFICATION_SERVICE);
-            StatusBarNotification[] notifications = nm.getActiveNotifications();
+            android.service.notification.StatusBarNotification[] notifications = nm.getActiveNotifications();
 
-            for (StatusBarNotification sbn : notifications) {
+            for (android.service.notification.StatusBarNotification sbn : notifications) {
                 if (!sbn.getPackageName().contains("whatsapp"))
                     continue;
-                Notification notif = sbn.getNotification();
+                android.app.Notification notif = sbn.getNotification();
                 if (notif.actions == null)
                     continue;
                 String tag = sbn.getTag() != null ? sbn.getTag() : "";
@@ -346,15 +339,15 @@ public class WppCore {
                 if (!tag.contains(bareId) && !extras.contains(bareId))
                     continue;
 
-                for (Notification.Action action : notif.actions) {
+                for (android.app.Notification.Action action : notif.actions) {
                     if (action.getRemoteInputs() != null && action.getRemoteInputs().length > 0) {
-                        RemoteInput[] remoteInputs = action.getRemoteInputs();
-                        Intent fillIn = new Intent();
-                        Bundle results = new Bundle();
-                        for (RemoteInput ri : remoteInputs) {
+                        android.app.RemoteInput[] remoteInputs = action.getRemoteInputs();
+                        android.content.Intent fillIn = new android.content.Intent();
+                        android.os.Bundle results = new android.os.Bundle();
+                        for (android.app.RemoteInput ri : remoteInputs) {
                             results.putCharSequence(ri.getResultKey(), message);
                         }
-                        RemoteInput.addResultsToIntent(remoteInputs, fillIn, results);
+                        android.app.RemoteInput.addResultsToIntent(remoteInputs, fillIn, results);
                         action.actionIntent.send(Utils.getApplication(), 0, fillIn);
                         if (Utils.DEBUG) {
                             ;
@@ -1183,8 +1176,8 @@ public class WppCore {
             Object instance = meManagerInstance;
             if (instance == null && meManagerPhoneJidField != null) {
                 Class<?> meManagerClass = meManagerPhoneJidField.getDeclaringClass();
-                for (Field f : meManagerClass.getDeclaredFields()) {
-                    if (Modifier.isStatic(f.getModifiers()) && f.getType() == meManagerClass) {
+                for (java.lang.reflect.Field f : meManagerClass.getDeclaredFields()) {
+                    if (java.lang.reflect.Modifier.isStatic(f.getModifiers()) && f.getType() == meManagerClass) {
                         try {
                             f.setAccessible(true);
                             instance = f.get(null);

@@ -28,9 +28,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
-import android.widget.Toast;
-import com.google.android.material.appbar.MaterialToolbar;
-import com.waenhancer.BuildConfig;
 
 public class SupportedVersionsActivity extends BaseActivity {
 
@@ -65,7 +62,7 @@ public class SupportedVersionsActivity extends BaseActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_supported_versions);
 
-        MaterialToolbar toolbar = findViewById(R.id.toolbar);
+        com.google.android.material.appbar.MaterialToolbar toolbar = findViewById(R.id.toolbar);
         toolbar.setNavigationOnClickListener(v -> finish());
 
         wppContainer = findViewById(R.id.wpp_versions_container);
@@ -164,8 +161,13 @@ public class SupportedVersionsActivity extends BaseActivity {
                 deleteBtn.setVisibility(View.GONE);
             }
 
-            // Long-press edit is not needed anymore as the flow is automated
-            row.setOnLongClickListener(null);
+            // Long-press to edit — only when customize is ON
+            if (!entry.isSystem && isCustomizeEnabled) {
+                row.setOnLongClickListener(v -> {
+                    showAddVersionDialog(entry.version, prefKey);
+                    return true;
+                });
+            }
 
             // Hide divider on last item
             if (i == all.size() - 1 && divider != null) {
@@ -176,76 +178,66 @@ public class SupportedVersionsActivity extends BaseActivity {
         }
     }
 
-    // ── Add Support Flow ───────────────────────────────────────────────────────
+    // ── Add / Edit dialog ──────────────────────────────────────────────────────
 
     private void showAddVersionDialog(@Nullable String existingVersion, @Nullable String prefKey) {
-        String wppVer = getInstalledVersion("com.whatsapp");
-        String bizVer = getInstalledVersion("com.whatsapp.w4b");
-
-        boolean isWppInstalled = wppVer != null;
-        boolean isBizInstalled = bizVer != null;
-
-        if (!isWppInstalled && !isBizInstalled) {
-            new MaterialAlertDialogBuilder(this)
-                    .setTitle("No WhatsApp Installed")
-                    .setMessage("Neither WhatsApp nor WhatsApp Business was found installed on this device.")
-                    .setPositiveButton(android.R.string.ok, null)
-                    .show();
+        if (existingVersion == null) {
+            showTypePickerThenInput();
             return;
         }
-
-        if (isWppInstalled && isBizInstalled) {
-            String[] options = {
-                    "WhatsApp (Installed: " + wppVer + ")",
-                    "WhatsApp Business (Installed: " + bizVer + ")"
-            };
-            new MaterialAlertDialogBuilder(this)
-                    .setTitle("Select WhatsApp Application")
-                    .setItems(options, (dialog, which) -> {
-                        if (which == 0) {
-                            confirmAddSupport(wppVer, PREF_CUSTOM_WPP, "WhatsApp");
-                        } else {
-                            confirmAddSupport(bizVer, PREF_CUSTOM_BIZ, "WhatsApp Business");
-                        }
-                    })
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show();
-        } else if (isWppInstalled) {
-            confirmAddSupport(wppVer, PREF_CUSTOM_WPP, "WhatsApp");
-        } else {
-            confirmAddSupport(bizVer, PREF_CUSTOM_BIZ, "WhatsApp Business");
-        }
+        showVersionInputDialog(existingVersion, prefKey, existingVersion);
     }
 
-    private void confirmAddSupport(String version, String prefKey, String appName) {
-        String wildcard = convertToWildcard(version);
+    private void showTypePickerThenInput() {
+        String[] options = {"WhatsApp Messenger", "WhatsApp Business"};
         new MaterialAlertDialogBuilder(this)
-                .setTitle("Add Supported Version")
-                .setMessage("Installed " + appName + " version: " + version + "\n\n" +
-                            "Would you like to add custom support for: " + wildcard + "?")
-                .setPositiveButton("Add Support", (dialog, which) -> {
-                    saveCustomVersion(wildcard, prefKey, null);
+                .setTitle(getString(R.string.add_version))
+                .setItems(options, (dialog, which) -> {
+                    String pref = which == 0 ? PREF_CUSTOM_WPP : PREF_CUSTOM_BIZ;
+                    showVersionInputDialog(null, pref, null);
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 
-    private String getInstalledVersion(String packageName) {
-        try {
-            var packageInfo = getPackageManager().getPackageInfo(packageName, 0);
-            return packageInfo.versionName;
-        } catch (Exception e) {
-            return null;
-        }
-    }
+    private void showVersionInputDialog(@Nullable String editingVersion,
+                                         String prefKey,
+                                         @Nullable String oldVersion) {
+        TextInputLayout inputLayout = new TextInputLayout(this);
+        inputLayout.setHint("e.g. 2.26.26.xx");
+        inputLayout.setPaddingRelative(40, 20, 40, 0);
+        inputLayout.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
 
-    private String convertToWildcard(String version) {
-        if (version == null) return "";
-        String[] parts = version.split("\\.");
-        if (parts.length >= 3) {
-            return parts[0] + "." + parts[1] + "." + parts[2] + ".xx";
+        TextInputEditText editText = new TextInputEditText(inputLayout.getContext());
+        editText.setInputType(InputType.TYPE_CLASS_TEXT);
+        editText.setFilters(new InputFilter[]{new InputFilter.LengthFilter(30)});
+        if (editingVersion != null) {
+            editText.setText(editingVersion);
+            editText.setSelection(editingVersion.length());
         }
-        return version;
+        inputLayout.addView(editText);
+
+        String title = editingVersion != null
+                ? getString(R.string.edit_version)
+                : getString(R.string.add_version);
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(title)
+                .setView(inputLayout)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    String input = editText.getText() != null
+                            ? editText.getText().toString().trim()
+                            : "";
+                    if (!VERSION_PATTERN.matcher(input).matches()) {
+                        android.widget.Toast.makeText(this,
+                                getString(R.string.invalid_version_format),
+                                android.widget.Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    saveCustomVersion(input, prefKey, oldVersion);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     // ── Delete ─────────────────────────────────────────────────────────────────
@@ -273,9 +265,9 @@ public class SupportedVersionsActivity extends BaseActivity {
 
         for (String sv : system) {
             if (sv.equals(newVersion)) {
-                Toast.makeText(this,
+                android.widget.Toast.makeText(this,
                         getString(R.string.version_exists),
-                        Toast.LENGTH_SHORT).show();
+                        android.widget.Toast.LENGTH_SHORT).show();
                 return;
             }
         }
@@ -283,9 +275,9 @@ public class SupportedVersionsActivity extends BaseActivity {
         Set<String> versions = new LinkedHashSet<>(getCustomVersions(prefKey));
 
         if (!newVersion.equals(oldVersion) && versions.contains(newVersion)) {
-            Toast.makeText(this,
+            android.widget.Toast.makeText(this,
                     getString(R.string.version_exists),
-                    Toast.LENGTH_SHORT).show();
+                    android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -308,7 +300,7 @@ public class SupportedVersionsActivity extends BaseActivity {
     private void notifyXposed() {
         try {
             for (String pkg : new String[]{"com.whatsapp", "com.whatsapp.w4b"}) {
-                Intent intent = new Intent(BuildConfig.APPLICATION_ID + ".MANUAL_RESTART");
+                Intent intent = new Intent(com.waenhancer.BuildConfig.APPLICATION_ID + ".MANUAL_RESTART");
                 intent.setPackage(pkg);
                 sendBroadcast(intent);
             }
