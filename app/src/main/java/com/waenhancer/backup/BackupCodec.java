@@ -98,6 +98,80 @@ public final class BackupCodec {
         return root.toString(2);
     }
 
+    /**
+     * Names the values the user has set that this file deliberately leaves behind, so the export
+     * can say what it is not carrying instead of dropping it silently.
+     *
+     * <p>Secrets are excluded because a settings backup is a plain JSON file the user may share.
+     * Carrying them safely needs a password-encrypted container, which belongs to the full
+     * backup work rather than here.</p>
+     */
+    public static ExcludedSummary excludedFrom(SharedPreferences preferences) {
+        Map<String, ?> stored = preferences == null
+                ? Collections.emptyMap() : preferences.getAll();
+        List<String> secrets = new ArrayList<>();
+        List<String> internal = new ArrayList<>();
+        for (Map.Entry<String, PreferenceSchema.Entry> entry
+                : PreferenceSchema.all().entrySet()) {
+            if (entry.getValue().isExportable()) continue;
+            Object value = stored.get(entry.getKey());
+            if (value == null) continue;
+            if (value instanceof String && ((String) value).isEmpty()) continue;
+            if (entry.getValue().sensitivity == PreferenceSchema.Sensitivity.SECRET) {
+                secrets.add(entry.getKey());
+            } else {
+                internal.add(entry.getKey());
+            }
+        }
+        return new ExcludedSummary(secrets, internal);
+    }
+
+    public static final class ExcludedSummary {
+        /** User secrets that are set but never written to a settings backup. */
+        public final List<String> secrets;
+        /** Cache and runtime state, which is regenerated rather than restored. */
+        public final List<String> internal;
+
+        private ExcludedSummary(List<String> secrets, List<String> internal) {
+            this.secrets = Collections.unmodifiableList(new ArrayList<>(secrets));
+            this.internal = Collections.unmodifiableList(new ArrayList<>(internal));
+        }
+
+        public boolean hasSecrets() {
+            return !secrets.isEmpty();
+        }
+
+        /** Plain-language notice naming the excluded secrets, or null when there are none. */
+        public String secretsNotice() {
+            if (secrets.isEmpty()) return null;
+            return "This file does not contain your " + join(secrets)
+                    + ". Settings backups are plain, shareable files, so secrets are never"
+                    + " written to them. Keep a copy of those values yourself: reinstalling"
+                    + " will not restore them.";
+        }
+
+        private static String join(List<String> keys) {
+            List<String> labels = new ArrayList<>();
+            for (String key : keys) labels.add(label(key));
+            if (labels.size() == 1) return labels.get(0);
+            String last = labels.remove(labels.size() - 1);
+            return String.join(", ", labels) + " and " + last;
+        }
+
+        private static String label(String key) {
+            switch (key) {
+                case "groq_api_key":
+                    return "Groq API key";
+                case "assemblyai_key":
+                    return "AssemblyAI API key";
+                case "bootloader_spoofer_xml":
+                    return "imported keybox";
+                default:
+                    return key;
+            }
+        }
+    }
+
     public static ImportPlan parseAndValidate(byte[] data) throws BackupException {
         if (data == null || data.length == 0) throw new BackupException("Backup is empty.");
         if (data.length > MAX_BYTES) throw new BackupException("Backup exceeds the 2 MB limit.");

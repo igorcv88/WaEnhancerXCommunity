@@ -519,7 +519,18 @@ public class HomeFragment extends BaseFragment {
                             preferences, BuildConfig.VERSION_NAME);
                     output.write(backup.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                     preferences.edit().putBoolean("backup_privacy_notice_seen", true).apply();
-                    Toast.makeText(context, R.string.configs_saved, Toast.LENGTH_SHORT).show();
+
+                    // Say what the file does not carry. Dropping secrets silently left users
+                    // believing a backup was complete when their API keys were not in it.
+                    BackupCodec.ExcludedSummary excluded = BackupCodec.excludedFrom(preferences);
+                    if (excluded.hasSecrets()) {
+                        com.waenhancer.ui.helpers.BottomSheetHelper.showInfo(
+                                requireActivity(),
+                                getString(R.string.configs_saved),
+                                excluded.secretsNotice());
+                    } else {
+                        Toast.makeText(context, R.string.configs_saved, Toast.LENGTH_SHORT).show();
+                    }
                 } catch (Exception exception) {
                     Log.e("saveConfigs", "Unable to export settings", exception);
                     Toast.makeText(context, exception.getMessage(), Toast.LENGTH_LONG).show();
@@ -531,17 +542,22 @@ public class HomeFragment extends BaseFragment {
         };
 
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
-        if (preferences.getBoolean("backup_privacy_notice_seen", false)) {
-            launchExport.run();
-            return;
+
+        // Shown before every export, not only the first one. This file can be shared, so the
+        // user should be reminded what it carries each time rather than once ever.
+        StringBuilder notice = new StringBuilder(
+                "The export contains only allowlisted module settings. It excludes keys, tokens, "
+                        + "certificates, internal paths, diagnostics, messages and media. "
+                        + "Review the file before sharing it.");
+        BackupCodec.ExcludedSummary excluded = BackupCodec.excludedFrom(preferences);
+        if (excluded.hasSecrets()) {
+            notice.append("\n\n").append(excluded.secretsNotice());
         }
 
         com.waenhancer.ui.helpers.BottomSheetHelper.showConfirmation(
                 requireActivity(),
                 "Export settings",
-                "The export contains only allowlisted module settings. It excludes keys, tokens, "
-                        + "certificates, license data, internal paths, diagnostics, messages and media. "
-                        + "Review the file before sharing it.",
+                notice.toString(),
                 "Export",
                 false,
                 () -> launchExport.run());
