@@ -124,9 +124,9 @@ public class CustomThemeV2 extends Feature {
     public void doHook() throws Throwable {
         try {
             applyTheme();
-            CssSafetyManager.clearFailureState(prefs);
+            CssSafetyManager.clearFailureState(Utils.getApplication(), prefs);
         } catch (Throwable failure) {
-            CssSafetyManager.recordThemeFailure(prefs);
+            CssSafetyManager.recordThemeFailure(Utils.getApplication(), prefs);
             throw failure;
         }
     }

@@ -357,8 +357,6 @@
     <string name="bootloader_spoofer_sum">Aktivieren, wenn sie gebannt worden und die inoffizielle WhatsApp-Nachricht über inoffizielle Version erhalten haben</string>
     <string name="not_available">Nicht verfügbar</string>
     <string name="select_all">Alle auswählen</string>
-    <string name="custom_colors_for_text_status">Benutzerdefinierte Farben für Textstatus</string>
-    <string name="custom_colors_for_text_status_sum">Drücke und halte die Farbauswahl im Status um sie anzupassen</string>
     <string name="enable_wa_enhancer_button">WaEnhancer Community Button aktivieren</string>
     <string name="enable_wa_enhancer_button_sum">Schaltfläche dem Startbildschirm hinzufügen, um WaEnhancer Community zu öffnen</string>
     <string name="custom_privacy">Benutzerdefiniert</string>
@@ -466,8 +464,6 @@
     <string name="search_no_results">No features found</string>
     <string name="search_try_different_keywords">Try different keywords or browse categories</string>
     <string name="search_start_typing">Start typing to search features</string>
-    <string name="enable_spy">Enable Spy Tool</string>
-    <string name="enable_spy_sum">Logs internal events to Xposed log for debugging.</string>
     <string name="no_deleted_messages">No deleted messages found</string>
     <string name="deleted_messages_title">Deleted By Me</string>
     <string name="restore_message">Restore</string>

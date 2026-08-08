@@ -55,3 +55,59 @@ Because WaEnhancer Community uses a different application ID and signing key, An
 ## Failure behavior
 
 When validation fails, the app must keep the source intact, restore the pre-migration state when necessary, disable only the affected feature, and report a clear local error. A failed migration must not leave the app in a partially switched state.
+
+## Block C — preference storage split (migration version 1)
+
+### What changes
+
+Values the hooked WhatsApp process must not be able to read move out of the world-readable
+preference file into a `MODE_PRIVATE` store named `private_config`. `PreferenceSchema` records,
+per key, whether it belongs to the public or the private store.
+
+The public store is the existing default preference file rather than a newly named one. Every
+hook reads it today through `XSharedPreferences`, and relocating the public keys in a single
+step would change the one working cross-process path — the largest configuration-loss risk in
+this project. The plan puts preservation of data above every other goal, so the file keeps its
+role and gains a name.
+
+### Sequence
+
+Run automatically at application start, in this order:
+
+1. `PreferenceMigration.copyPrivateValues` — writes a snapshot of the public store to
+   `files/migration_snapshots/`, copies every private-store key across, then verifies the copy
+   value by value. The public copy is left in place. Nothing is marked migrated unless every
+   value verified.
+2. The automation token is minted if absent.
+3. `PreferenceMigration.removeMigratedSecrets` — removes the secrets from the world-readable
+   file, and only then. It refuses unless the copy has been verified and a UID-validated reader
+   exists for the hooked process, and re-checks that the private copy still matches before
+   deleting anything.
+
+`clear()` is never used at any point.
+
+### Compatibility
+
+**Upgrade.** Existing settings are untouched. Secrets are copied before being removed and remain
+readable by the features that use them, now through the provider rather than from disk.
+
+**Downgrade.** Step 1 is additive, so a build that only knows the public store still finds every
+public setting. A build older than step 3 will not find the secrets, because they have been
+removed from the file it reads; re-entering them, or restoring a snapshot, recovers them.
+
+**Failure.** Any failure leaves the public store as it was. The migration is wrapped so that it
+can never prevent the application from starting.
+
+### Rollback
+
+`PreferenceMigration.rollback` restores from a snapshot in `files/migration_snapshots/`, keeping
+the five most recent. It writes the recorded values back rather than clearing first, so a
+setting made after the snapshot is not lost. A corrupt snapshot is rejected without touching the
+store.
+
+### Backup allowlist
+
+The exportable set is derived from `PreferenceSchema` rather than maintained by hand. The
+previous hand-written list named 43 keys that do not exist and misspelled others, so most
+settings were silently dropped by both export and import. Files written by that build are
+handled: the drifted names are mapped back onto the real keys through `LEGACY_ALIASES`.

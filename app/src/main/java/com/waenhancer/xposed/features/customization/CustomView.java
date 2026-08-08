@@ -130,9 +130,9 @@ public class CustomView extends Feature {
         // failures so CssSafetyManager can arm safe mode automatically after three bad starts.
         try {
             applyCustomView();
-            CssSafetyManager.clearFailureState(prefs);
+            CssSafetyManager.clearFailureState(Utils.getApplication(), prefs);
         } catch (Throwable failure) {
-            CssSafetyManager.recordThemeFailure(prefs);
+            CssSafetyManager.recordThemeFailure(Utils.getApplication(), prefs);
             throw failure;
         }
     }

@@ -212,14 +212,6 @@
             app:summaryOn="@string/recording_included_contacts_summary_on"
             app:title="@string/select_contacts" />
 
-        <ListPreference
-            app:defaultValue="0"
-            app:dependency="always_typing_global"
-            app:entries="@array/always_typing_type_entries"
-            app:entryValues="@array/always_typing_type_values"
-            app:key="always_typing_global_type"
-            app:summary="%s"
-            app:title="@string/always_typing_global_type_title" />
 
         <Preference
             app:key="always_typing_delay_note"

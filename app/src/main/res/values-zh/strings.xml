@@ -357,8 +357,6 @@
     <string name="bootloader_spoofer_sum">如果您被封禁并收到非官方 Whatsapp 消息，请使用此功能</string>
     <string name="not_available">无法使用</string>
     <string name="select_all">选择全部</string>
-    <string name="custom_colors_for_text_status">自定义文本动态的颜色</string>
-    <string name="custom_colors_for_text_status_sum">按住动态中的颜色选择器以对其进行自定义</string>
     <string name="enable_wa_enhancer_button">启用 WaEnhancer Community 按钮</string>
     <string name="enable_wa_enhancer_button_sum">在主页工具栏添加按钮用于打开 WaEnhancer Community</string>
     <string name="custom_privacy">自定义隐私设置</string>
@@ -466,8 +464,6 @@
     <string name="search_no_results">No features found</string>
     <string name="search_try_different_keywords">Try different keywords or browse categories</string>
     <string name="search_start_typing">Start typing to search features</string>
-    <string name="enable_spy">Enable Spy Tool</string>
-    <string name="enable_spy_sum">Logs internal events to Xposed log for debugging.</string>
     <string name="no_deleted_messages">No deleted messages found</string>
     <string name="deleted_messages_title">Deleted By Me</string>
     <string name="restore_message">Restore</string>

@@ -357,8 +357,6 @@
     <string name="bootloader_spoofer_sum">Utilisez-le si vous avez été banni et recevez le message Whatsapp non officiel</string>
     <string name="not_available">pas disponible</string>
     <string name="select_all">Sélectionner tout</string>
-    <string name="custom_colors_for_text_status">Couleurs personnalisées pour le texte du statut</string>
-    <string name="custom_colors_for_text_status_sum">Appuyez et maintenez sur le sélecteur de couleur dans l\'état pour le personnaliser</string>
     <string name="enable_wa_enhancer_button">Activer le bouton WaEnhancer Community</string>
     <string name="enable_wa_enhancer_button_sum">Ajouter un bouton sur l’écran d’accueil pour ouvrir WaEnhancer Community</string>
     <string name="custom_privacy">Confidentialité personnalisée</string>
@@ -466,8 +464,6 @@
     <string name="search_no_results">No features found</string>
     <string name="search_try_different_keywords">Try different keywords or browse categories</string>
     <string name="search_start_typing">Start typing to search features</string>
-    <string name="enable_spy">Enable Spy Tool</string>
-    <string name="enable_spy_sum">Logs internal events to Xposed log for debugging.</string>
     <string name="no_deleted_messages">No deleted messages found</string>
     <string name="deleted_messages_title">Deleted By Me</string>
     <string name="restore_message">Restore</string>

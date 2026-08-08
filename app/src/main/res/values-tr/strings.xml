@@ -357,8 +357,6 @@
     <string name="bootloader_spoofer_sum">Yasaklandıysanız ve resmi olmayan WhatsApp mesajı alıyorsanız bunu kullanın</string>
     <string name="not_available">mevcut değil</string>
     <string name="select_all">Tümünü Seç</string>
-    <string name="custom_colors_for_text_status">Metin durumu için özel renkler</string>
-    <string name="custom_colors_for_text_status_sum">Özelleştirmek için durumdaki renk seçiciyi basılı tutun</string>
     <string name="enable_wa_enhancer_button">WaEnhancer Community Düğmesini Etkinleştir</string>
     <string name="enable_wa_enhancer_button_sum">WaEnhancer Community\'ı açmak için Ana Ekrana düğme ekleyin</string>
     <string name="custom_privacy">Özel Gizlilik</string>
@@ -466,8 +464,6 @@
     <string name="search_no_results">No features found</string>
     <string name="search_try_different_keywords">Try different keywords or browse categories</string>
     <string name="search_start_typing">Start typing to search features</string>
-    <string name="enable_spy">Enable Spy Tool</string>
-    <string name="enable_spy_sum">Logs internal events to Xposed log for debugging.</string>
     <string name="no_deleted_messages">No deleted messages found</string>
     <string name="deleted_messages_title">Deleted By Me</string>
     <string name="restore_message">Restore</string>

@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 
 import com.waenhancer.config.BottomBarPreferenceSchema;
+import com.waenhancer.config.PreferenceSchema;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -31,51 +32,19 @@ public final class BackupCodec {
     public static final int SCHEMA_VERSION = 1;
     public static final int MAX_BYTES = 2 * 1024 * 1024;
 
-    private static final Set<String> SAFE_KEYS = Collections.unmodifiableSet(
-            new LinkedHashSet<>(Arrays.asList((
-                    "thememode,wae_color_mode,wae_color_preset,force_english,update_check," +
-                    "disable_expiration,lite_mode,show_hook_toast,bypass_version_check," +
-                    "customize_supported_versions,ampm,segundos,secondstotime," +
-                    "antirevoke,antirevokestatus,viewonce,downloadviewonce,download_video_note," +
-                    "hideread,hidereceipt,hidestatusview,ghostmode,ghostmode_r,freezelastseen," +
-                    "call_blocker,call_type,hide_archived_chat,hide_once_view_seen,blueonreply," +
-                    "removeforwardlimit,customforwardlimit,disable_pinned_limit," +
-                    "delete_for_everyone_all_messages,show_edited_message_history," +
-                    "show_message_device_source,show_button_to_send_blue_tick," +
-                    "imagequality,videoquality,increase_video_size_limit,send_video_in_real_resolution," +
-                    "send_video_in_60fps,statusdowload,statuscomposer,oldstatus,igstatus,channels," +
-                    "removechannel_rec,status_style,autonext_status,copystatus,toast_viewed_status," +
-                    "enable_spy,novaconfig,novofiltro,menuwicon,showname,showbio,show_dnd_button," +
-                    "separate_groups,separate_groups_counter,enable_filter_chats,disable_channels," +
-                    "admin_grp,admin_emoji,floatingmenu,animation_emojis,bubble_color,bubble_left," +
-                    "bubble_right,changecolor,changecolor_mode,primary_color,background_color," +
-                    "text_color,wallpaper,wallpaper_file,wallpaper_alpha,wallpaper_alpha_toolbar," +
-                    "wallpaper_alpha_navigation,hidetabs,custom_filters,filter_items,css_theme," +
-                    "change_dpi,folder_theme,animation_list,custom_toolbar,custom_view," +
-                    "floating_bottom_bar,floating_bottom_bar_glass,floating_bottom_bar_fill_color," +
-                    "floating_bottom_bar_fully_rounded,floating_bottom_bar_radius," +
-                    "floating_bottom_bar_bottom_margin,floating_bottom_bar_horizontal_margin," +
-                    "floating_bottom_bar_glass_opacity,floating_bottom_bar_icon_size," +
-                    "floating_bottom_bar_text_size,floating_bottom_bar_padding_vertical," +
-                    "floating_bottom_bar_icon_label_spacing,floating_bottom_bar_height_mode," +
-                    "floating_bottom_bar_manual_height,floating_bottom_bar_scroll_hide_mode," +
-                    "floating_bottom_bar_fab_mode,floating_bottom_bar_fab_offset," +
-                    "floating_bottom_bar_minimal_fab_size,floating_bottom_bar_minimal_fab_radius," +
-                    "floating_bottom_bar_minimal_fab_opacity,floating_bottom_bar_minimal_fab_margin," +
-                    "floating_bottom_bar_minimal_fab_color,floating_bottom_bar_minimal_fab_icon_color," +
-                    "floating_bottom_bar_indicator_visible,floating_bottom_bar_indicator_width_mode," +
-                    "floating_bottom_bar_indicator_height_mode,floating_bottom_bar_indicator_width," +
-                    "floating_bottom_bar_indicator_height,floating_bottom_bar_indicator_radius," +
-                    "floating_bottom_bar_indicator_padding_horizontal," +
-                    "floating_bottom_bar_indicator_padding_vertical,floating_bottom_bar_indicator_offset," +
-                    "floating_bottom_bar_indicator_opacity,floating_bottom_bar_indicator_color," +
-                    "tasker_enabled,tasker_confirm_send,tasker_allowed_packages," +
-                    "call_recording,call_recording_format,call_recording_source," +
-                    "auto_status_forward,status_forward_rules,google_translate,audio_transcript," +
-                    "toast_viewer,contact_online_notification,locked_chats_enhancer,hide_chat," +
-                    "tag_message,download_profile,media_preview,file_size_spoofer," +
-                    "force_restore_backup_feature,lazy_feature_loading"
-            ).split(","))));
+    /**
+     * The set of exportable keys is derived from {@link PreferenceSchema}, which is the single
+     * source of truth for what the module persists.
+     *
+     * <p>This replaces a hand-written list that had drifted from the implementation. That list
+     * named 43 keys the app never defines and misspelled others — {@code showname} for
+     * {@code shownamehome}, {@code separate_groups} for {@code separategroups},
+     * {@code statusdowload} for {@code downloadstatus}, {@code toast_viewer} for
+     * {@code toast_viewed_message} — while omitting most real settings. Export wrote a small,
+     * partly non-existent subset and import restored the same, so a restored backup appeared to
+     * do nothing.</p>
+     */
+    private static final Set<String> SAFE_KEYS = PreferenceSchema.exportableKeys();
 
     private static final Set<String> BLOCKED_KEYS = Collections.unmodifiableSet(
             new HashSet<>(Arrays.asList(
@@ -92,6 +61,18 @@ public final class BackupCodec {
         aliases.put("floating_bottom_bar_scroll_hide", "floating_bottom_bar_scroll_hide_mode");
         aliases.put("colors_customization", "changecolor");
         aliases.put("custom_primary_color", "primary_color");
+        // Names the previous hand-written allowlist used, which never matched the
+        // implementation. Files exported by that build carry them, so they are mapped back
+        // onto the real keys instead of being discarded as unknown.
+        aliases.put("showname", "shownamehome");
+        aliases.put("showbio", "showbiohome");
+        aliases.put("separate_groups", "separategroups");
+        aliases.put("separate_groups_counter", "separategroups_counter_type");
+        aliases.put("statusdowload", "downloadstatus");
+        aliases.put("locked_chats_enhancer", "lockedchats_enhancer");
+        aliases.put("show_message_device_source", "message_device_source");
+        aliases.put("toast_viewer", "toast_viewed_message");
+        aliases.put("audio_transcript", "audio_transcription");
         LEGACY_ALIASES = Collections.unmodifiableMap(aliases);
     }
 
@@ -115,6 +96,80 @@ public final class BackupCodec {
         }
         root.put("settings", settings);
         return root.toString(2);
+    }
+
+    /**
+     * Names the values the user has set that this file deliberately leaves behind, so the export
+     * can say what it is not carrying instead of dropping it silently.
+     *
+     * <p>Secrets are excluded because a settings backup is a plain JSON file the user may share.
+     * Carrying them safely needs a password-encrypted container, which belongs to the full
+     * backup work rather than here.</p>
+     */
+    public static ExcludedSummary excludedFrom(SharedPreferences preferences) {
+        Map<String, ?> stored = preferences == null
+                ? Collections.emptyMap() : preferences.getAll();
+        List<String> secrets = new ArrayList<>();
+        List<String> internal = new ArrayList<>();
+        for (Map.Entry<String, PreferenceSchema.Entry> entry
+                : PreferenceSchema.all().entrySet()) {
+            if (entry.getValue().isExportable()) continue;
+            Object value = stored.get(entry.getKey());
+            if (value == null) continue;
+            if (value instanceof String && ((String) value).isEmpty()) continue;
+            if (entry.getValue().sensitivity == PreferenceSchema.Sensitivity.SECRET) {
+                secrets.add(entry.getKey());
+            } else {
+                internal.add(entry.getKey());
+            }
+        }
+        return new ExcludedSummary(secrets, internal);
+    }
+
+    public static final class ExcludedSummary {
+        /** User secrets that are set but never written to a settings backup. */
+        public final List<String> secrets;
+        /** Cache and runtime state, which is regenerated rather than restored. */
+        public final List<String> internal;
+
+        private ExcludedSummary(List<String> secrets, List<String> internal) {
+            this.secrets = Collections.unmodifiableList(new ArrayList<>(secrets));
+            this.internal = Collections.unmodifiableList(new ArrayList<>(internal));
+        }
+
+        public boolean hasSecrets() {
+            return !secrets.isEmpty();
+        }
+
+        /** Plain-language notice naming the excluded secrets, or null when there are none. */
+        public String secretsNotice() {
+            if (secrets.isEmpty()) return null;
+            return "This file does not contain your " + join(secrets)
+                    + ". Settings backups are plain, shareable files, so secrets are never"
+                    + " written to them. Keep a copy of those values yourself: reinstalling"
+                    + " will not restore them.";
+        }
+
+        private static String join(List<String> keys) {
+            List<String> labels = new ArrayList<>();
+            for (String key : keys) labels.add(label(key));
+            if (labels.size() == 1) return labels.get(0);
+            String last = labels.remove(labels.size() - 1);
+            return String.join(", ", labels) + " and " + last;
+        }
+
+        private static String label(String key) {
+            switch (key) {
+                case "groq_api_key":
+                    return "Groq API key";
+                case "assemblyai_key":
+                    return "AssemblyAI API key";
+                case "bootloader_spoofer_xml":
+                    return "imported keybox";
+                default:
+                    return key;
+            }
+        }
     }
 
     public static ImportPlan parseAndValidate(byte[] data) throws BackupException {
@@ -148,7 +203,9 @@ public final class BackupCodec {
         List<String> sensitive = new ArrayList<>();
         List<String> normalized = new ArrayList<>();
 
+        int total = 0;
         for (String originalKey : iterable(source.keys())) {
+            total++;
             String key = LEGACY_ALIASES.getOrDefault(originalKey, originalKey);
             if (isSensitive(key)) {
                 sensitive.add(originalKey);
@@ -168,7 +225,7 @@ public final class BackupCodec {
             }
         }
 
-        return new ImportPlan(schemaVersion, legacy, values, unknown, sensitive, normalized);
+        return new ImportPlan(schemaVersion, legacy, total, values, unknown, sensitive, normalized);
     }
 
     public static ImportReport apply(Context context, SharedPreferences preferences, ImportPlan plan)
@@ -187,7 +244,7 @@ public final class BackupCodec {
             throw new BackupException("Android rejected the settings transaction. "
                     + "No setting was changed.");
         }
-        return new ImportReport(plan.values.size(), plan.unknownKeys,
+        return new ImportReport(plan.values.size(), plan.totalKeys, plan.unknownKeys,
                 plan.sensitiveKeys, plan.normalizedKeys, plan.legacy);
     }
 
@@ -197,6 +254,9 @@ public final class BackupCodec {
 
     public static boolean isSensitive(String key) {
         if (key == null) return true;
+        // The schema is authoritative: anything it classifies as a secret is refused and
+        // reported as such, rather than falling through to the name heuristic below.
+        if (PreferenceSchema.isSecret(key)) return true;
         String normalized = key.toLowerCase(Locale.ROOT);
         if (BLOCKED_KEYS.contains(normalized)) return true;
         return normalized.contains("private_key")
@@ -364,16 +424,20 @@ public final class BackupCodec {
     public static final class ImportPlan {
         public final int schemaVersion;
         public final boolean legacy;
+        /** How many entries the file contained, regardless of whether they were applied. */
+        public final int totalKeys;
         public final Map<String, Object> values;
         public final List<String> unknownKeys;
         public final List<String> sensitiveKeys;
         public final List<String> normalizedKeys;
 
-        private ImportPlan(int schemaVersion, boolean legacy, Map<String, Object> values,
+        private ImportPlan(int schemaVersion, boolean legacy, int totalKeys,
+                           Map<String, Object> values,
                            List<String> unknownKeys, List<String> sensitiveKeys,
                            List<String> normalizedKeys) {
             this.schemaVersion = schemaVersion;
             this.legacy = legacy;
+            this.totalKeys = totalKeys;
             this.values = Collections.unmodifiableMap(new LinkedHashMap<>(values));
             this.unknownKeys = Collections.unmodifiableList(new ArrayList<>(unknownKeys));
             this.sensitiveKeys = Collections.unmodifiableList(new ArrayList<>(sensitiveKeys));
@@ -383,27 +447,47 @@ public final class BackupCodec {
 
     public static final class ImportReport {
         public final int applied;
+        public final int total;
         public final List<String> skippedUnknown;
         public final List<String> skippedSensitive;
         public final List<String> normalized;
         public final boolean legacy;
 
-        private ImportReport(int applied, List<String> skippedUnknown,
+        private ImportReport(int applied, int total, List<String> skippedUnknown,
                              List<String> skippedSensitive, List<String> normalized,
                              boolean legacy) {
             this.applied = applied;
+            this.total = total;
             this.skippedUnknown = skippedUnknown;
             this.skippedSensitive = skippedSensitive;
             this.normalized = normalized;
             this.legacy = legacy;
         }
 
+        /**
+         * States applied-against-total explicitly. The previous wording reported only the
+         * applied count, so an import that recognised almost nothing read as a success.
+         */
         public String summary() {
-            return "Applied " + applied + " settings"
-                    + (legacy ? " from a legacy backup" : "")
-                    + ". Unknown skipped: " + skippedUnknown.size()
-                    + "; sensitive skipped: " + skippedSensitive.size()
-                    + "; normalized: " + normalized.size() + ".";
+            StringBuilder text = new StringBuilder();
+            text.append("Applied ").append(applied).append(" of ").append(total)
+                    .append(total == 1 ? " setting" : " settings")
+                    .append(legacy ? " from a legacy backup." : ".");
+            if (!skippedUnknown.isEmpty()) {
+                text.append("\nNot recognised: ").append(skippedUnknown.size())
+                        .append(" (these belong to a different version and were ignored).");
+            }
+            if (!skippedSensitive.isEmpty()) {
+                text.append("\nRefused as sensitive: ").append(skippedSensitive.size())
+                        .append(" (keys, tokens and certificates are never imported).");
+            }
+            if (!normalized.isEmpty()) {
+                text.append("\nClamped to a valid range: ").append(normalized.size()).append(".");
+            }
+            if (applied == 0) {
+                text.append("\nNothing changed.");
+            }
+            return text.toString();
         }
     }
 

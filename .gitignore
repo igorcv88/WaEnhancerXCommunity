@@ -26,3 +26,6 @@ scratch
 app/src/main/java/com/waenhancer/utils/WppTabChecker.java
 */build/
 /pro
+# Local environment secrets
+.env.local
+.env

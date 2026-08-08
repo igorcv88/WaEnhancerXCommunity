@@ -551,7 +551,7 @@
               "key": "doubletap2like_emoji",
               "type": "text",
               "value_type": "string",
-              "default": "\ud83d\udc4d",
+              "default": "👍",
               "title": "Custom Reaction",
               "summary": "Select which reaction will be sent when double clicking on the message",
               "dep": "doubletap2like"
@@ -619,33 +619,6 @@
               "default": true,
               "title": "Animation Emojis",
               "summary": "Activate animated emojis (This creates large emojis in conversations)"
-            },
-            {
-              "key": "message_bomber",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "Message Bomber",
-              "summary": "Under Development",
-              "enabled": false
-            },
-            {
-              "key": "delete_message_file",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "Delete message media file",
-              "summary": "Under Development",
-              "enabled": false
-            },
-            {
-              "key": "delete_message_file_sent",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "Also apply for my sent messages",
-              "summary": "Show the delete option for your own sent media messages as well.",
-              "dep": "delete_message_file"
             }
           ]
         }
@@ -905,14 +878,6 @@
               "summary": "Shows a toast if someone views your status"
             },
             {
-              "key": "enable_spy",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "Enable Spy Tool",
-              "summary": "Logs internal events to Xposed log for debugging."
-            },
-            {
               "key": "igstatus",
               "type": "switch",
               "value_type": "boolean",
@@ -987,23 +952,6 @@
               "summary": "Change to the old statuses page vertically and without channels (NOTE: May cause lag in the interface)"
             },
             {
-              "key": "statuscomposer",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "Custom colors for text status",
-              "summary": "Press and hold on the color selector in the status to customize it"
-            },
-            {
-              "key": "send_audio_as_voice_status",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "Send Audio as Voice Status",
-              "summary": "Under Development",
-              "enabled": false
-            },
-            {
               "key": "auto_status_forward",
               "type": "switch",
               "value_type": "boolean",
@@ -1021,29 +969,11 @@
               "dep": "auto_status_forward"
             },
             {
-              "key": "pro_status_splitter",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "Status Video Splitter",
-              "summary": "Under Development",
-              "enabled": false
-            },
-            {
               "key": "remove_status_bottom_tile",
               "type": "switch",
               "value_type": "boolean",
               "default": false,
               "title": "Remove bottom visible tile",
-              "summary": "Under Development",
-              "enabled": false
-            },
-            {
-              "key": "disable_status_swipe_up",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "Disable Swipe Up to reply",
               "summary": "Under Development",
               "enabled": false
             },
@@ -1062,69 +992,6 @@
               "value_type": "boolean",
               "default": false,
               "title": "Remove heart button",
-              "summary": "Under Development",
-              "enabled": false
-            },
-            {
-              "key": "add_status_reply_menu_item",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "Add option to menu to open reply",
-              "summary": "Under Development",
-              "enabled": false
-            },
-            {
-              "key": "status_video_fast_gesture",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "Long press to fast forward/rewind",
-              "summary": "Under Development",
-              "enabled": false
-            },
-            {
-              "key": "status_video_fast_speed",
-              "type": "list",
-              "value_type": "string",
-              "default": "2.0",
-              "title": "Playback speed",
-              "summary": "Under Development",
-              "enabled": false,
-              "dep": "status_video_fast_gesture",
-              "entries": [
-                {
-                  "label": "1.2x",
-                  "value": "1.2"
-                },
-                {
-                  "label": "1.5x",
-                  "value": "1.5"
-                },
-                {
-                  "label": "1.8x",
-                  "value": "1.8"
-                },
-                {
-                  "label": "2.0x",
-                  "value": "2.0"
-                },
-                {
-                  "label": "2.5x",
-                  "value": "2.5"
-                },
-                {
-                  "label": "3.0x",
-                  "value": "3.0"
-                }
-              ]
-            },
-            {
-              "key": "status_bottom_play_pause_button",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "Show play/pause button in bottom bar",
               "summary": "Under Development",
               "enabled": false
             }
@@ -1230,15 +1097,6 @@
               "default": false,
               "title": "Enable Call Recording",
               "summary": "Record incoming and outgoing calls (Voice & Video) as audio."
-            },
-            {
-              "key": "call_recording_calls_tab_menu",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": true,
-              "title": "Manage recordings in calls tab",
-              "summary": "Enable \"Manage Recordings\" option in WhatsApp calls tab menu",
-              "dep": "call_recording_enable"
             },
             {
               "key": "call_recording_path",
@@ -1425,14 +1283,6 @@
               "default": true,
               "title": "Enable Media Preview",
               "summary": "Add a button to preview media in a temporary file (without downloading it permanently)"
-            },
-            {
-              "key": "file_size_spoofer",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "File Size Spoofer",
-              "summary": "Add a button in the send preview screen to spoof the displayed file size shown to the recipient"
             }
           ]
         }
@@ -1521,24 +1371,6 @@
                   "value": "groq"
                 }
               ]
-            },
-            {
-              "key": "assemblyai_key",
-              "type": "text",
-              "value_type": "string",
-              "default": null,
-              "title": "AssemblyAI API Key",
-              "summary": "AssemblyAI API access key (Get it at assemblyai.com)",
-              "dep": "audio_transcription"
-            },
-            {
-              "key": "groq_api_key",
-              "type": "text",
-              "value_type": "string",
-              "default": null,
-              "title": "Groq API Key",
-              "summary": "Groq API access key (Get it at console.groq.com)",
-              "dep": "audio_transcription"
             }
           ]
         }
@@ -1812,15 +1644,6 @@
               "default": false,
               "title": "Enable Custom KeyBox",
               "summary": "Use this if you have been banned and are receiving the unofficial Whatsapp message"
-            },
-            {
-              "key": "bootloader_spoofer_xml",
-              "type": "file_reader",
-              "value_type": "string",
-              "default": null,
-              "title": "Use Custom keybox.xml file",
-              "summary": "No file selected",
-              "dep": "bootloader_spoofer_custom"
             },
             {
               "key": "bootloader_spoofer_verify",

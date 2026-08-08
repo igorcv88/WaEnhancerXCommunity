@@ -21,10 +21,6 @@
             app:summary="@string/toast_on_viewed_status_sum"
             app:title="@string/toast_on_viewed_status" />
 
-        <rikka.material.preference.MaterialSwitchPreference
-            app:key="enable_spy"
-            app:summary="@string/enable_spy_sum"
-            app:title="@string/enable_spy" />
 
         <rikka.material.preference.MaterialSwitchPreference
             app:key="igstatus"
@@ -60,16 +56,7 @@
             app:summary="@string/old_statuses_sum"
             app:title="@string/old_statuses" />
 
-        <rikka.material.preference.MaterialSwitchPreference
-            app:key="statuscomposer"
-            app:summary="@string/custom_colors_for_text_status_sum"
-            app:title="@string/custom_colors_for_text_status" />
 
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="send_audio_as_voice_status"
-            app:summary="@string/send_audio_as_voice_status_sum"
-            app:title="@string/send_audio_as_voice_status" />
 
         <rikka.material.preference.MaterialSwitchPreference
             app:key="auto_status_forward"
@@ -81,11 +68,6 @@
             app:key="auto_status_forward_rules_pref"
             app:title="@string/auto_status_forward_rules" />
 
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="pro_status_splitter"
-            app:summary="@string/pro_status_splitter_sum"
-            app:title="@string/pro_status_splitter" />
 
     </PreferenceCategory>
 
@@ -100,11 +82,6 @@
             app:summary="@string/remove_status_bottom_tile_sum"
             app:title="@string/remove_status_bottom_tile" />
 
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="disable_status_swipe_up"
-            app:summary="@string/disable_status_swipe_up_sum"
-            app:title="@string/disable_status_swipe_up" />
 
         <rikka.material.preference.MaterialSwitchPreference
             app:defaultValue="false"
@@ -118,32 +95,9 @@
             app:summary="@string/remove_status_heart_button_sum"
             app:title="@string/remove_status_heart_button" />
 
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="add_status_reply_menu_item"
-            app:summary="@string/add_status_reply_menu_item_sum"
-            app:title="@string/add_status_reply_menu_item" />
 
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="status_video_fast_gesture"
-            app:summary="@string/status_video_fast_gesture_sum"
-            app:title="@string/status_video_fast_gesture" />
 
-        <ListPreference
-            android:defaultValue="2.0"
-            android:entries="@array/status_fast_speed_entries"
-            android:entryValues="@array/status_fast_speed_values"
-            app:dependency="status_video_fast_gesture"
-            app:key="status_video_fast_speed"
-            app:summary="@string/status_video_fast_speed_sum"
-            app:title="@string/status_video_fast_speed" />
 
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="status_bottom_play_pause_button"
-            app:summary="@string/status_bottom_play_pause_button_sum"
-            app:title="@string/status_bottom_play_pause_button" />
 
     </PreferenceCategory>
 

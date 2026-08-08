@@ -28,9 +28,10 @@ public class BackupRoundTripTest {
                 .putBoolean("floating_bottom_bar", true)
                 .putFloat("floating_bottom_bar_radius", 28f)
                 .putString("wae_color_preset", "blue")
-                .putStringSet("tasker_allowed_packages",
-                        new LinkedHashSet<>(Arrays.asList("com.example.a", "com.example.b")))
+                .putStringSet("hidetabs",
+                        new LinkedHashSet<>(Arrays.asList("status", "communities")))
                 .putString("github_token", "ghp_shouldNeverBeExported")
+                .putString("groq_api_key", "gsk_shouldNeverBeExported")
                 .putString("some_internal_cache", "x")
                 .commit();
 
@@ -39,8 +40,10 @@ public class BackupRoundTripTest {
 
         assertEquals(BackupCodec.SCHEMA_VERSION, root.getInt("schemaVersion"));
         assertTrue(settings.has("floating_bottom_bar"));
-        assertTrue(settings.has("tasker_allowed_packages"));
+        assertTrue(settings.has("hidetabs"));
         assertFalse(settings.has("github_token"));
+        // A user secret is described by the schema but is never exportable.
+        assertFalse(settings.has("groq_api_key"));
         assertFalse(settings.has("some_internal_cache"));
     }
 
@@ -51,8 +54,7 @@ public class BackupRoundTripTest {
                 .putBoolean("floating_bottom_bar", true)
                 .putFloat("floating_bottom_bar_radius", 30f)
                 .putString("wae_color_preset", "purple")
-                .putStringSet("tasker_allowed_packages",
-                        new LinkedHashSet<>(Arrays.asList("com.example.a")))
+                .putStringSet("hidetabs", new LinkedHashSet<>(Arrays.asList("status")))
                 .commit();
 
         String exported = BackupCodec.exportSettings(source, "1.8.0-alpha1");
@@ -62,7 +64,7 @@ public class BackupRoundTripTest {
         assertEquals(Boolean.TRUE, plan.values.get("floating_bottom_bar"));
         assertEquals(30f, ((Number) plan.values.get("floating_bottom_bar_radius")).floatValue(), 0.001f);
         assertEquals("purple", plan.values.get("wae_color_preset"));
-        assertTrue(plan.values.get("tasker_allowed_packages") instanceof java.util.Set);
+        assertTrue(plan.values.get("hidetabs") instanceof java.util.Set);
     }
 
     @Test

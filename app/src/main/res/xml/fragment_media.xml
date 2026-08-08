@@ -54,11 +54,6 @@
             app:key="auto_status_forward_rules_pref"
             app:title="@string/auto_status_forward_rules" />
 
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="pro_status_splitter"
-            app:summary="@string/pro_status_splitter_sum"
-            app:title="@string/pro_status_splitter" />
 
     </PreferenceCategory>
 
@@ -71,12 +66,6 @@
             app:summary="@string/call_recording_enable_summary_latest"
             app:title="@string/call_recording_enable" />
 
-        <rikka.material.preference.MaterialSwitchPreference
-            android:defaultValue="true"
-            app:dependency="call_recording_enable"
-            app:key="call_recording_calls_tab_menu"
-            app:summary="@string/call_recording_calls_tab_menu_summary"
-            app:title="@string/call_recording_calls_tab_menu" />
 
         <com.waenhancer.preference.FileSelectPreference
             android:defaultValue="/sdcard/Download"
@@ -237,11 +226,6 @@
             app:summary="@string/enable_media_preview_sum"
             app:title="@string/enable_media_preview" />
 
-        <rikka.material.preference.MaterialSwitchPreference
-            android:defaultValue="false"
-            app:key="file_size_spoofer"
-            app:summary="@string/file_size_spoofer_sum"
-            app:title="@string/file_size_spoofer" />
 
     </PreferenceCategory>
 
