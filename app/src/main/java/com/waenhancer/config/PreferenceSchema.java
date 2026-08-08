@@ -263,6 +263,10 @@ public final class PreferenceSchema {
         add(entries, "stamp_copied_message", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "status_style", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "tasker", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "tasker_allowed_packages", Type.STRING_SET, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "tasker_broadcast_message_body", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "tasker_legacy_unauthenticated", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "tasker_secret", Type.STRING, Sensitivity.SECRET, Store.PRIVATE);
         add(entries, "text_color", Type.INT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "thememode", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "toast_viewed_message", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);

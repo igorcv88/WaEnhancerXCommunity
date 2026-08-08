@@ -52,11 +52,19 @@
         android:supportsRtl="true"
         tools:targetApi="30">
 
+        <!--
+            Exported because automation apps must be able to reach it. The request itself is
+            authenticated by the per-installation token checked in the receiver; a broadcast
+            carries no caller identity, so no manifest-level permission can express this.
+            The action is namespaced to the installed application ID; the pre-rebrand action is
+            still accepted for one release so existing automation profiles keep working.
+        -->
         <receiver
             android:name=".receivers.TaskerMessageSentReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
+                <action android:name="${applicationId}.MESSAGE_SENT" />
                 <action android:name="com.waenhancer.MESSAGE_SENT" />
             </intent-filter>
         </receiver>

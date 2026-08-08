@@ -17,6 +17,10 @@ import com.waenhancer.xposed.core.components.FMessageWpp;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.utils.Utils;
 import com.waenhancer.utils.TaskerHistoryManager;
+import com.waenhancer.config.SecretBridge;
+import com.waenhancer.security.TaskerGuard;
+import com.waenhancer.receivers.TaskerMessageSentReceiver;
+import com.waenhancer.BuildConfig;
 
 import com.waenhancer.xposed.utils.ReflectionUtils;
 import org.luckypray.dexkit.query.enums.StringMatchType;
@@ -34,6 +38,32 @@ public class Tasker extends Feature {
     private static boolean taskerEnabled;
     // Timestamp of last successful notification-reply send, used for deduplication
     static volatile long lastNotificationReplyTime = 0;
+
+    public static final String ACTION_MESSAGE_RECEIVED =
+            BuildConfig.APPLICATION_ID + ".MESSAGE_RECEIVED";
+    public static final String ACTION_EVENT = BuildConfig.APPLICATION_ID + ".EVENT";
+
+    /**
+     * Sends an event only to the packages the user allowlisted, as an explicit intent.
+     *
+     * <p>These were implicit broadcasts, so any application that declared a matching receiver
+     * saw every event, including incoming message text. With no allowlist configured nothing is
+     * sent at all, which is the safe default rather than broadcasting to the world.</p>
+     */
+    private static void sendToAllowedPackages(Intent intent) {
+        try {
+            var context = Utils.getApplication();
+            if (context == null) return;
+            var prefs = WppCore.waePrefs;
+            if (prefs == null) return;
+            for (String target : TaskerGuard.allowedPackages(prefs)) {
+                Intent explicit = new Intent(intent);
+                explicit.setPackage(target);
+                context.sendBroadcast(explicit);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
 
 
     public Tasker(@NonNull ClassLoader classLoader, @NonNull SharedPreferences preferences) {
@@ -57,19 +87,19 @@ public class Tasker extends Feature {
 
     private void registerSenderMessage() {
         IntentFilter filter = new IntentFilter();
-        filter.addAction("com.waenhancer.MESSAGE_SENT");
-        filter.addAction("com.waenhancer.MESSAGE_SENT_INTERNAL");
+        filter.addAction(TaskerMessageSentReceiver.ACTION_INTERNAL);
+        filter.addAction(TaskerMessageSentReceiver.ACTION_SEND_LEGACY);
         ContextCompat.registerReceiver(Utils.getApplication(), new SenderMessageBroadcastReceiver(), filter, ContextCompat.RECEIVER_EXPORTED);
     }
 
     public synchronized static void sendTaskerEvent(String name, String number, String event) {
         if (!taskerEnabled) return;
 
-        Intent intent = new Intent("com.waenhancer.EVENT");
+        Intent intent = new Intent(ACTION_EVENT);
         intent.putExtra("name", name);
         intent.putExtra("number", number);
         intent.putExtra("event", event);
-        Utils.getApplication().sendBroadcast(intent);
+        sendToAllowedPackages(intent);
 
     }
 
@@ -129,11 +159,18 @@ public class Tasker extends Feature {
                     new Handler(Utils.getApplication().getMainLooper()).post(() -> {
                         logEventViaProvider(Utils.getApplication(), "INCOMING", number, msg);
 
-                        Intent intent = new Intent("com.waenhancer.MESSAGE_RECEIVED");
+                        // Was an implicit broadcast carrying the phone number, contact name
+                        // and full message text, so any app with a matching receiver read every
+                        // incoming WhatsApp message. It is now addressed explicitly to the
+                        // packages the user allowlisted, and the body is included only when the
+                        // user opts in.
+                        Intent intent = new Intent(ACTION_MESSAGE_RECEIVED);
                         intent.putExtra("number", number);
                         intent.putExtra("name", name);
-                        intent.putExtra("message", msg);
-                        Utils.getApplication().sendBroadcast(intent);
+                        if (TaskerGuard.mayIncludeBody(prefs)) {
+                            intent.putExtra("message", msg);
+                        }
+                        sendToAllowedPackages(intent);
                     });
                 } catch (Throwable t) {
                     XposedBridge.log("[WaEnhancerX] Tasker receive message hook error: " + t.getMessage());
@@ -182,7 +219,23 @@ public class Tasker extends Feature {
             }
 
             number = number.replaceAll("\\D", "");
-            ;
+
+            // This receiver is registered RECEIVER_EXPORTED because the module app has to reach
+            // it across the process boundary, which means any application can address it
+            // directly too. Require the per-installation token so a direct injection cannot
+            // bypass the checks TaskerMessageSentReceiver already performed.
+            var waePrefs = WppCore.waePrefs;
+            boolean legacyMode = waePrefs != null
+                    && waePrefs.getBoolean(TaskerGuard.KEY_LEGACY_MODE, false);
+            if (!legacyMode) {
+                String expected = SecretBridge.get(Utils.getApplication(), waePrefs,
+                        TaskerGuard.KEY_SECRET, null);
+                String presented =
+                        intent.getStringExtra(TaskerMessageSentReceiver.EXTRA_TOKEN);
+                if (!TaskerGuard.constantTimeEquals(expected, presented)) {
+                    return;
+                }
+            }
 
             // Time-based deduplication
             long now = System.currentTimeMillis();

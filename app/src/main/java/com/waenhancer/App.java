@@ -76,6 +76,29 @@ public class App extends Application {
             sharedPreferences.edit().putBoolean("init_prefs_creation", true).commit();
         }
 
+        // Phase C2/C3 storage work, in this order: copy anything the hooked process must not be
+        // able to read into the private store, then mint the automation token if it is missing,
+        // then remove the secrets from the world-readable file now that a UID-validated reader
+        // exists. The removal step verifies the private copy itself and refuses otherwise, so a
+        // failure here leaves the old location intact rather than losing the value.
+        try {
+            com.waenhancer.config.PreferenceMigration.copyPrivateValues(this);
+
+            android.content.SharedPreferences privateStore =
+                    com.waenhancer.config.PreferenceStores.privateStore(this);
+            if (privateStore.getString(
+                    com.waenhancer.security.TaskerGuard.KEY_SECRET, null) == null) {
+                privateStore.edit()
+                        .putString(com.waenhancer.security.TaskerGuard.KEY_SECRET,
+                                com.waenhancer.security.TaskerGuard.newSecret())
+                        .commit();
+            }
+
+            com.waenhancer.config.PreferenceMigration.removeMigratedSecrets(this, true);
+        } catch (RuntimeException ignored) {
+            // Storage migration must never stop the app from starting.
+        }
+
         int mode;
         try {
             mode = Integer.parseInt(sharedPreferences.getString("thememode", "0"));
