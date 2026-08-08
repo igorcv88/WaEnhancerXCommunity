@@ -166,9 +166,11 @@ public class UpdateDownloader {
             String resultVal = "";
             if (bytes > 1000) {
                 // -r: replace existing application
-                // -d: allow version code downgrade
                 // --user 0: install for owner
-                String cmd = "pm install -r -d --user 0 " + tmpPath;
+                // -d is deliberately absent: allowing a version-code downgrade by default let a
+                // stale or crafted APK silently replace a newer install. A downgrade is an
+                // explicit user action, not something the updater does on its own.
+                String cmd = "pm install -r --user 0 " + tmpPath;
                 resultVal = com.waenhancer.utils.RootUtils.runRootCommand(cmd);
                 successVal = resultVal != null && (resultVal.toLowerCase().contains("success") || resultVal.toLowerCase().contains("pkg:"));
             } else {
