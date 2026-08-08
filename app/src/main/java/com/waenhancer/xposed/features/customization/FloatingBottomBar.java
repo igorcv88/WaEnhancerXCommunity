@@ -55,10 +55,19 @@ public class FloatingBottomBar extends Feature {
     private static final WeakHashMap<View, FrameLayout> glassHosts = new WeakHashMap<>();
     private static final WeakHashMap<View, BlurView> glassBlurViews = new WeakHashMap<>();
     private static boolean scrollHideEnabled = true;
+    private static String scrollHideMode = "tabs";
     private static boolean glassEnabled = false;
     private static float glassOpacity = 35f;
     private static int glassFillColor = 0;
-    private static boolean pillDesignPro = true;
+    private static int pillRadiusDp = 28;
+    private static int pillSideMarginDp = PILL_SIDE_MARGIN_DP;
+    private static int pillBottomMarginDp = PILL_BOTTOM_MARGIN_DP;
+    private static int pillManualHeightDp = 64;
+    private static boolean pillManualHeight = false;
+    private static int fabVisibleOffsetDp = FAB_VISIBLE_OFFSET_DP;
+    private static String fabMode = "default";
+    private static boolean indicatorVisible = false;
+    private static SharedPreferences activePrefs;
 
     public FloatingBottomBar(@NonNull ClassLoader loader, @NonNull SharedPreferences preferences) {
         super(loader, preferences);
@@ -66,16 +75,25 @@ public class FloatingBottomBar extends Feature {
 
     @Override
     public void doHook() throws Throwable {
+        activePrefs = prefs;
         if (!prefs.getBoolean("floating_bottom_bar", false)) return;
 
-        scrollHideEnabled = prefs.getBoolean("floating_bottom_bar_scroll_hide", true);
+        scrollHideMode = getPrefString(activePrefs, "floating_bottom_bar_scroll_hide_mode",
+                prefs.getBoolean("floating_bottom_bar_scroll_hide", true) ? "tabs" : "off");
+        scrollHideEnabled = !"off".equals(scrollHideMode);
         glassEnabled = prefs.getBoolean("floating_bottom_bar_glass", true);
-        glassOpacity = getPrefFloat(prefs, "floating_bottom_bar_glass_opacity", 35f);
-        glassFillColor = getPrefColor(prefs, "floating_bottom_bar_fill_color", 0);
-        // Read pref — default to "regular" so new installs/free users get Classic
-        boolean prefWantsPro = "pro".equals(prefs.getString("floating_bottom_bar_pill_design", "regular"));
-        // Runtime Pro gate: override to false if the license is not active regardless of saved pref
-        pillDesignPro = prefWantsPro && com.waenhancer.xposed.utils.ProHelper.isPillDesignProEnabled();
+        glassOpacity = normalized("floating_bottom_bar_glass_opacity");
+        glassFillColor = getPrefColor(activePrefs, "floating_bottom_bar_fill_color", 0);
+        pillRadiusDp = prefs.getBoolean("floating_bottom_bar_fully_rounded", false)
+                ? 1000 : Math.round(normalized("floating_bottom_bar_radius"));
+        pillSideMarginDp = Math.round(normalized("floating_bottom_bar_horizontal_margin"));
+        pillBottomMarginDp = Math.round(normalized("floating_bottom_bar_bottom_margin"));
+        pillManualHeight = "manual".equals(getPrefString(
+                prefs, "floating_bottom_bar_height_mode", "automatic"));
+        pillManualHeightDp = Math.round(normalized("floating_bottom_bar_manual_height"));
+        fabVisibleOffsetDp = Math.round(normalized("floating_bottom_bar_fab_offset"));
+        fabMode = getPrefString(activePrefs, "floating_bottom_bar_fab_mode", "default");
+        indicatorVisible = prefs.getBoolean("floating_bottom_bar_indicator_visible", false);
 
 
         // Hook the tab frame container
@@ -160,7 +178,7 @@ public class FloatingBottomBar extends Feature {
                         // Create rounded shape background matching the theme surface/card color
                         GradientDrawable shape = new GradientDrawable();
                         shape.setShape(GradientDrawable.RECTANGLE);
-                        shape.setCornerRadius(28 * density);
+                        shape.setCornerRadius(pillRadiusDp * density);
 
                         boolean isNight = DesignUtils.isNightMode(view.getContext());
                         int bgColor = isNight ? 0xff1f2c34 : 0xffffffff;
@@ -203,22 +221,19 @@ public class FloatingBottomBar extends Feature {
                         // Clear backgrounds of immediate children to prevent solid white rectangular overlays
                         makeChildrenTransparent(view);
 
-                        if (pillDesignPro) {
-                            try {
-                                ClassLoader pluginLoader = (ClassLoader) System.getProperties().get("com.waex.helper.classloader");
-                                if (pluginLoader != null) {
-                                    Class<?> pillProClass = Class.forName("com.waex.helper.PillDesignPro", true, pluginLoader);
-                                    pillProClass.getMethod("applyProDesign", View.class, float.class).invoke(null, view, density);
-                                }
-                            } catch (Throwable t) {
-                                XposedBridge.log("Failed to load PillDesignPro: " + t.getMessage());
-                            }
-                        }
-
                         // Adjust padding to center items within floating pill
                         // Pro: tighter 3dp; Regular: original 6dp
-                        int paddingVertical = (int) ((pillDesignPro ? 3 : 6) * density);
-                        view.setPadding(view.getPaddingLeft(), paddingVertical, view.getPaddingRight(), paddingVertical);
+                        int paddingVertical = dp(density,
+                                Math.round(normalized("floating_bottom_bar_padding_vertical")));
+                        view.setPadding(view.getPaddingLeft(), paddingVertical,
+                                view.getPaddingRight(), paddingVertical);
+                        if (pillManualHeight) {
+                            ViewGroup.LayoutParams heightParams = view.getLayoutParams();
+                            if (heightParams != null) {
+                                heightParams.height = dp(density, pillManualHeightDp);
+                                view.setLayoutParams(heightParams);
+                            }
+                        }
 
                         // Attach LayoutChangeListener to enforce margins, overriding parent-forced layout passes
                         view.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
@@ -230,14 +245,11 @@ public class FloatingBottomBar extends Feature {
                                 if (isUpdating) return;
                                 isUpdating = true;
                                 try {
-                                    if (pillDesignPro && v.getMinimumHeight() != 0) {
-                                        v.setMinimumHeight(0);
-                                    }
                                     ViewGroup.LayoutParams lp = v.getLayoutParams();
                                     if (lp instanceof ViewGroup.MarginLayoutParams) {
                                         ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
-                                        int marginSide = dp(density, PILL_SIDE_MARGIN_DP);
-                                        int marginBottom = dp(density, PILL_BOTTOM_MARGIN_DP);
+                                        int marginSide = dp(density, pillSideMarginDp);
+                                        int marginBottom = dp(density, pillBottomMarginDp);
                                         if (glassHosts.containsKey(v)) return;
                                         if (mlp.leftMargin != marginSide || mlp.rightMargin != marginSide || mlp.bottomMargin != marginBottom) {
                                             mlp.leftMargin = marginSide;
@@ -256,8 +268,8 @@ public class FloatingBottomBar extends Feature {
                         ViewGroup.LayoutParams lp = view.getLayoutParams();
                         if (lp instanceof ViewGroup.MarginLayoutParams) {
                             ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
-                            int marginSide = dp(density, PILL_SIDE_MARGIN_DP);
-                            int marginBottom = dp(density, PILL_BOTTOM_MARGIN_DP);
+                            int marginSide = dp(density, pillSideMarginDp);
+                            int marginBottom = dp(density, pillBottomMarginDp);
                             mlp.leftMargin = marginSide;
                             mlp.rightMargin = marginSide;
                             mlp.bottomMargin = marginBottom;
@@ -291,7 +303,7 @@ public class FloatingBottomBar extends Feature {
                             try {
                                 if (hasSetPadding) return;
                                 if (v.getHeight() > 0 && v.getWidth() > 0) {
-                                    if (isMainTabScrollable(v)) {
+                                    if ("all".equals(scrollHideMode) || isMainTabScrollable(v)) {
                                         View bottomNav = findBottomNavForScrollable(v);
                                         if (bottomNav != null) {
                                             float density = v.getContext().getResources().getDisplayMetrics().density;
@@ -349,6 +361,13 @@ public class FloatingBottomBar extends Feature {
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     final View fab = (View) param.thisObject;
                     if (fab == null) return;
+                    if ("hidden".equals(fabMode)) {
+                        fab.setVisibility(View.GONE);
+                        return;
+                    }
+                    if ("minimal".equals(fabMode)) {
+                        applyMinimalFab(fab);
+                    }
                     fab.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
                         @Override
                         public void onViewAttachedToWindow(View v) {
@@ -585,8 +604,8 @@ public class FloatingBottomBar extends Feature {
                         }
                     }
 
-                    int marginSide = dp(density, PILL_SIDE_MARGIN_DP);
-                    int marginBottom = dp(density, PILL_BOTTOM_MARGIN_DP);
+                    int marginSide = dp(density, pillSideMarginDp);
+                    int marginBottom = dp(density, pillBottomMarginDp);
                         ViewGroup.LayoutParams newLp = null;
 
                         if (targetRoot instanceof android.widget.FrameLayout) {
@@ -739,7 +758,8 @@ public class FloatingBottomBar extends Feature {
                     final View scrollView = child;
                     scrollView.post(() -> {
                         try {
-                            if (!isMainTabScrollable(scrollView)) {
+                            if (!"all".equals(scrollHideMode)
+                                    && !isMainTabScrollable(scrollView)) {
                                 restoreOriginalBottomPadding(scrollView);
                                 return;
                             }
@@ -799,7 +819,7 @@ public class FloatingBottomBar extends Feature {
             if (Math.abs(dy) > 50000) return; // Ignore layout measureSpec triggers (e.g. 1073743008)
             if (Math.abs(dy) < 5) return;
             if (!rv.isShown()) return; // Ignore background scrolls
-            if (!isMainTabScrollable(rv)) return;
+            if (!"all".equals(scrollHideMode) && !isMainTabScrollable(rv)) return;
 
             View bottomNav = findBottomNavForScrollable(rv);
             if (bottomNav == null) return;
@@ -1126,7 +1146,7 @@ public class FloatingBottomBar extends Feature {
     }
 
     private static float getFabVisibleTranslation(float density) {
-        return -dp(density, FAB_VISIBLE_OFFSET_DP);
+        return -dp(density, fabVisibleOffsetDp);
     }
 
     private static View getBarAnimationTarget(View bottomNav) {
@@ -1312,6 +1332,84 @@ public class FloatingBottomBar extends Feature {
         return null;
     }
 
+    /** Original tab appearance captured before the indicator ever touched it. */
+    private static final class TabState {
+        Drawable background;
+        float translationY;
+        int paddingLeft;
+        int paddingTop;
+        int paddingRight;
+        int paddingBottom;
+        int layoutWidth;
+        int layoutHeight;
+    }
+
+    private static final WeakHashMap<View, TabState> originalTabStates = new WeakHashMap<>();
+
+    private static void rememberOriginalTabState(View item) {
+        if (originalTabStates.containsKey(item)) return;
+        TabState state = new TabState();
+        state.background = item.getBackground();
+        state.translationY = item.getTranslationY();
+        state.paddingLeft = item.getPaddingLeft();
+        state.paddingTop = item.getPaddingTop();
+        state.paddingRight = item.getPaddingRight();
+        state.paddingBottom = item.getPaddingBottom();
+        ViewGroup.LayoutParams params = item.getLayoutParams();
+        if (params != null) {
+            state.layoutWidth = params.width;
+            state.layoutHeight = params.height;
+        }
+        originalTabStates.put(item, state);
+    }
+
+    private static void restoreOriginalTabState(View item) {
+        TabState state = originalTabStates.get(item);
+        if (state == null) {
+            item.setBackground(null);
+            return;
+        }
+        // Restore WhatsApp's own ripple, offset, padding and measured size instead of leaving the
+        // indicator's values behind on every tab the user has visited.
+        item.setBackground(state.background);
+        item.setTranslationY(state.translationY);
+        item.setPadding(state.paddingLeft, state.paddingTop,
+                state.paddingRight, state.paddingBottom);
+        ViewGroup.LayoutParams params = item.getLayoutParams();
+        if (params != null
+                && (params.width != state.layoutWidth || params.height != state.layoutHeight)) {
+            params.width = state.layoutWidth;
+            params.height = state.layoutHeight;
+            item.setLayoutParams(params);
+        }
+    }
+
+    private static float normalized(String key) {
+        try {
+            if (activePrefs != null) {
+                return com.waenhancer.config.BottomBarPreferenceSchema.read(activePrefs, key);
+            }
+        } catch (Throwable ignored) {
+        }
+        // Never fall back to 0: for sizes such as manual_height (48-96) or minimal_fab_size
+        // (32-72) that would collapse the element instead of degrading to a sane default.
+        try {
+            return com.waenhancer.config.BottomBarPreferenceSchema.spec(key).defaultValue;
+        } catch (Throwable ignored) {
+            return 0f;
+        }
+    }
+
+    private static String getPrefString(SharedPreferences preferences,
+                                        String key, String defaultValue) {
+        try {
+            Object raw = preferences.getAll().get(key);
+            return raw == null ? defaultValue : String.valueOf(raw);
+        } catch (Throwable ignored) {
+            return defaultValue;
+        }
+    }
+
     private static float getPrefFloat(SharedPreferences prefs, String key, float defaultValue) {
         try {
             return prefs.getFloat(key, defaultValue);
@@ -1341,7 +1439,7 @@ public class FloatingBottomBar extends Feature {
     private static android.graphics.drawable.GradientDrawable createGlassShape(android.content.Context ctx, float density, boolean includeFill) {
         android.graphics.drawable.GradientDrawable glassShape = new android.graphics.drawable.GradientDrawable();
         glassShape.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
-        glassShape.setCornerRadius(28 * density);
+        glassShape.setCornerRadius(pillRadiusDp * density);
         glassShape.setColor(includeFill ? getGlassOverlayColor(ctx) : 0x00000000);
         glassShape.setStroke(Math.max(1, (int) (0.6f * density)), getGlassStrokeColor(ctx));
         return glassShape;
@@ -1350,7 +1448,7 @@ public class FloatingBottomBar extends Feature {
     private static android.graphics.drawable.GradientDrawable createGlassOutlineShape(android.content.Context ctx, float density) {
         android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
         shape.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
-        shape.setCornerRadius(28 * density);
+        shape.setCornerRadius(pillRadiusDp * density);
         shape.setColor(0x00000000);
         return shape;
     }
@@ -1397,6 +1495,7 @@ public class FloatingBottomBar extends Feature {
             if (height <= 0) height = (int) (80 * density);
 
             boolean isMetaAiActive = isMetaAiTabActive(bottomNav);
+            applySelectedIndicator(bottomNav, tabId, density);
 
             if (tabId == 1000 || tabId == 1100 || isMetaAiActive) {
                 float targetTranslationY = height + (24 * density);
@@ -1418,6 +1517,81 @@ public class FloatingBottomBar extends Feature {
             }
         } catch (Throwable t) {
             XposedBridge.log("[WAEX-FBB] Error handling tab selection: " + t);
+        }
+    }
+
+    private static void applySelectedIndicator(View bottomNav, int selectedId, float density) {
+        if (!indicatorVisible) return;
+        try {
+            ViewGroup menu = findMenuView(bottomNav);
+            if (menu == null) return;
+            for (int i = 0; i < menu.getChildCount(); i++) {
+                View item = menu.getChildAt(i);
+                rememberOriginalTabState(item);
+                if (item.getId() != selectedId) {
+                    restoreOriginalTabState(item);
+                    continue;
+                }
+                GradientDrawable indicator = new GradientDrawable();
+                int color = getPrefColor(activePrefs,
+                        "floating_bottom_bar_indicator_color", 0);
+                if (color == 0) color = DesignUtils.getPrimaryColor();
+                int opacity = Math.round(normalized(
+                        "floating_bottom_bar_indicator_opacity"));
+                indicator.setColor((Math.max(0, Math.min(255,
+                        Math.round(opacity * 2.55f))) << 24) | (color & 0x00FFFFFF));
+                indicator.setCornerRadius(normalized(
+                        "floating_bottom_bar_indicator_radius") * density);
+                item.setBackground(indicator);
+                item.setTranslationY(normalized(
+                        "floating_bottom_bar_indicator_offset") * density);
+                int horizontal = Math.round(normalized(
+                        "floating_bottom_bar_indicator_padding_horizontal") * density);
+                int vertical = Math.round(normalized(
+                        "floating_bottom_bar_indicator_padding_vertical") * density);
+                item.setPadding(horizontal, vertical, horizontal, vertical);
+                if ("manual".equals(getPrefString(activePrefs,
+                        "floating_bottom_bar_indicator_width_mode", "automatic"))) {
+                    ViewGroup.LayoutParams params = item.getLayoutParams();
+                    params.width = Math.round(normalized(
+                            "floating_bottom_bar_indicator_width") * density);
+                    if ("manual".equals(getPrefString(activePrefs,
+                            "floating_bottom_bar_indicator_height_mode", "automatic"))) {
+                        params.height = Math.round(normalized(
+                                "floating_bottom_bar_indicator_height") * density);
+                    }
+                    item.setLayoutParams(params);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void applyMinimalFab(View fab) {
+        try {
+            float density = fab.getResources().getDisplayMetrics().density;
+            int size = Math.round(normalized("floating_bottom_bar_minimal_fab_size") * density);
+            ViewGroup.LayoutParams params = fab.getLayoutParams();
+            if (params != null) {
+                params.width = size;
+                params.height = size;
+                fab.setLayoutParams(params);
+            }
+            GradientDrawable background = new GradientDrawable();
+            int color = getPrefColor(activePrefs, "floating_bottom_bar_minimal_fab_color", 0);
+            if (color == 0) color = DesignUtils.getPrimaryColor();
+            int opacity = Math.round(normalized("floating_bottom_bar_minimal_fab_opacity"));
+            background.setColor((Math.max(0, Math.min(255, Math.round(opacity * 2.55f))) << 24)
+                    | (color & 0x00FFFFFF));
+            background.setCornerRadius(normalized(
+                    "floating_bottom_bar_minimal_fab_radius") * density);
+            fab.setBackground(background);
+            if (fab instanceof android.widget.ImageView) {
+                ((android.widget.ImageView) fab).setImageTintList(ColorStateList.valueOf(
+                        getPrefColor(activePrefs,
+                                "floating_bottom_bar_minimal_fab_icon_color", 0xffffffff)));
+            }
+        } catch (Throwable ignored) {
         }
     }
 

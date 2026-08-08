@@ -23,9 +23,15 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.widget.Toolbar;
 import androidx.preference.PreferenceManager;
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+
 import com.waenhancer.R;
+import com.waenhancer.BuildConfig;
+import com.waenhancer.App;
+import com.waenhancer.diagnostics.LocalDiagnostics;
 import com.waenhancer.activities.base.BaseActivity;
 import com.waenhancer.preference.ThemePreference;
+import com.waenhancer.theme.CssSafetyManager;
 import com.waenhancer.xposed.utils.Utils;
 
 import java.io.File;
@@ -45,6 +51,7 @@ import rikka.core.util.IOUtils;
 public class TextEditorActivity extends BaseActivity {
     // private CodeView codeView;
     private String folderName;
+    private String preferenceKey;
     private ActivityResultLauncher<String> mGetContent;
     private ActivityResultLauncher<String> mExportFile;
     private WebView webView;
@@ -77,6 +84,10 @@ public class TextEditorActivity extends BaseActivity {
         mExportFile = registerForActivityResult(new ActivityResultContracts.CreateDocument("*/*"), this::exportAsZip);
 
         folderName = getIntent().getStringExtra("folder_name");
+        preferenceKey = getIntent().getStringExtra("key");
+        if (TextUtils.isEmpty(preferenceKey)) {
+            preferenceKey = "folder_theme";
+        }
         if (!TextUtils.isEmpty(folderName)) {
             readFile(folderName);
         }
@@ -133,6 +144,37 @@ public class TextEditorActivity extends BaseActivity {
         }
     }
 
+    private android.os.Handler testExpiryHandler;
+    private Runnable testExpiryTask;
+
+    /** Restarts WhatsApp once the temporary test expires, cancelling any previous timer. */
+    private void scheduleTestExpiry() {
+        cancelTestExpiry();
+        testExpiryHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        testExpiryTask = () -> {
+            LocalDiagnostics.record(this, "css", "Temporary CSS test expired");
+            notifyCssChanged();
+            restartWhatsAppVariants();
+        };
+        testExpiryHandler.postDelayed(testExpiryTask, CssSafetyManager.DEFAULT_TEST_DURATION_MS);
+    }
+
+    private void cancelTestExpiry() {
+        if (testExpiryHandler != null && testExpiryTask != null) {
+            testExpiryHandler.removeCallbacks(testExpiryTask);
+        }
+        testExpiryHandler = null;
+        testExpiryTask = null;
+    }
+
+    @Override
+    protected void onDestroy() {
+        // effectiveCss() reconciles KEY_TEST_EXPIRES_AT lazily, so dropping the timer here only
+        // skips the courtesy restart - it never leaves the test CSS active past its deadline.
+        cancelTestExpiry();
+        super.onDestroy();
+    }
+
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.css_editor_menu, menu);
@@ -144,36 +186,154 @@ public class TextEditorActivity extends BaseActivity {
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
         switch (item.getItemId()) {
             case R.id.menuitem_save -> {
-                try {
-                    getTextareaContentAsync().thenAccept(content -> {
-                        String code = content;
-                        File folderFolder = new File(ThemePreference.rootDirectory, folderName);
-                        File cssCode = new File(folderFolder, "style.css");
-                        FilesKt.writeText(cssCode, code, Charset.defaultCharset());
-                        Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show();
-                        var prefs = PreferenceManager.getDefaultSharedPreferences(this);
-                        var key = getIntent().getStringExtra("key");
-                        if (key != null && prefs.getString(key, "").equals(folderName)) {
-                            prefs.edit().putString("custom_css", code).commit();
-                        }
-                    });
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
+                getTextareaContentAsync().thenAccept(content ->
+                        runOnUiThread(() -> saveThemeContent(content)));
+                return true;
             }
-            case R.id.menuitem_exit -> finish();
+            case R.id.menuitem_test_theme -> {
+                getTextareaContentAsync().thenAccept(content ->
+                        runOnUiThread(() -> {
+                            var preferences = PreferenceManager.getDefaultSharedPreferences(this);
+                            CssSafetyManager.SaveResult result = CssSafetyManager.beginTest(
+                                    preferences, content, CssSafetyManager.DEFAULT_TEST_DURATION_MS);
+                            if (!result.saved) {
+                                new MaterialAlertDialogBuilder(this)
+                                        .setTitle(getString(R.string.css_validation_failed))
+                                        .setMessage(result.validation.message())
+                                        .setPositiveButton(android.R.string.ok, null)
+                                        .show();
+                                return;
+                            }
+                            LocalDiagnostics.record(this, "css",
+                                    "Temporary two-minute CSS test started");
+                            notifyCssChanged();
+                            restartWhatsAppVariants();
+                            scheduleTestExpiry();
+                            new MaterialAlertDialogBuilder(this)
+                                    .setTitle(R.string.css_test_title)
+                                    .setMessage(R.string.css_test_message)
+                                    .setPositiveButton(android.R.string.ok, null)
+                                    .show();
+                        }));
+                return true;
+            }
+            case R.id.menuitem_rollback_theme -> {
+                var preferences = PreferenceManager.getDefaultSharedPreferences(this);
+                boolean restored = CssSafetyManager.rollback(preferences);
+                LocalDiagnostics.record(this, "css", restored
+                        ? "Previous valid CSS restored" : "CSS rollback unavailable");
+                if (restored) {
+                    notifyCssChanged();
+                    restartWhatsAppVariants();
+                }
+                Toast.makeText(this, restored
+                                ? R.string.css_rollback_done
+                                : R.string.css_rollback_unavailable,
+                        Toast.LENGTH_LONG).show();
+                return true;
+            }
+            case R.id.menuitem_css_safe_mode_exit -> {
+                var preferences = PreferenceManager.getDefaultSharedPreferences(this);
+                CssSafetyManager.disableSafeMode(preferences);
+                LocalDiagnostics.record(this, "css", "CSS safe mode disabled manually");
+                notifyCssChanged();
+                restartWhatsAppVariants();
+                Toast.makeText(this, R.string.css_safe_mode_disabled, Toast.LENGTH_LONG).show();
+                return true;
+            }
+            case R.id.menuitem_css_safe_mode -> {
+                var preferences = PreferenceManager.getDefaultSharedPreferences(this);
+                CssSafetyManager.enableSafeMode(preferences);
+                LocalDiagnostics.record(this, "css", "CSS safe mode enabled manually");
+                notifyCssChanged();
+                restartWhatsAppVariants();
+                Toast.makeText(this, R.string.css_safe_mode_enabled, Toast.LENGTH_LONG).show();
+                return true;
+            }
+            case R.id.menuitem_exit -> {
+                finish();
+                return true;
+            }
             case R.id.menuitem_clear -> {
                 updateWebViewContent("");
+                return true;
             }
             case R.id.menuitem_import_image -> {
                 mGetContent.launch("image/*");
+                return true;
             }
             case R.id.menuitem_export -> {
                 mExportFile.launch(folderName + ".zip");
+                return true;
+            }
+            default -> {
+                return super.onOptionsItemSelected(item);
+            }
+        }
+    }
+
+    private void saveThemeContent(String content) {
+        try {
+            var preferences = PreferenceManager.getDefaultSharedPreferences(this);
+            CssSafetyManager.ValidationResult validation = CssSafetyManager.validate(content);
+            if (!validation.valid) {
+                new MaterialAlertDialogBuilder(this)
+                        .setTitle(getString(R.string.css_validation_failed))
+                        .setMessage(validation.message())
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show();
+                return;
             }
 
+            String selectedTheme = preferences.getString(preferenceKey, null);
+            boolean activeTheme = !TextUtils.isEmpty(folderName)
+                    && folderName.equals(selectedTheme);
+            if (activeTheme) {
+                CssSafetyManager.SaveResult result = CssSafetyManager.save(preferences, content);
+                if (!result.saved) {
+                    Toast.makeText(this, R.string.css_active_state_failed,
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+                validation = result.validation;
+            }
+
+            File folder = new File(ThemePreference.rootDirectory, folderName);
+            if (!folder.exists() && !folder.mkdirs()) {
+                throw new IllegalStateException("Could not create the theme folder");
+            }
+            File cssFile = new File(folder, "style.css");
+            FilesKt.writeText(cssFile, content == null ? "" : content,
+                    Charset.defaultCharset());
+
+            LocalDiagnostics.record(this, "css", activeTheme
+                    ? "Validated active CSS saved"
+                    : "Validated inactive theme CSS saved without activation");
+            if (activeTheme) {
+                notifyCssChanged();
+            }
+            Toast.makeText(this,
+                    validation.warnings.isEmpty()
+                            ? getString(R.string.saved)
+                            : "Saved with warnings: " + validation.message(),
+                    Toast.LENGTH_LONG).show();
+        } catch (Exception exception) {
+            Toast.makeText(this, exception.getMessage(), Toast.LENGTH_LONG).show();
         }
-        return super.onOptionsItemSelected(item);
+    }
+
+    private void notifyCssChanged() {
+        try {
+            getContentResolver().notifyChange(
+                    Uri.parse("content://" + BuildConfig.APPLICATION_ID
+                            + ".hookprovider/preferences"), null);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private void restartWhatsAppVariants() {
+        App.getInstance().restartApp("com.whatsapp");
+        App.getInstance().restartApp("com.whatsapp.w4b");
     }
 
     private void exportAsZip(Uri uri) {

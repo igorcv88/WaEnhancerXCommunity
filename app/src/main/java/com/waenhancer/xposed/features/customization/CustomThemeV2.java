@@ -27,6 +27,7 @@ import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 
 import com.waenhancer.utils.IColors;
+import com.waenhancer.theme.CssSafetyManager;
 import com.waenhancer.views.WallpaperView;
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.PerfLogger;
@@ -121,11 +122,25 @@ public class CustomThemeV2 extends Feature {
 
     @Override
     public void doHook() throws Throwable {
+        try {
+            applyTheme();
+            CssSafetyManager.clearFailureState(prefs);
+        } catch (Throwable failure) {
+            CssSafetyManager.recordThemeFailure(prefs);
+            throw failure;
+        }
+    }
+
+    private void applyTheme() throws Throwable {
         if (prefs.getBoolean("lite_mode", false)) {
             return;
         }
 
-        properties = Utils.getProperties(prefs, "custom_css", "custom_filters");
+        // Safe mode is scoped to CSS only: effectiveCss() already returns an empty sheet under
+        // safe mode, so colors and wallpaper keep working instead of being disabled wholesale.
+        properties = Utils.getPropertiesFromText(
+                CssSafetyManager.effectiveCss(prefs),
+                prefs.getBoolean("custom_filters", false));
 
         // PERFORMANCE OPTIMIZATION: Check if any theming features are enabled
         // Skip expensive hooks if no theming is active

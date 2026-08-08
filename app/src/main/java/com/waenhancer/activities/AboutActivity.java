@@ -48,7 +48,7 @@ public class AboutActivity extends BaseActivity {
     private ContributorAdapter adapter;
     private List<Contributor> contributorList = new ArrayList<>();
 
-    private static final String API_URL = "https://api.github.com/repos/mubashardev/WaEnhancer/contributors";
+    private static final String API_URL = "https://api.github.com/repos/igorcv88/WaEnhancerX/contributors";
     private static final OkHttpClient client = new OkHttpClient();
 
     @Override
@@ -58,7 +58,7 @@ public class AboutActivity extends BaseActivity {
         setContentView(binding.getRoot());
 
         binding.btnTelegram.setOnClickListener(v -> openTelegramChannel());
-        binding.btnGithub.setOnClickListener(view -> openUrl("https://github.com/mubashardev/WaEnhancer/issues"));
+        binding.btnGithub.setOnClickListener(view -> openUrl("https://github.com/igorcv88/WaEnhancerX/issues"));
 
         adapter = new ContributorAdapter();
         binding.rvContributors.setAdapter(adapter);
@@ -103,7 +103,7 @@ public class AboutActivity extends BaseActivity {
 
         Request request = new Request.Builder()
                 .url(API_URL)
-                .header("User-Agent", "WaEnhancer X-App")
+                .header("User-Agent", "WaEnhancer Community-App")
                 .header("Accept", "application/vnd.github.v3+json")
                 .build();
 
@@ -218,7 +218,7 @@ public class AboutActivity extends BaseActivity {
             com.bumptech.glide.Glide.with(holder.itemView.getContext())
                     .load(new com.bumptech.glide.load.model.GlideUrl(c.avatarUrl,
                             new com.bumptech.glide.load.model.LazyHeaders.Builder()
-                                    .addHeader("User-Agent", "WaEnhancer X-App")
+                                    .addHeader("User-Agent", "WaEnhancer Community-App")
                                     .build()))
                     .placeholder(R.drawable.ic_github)
                     .into(holder.ivAvatar);

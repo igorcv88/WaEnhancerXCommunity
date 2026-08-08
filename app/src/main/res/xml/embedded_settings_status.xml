@@ -65,7 +65,7 @@
             app:summary="@string/custom_colors_for_text_status_sum"
             app:title="@string/custom_colors_for_text_status" />
 
-        <com.waenhancer.preference.ProSwitchPreference
+        <rikka.material.preference.MaterialSwitchPreference
             app:defaultValue="false"
             app:key="send_audio_as_voice_status"
             app:summary="@string/send_audio_as_voice_status_sum"
@@ -81,7 +81,7 @@
             app:key="auto_status_forward_rules_pref"
             app:title="@string/auto_status_forward_rules" />
 
-        <com.waenhancer.preference.ProSwitchPreference
+        <rikka.material.preference.MaterialSwitchPreference
             app:defaultValue="false"
             app:key="pro_status_splitter"
             app:summary="@string/pro_status_splitter_sum"
@@ -89,7 +89,7 @@
 
     </PreferenceCategory>
 
-    <com.waenhancer.preference.ProPreferenceCategory
+    <PreferenceCategory
         app:key="customize_status_view_category"
         app:iconSpaceReserved="false"
         app:title="@string/customize_status_view_title">
@@ -145,6 +145,6 @@
             app:summary="@string/status_bottom_play_pause_button_sum"
             app:title="@string/status_bottom_play_pause_button" />
 
-    </com.waenhancer.preference.ProPreferenceCategory>
+    </PreferenceCategory>
 
 </PreferenceScreen>

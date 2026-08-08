@@ -1,13 +1,14 @@
 package com.waenhancer.services;
 
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.net.Uri;
 import android.service.quicksettings.Tile;
 import android.service.quicksettings.TileService;
-import android.content.SharedPreferences;
-import android.content.Intent;
+
 import androidx.preference.PreferenceManager;
-import android.net.Uri;
+
 import com.waenhancer.BuildConfig;
-import com.waenhancer.xposed.utils.LicenseManager;
 
 public abstract class BaseTileService extends TileService {
 
@@ -25,18 +26,6 @@ public abstract class BaseTileService extends TileService {
         super.onClick();
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         String key = getPreferenceKey();
-        
-        if (com.waenhancer.xposed.utils.ProHelper.isProFeature(key)) {
-            boolean isVerified = prefs.getBoolean("is_pro_verified", false);
-            boolean limitedFree = com.waenhancer.xposed.utils.ProHelper.isLimitedFreePreferenceEnabled(key);
-            if (!isVerified && !limitedFree) {
-                if (!isTileActive(prefs)) {
-                    android.widget.Toast.makeText(this, "This is a Pro feature. Please activate Pro to enable it.", android.widget.Toast.LENGTH_LONG).show();
-                    updateTileState();
-                    return;
-                }
-            }
-        }
 
         if (isCustomToggle()) {
             performCustomToggle(prefs, key);
@@ -44,7 +33,7 @@ public abstract class BaseTileService extends TileService {
             boolean current = prefs.getBoolean(key, getDefaultValue());
             prefs.edit().putBoolean(key, !current).apply();
         }
-        
+
         syncAndRestart();
         updateTileState();
     }
@@ -54,7 +43,7 @@ public abstract class BaseTileService extends TileService {
     }
 
     protected void performCustomToggle(SharedPreferences prefs, String key) {
-        // Override for custom toggle behavior (e.g. list preferences)
+        // Override for custom toggle behavior.
     }
 
     protected boolean isTileActive(SharedPreferences prefs) {
@@ -64,36 +53,31 @@ public abstract class BaseTileService extends TileService {
     protected void syncAndRestart() {
         try {
             getContentResolver().notifyChange(
-                Uri.parse("content://" + BuildConfig.APPLICATION_ID + ".hookprovider/preferences"), 
-                null
-            );
-        } catch (Exception ignored) {}
-        
-        try {
-            LicenseManager.makePrefsWorldReadable(this);
-        } catch (Exception ignored) {}
+                    Uri.parse("content://" + BuildConfig.APPLICATION_ID
+                            + ".hookprovider/preferences"),
+                    null);
+        } catch (RuntimeException ignored) {
+        }
 
-        try {
-            Intent intentWpp = new Intent(BuildConfig.APPLICATION_ID + ".WHATSAPP.RESTART");
-            intentWpp.putExtra("PKG", "com.whatsapp");
-            sendBroadcast(intentWpp);
-        } catch (Exception ignored) {}
+        restartPackage("com.whatsapp");
+        restartPackage("com.whatsapp.w4b");
+    }
 
+    private void restartPackage(String packageName) {
         try {
-            Intent intentBusiness = new Intent(BuildConfig.APPLICATION_ID + ".WHATSAPP.RESTART");
-            intentBusiness.putExtra("PKG", "com.whatsapp.w4b");
-            sendBroadcast(intentBusiness);
-        } catch (Exception ignored) {}
+            Intent intent = new Intent(BuildConfig.APPLICATION_ID + ".WHATSAPP.RESTART");
+            intent.putExtra("PKG", packageName);
+            sendBroadcast(intent);
+        } catch (RuntimeException ignored) {
+        }
     }
 
     protected void updateTileState() {
         Tile tile = getQsTile();
         if (tile == null) return;
-        
+
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        boolean active = isTileActive(prefs);
-        
-        tile.setState(active ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
+        tile.setState(isTileActive(prefs) ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
         tile.updateTile();
     }
 }

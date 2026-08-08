@@ -114,14 +114,6 @@ public class FeatureCatalog {
                                 "general_home",
                                 Arrays.asList("toast", "hook", "loading", "snackbar", "please wait")));
 
-                catalog.add(new SearchableFeature("enable_crash_analytics",
-                                context.getString(R.string.enable_crash_analytics),
-                                context.getString(R.string.enable_crash_analytics_sum),
-                                SearchableFeature.Category.GENERAL_HOME,
-                                SearchableFeature.FragmentType.GENERAL,
-                                "general_home",
-                                Arrays.asList("crash", "logs", "analytics", "firebase", "anonymous", "share", "bug")));
-
                 catalog.add(new SearchableFeature("bypass_version_check",
                                 context.getString(R.string.disable_version_check),
                                 context.getString(R.string.disable_version_check_sum),
@@ -276,7 +268,7 @@ public class FeatureCatalog {
                                 "floating_bottom_bar",
                                 Arrays.asList("floating", "bottom", "bar", "menu", "navigation", "pill", "morph")));
 
-                catalog.add(new SearchableFeature("floating_bottom_bar_scroll_hide",
+                catalog.add(new SearchableFeature("floating_bottom_bar_scroll_hide_mode",
                                 context.getString(R.string.floating_bottom_bar_scroll_hide),
                                 context.getString(R.string.floating_bottom_bar_scroll_hide_sum),
                                 SearchableFeature.Category.CUSTOMIZATION,

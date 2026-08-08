@@ -29,9 +29,9 @@ import okhttp3.OkHttpClient;
 public class UpdateChecker implements Runnable {
 
     private static final String TAG = "WAE_UpdateChecker";
-    private static final String RELEASES_API = "https://api.github.com/repos/mubashardev/WaEnhancer/releases";
+    private static final String RELEASES_API = "https://api.github.com/repos/igorcv88/WaEnhancerX/releases";
     private static final String RELEASE_TAG_PREFIX = "debug-";
-    private static final String TELEGRAM_UPDATE_URL = "https://github.com/mubashardev/WaEnhancer/releases";
+    private static final String TELEGRAM_UPDATE_URL = "https://github.com/igorcv88/WaEnhancerX/releases";
     private static final Pattern BETA_TAG_PATTERN = Pattern.compile("^\\d+\\.\\d+\\.\\d+-beta-\\d+$");
     private static final Pattern VERSION_PATTERN = Pattern.compile("^\\d+\\.\\d+\\.\\d+(-beta-\\d+)?$");
 
@@ -85,11 +85,7 @@ public class UpdateChecker implements Runnable {
             var requestBuilder = new okhttp3.Request.Builder()
                     .url(RELEASES_API)
                     .header("Accept", "application/vnd.github+json")
-                    .header("User-Agent", "WaEnhancer X-UpdateChecker");
-
-            if (BuildConfig.GH_PUBLIC_TOKEN != null && !BuildConfig.GH_PUBLIC_TOKEN.isEmpty()) {
-                requestBuilder.header("Authorization", "Bearer " + BuildConfig.GH_PUBLIC_TOKEN);
-            }
+                    .header("User-Agent", "WaEnhancer-Community-UpdateChecker");
 
             var request = requestBuilder.build();
 
@@ -257,14 +253,14 @@ public class UpdateChecker implements Runnable {
 
             if (!isXposed) {
                 BottomSheetHelper.showConfirmation(mActivity, title, message, contactText, false, () -> {
-                    Utils.openLink(mActivity, "https://t.me/mubashardev");
+                    Utils.openLink(mActivity, "https://t.me/WaEnhancerX");
                 });
             } else {
                 var dialog = new AlertDialogWpp(mActivity);
                 dialog.setTitle(title);
                 dialog.setMessage(message);
                 dialog.setPositiveButton(contactText, (dialog1, which) -> {
-                    Utils.openLink(mActivity, "https://t.me/mubashardev");
+                    Utils.openLink(mActivity, "https://t.me/WaEnhancerX");
                     dialog1.dismiss();
                 });
                 dialog.setNegativeButton(mActivity.getString(R.string.cancel), (dialog1, which) -> dialog1.dismiss());
@@ -295,7 +291,7 @@ public class UpdateChecker implements Runnable {
             if (!isXposed) {
                 BottomSheetHelper.showConfirmation(mActivity, title, styledMessage, "Update Now", false, () -> {
                     android.content.Intent intent = new android.content.Intent();
-                    intent.setComponent(new android.content.ComponentName("com.waenhancer", "com.waenhancer.activities.ChangelogActivity"));
+                    intent.setComponent(new android.content.ComponentName(BuildConfig.APPLICATION_ID, "com.waenhancer.activities.ChangelogActivity"));
                     intent.setFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
                     mActivity.startActivity(intent);
                 });
@@ -337,7 +333,7 @@ public class UpdateChecker implements Runnable {
                     getLocalPrefs(mActivity).edit().putString("ignored_version", "").apply();
 
                     android.content.Intent intent = new android.content.Intent();
-                    intent.setComponent(new android.content.ComponentName("com.waenhancer", "com.waenhancer.activities.ChangelogActivity"));
+                    intent.setComponent(new android.content.ComponentName(BuildConfig.APPLICATION_ID, "com.waenhancer.activities.ChangelogActivity"));
                     intent.setFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
                     mActivity.startActivity(intent);
                     dialog1.dismiss();
@@ -490,7 +486,7 @@ public class UpdateChecker implements Runnable {
         String s = com.waenhancer.xposed.core.FeatureLoader.getModuleString(resId);
         if (s == null || s.isEmpty()) {
             try {
-                android.content.Context moduleContext = mActivity.createPackageContext("com.waenhancer", android.content.Context.CONTEXT_IGNORE_SECURITY);
+                android.content.Context moduleContext = mActivity.createPackageContext(BuildConfig.APPLICATION_ID, android.content.Context.CONTEXT_IGNORE_SECURITY);
                 return moduleContext.getString(resId);
             } catch (Exception e) {
                 // Fallback to hardcoded English if everything fails to prevent crash

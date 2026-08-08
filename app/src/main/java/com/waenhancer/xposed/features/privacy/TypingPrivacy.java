@@ -34,9 +34,6 @@ public class TypingPrivacy extends Feature {
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 // Safeguard: Check if this was triggered by the AlwaysTyping pro engine
                 try {
-                    if ("true".equals(System.getProperty("com.waex.helper.AlwaysTyping.isEngineTriggering"))) {
-                        return; // Let the engine send its simulated composing packets
-                    }
                 } catch (Throwable ignored) {}
 
                 // Look for JID and composing state in the parameters dynamically

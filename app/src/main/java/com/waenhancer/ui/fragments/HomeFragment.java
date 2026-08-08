@@ -22,6 +22,7 @@ import androidx.fragment.app.FragmentActivity;
 import androidx.preference.PreferenceManager;
 
 import com.waenhancer.App;
+import com.waenhancer.backup.BackupCodec;
 import com.waenhancer.BuildConfig;
 import com.waenhancer.R;
 import com.waenhancer.UpdateChecker;
@@ -55,8 +56,8 @@ import java.io.File;
 
 public class HomeFragment extends BaseFragment {
 
-    private static final String RELEASES_URL = "https://github.com/mubashardev/WaEnhancer/releases";
-    private static final String LATEST_STABLE_URL = "https://github.com/mubashardev/WaEnhancer/releases/latest";
+    private static final String RELEASES_URL = "https://github.com/igorcv88/WaEnhancerX/releases";
+    private static final String LATEST_STABLE_URL = "https://github.com/igorcv88/WaEnhancerX/releases/latest";
 
     /**
      * In-memory flag — reset to false every time the app process starts.
@@ -70,7 +71,6 @@ public class HomeFragment extends BaseFragment {
     private FragmentHomeBinding binding;
     private String pendingUpdateUrl;
     private String pendingUpdateVersion;
-    private BroadcastReceiver proStatusReceiver;
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -94,13 +94,6 @@ public class HomeFragment extends BaseFragment {
                 }
             }
         }, intentFilter, ContextCompat.RECEIVER_EXPORTED);
-
-        proStatusReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                updateProUI();
-            }
-        };
     }
 
     public View onCreateView(@NonNull LayoutInflater inflater,
@@ -200,7 +193,7 @@ public class HomeFragment extends BaseFragment {
                 final String finalDialogDetails = dialogDetailsHtml;
                 final String finalGithubDetails = githubDetailsMd;
 
-                String dialogMessageHtml = "This will open the WaEnhancer X GitHub Issues page to report a bug.<br><br>"
+                String dialogMessageHtml = "This will open the WaEnhancer Community GitHub Issues page to report a bug.<br><br>"
                         + "The following information about your device and installed apps will be pre-filled in your report:<br><br>"
                         + finalDialogDetails + "<b>WhatsApp Version:</b> " + waVersion + "<br>"
                         + "<b>WhatsApp Business Version:</b> " + waBusinessVersion + "<br>";
@@ -311,7 +304,7 @@ public class HomeFragment extends BaseFragment {
                                     + "\n---\n"
                                     + description + "\n";
 
-                            String url = "https://github.com/mubashardev/WaEnhancer/issues/new?title="
+                            String url = "https://github.com/igorcv88/WaEnhancerX/issues/new?title="
                                     + java.net.URLEncoder.encode(title, "UTF-8") + "&body="
                                     + java.net.URLEncoder.encode(body, "UTF-8");
                             openUrl(requireContext(), url);
@@ -335,7 +328,7 @@ public class HomeFragment extends BaseFragment {
 
         binding.githubBtn.setOnClickListener(view -> {
             animateClick(view);
-            openUrl(requireContext(), "https://github.com/mubashardev/WaEnhancer/issues");
+            openUrl(requireContext(), "https://github.com/igorcv88/WaEnhancerX/issues");
         });
 
         binding.clearCacheBtn.setOnClickListener(view -> {
@@ -349,82 +342,12 @@ public class HomeFragment extends BaseFragment {
             startActivity(intent);
         });
 
-        binding.proStatusChip.setOnClickListener(v -> {
-            animateClick(v);
-            launchLicenseActivity(requireContext());
-        });
-
         setupReleaseChannelSelector();
         setupUpdateBanner();
         startCardAnimations();
 
-        showConsentDialogIfNeeded();
 
         return binding.getRoot();
-    }
-
-    @Override
-    public void onViewCreated(@NonNull android.view.View view, @Nullable android.os.Bundle savedInstanceState) {
-        super.onViewCreated(view, savedInstanceState);
-        if (binding != null && binding.proStatusChip != null) {
-            binding.proStatusChip.setOnClickListener(v -> {
-                android.content.Context context = getContext();
-                if (context != null) {
-                    launchLicenseActivity(context);
-                }
-            });
-        }
-    }
-
-    private void showConsentDialogIfNeeded() {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
-        if (!prefs.contains("consent_crashlytics_asked")) {
-            com.google.android.material.bottomsheet.BottomSheetDialog dialog = new com.google.android.material.bottomsheet.BottomSheetDialog(requireContext());
-            android.view.View view = android.view.LayoutInflater.from(requireContext()).inflate(R.layout.bottom_sheet_action, null);
-            dialog.setContentView(view);
-            dialog.setCancelable(false);
-
-            ((com.google.android.material.textview.MaterialTextView) view.findViewById(R.id.bs_title)).setText("Share Anonymous Crash Logs");
-            ((com.google.android.material.textview.MaterialTextView) view.findViewById(R.id.bs_message)).setText("Help us fix bugs by sharing anonymous crash logs.\n\nYou can always change this preference later in Settings.");
-
-            com.google.android.material.button.MaterialButton acceptBtn = view.findViewById(R.id.bs_confirm_btn);
-            acceptBtn.setText("Accept");
-            acceptBtn.setOnClickListener(v -> {
-                prefs.edit().putBoolean("consent_crashlytics_asked", true)
-                        .putBoolean("enable_crash_analytics", true).apply();
-                if (!BuildConfig.DEBUG) {
-                    try {
-                        Class<?> firebaseAppClass = Class.forName("com.google.firebase.FirebaseApp");
-                        firebaseAppClass.getMethod("initializeApp", Context.class).invoke(null, requireContext().getApplicationContext());
-
-                        Class<?> firebaseAnalyticsClass = Class.forName("com.google.firebase.analytics.FirebaseAnalytics");
-                        Object analyticsInstance = firebaseAnalyticsClass.getMethod("getInstance", android.content.Context.class).invoke(null, requireContext());
-                        firebaseAnalyticsClass.getMethod("setAnalyticsCollectionEnabled", boolean.class).invoke(analyticsInstance, true);
-
-                        Class<?> firebaseCrashlyticsClass = Class.forName("com.google.firebase.crashlytics.FirebaseCrashlytics");
-                        Object crashlyticsInstance = firebaseCrashlyticsClass.getMethod("getInstance").invoke(null);
-                        firebaseCrashlyticsClass.getMethod("setCrashlyticsCollectionEnabled", boolean.class).invoke(crashlyticsInstance, true);
-                    } catch (Throwable ignored) {
-                    }
-                }
-                dialog.dismiss();
-            });
-
-            com.google.android.material.button.MaterialButton declineBtn = view.findViewById(R.id.bs_cancel_btn);
-            declineBtn.setText("Decline");
-            declineBtn.setOnClickListener(v -> {
-                prefs.edit().putBoolean("consent_crashlytics_asked", true)
-                        .putBoolean("enable_crash_analytics", false).apply();
-                dialog.dismiss();
-            });
-
-            android.view.View bottomSheet = dialog.findViewById(com.google.android.material.R.id.design_bottom_sheet);
-            if (bottomSheet != null) {
-                bottomSheet.setBackgroundResource(android.R.color.transparent);
-            }
-
-            dialog.show();
-        }
     }
 
     private void openUrl(Context context, String url) {
@@ -504,90 +427,6 @@ public class HomeFragment extends BaseFragment {
         syncReleaseChannelToInstalled();
         checkForUpdates();
         checkStateWpp(requireActivity());
-
-        if (proStatusReceiver != null && getContext() != null) {
-            var proFilter = new IntentFilter(requireContext().getPackageName() + ".ACTION_PRO_STATUS_CHANGED");
-            ContextCompat.registerReceiver(requireContext(), proStatusReceiver, proFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
-        }
-
-        updateProUI();
-    }
-
-    @Override
-    public void onPause() {
-        super.onPause();
-        if (proStatusReceiver != null && getContext() != null) {
-            requireContext().unregisterReceiver(proStatusReceiver);
-        }
-    }
-
-    private void updateProUI() {
-        if (binding == null || getContext() == null) {
-            return;
-        }
-        boolean isPro = com.waenhancer.xposed.utils.ProHelper.isProEnabled();
-        String planName = com.waenhancer.xposed.utils.ProHelper.getProPlanName();
-        String proStatus = com.waenhancer.xposed.utils.ProHelper.getProStatus();
-
-        if (binding.proStatusChip != null) {
-            String text;
-            boolean packageInstalled = com.waenhancer.xposed.utils.ProHelper.isPluginPackageInstalled(getContext());
-            boolean pluginInstalled = com.waenhancer.xposed.utils.ProHelper.isPluginInstalled(getContext());
-            boolean isRedDotError = false;
-
-            if (packageInstalled && !pluginInstalled) {
-                // Plugin is installed, but unsupported (since pluginInstalled is false)
-                int minVersion = com.waenhancer.xposed.utils.ProHelper.getPluginMinWaexVersion(getContext());
-                String minVersionName = com.waenhancer.xposed.utils.ProHelper.getVersionNameFromCode(minVersion);
-                text = "v" + minVersionName + " Required";
-            } else if (!packageInstalled) {
-                if (!"FREE".equalsIgnoreCase(proStatus)) {
-                    // License activated in module but Pro plugin app is not installed
-                    text = planName;
-                    isRedDotError = true;
-                } else {
-                    text = "Free";
-                }
-            } else if ("ACTIVE".equalsIgnoreCase(proStatus)) {
-                text = planName;
-            } else if ("EXPIRED".equalsIgnoreCase(proStatus)) {
-                text = "License Expired";
-            } else {
-                text = "Free";
-            }
-            binding.proStatusChip.setText(text);
-
-            // Dynamically update chip's background tint and text colors based on status
-            if ((packageInstalled && !pluginInstalled) || "EXPIRED".equalsIgnoreCase(proStatus) || isRedDotError) {
-                // Light red background with dark red text for Expired Pro / Plugin Required / Red Dot Error
-                binding.proStatusChip.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFFFEBEE));
-                binding.proStatusChip.setTextColor(0xFFC62828);
-            } else {
-                // Standard default background tint and primary color text for Free status and Active/Pro status
-                android.util.TypedValue typedValueContainer = new android.util.TypedValue();
-                android.util.TypedValue typedValuePrimary = new android.util.TypedValue();
-                if (requireContext().getTheme().resolveAttribute(com.google.android.material.R.attr.colorPrimaryContainer, typedValueContainer, true)) {
-                    binding.proStatusChip.setBackgroundTintList(android.content.res.ColorStateList.valueOf(typedValueContainer.data));
-                } else {
-                    binding.proStatusChip.setBackgroundTintList(null); // fallback
-                }
-                if (requireContext().getTheme().resolveAttribute(android.R.attr.colorPrimary, typedValuePrimary, true)) {
-                    binding.proStatusChip.setTextColor(typedValuePrimary.data);
-                } else {
-                    binding.proStatusChip.setTextColor(0xFF000000); // generic fallback
-                }
-            }
-
-            if (isRedDotError) {
-                binding.proStatusChip.setCompoundDrawablesWithIntrinsicBounds(R.drawable.status_dot_inactive, 0, R.drawable.ic_chevron_right, 0);
-            } else {
-                binding.proStatusChip.setCompoundDrawablesWithIntrinsicBounds(0, 0, R.drawable.ic_chevron_right, 0);
-            }
-
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                binding.proStatusChip.setCompoundDrawableTintList(binding.proStatusChip.getTextColors());
-            }
-        }
     }
 
     @SuppressLint("StringFormatInvalid")
@@ -662,109 +501,93 @@ public class HomeFragment extends BaseFragment {
         }
     }
 
-    private static @NonNull
-    JSONObject getJsonObject(SharedPreferences prefs) throws JSONException {
-        var entries = prefs.getAll();
-        var JSOjsonObject = new JSONObject();
-        for (var entry : entries.entrySet()) {
-            var type = new JSONObject();
-            var keyValue = entry.getValue();
-            if (keyValue instanceof HashSet<?> hashSet) {
-                keyValue = new JSONArray(new ArrayList<>(hashSet));
-            }
-            type.put("type", keyValue.getClass().getSimpleName());
-            type.put("value", keyValue);
-            JSOjsonObject.put(entry.getKey(), type);
-        }
-        return JSOjsonObject;
-    }
-
     private void saveConfigs(Context context) {
         if (FilePicker.fileSalve == null) {
-            Toast.makeText(context, context.getString(R.string.configs_imported) != null ? "Please use the standalone WaEnhancerX app for file operations." : "Please use the standalone WaEnhancerX app for file operations.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(context,
+                    "Please use the standalone WaEnhancer Community app for file operations.",
+                    Toast.LENGTH_SHORT).show();
             return;
         }
-        FilePicker.setOnUriPickedListener((uri) -> {
-            try {
+
+        Runnable launchExport = () -> {
+            FilePicker.setOnUriPickedListener(uri -> {
                 try (var output = context.getContentResolver().openOutputStream(uri)) {
-                    var prefs = PreferenceManager.getDefaultSharedPreferences(context);
-                    var JSOjsonObject = getJsonObject(prefs);
-                    Objects.requireNonNull(output).write(JSOjsonObject.toString(4).getBytes());
+                    if (output == null) throw new IllegalStateException("Unable to open destination.");
+                    SharedPreferences preferences =
+                            PreferenceManager.getDefaultSharedPreferences(context);
+                    String backup = BackupCodec.exportSettings(
+                            preferences, BuildConfig.VERSION_NAME);
+                    output.write(backup.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    preferences.edit().putBoolean("backup_privacy_notice_seen", true).apply();
+                    Toast.makeText(context, R.string.configs_saved, Toast.LENGTH_SHORT).show();
+                } catch (Exception exception) {
+                    Log.e("saveConfigs", "Unable to export settings", exception);
+                    Toast.makeText(context, exception.getMessage(), Toast.LENGTH_LONG).show();
                 }
-                Toast.makeText(context, context.getString(R.string.configs_saved), Toast.LENGTH_SHORT).show();
-            } catch (Exception e) {
-                Toast.makeText(context, e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
-        });
-        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US);
-        String formattedDate = dateFormat.format(new Date());
-        FilePicker.fileSalve.launch("wpp_enhacer_configs_" + formattedDate + ".json");
+            });
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US);
+            FilePicker.fileSalve.launch("WaEnhancerCommunity-settings-"
+                    + format.format(new Date()) + ".json");
+        };
+
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
+        if (preferences.getBoolean("backup_privacy_notice_seen", false)) {
+            launchExport.run();
+            return;
+        }
+
+        com.waenhancer.ui.helpers.BottomSheetHelper.showConfirmation(
+                requireActivity(),
+                "Export settings",
+                "The export contains only allowlisted module settings. It excludes keys, tokens, "
+                        + "certificates, license data, internal paths, diagnostics, messages and media. "
+                        + "Review the file before sharing it.",
+                "Export",
+                false,
+                () -> launchExport.run());
     }
 
     private void importConfigs(Context context) {
         if (FilePicker.fileCapture == null) {
-            Toast.makeText(context, "Please use the standalone WaEnhancerX app for file operations.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(context,
+                    "Please use the standalone WaEnhancer Community app for file operations.",
+                    Toast.LENGTH_SHORT).show();
             return;
         }
-        FilePicker.setOnUriPickedListener((uri) -> {
-            try {
-                try (var input = context.getContentResolver().openInputStream(uri)) {
-                    java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
-                    int nRead;
-                    byte[] dataBuffer = new byte[8192];
-                    int totalRead = 0;
-                    while ((nRead = input.read(dataBuffer, 0, dataBuffer.length)) != -1) {
-                        buffer.write(dataBuffer, 0, nRead);
-                        totalRead += nRead;
-                        if (totalRead > 5 * 1024 * 1024) { // 5 MB limit
-                            throw new RuntimeException("File is too large to be a valid config.");
-                        }
-                    }
-                    var data = buffer.toString("UTF-8");
-                    var prefs = PreferenceManager.getDefaultSharedPreferences(context);
-                    var jsonObject = new JSONObject(data);
-                    prefs.getAll().forEach((key, value) -> prefs.edit().remove(key).apply());
-                    var key = jsonObject.keys();
-                    while (key.hasNext()) {
-                        var keyName = key.next();
-                        var value = jsonObject.get(keyName);
-                        var type = value.getClass().getSimpleName();
-                        if (value instanceof JSONObject valueJson) {
-                            value = valueJson.get("value");
-                            type = valueJson.getString("type");
-                        }
 
-                        if (type.equals(JSONArray.class.getSimpleName())) {
-                            var jsonArray = (JSONArray) value;
-                            HashSet<String> hashSet = new HashSet<>();
-                            for (var i = 0; i < jsonArray.length(); i++) {
-                                hashSet.add(jsonArray.getString(i));
-                            }
-                            prefs.edit().putStringSet(keyName, hashSet).apply();
-                        } else if (type.equals(String.class.getSimpleName())) {
-                            prefs.edit().putString(keyName, (String) value).apply();
-                        } else if (type.equals(Boolean.class.getSimpleName())) {
-                            prefs.edit().putBoolean(keyName, (boolean) value).apply();
-                        } else if (type.equals(Integer.class.getSimpleName())) {
-                            prefs.edit().putInt(keyName, (int) value).apply();
-                        } else if (type.equals(Long.class.getSimpleName())) {
-                            prefs.edit().putLong(keyName, (long) value).apply();
-                        } else if (type.equals(Double.class.getSimpleName())) {
-                            prefs.edit().putFloat(keyName, Float.parseFloat(String.valueOf(value))).apply();
-                        } else if (type.equals(Float.class.getSimpleName())) {
-                            prefs.edit().putFloat(keyName, Float.parseFloat(String.valueOf(value))).apply();
-                        }
+        FilePicker.setOnUriPickedListener(uri -> {
+            try (var input = context.getContentResolver().openInputStream(uri)) {
+                if (input == null) throw new IllegalStateException("Unable to open backup.");
+                java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+                byte[] chunk = new byte[8192];
+                int total = 0;
+                int read;
+                while ((read = input.read(chunk)) != -1) {
+                    total += read;
+                    if (total > BackupCodec.MAX_BYTES) {
+                        throw new BackupCodec.BackupException(
+                                "Backup exceeds the 2 MB safety limit.");
                     }
+                    buffer.write(chunk, 0, read);
                 }
-                Toast.makeText(context, context.getString(R.string.configs_imported), Toast.LENGTH_SHORT).show();
+
+                SharedPreferences preferences =
+                        PreferenceManager.getDefaultSharedPreferences(context);
+                BackupCodec.ImportPlan plan = BackupCodec.parseAndValidate(buffer.toByteArray());
+                BackupCodec.ImportReport report = BackupCodec.apply(
+                        context, preferences, plan);
+
+                com.waenhancer.ui.helpers.BottomSheetHelper.showInfo(
+                        requireActivity(), "Import complete", report.summary());
                 App.getInstance().restartApp(FeatureLoader.PACKAGE_WPP);
                 App.getInstance().restartApp(FeatureLoader.PACKAGE_BUSINESS);
-                if (getActivity() != null && context.getPackageName().equals(BuildConfig.APPLICATION_ID)) {
+                if (getActivity() != null
+                        && context.getPackageName().equals(BuildConfig.APPLICATION_ID)) {
                     getActivity().recreate();
                 }
-            } catch (Exception e) {
-                Log.e("importConfigs", e.getMessage(), e);
-                Toast.makeText(context, e.getMessage(), Toast.LENGTH_SHORT).show();
+            } catch (Exception exception) {
+                Log.e("importConfigs", "Unable to import settings", exception);
+                Toast.makeText(context, exception.getMessage(), Toast.LENGTH_LONG).show();
             }
         });
         FilePicker.fileCapture.launch(new String[]{"application/json"});
@@ -896,7 +719,7 @@ public class HomeFragment extends BaseFragment {
                     com.waenhancer.ui.helpers.BottomSheetHelper.showInfo(
                             activity,
                             "Unsupported Version",
-                            "The installed WaEnhancer X has no support for your installed version of WhatsApp. It may not work as expected. Please either update WaEnhancer X, install a supported version of WhatsApp, or open an issue on GitHub.");
+                            "The installed WaEnhancer Community has no support for your installed version of WhatsApp. It may not work as expected. Please either update WaEnhancer Community, install a supported version of WhatsApp, or open an issue on GitHub.");
                 });
             }
 
@@ -919,7 +742,7 @@ public class HomeFragment extends BaseFragment {
 
                                 ((com.google.android.material.textview.MaterialTextView) view.findViewById(R.id.bs_title)).setText("WhatsApp Beta Detected");
                                 ((com.google.android.material.textview.MaterialTextView) view.findViewById(R.id.bs_message)).setText(
-                                        "You are using a beta version of " + appName + " while WaEnhancerX is currently set to the Stable update channel.\n\nTo ensure full compatibility and stay up-to-date with every new WhatsApp beta update, we highly recommend switching WaEnhancerX to the Beta update channel.");
+                                        "You are using a beta version of " + appName + " while WaEnhancer Community is currently set to the Stable update channel.\n\nTo ensure full compatibility and stay up-to-date with every new WhatsApp beta update, we highly recommend switching WaEnhancer Community to the Beta update channel.");
 
                                 com.google.android.material.button.MaterialButton okBtn = view.findViewById(R.id.bs_confirm_btn);
                                 okBtn.setText("Leave WhatsApp Beta");
@@ -996,7 +819,7 @@ public class HomeFragment extends BaseFragment {
 
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
                 .setTitle("Beta Version Detected")
-                .setMessage("You have installed a beta version of " + appName + ". WaEnhancerX is designed for the stable versions of WhatsApp, if you face any bugs please switch to a stable version of " + appName + ".")
+                .setMessage("You have installed a beta version of " + appName + ". WaEnhancer Community is designed for the stable versions of WhatsApp, if you face any bugs please switch to a stable version of " + appName + ".")
                 .setPositiveButton("Dismiss for 1 Day", (dialog, which) -> {
                     prefs.edit().putLong(prefKey, System.currentTimeMillis()).apply();
                     dialog.dismiss();
@@ -1179,16 +1002,6 @@ public class HomeFragment extends BaseFragment {
     public void onDestroyView() {
         super.onDestroyView();
         binding = null;
-    }
-
-    private void launchLicenseActivity(Context context) {
-        try {
-            Class<?> clazz = Class.forName("com.waenhancer.activities.LicenseActivity");
-            Intent intent = new Intent(context, clazz);
-            context.startActivity(intent);
-        } catch (ClassNotFoundException e) {
-            Toast.makeText(context, "Pro features are not available.", Toast.LENGTH_SHORT).show();
-        }
     }
 
     private String getXposedFrameworkVersion() {

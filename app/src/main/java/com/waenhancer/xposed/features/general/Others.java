@@ -32,6 +32,7 @@ import com.waenhancer.xposed.utils.ReflectionUtils;
 import com.waenhancer.xposed.core.components.AlertDialogWpp;
 import com.waenhancer.R;
 import com.waenhancer.xposed.utils.Utils;
+import com.waenhancer.theme.CssSafetyManager;
 import com.waenhancer.model.FilterItem;
 
 import org.json.JSONObject;
@@ -79,7 +80,6 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.function.Consumer;
 import org.json.JSONArray;
-import com.waenhancer.xposed.utils.ProHelper;
 import com.waenhancer.xposed.core.FeatureLoader;
 import com.waenhancer.xposed.features.customization.SeparateGroup;
 
@@ -113,7 +113,8 @@ public class Others extends Feature {
         }
 
         // receivedIncomingTimestamp
-        properties = Utils.getProperties(prefs, "custom_css", "custom_filters");
+        properties = Utils.getPropertiesFromText(
+                CssSafetyManager.effectiveCss(prefs), prefs.getBoolean("custom_filters", false));
 
         var menuWIcons = prefs.getBoolean("menuwicon", false);
         var newSettings = prefs.getBoolean("novaconfig", false);
@@ -767,7 +768,7 @@ public class Others extends Feature {
             } catch (Throwable ignored) {
             }
         }
-        if ("com.waenhancer".equals(currentPkg)) {
+        if (com.waenhancer.BuildConfig.APPLICATION_ID.equals(currentPkg)) {
             return;
         }
 
@@ -1427,93 +1428,10 @@ public class Others extends Feature {
                 }
                 var mediaType = results.get(0);
                 var audioType = results.get(1);
-                if (audio_type == 2) {
-                    // Transcode local audio to Opus before sending as voice note
-                    Uri originalUri = null;
-                    int uriArgIndex = -1;
-
-                    var uris = ReflectionUtils.findInstancesOfType(param.args, Uri.class);
-                    if (!uris.isEmpty()) {
-                        originalUri = uris.get(0).second;
-                        uriArgIndex = uris.get(0).first;
-                    }
-
-                    Field fileField = null;
-                    Object fileFieldContainer = null;
-                    File originalFile = null;
-
-                    if (originalUri == null) {
-                        // Scan arguments for a non-null java.io.File field
-                        for (Object arg : param.args) {
-                            if (arg == null) {
-                                continue;
-                            }
-                            Class<?> clazz = arg.getClass();
-                            while (clazz != null && clazz != Object.class) {
-                                try {
-                                    for (Field f : clazz.getDeclaredFields()) {
-                                        if (f.getType() == File.class) {
-                                            f.setAccessible(true);
-                                            File fileVal = (File) f.get(arg);
-                                            if (fileVal != null) {
-                                                originalFile = fileVal;
-                                                fileField = f;
-                                                fileFieldContainer = arg;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                } catch (Throwable ignored) {
-                                }
-                                if (originalFile != null) {
-                                    break;
-                                }
-                                clazz = clazz.getSuperclass();
-                            }
-                            if (originalFile != null) {
-                                break;
-                            }
-                        }
-                        if (originalFile != null) {
-                            originalUri = Uri.fromFile(originalFile);
-                        }
-                    }
-
-                    if (originalUri != null) {
-                        Context context = Utils.getApplication();
-                        if (context != null) {
-                            File transcodedFile = ProHelper.convertAudioToOpus(context, originalUri);
-                            if (transcodedFile != null && transcodedFile.exists()) {
-                                boolean replacedOnDisk = false;
-                                if (originalFile != null && originalFile.exists()) {
-                                    try {
-                                        copyFile(transcodedFile, originalFile);
-                                        replacedOnDisk = true;
-                                    } catch (Throwable t) {
-                                        XposedBridge.log("[WAEX-AudioToOpus] Error overwriting original file: " + t.toString());
-                                    }
-                                }
-
-                                if (!replacedOnDisk) {
-                                    if (uriArgIndex != -1) {
-                                        param.args[uriArgIndex] = Uri.fromFile(transcodedFile);
-                                    }
-                                    if (fileField != null && fileFieldContainer != null) {
-                                        try {
-                                            fileField.set(fileFieldContainer, transcodedFile);
-                                        } catch (Throwable t) {
-                                            XposedBridge.log("[WAEX-AudioToOpus] Error replacing File field: " + t.toString());
-                                        }
-                                    }
-                                }
-                                param.args[audioType.first] = 1; // 1 = voice notes
-                                return;
-                            }
-                        }
-                    }
-                }
-
-                param.args[audioType.first] = audio_type - 1; // 1 = voice notes || 0 = audio voice
+                // The former value 2 depended on a closed external transcoder. Degrade it
+                // to ordinary audio instead of mislabelling an incompatible file as Opus.
+                int effectiveAudioType = audio_type == 2 ? 1 : audio_type;
+                param.args[audioType.first] = effectiveAudioType - 1; // 1 = voice notes || 0 = audio voice
             }
         });
 

@@ -396,7 +396,7 @@ public class ActivityController extends Feature {
         android.widget.ImageView appIconView = new android.widget.ImageView(activity);
         boolean iconLoaded = false;
         try {
-            android.graphics.drawable.Drawable appIcon = activity.getPackageManager().getApplicationIcon("com.waenhancer");
+            android.graphics.drawable.Drawable appIcon = activity.getPackageManager().getApplicationIcon(com.waenhancer.BuildConfig.APPLICATION_ID);
             appIconView.setImageDrawable(appIcon);
             iconLoaded = true;
         } catch (Throwable ignored) {}

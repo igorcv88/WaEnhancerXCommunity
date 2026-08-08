@@ -142,7 +142,6 @@ public abstract class EmbeddedBasePreferenceFragment extends PreferenceFragmentC
         }
         runWithoutRestartBroadcast(() -> applyDynamicStates(null));
         refreshSpecialSummaries();
-        com.waenhancer.xposed.utils.ProHelper.updatePreferences(requireContext(), getPreferenceScreen());
     }
 
     @Override
@@ -211,10 +210,6 @@ public abstract class EmbeddedBasePreferenceFragment extends PreferenceFragmentC
 
     @Override
     public boolean onPreferenceTreeClick(@NonNull Preference preference) {
-        if ("bootloader_spoofer_verify".equals(preference.getKey())) {
-            com.waenhancer.xposed.utils.ProHelper.showKeyboxVerificationDialog(this);
-            return true;
-        }
         if ("call_recording_settings".equals(preference.getKey())) {
             try {
                 Intent intent = new Intent();

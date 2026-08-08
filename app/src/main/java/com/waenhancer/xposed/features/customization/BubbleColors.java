@@ -12,6 +12,7 @@ import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.utils.DesignUtils;
 import com.waenhancer.xposed.utils.Utils;
+import com.waenhancer.theme.CssSafetyManager;
 
 import java.util.Objects;
 import java.util.Properties;
@@ -29,7 +30,8 @@ public class BubbleColors extends Feature {
     @Override
     public void doHook() throws Exception {
 
-        Properties properties = Utils.getProperties(prefs, "custom_css", "custom_filters");
+        Properties properties = Utils.getPropertiesFromText(
+                CssSafetyManager.effectiveCss(prefs), prefs.getBoolean("custom_filters", false));
 
         boolean bubbleColor = prefs.getBoolean("bubble_color", false);
 

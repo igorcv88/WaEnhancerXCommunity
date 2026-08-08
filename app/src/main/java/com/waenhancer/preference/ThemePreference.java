@@ -27,6 +27,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.waenhancer.App;
 import com.waenhancer.R;
 import com.waenhancer.activities.TextEditorActivity;
+import com.waenhancer.theme.CssSafetyManager;
 import com.waenhancer.utils.FilePicker;
 import com.waenhancer.xposed.utils.Utils;
 
@@ -93,7 +94,7 @@ public class ThemePreference extends Preference implements FilePicker.OnUriPicke
         Button importTheme = dialogView.findViewById(R.id.import_theme_button);
         importTheme.setOnClickListener(v -> {
             if (FilePicker.fileCapture == null) {
-                Toast.makeText(context, "Please use the standalone WaEnhancerX app for file operations.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(context, "Please use the standalone WaEnhancer Community app for file operations.", Toast.LENGTH_SHORT).show();
                 return;
             }
             FilePicker.setOnUriPickedListener(this);
@@ -125,7 +126,12 @@ public class ThemePreference extends Preference implements FilePicker.OnUriPicke
                 getSafeSharedPreferences().edit().putString(getKey(), folder).commit();
                 if (cssFile.exists()) {
                     var code = FilesKt.readText(cssFile, Charset.defaultCharset());
-                    getSafeSharedPreferences().edit().putString("custom_css", code).commit();
+                    CssSafetyManager.SaveResult result =
+                            CssSafetyManager.save(getSafeSharedPreferences(), code);
+                    if (!result.saved) {
+                        Toast.makeText(context, result.validation.message(), Toast.LENGTH_LONG).show();
+                        return;
+                    }
                 } else {
                     getSafeSharedPreferences().edit().putString("custom_css", "").commit();
                 }
@@ -197,8 +203,15 @@ public class ThemePreference extends Preference implements FilePicker.OnUriPicke
 
                 String zipFileName = getZipFileName(uri);
 
+                int entryCount = 0;
+                long extractedBytes = 0;
                 while ((zipEntry = zipInputStream.getNextEntry()) != null) {
+                    if (++entryCount > 100) throw new IllegalArgumentException("Theme has too many files.");
                     var entryName = zipEntry.getName();
+                    if (entryName.contains("..") || entryName.startsWith("/")
+                            || entryName.startsWith("\\")) {
+                        throw new IllegalArgumentException("Unsafe path in theme archive.");
+                    }
 
                     String folderName;
                     String targetPath;
@@ -219,7 +232,24 @@ public class ThemePreference extends Preference implements FilePicker.OnUriPicke
                     if (entryName.endsWith("/"))
                         continue;
                     var file = new File(rootDirectory, targetPath);
-                    Files.copy(zipInputStream, file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    String rootPath = rootDirectory.getCanonicalPath() + File.separator;
+                    if (!file.getCanonicalPath().startsWith(rootPath)) {
+                        throw new IllegalArgumentException("Theme archive escapes the theme directory.");
+                    }
+                    byte[] bytes = zipInputStream.readAllBytes();
+                    extractedBytes += bytes.length;
+                    if (extractedBytes > 20L * 1024L * 1024L) {
+                        throw new IllegalArgumentException("Theme exceeds the 20 MB extraction limit.");
+                    }
+                    Files.write(file.toPath(), bytes);
+                    if (file.getName().equalsIgnoreCase("style.css")) {
+                        String css = FilesKt.readText(file, Charset.defaultCharset());
+                        CssSafetyManager.ValidationResult validation = CssSafetyManager.validate(css);
+                        if (!validation.valid) {
+                            file.delete();
+                            throw new IllegalArgumentException(validation.message());
+                        }
+                    }
                 }
                 ((Activity) getContext()).runOnUiThread(() -> {
                     Utils.showToast(getContext().getString(R.string.theme_imported_successfully), Toast.LENGTH_SHORT);

@@ -54,7 +54,7 @@
             app:key="auto_status_forward_rules_pref"
             app:title="@string/auto_status_forward_rules" />
 
-        <com.waenhancer.preference.ProSwitchPreference
+        <rikka.material.preference.MaterialSwitchPreference
             app:defaultValue="false"
             app:key="pro_status_splitter"
             app:summary="@string/pro_status_splitter_sum"

@@ -52,11 +52,5 @@
             app:summary="@string/show_hook_toast_sum"
             app:title="@string/show_hook_toast" />
 
-        <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="false"
-            app:key="enable_crash_analytics"
-            app:title="@string/enable_crash_analytics"
-            app:summary="@string/enable_crash_analytics_sum" />
-
     </PreferenceCategory>
 </PreferenceScreen>

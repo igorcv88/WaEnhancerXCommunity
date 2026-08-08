@@ -55,7 +55,7 @@ public class ChangelogActivity extends BaseActivity {
     private final List<JSONObject> stableReleases = new ArrayList<>();
     private final List<JSONObject> betaReleases = new ArrayList<>();
     private boolean downgradesEnabled = false;
-    private static final String RELEASES_API = "https://api.github.com/repos/mubashardev/WaEnhancer/releases";
+    private static final String RELEASES_API = "https://api.github.com/repos/igorcv88/WaEnhancerX/releases";
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -171,10 +171,6 @@ public class ChangelogActivity extends BaseActivity {
                     .url(RELEASES_API)
                     .header("Accept", "application/vnd.github+json")
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-
-            if (BuildConfig.GH_PUBLIC_TOKEN != null && !BuildConfig.GH_PUBLIC_TOKEN.isEmpty()) {
-                requestBuilder.header("Authorization", "Bearer " + BuildConfig.GH_PUBLIC_TOKEN);
-            }
 
             Request request = requestBuilder.build();
 
@@ -585,7 +581,7 @@ public class ChangelogActivity extends BaseActivity {
                     try {
                         android.content.Context context = v.getContext();
                         android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW,
-                                android.net.Uri.parse("https://github.com/mubashardev/WaEnhancer/releases"));
+                                android.net.Uri.parse("https://github.com/igorcv88/WaEnhancerX/releases"));
                         context.startActivity(intent);
                     } catch (Exception ignored) {
                     }
@@ -631,7 +627,7 @@ public class ChangelogActivity extends BaseActivity {
                 }
             });
 
-            String htmlUrl = release.optString("html_url", "https://github.com/mubashardev/WaEnhancer/releases");
+            String htmlUrl = release.optString("html_url", "https://github.com/igorcv88/WaEnhancerX/releases");
             btnGithub.setOnClickListener(v -> {
                 try {
                     android.content.Context context = v.getContext();
