@@ -37,7 +37,7 @@ bloqueavam o Gate C, e por decisão explícita do mantenedor foram corrigidos ne
 1. **Funções Pro/Helper ainda visíveis.** As classes tinham sido removidas, mas a UI ficou.
    15 chaves declaradas nas telas standalone e embedded, com strings traduzidas e entrada no
    settings map, sem nenhum leitor em Java; mais duas entradas de busca que ainda anunciavam o
-   Helper. Removidas. **Ver secção 5 de `BLOCK_C_INVENTORY.md` para o manifesto completo do que
+   Helper. Removidas. **Ver secção 5 do Anexo A de `HANDOFF_WaEnhancer_Community_v2_ExecutionPlan.md` para o manifesto completo do que
    foi removido e o que cada função prometia** — é o insumo para reimplementação futura.
 2. **Import de backup não alterava nada.** A allowlist tinha sido escrita a partir da prosa do
    plano, não do código: nomeava 43 chaves inexistentes e errava outras. Export e import
