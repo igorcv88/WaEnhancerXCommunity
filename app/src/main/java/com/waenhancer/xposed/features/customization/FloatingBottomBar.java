@@ -15,13 +15,17 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.os.Build;
+import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
+import com.waenhancer.config.BottomBarPreferenceSchema;
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.utils.DesignUtils;
@@ -172,6 +176,8 @@ public class FloatingBottomBar extends Feature {
                                 }
                             }
                         }
+
+                        applyTabMetrics(view);
 
                         float density = view.getContext().getResources().getDisplayMetrics().density;
 
@@ -1496,6 +1502,8 @@ public class FloatingBottomBar extends Feature {
 
             boolean isMetaAiActive = isMetaAiTabActive(bottomNav);
             applySelectedIndicator(bottomNav, tabId, density);
+            // Re-assert the metrics: WhatsApp re-lays out the items on selection.
+            applyTabMetrics(bottomNav);
 
             if (tabId == 1000 || tabId == 1100 || isMetaAiActive) {
                 float targetTranslationY = height + (24 * density);
@@ -1567,6 +1575,131 @@ public class FloatingBottomBar extends Feature {
         }
     }
 
+    /** Original icon and label metrics, captured before any custom sizing was applied. */
+    private static final class TabMetrics {
+        int iconWidth;
+        int iconHeight;
+        int iconBottomMargin;
+        float labelTextSizePx;
+    }
+
+    private static final WeakHashMap<View, TabMetrics> originalTabMetrics = new WeakHashMap<>();
+
+    /** True when the user moved this control away from its schema default. */
+    private static boolean isCustomized(String key) {
+        try {
+            return Math.abs(normalized(key) - BottomBarPreferenceSchema.spec(key).defaultValue)
+                    > 0.001f;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * Applies icon size, label text size and icon-to-label spacing to the real tabs.
+     *
+     * <p>Each metric is applied only while the user keeps it away from the schema default, and is
+     * restored to WhatsApp's own value otherwise, so an untouched install looks exactly like the
+     * stock bar.
+     */
+    private static void applyTabMetrics(View bottomNav) {
+        try {
+            ViewGroup menu = findMenuView(bottomNav);
+            if (menu == null) return;
+            float density = bottomNav.getContext().getResources().getDisplayMetrics().density;
+            boolean customIcon = isCustomized("floating_bottom_bar_icon_size");
+            boolean customText = isCustomized("floating_bottom_bar_text_size");
+            boolean customSpacing = isCustomized("floating_bottom_bar_icon_label_spacing");
+
+            for (int i = 0; i < menu.getChildCount(); i++) {
+                View item = menu.getChildAt(i);
+                ImageView icon = findFirstIcon(item);
+                TextView label = findFirstLabel(item);
+                TabMetrics original = rememberTabMetrics(item, icon, label);
+
+                if (icon != null) {
+                    ViewGroup.LayoutParams params = icon.getLayoutParams();
+                    if (params != null) {
+                        int size = customIcon
+                                ? Math.round(normalized("floating_bottom_bar_icon_size") * density)
+                                : original.iconWidth;
+                        int height = customIcon ? size : original.iconHeight;
+                        boolean changed = params.width != size || params.height != height;
+                        params.width = size;
+                        params.height = height;
+
+                        if (params instanceof ViewGroup.MarginLayoutParams) {
+                            ViewGroup.MarginLayoutParams margins =
+                                    (ViewGroup.MarginLayoutParams) params;
+                            int spacing = customSpacing
+                                    ? Math.round(normalized(
+                                            "floating_bottom_bar_icon_label_spacing") * density)
+                                    : original.iconBottomMargin;
+                            changed |= margins.bottomMargin != spacing;
+                            margins.bottomMargin = spacing;
+                        }
+                        if (changed) icon.setLayoutParams(params);
+                    }
+                }
+
+                if (label != null) {
+                    if (customText) {
+                        label.setTextSize(TypedValue.COMPLEX_UNIT_SP,
+                                normalized("floating_bottom_bar_text_size"));
+                    } else if (original.labelTextSizePx > 0f
+                            && Math.abs(label.getTextSize() - original.labelTextSizePx) > 0.1f) {
+                        label.setTextSize(TypedValue.COMPLEX_UNIT_PX, original.labelTextSizePx);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static TabMetrics rememberTabMetrics(View item, ImageView icon, TextView label) {
+        TabMetrics existing = originalTabMetrics.get(item);
+        if (existing != null) return existing;
+        TabMetrics metrics = new TabMetrics();
+        if (icon != null) {
+            ViewGroup.LayoutParams params = icon.getLayoutParams();
+            if (params != null) {
+                metrics.iconWidth = params.width;
+                metrics.iconHeight = params.height;
+                if (params instanceof ViewGroup.MarginLayoutParams) {
+                    metrics.iconBottomMargin =
+                            ((ViewGroup.MarginLayoutParams) params).bottomMargin;
+                }
+            }
+        }
+        if (label != null) metrics.labelTextSizePx = label.getTextSize();
+        originalTabMetrics.put(item, metrics);
+        return metrics;
+    }
+
+    private static ImageView findFirstIcon(View view) {
+        if (view instanceof ImageView) return (ImageView) view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                ImageView found = findFirstIcon(group.getChildAt(i));
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    private static TextView findFirstLabel(View view) {
+        if (view instanceof TextView) return (TextView) view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                TextView found = findFirstLabel(group.getChildAt(i));
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
     private static void applyMinimalFab(View fab) {
         try {
             float density = fab.getResources().getDisplayMetrics().density;
@@ -1575,6 +1708,15 @@ public class FloatingBottomBar extends Feature {
             if (params != null) {
                 params.width = size;
                 params.height = size;
+                if (params instanceof ViewGroup.MarginLayoutParams) {
+                    int margin = Math.round(
+                            normalized("floating_bottom_bar_minimal_fab_margin") * density);
+                    ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) params;
+                    margins.leftMargin = margin;
+                    margins.rightMargin = margin;
+                    margins.setMarginStart(margin);
+                    margins.setMarginEnd(margin);
+                }
                 fab.setLayoutParams(params);
             }
             GradientDrawable background = new GradientDrawable();
