@@ -197,7 +197,7 @@ jobs:
             exit 1
           fi
 
-          ACTUAL_CERT_SHA256="$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' <<< "$SIGNATURE_REPORT" \
+          ACTUAL_CERT_SHA256="$(awk '/^(Signer #[0-9]+ |V[0-9.]+ Signer: )certificate SHA-256 digest:/{print $NF; exit}' <<< "$SIGNATURE_REPORT" \
             | tr -d ':' \
             | tr '[:upper:]' '[:lower:]')"
 
