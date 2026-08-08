@@ -260,11 +260,11 @@ public final class PreferenceSchema {
         add(entries, "shownamehome", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "showonline", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "showonlinetext", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
-        add(entries, "stamp_copied_message", Type.BOOLEAN, Sensitivity.CACHE, Store.PRIVATE);
+        add(entries, "stamp_copied_message", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "status_style", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "tasker", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "text_color", Type.INT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
-        add(entries, "thememode", Type.STRING, Sensitivity.PRIVATE_SETTING, Store.PRIVATE);
+        add(entries, "thememode", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "toast_viewed_message", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "toast_viewed_status", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "toastdeleted", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
@@ -274,7 +274,7 @@ public final class PreferenceSchema {
         add(entries, "updateTime", Type.LONG, Sensitivity.RUNTIME, Store.PUBLIC);
         add(entries, "update_alert_pref", Type.BOOLEAN, Sensitivity.PRIVATE_SETTING, Store.PRIVATE);
         add(entries, "update_check", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
-        add(entries, "verify_blocked_contact", Type.BOOLEAN, Sensitivity.PRIVATE_SETTING, Store.PRIVATE);
+        add(entries, "verify_blocked_contact", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "video_call_screen_rec", Type.BOOLEAN, Sensitivity.PRIVATE_SETTING, Store.PRIVATE);
         add(entries, "video_limit_size", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "video_maxfps", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
@@ -282,14 +282,14 @@ public final class PreferenceSchema {
         add(entries, "videoquality", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "viewonce", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "voicenote_speed", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
-        add(entries, "wae_color_mode", Type.STRING, Sensitivity.PRIVATE_SETTING, Store.PRIVATE);
+        add(entries, "wae_color_mode", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "wae_color_preset", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "wae_version_name", Type.STRING, Sensitivity.RUNTIME, Store.PUBLIC);
         add(entries, "wallpaper", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "wallpaper_alpha", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "wallpaper_alpha_navigation", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "wallpaper_alpha_toolbar", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
-        add(entries, "wallpaper_file", Type.STRING, Sensitivity.PRIVATE_SETTING, Store.PRIVATE);
+        add(entries, "wallpaper_file", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
 
         ENTRIES = Collections.unmodifiableMap(entries);
 

@@ -45,17 +45,7 @@
             app:summary="@string/transcription_provider_sum"
             app:title="@string/transcription_provider" />
 
-        <EditTextPreference
-            android:dependency="audio_transcription"
-            app:key="assemblyai_key"
-            app:summary="@string/assemblyai_key_sum"
-            app:title="@string/assemblyai_key" />
 
-        <EditTextPreference
-            android:dependency="audio_transcription"
-            app:key="groq_api_key"
-            app:summary="@string/groq_api_key_sum"
-            app:title="@string/groq_api_key" />
 
     </PreferenceCategory>
 

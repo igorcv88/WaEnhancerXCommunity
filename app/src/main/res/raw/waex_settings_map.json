@@ -1371,24 +1371,6 @@
                   "value": "groq"
                 }
               ]
-            },
-            {
-              "key": "assemblyai_key",
-              "type": "text",
-              "value_type": "string",
-              "default": null,
-              "title": "AssemblyAI API Key",
-              "summary": "AssemblyAI API access key (Get it at assemblyai.com)",
-              "dep": "audio_transcription"
-            },
-            {
-              "key": "groq_api_key",
-              "type": "text",
-              "value_type": "string",
-              "default": null,
-              "title": "Groq API Key",
-              "summary": "Groq API access key (Get it at console.groq.com)",
-              "dep": "audio_transcription"
             }
           ]
         }
@@ -1662,15 +1644,6 @@
               "default": false,
               "title": "Enable Custom KeyBox",
               "summary": "Use this if you have been banned and are receiving the unofficial Whatsapp message"
-            },
-            {
-              "key": "bootloader_spoofer_xml",
-              "type": "file_reader",
-              "value_type": "string",
-              "default": null,
-              "title": "Use Custom keybox.xml file",
-              "summary": "No file selected",
-              "dep": "bootloader_spoofer_custom"
             },
             {
               "key": "bootloader_spoofer_verify",

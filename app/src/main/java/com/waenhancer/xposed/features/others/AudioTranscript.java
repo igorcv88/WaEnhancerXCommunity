@@ -1,5 +1,6 @@
 package com.waenhancer.xposed.features.others;
 
+import com.waenhancer.config.SecretBridge;
 import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
@@ -42,9 +43,9 @@ public class AudioTranscript extends Feature {
         String apiKey = "";
 
         if ("groq".equals(provider)) {
-            apiKey = prefs.getString("groq_api_key", "");
+            apiKey = SecretBridge.get(Utils.getApplication(), prefs, "groq_api_key", "");
         } else {
-            apiKey = prefs.getString("assemblyai_key", "");
+            apiKey = SecretBridge.get(Utils.getApplication(), prefs, "assemblyai_key", "");
         }
 
         if (TextUtils.isEmpty(apiKey))
@@ -93,7 +94,7 @@ public class AudioTranscript extends Feature {
     }
 
     private String transcriptionAssemblyAI(File fileOpus) throws Exception {
-        String apiKey = prefs.getString("assemblyai_key", "");
+        String apiKey = SecretBridge.get(Utils.getApplication(), prefs, "assemblyai_key", "");
         if (TextUtils.isEmpty(apiKey)) {
             return "API key not provided";
         }
@@ -167,7 +168,7 @@ public class AudioTranscript extends Feature {
     }
 
     private String transcriptionGroqAI(File fileAudio) throws Exception {
-        String apiKey = prefs.getString("groq_api_key", "");
+        String apiKey = SecretBridge.get(Utils.getApplication(), prefs, "groq_api_key", "");
         if (TextUtils.isEmpty(apiKey)) {
             return "Groq API key not provided";
         }

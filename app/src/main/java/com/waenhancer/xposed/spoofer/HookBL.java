@@ -1,5 +1,6 @@
 package com.waenhancer.xposed.spoofer;
 
+import com.waenhancer.config.SecretBridge;
 
 import android.app.Application;
 import android.content.Context;
@@ -382,7 +383,7 @@ public final class HookBL {
 
         boolean useCustomSpoofer = prefs.getBoolean("bootloader_spoofer_custom", false);
         String xmlContent = useCustomSpoofer 
-                ? prefs.getString("bootloader_spoofer_xml", "") 
+                ? SecretBridge.get(Utils.getApplication(), prefs, "bootloader_spoofer_xml", "") 
                 : prefs.getString("bootloader_spoofer_default_xml", "");
         if (xmlContent != null && !xmlContent.isEmpty()) {
             try {

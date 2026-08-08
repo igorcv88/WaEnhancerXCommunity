@@ -51,11 +51,6 @@
             android:title="Enable Custom KeyBox"
             app:key="bootloader_spoofer_custom" />
 
-        <com.waenhancer.preference.FileReaderPreference
-            android:dependency="bootloader_spoofer_custom"
-            android:key="bootloader_spoofer_xml"
-            android:summary="No file selected"
-            android:title="Use Custom keybox.xml file" />
 
         <Preference
             android:key="bootloader_spoofer_verify"
