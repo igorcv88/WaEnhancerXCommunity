@@ -3,6 +3,7 @@ package com.waenhancer.activities;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.InputType;
@@ -28,18 +29,30 @@ import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
 import com.waenhancer.BuildConfig;
 import com.waenhancer.config.BottomBarPreferenceSchema;
+import com.waenhancer.config.BottomBarPreviewModel;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
 /** Complete open-source editor for the classic floating bottom bar. */
 public class BottomBarCustomizationActivity extends AppCompatActivity {
 
+    private static final String[] PREVIEW_TAB_LABELS = {"Chats", "Updates", "Communities", "Calls"};
+    private static final int PREVIEW_SELECTED_TAB = 0;
+    private static final int PREVIEW_DEFAULT_FAB_SIZE_DP = 56;
+    private static final int PREVIEW_DEFAULT_FAB_MARGIN_DP = 12;
+    /** Any radius at or beyond half the pill height reads as fully rounded. */
+    private static final int PREVIEW_PILL_MAX_RADIUS_DP = 48;
+
     private SharedPreferences prefs;
     private LinearLayout controls;
+    private FrameLayout previewStage;
     private LinearLayout previewPill;
     private MaterialButton previewFab;
+    private final List<TextView> previewItems = new ArrayList<>();
     private final Map<String, Slider> sliders = new LinkedHashMap<>();
 
     @Override
@@ -73,7 +86,6 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
         root.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        addPreview();
         addSection("Core");
         addSwitch("Enable floating bar", "floating_bottom_bar", false);
         addSwitch("Glassmorphism", "floating_bottom_bar_glass", true);
@@ -138,43 +150,58 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
         resetParams.topMargin = dp(12);
         controls.addView(reset, resetParams);
 
+        // The preview is a fixed footer, not a list item: dragging a slider further down the list
+        // must not scroll the thing it is changing off screen.
+        root.addView(buildPreviewFooter(), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         return root;
     }
 
-    private void addPreview() {
-        addSection("Live preview");
-        FrameLayout stage = new FrameLayout(this);
-        stage.setPadding(dp(16), dp(20), dp(16), dp(20));
-        stage.setBackgroundColor(resolveSurfaceVariant());
+    private View buildPreviewFooter() {
+        LinearLayout footer = new LinearLayout(this);
+        footer.setOrientation(LinearLayout.VERTICAL);
+        footer.setBackgroundColor(resolveSurfaceVariant());
+        footer.setElevation(dp(8));
+
+        TextView caption = new TextView(this);
+        caption.setText("Live preview");
+        caption.setTextSize(12);
+        caption.setTextColor(resolvePrimary());
+        caption.setPadding(dp(20), dp(10), dp(20), 0);
+        footer.addView(caption);
+
+        previewStage = new FrameLayout(this);
+        previewStage.setPadding(dp(4), dp(10), dp(4), dp(10));
 
         previewPill = new LinearLayout(this);
         previewPill.setOrientation(LinearLayout.HORIZONTAL);
         previewPill.setGravity(Gravity.CENTER);
-        String[] labels = {"Chats", "Updates", "Communities", "Calls"};
-        for (String label : labels) {
+        for (String label : PREVIEW_TAB_LABELS) {
             TextView item = new TextView(this);
             item.setText(label);
             item.setGravity(Gravity.CENTER);
-            item.setCompoundDrawablesWithIntrinsicBounds(0, android.R.drawable.presence_invisible, 0, 0);
-            previewPill.addView(item, new LinearLayout.LayoutParams(0, dp(52), 1f));
+            item.setSingleLine(true);
+            previewItems.add(item);
+            previewPill.addView(item, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         }
-        FrameLayout.LayoutParams pillParams = new FrameLayout.LayoutParams(
+        previewStage.addView(previewPill, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM);
-        stage.addView(previewPill, pillParams);
+                Gravity.BOTTOM));
 
         previewFab = new MaterialButton(this);
         previewFab.setText("+");
-        previewFab.setTextSize(24);
+        previewFab.setTextSize(20);
         previewFab.setInsetTop(0);
         previewFab.setInsetBottom(0);
-        FrameLayout.LayoutParams fabParams = new FrameLayout.LayoutParams(dp(56), dp(56),
-                Gravity.END | Gravity.BOTTOM);
-        fabParams.setMargins(0, 0, dp(12), dp(68));
-        stage.addView(previewFab, fabParams);
+        previewFab.setPadding(0, 0, 0, 0);
+        previewStage.addView(previewFab, new FrameLayout.LayoutParams(dp(56), dp(56),
+                Gravity.END | Gravity.BOTTOM));
 
-        controls.addView(stage, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(190)));
+        footer.addView(previewStage, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(160)));
+        return footer;
     }
 
     private void addSection(String title) {
@@ -319,48 +346,108 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
         refreshPreview();
     }
 
+    /**
+     * Repaints the preview from a single resolved model, so every control on the screen has a
+     * visible effect instead of only the handful that used to be read here.
+     */
     private void refreshPreview() {
         if (previewPill == null || prefs == null) return;
+        BottomBarPreviewModel model = BottomBarPreviewModel.from(prefs.getAll());
         float density = getResources().getDisplayMetrics().density;
-        int radius = prefs.getBoolean("floating_bottom_bar_fully_rounded", false)
-                ? 1000 : BottomBarPreferenceSchema.readInt(prefs, "floating_bottom_bar_radius");
-        int fill = safeColor("floating_bottom_bar_fill_color", 0);
-        if (fill == 0) fill = resolveSurface();
-        int opacity = BottomBarPreferenceSchema.readInt(prefs,
-                "floating_bottom_bar_glass_opacity");
-        if (prefs.getBoolean("floating_bottom_bar_glass", true)) {
-            fill = Color.argb(Math.round(255f * opacity / 100f),
-                    Color.red(fill), Color.green(fill), Color.blue(fill));
-        }
+
+        // Disabled bar still previews, but reads as inactive.
+        previewStage.setAlpha(model.barEnabled ? 1f : 0.45f);
+
         GradientDrawable pill = new GradientDrawable();
-        pill.setColor(fill);
-        pill.setCornerRadius(radius * density);
+        pill.setColor(model.resolvedFillColor(resolveSurface()));
+        pill.setCornerRadius(model.isFullyRounded()
+                ? dp(PREVIEW_PILL_MAX_RADIUS_DP) : model.radiusDp * density);
         pill.setStroke(dp(1), withAlpha(resolvePrimary(), 0.30f));
         previewPill.setBackground(pill);
-        int vertical = BottomBarPreferenceSchema.readInt(prefs,
-                "floating_bottom_bar_padding_vertical");
-        previewPill.setPadding(dp(4), dp(vertical), dp(4), dp(vertical));
+        previewPill.setPadding(dp(4), dp(model.paddingVerticalDp),
+                dp(4), dp(model.paddingVerticalDp));
 
-        String fabMode = prefs.getString("floating_bottom_bar_fab_mode", "default");
-        previewFab.setVisibility("hidden".equals(fabMode) ? View.GONE : View.VISIBLE);
-        if ("minimal".equals(fabMode)) {
-            int size = BottomBarPreferenceSchema.readInt(prefs,
-                    "floating_bottom_bar_minimal_fab_size");
-            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) previewFab.getLayoutParams();
-            params.width = dp(size);
-            params.height = dp(size);
-            previewFab.setLayoutParams(params);
-            int color = safeColor("floating_bottom_bar_minimal_fab_color", resolvePrimary());
-            int alpha = BottomBarPreferenceSchema.readInt(prefs,
-                    "floating_bottom_bar_minimal_fab_opacity");
-            previewFab.setBackgroundTintList(ColorStateList.valueOf(withAlpha(color, alpha / 100f)));
-            previewFab.setTextColor(safeColor("floating_bottom_bar_minimal_fab_icon_color", Color.WHITE));
-            previewFab.setCornerRadius(dp(BottomBarPreferenceSchema.readInt(prefs,
-                    "floating_bottom_bar_minimal_fab_radius")));
+        FrameLayout.LayoutParams pillParams =
+                (FrameLayout.LayoutParams) previewPill.getLayoutParams();
+        pillParams.leftMargin = dp(model.sideMarginDp);
+        pillParams.rightMargin = dp(model.sideMarginDp);
+        pillParams.bottomMargin = dp(model.bottomMarginDp);
+        pillParams.height = model.manualHeight
+                ? dp(model.manualHeightDp) : ViewGroup.LayoutParams.WRAP_CONTENT;
+        previewPill.setLayoutParams(pillParams);
+
+        applyTabStyling(model, density);
+        applyFabStyling(model);
+    }
+
+    private void applyTabStyling(BottomBarPreviewModel model, float density) {
+        int indicatorColor = model.resolvedIndicatorColor(resolvePrimary());
+        for (int i = 0; i < previewItems.size(); i++) {
+            TextView item = previewItems.get(i);
+            item.setTextSize(model.textSizeSp);
+            item.setTextColor(resolveOnSurface());
+            item.setCompoundDrawablePadding(dp(model.iconLabelSpacingDp));
+
+            Drawable glyph = getDrawable(android.R.drawable.presence_invisible);
+            if (glyph != null) {
+                glyph = glyph.mutate();
+                int size = dp(model.iconSizeDp);
+                glyph.setBounds(0, 0, size, size);
+                glyph.setTint(resolveOnSurface());
+            }
+            item.setCompoundDrawables(null, glyph, null, null);
+
+            boolean selected = i == PREVIEW_SELECTED_TAB;
+            if (model.indicatorVisible && selected) {
+                GradientDrawable indicator = new GradientDrawable();
+                indicator.setColor(indicatorColor);
+                indicator.setCornerRadius(model.indicatorRadiusDp * density);
+                item.setBackground(indicator);
+                item.setTranslationY(model.indicatorOffsetDp * density);
+                item.setPadding(dp(model.indicatorPaddingHorizontalDp),
+                        dp(model.indicatorPaddingVerticalDp),
+                        dp(model.indicatorPaddingHorizontalDp),
+                        dp(model.indicatorPaddingVerticalDp));
+            } else {
+                item.setBackground(null);
+                item.setTranslationY(0f);
+                item.setPadding(0, 0, 0, 0);
+            }
+
+            LinearLayout.LayoutParams itemParams =
+                    (LinearLayout.LayoutParams) item.getLayoutParams();
+            boolean manualBox = model.indicatorVisible && selected;
+            itemParams.width = manualBox && model.indicatorManualWidth
+                    ? dp(model.indicatorWidthDp) : 0;
+            itemParams.weight = manualBox && model.indicatorManualWidth ? 0f : 1f;
+            itemParams.height = manualBox && model.indicatorManualHeight
+                    ? dp(model.indicatorHeightDp) : ViewGroup.LayoutParams.WRAP_CONTENT;
+            item.setLayoutParams(itemParams);
+        }
+    }
+
+    private void applyFabStyling(BottomBarPreviewModel model) {
+        previewFab.setVisibility(model.isFabHidden() ? View.GONE : View.VISIBLE);
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) previewFab.getLayoutParams();
+        params.bottomMargin = dp(model.fabOffsetDp);
+
+        if (model.isFabMinimal()) {
+            params.width = dp(model.minimalFabSizeDp);
+            params.height = dp(model.minimalFabSizeDp);
+            params.rightMargin = dp(model.minimalFabMarginDp);
+            previewFab.setBackgroundTintList(ColorStateList.valueOf(
+                    model.resolvedMinimalFabColor(resolvePrimary())));
+            previewFab.setTextColor(model.minimalFabIconColor);
+            previewFab.setCornerRadius(dp(model.minimalFabRadiusDp));
         } else {
+            params.width = dp(PREVIEW_DEFAULT_FAB_SIZE_DP);
+            params.height = dp(PREVIEW_DEFAULT_FAB_SIZE_DP);
+            params.rightMargin = dp(PREVIEW_DEFAULT_FAB_MARGIN_DP);
             previewFab.setBackgroundTintList(ColorStateList.valueOf(resolvePrimary()));
             previewFab.setTextColor(Color.WHITE);
+            previewFab.setCornerRadius(dp(PREVIEW_DEFAULT_FAB_SIZE_DP / 2));
         }
+        previewFab.setLayoutParams(params);
     }
 
     private LinearLayout.LayoutParams weighted() {
@@ -381,16 +468,7 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
     }
 
     private static Integer parseColor(String raw) {
-        String value = raw == null ? "" : raw.trim();
-        if (value.isEmpty() || "0".equals(value)) return 0;
-        try {
-            if (!value.startsWith("#")) value = "#" + value;
-            if (value.length() == 7) value = "#FF" + value.substring(1);
-            if (value.length() != 9) return null;
-            return (int) Long.parseLong(value.substring(1), 16);
-        } catch (RuntimeException ignored) {
-            return null;
-        }
+        return BottomBarPreviewModel.parseColor(raw);
     }
 
     private int resolvePrimary() {
@@ -403,6 +481,12 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
         android.util.TypedValue value = new android.util.TypedValue();
         return getTheme().resolveAttribute(com.google.android.material.R.attr.colorSurface, value, true)
                 ? value.data : Color.WHITE;
+    }
+
+    private int resolveOnSurface() {
+        android.util.TypedValue value = new android.util.TypedValue();
+        return getTheme().resolveAttribute(android.R.attr.textColorPrimary, value, true)
+                ? value.data : Color.DKGRAY;
     }
 
     private int resolveSurfaceVariant() {

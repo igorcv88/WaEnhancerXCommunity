@@ -73,7 +73,9 @@ public class MenuHome extends Feature {
         try {
             cachedRestartIcon = DesignUtils.getDrawable(R.drawable.refresh);
             
-            cachedWaeIcon = DesignUtils.getDrawableByName("ic_settings");
+            // Must not be WhatsApp's own "ic_settings" gear: the injected entry has to be
+            // distinguishable from the native Settings row.
+            cachedWaeIcon = DesignUtils.getDrawableByName("ic_waenhancer_entry");
             if (cachedWaeIcon != null) cachedWaeIcon.setTint(0xff8696a0);
 
             cachedGhostOnIcon = DesignUtils.getDrawable(R.drawable.ghost_enabled);
@@ -131,7 +133,8 @@ public class MenuHome extends Feature {
 
         String title = com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.waenhancer_settings, "WaEnhancerX Settings");
         var itemMenu = menu.add(0, MENU_ID_OPEN_WAEX, 0, title);
-        
+        if (cachedWaeIcon != null) itemMenu.setIcon(cachedWaeIcon);
+
         itemMenu.setOnMenuItemClickListener(item -> {
             Utils.openModule(activity);
             return true;
@@ -151,9 +154,12 @@ public class MenuHome extends Feature {
         } catch (Exception ignored) {}
 
         var itemMenu = menu.add(0, MENU_ID_GHOST, 1, title);
-        if (buttonAction && !(menu instanceof SubMenu)) {
+        boolean inSubMenu = menu instanceof SubMenu;
+        if (InjectedMenuPresentation.shouldSetIcon(inSubMenu)) {
             Drawable icon = ghostmode ? cachedGhostOnIcon : cachedGhostOffIcon;
             if (icon != null) itemMenu.setIcon(icon);
+        }
+        if (InjectedMenuPresentation.shouldShowAsAction(buttonAction, inSubMenu)) {
             itemMenu.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
         }
 
@@ -179,9 +185,12 @@ public class MenuHome extends Feature {
         } catch (Exception ignored) {}
 
         var itemMenu = menu.add(0, MENU_ID_DND, 2, title);
-        if (buttonAction && !(menu instanceof SubMenu)) {
+        boolean inSubMenu = menu instanceof SubMenu;
+        if (InjectedMenuPresentation.shouldSetIcon(inSubMenu)) {
             Drawable icon = dndmode ? cachedDndOnIcon : cachedDndOffIcon;
             if (icon != null) itemMenu.setIcon(icon);
+        }
+        if (InjectedMenuPresentation.shouldShowAsAction(buttonAction, inSubMenu)) {
             itemMenu.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
         }
 
@@ -207,9 +216,12 @@ public class MenuHome extends Feature {
         } catch (Exception ignored) {}
 
         var itemMenu = menu.add(0, MENU_ID_FREEZE, 3, title);
-        if (buttonAction && !(menu instanceof SubMenu)) {
+        boolean inSubMenu = menu instanceof SubMenu;
+        if (InjectedMenuPresentation.shouldSetIcon(inSubMenu)) {
             Drawable icon = freeze ? cachedFreezeOnIcon : cachedFreezeOffIcon;
             if (icon != null) itemMenu.setIcon(icon);
+        }
+        if (InjectedMenuPresentation.shouldShowAsAction(buttonAction, inSubMenu)) {
             itemMenu.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
         }
 
@@ -235,9 +247,12 @@ public class MenuHome extends Feature {
         } catch (Exception ignored) {}
 
         var itemMenu = menu.add(0, MENU_ID_DELIVERED, 4, title);
-        if (buttonAction && !(menu instanceof SubMenu)) {
+        boolean inSubMenu = menu instanceof SubMenu;
+        if (InjectedMenuPresentation.shouldSetIcon(inSubMenu)) {
             Drawable icon = hidereceipt ? cachedDeliveredOnIcon : cachedDeliveredOffIcon;
             if (icon != null) itemMenu.setIcon(icon);
+        }
+        if (InjectedMenuPresentation.shouldShowAsAction(buttonAction, inSubMenu)) {
             itemMenu.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
         }
 
@@ -298,6 +313,7 @@ public class MenuHome extends Feature {
         } catch (Exception ignored) {}
 
         var itemMenu = menu.add(0, MENU_ID_RECORDINGS, 11, title);
+        if (cachedRecordingsIcon != null) itemMenu.setIcon(cachedRecordingsIcon);
 
         itemMenu.setOnMenuItemClickListener(item -> {
             try {
@@ -353,17 +369,13 @@ public class MenuHome extends Feature {
         String restartLabel = com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.restart_whatsapp, "Restart WhatsApp");
         var itemMenu = menu.add(0, MENU_ID_RESTART, 4, restartLabel);
         
-        if (newSettings && !(menu instanceof SubMenu)) {
-            if (cachedRestartIcon != null) {
-                cachedRestartIcon.setTint(DesignUtils.getPrimaryTextColor());
-                itemMenu.setIcon(cachedRestartIcon);
-            }
+        boolean inSubMenu = menu instanceof SubMenu;
+        if (InjectedMenuPresentation.shouldSetIcon(inSubMenu) && cachedRestartIcon != null) {
+            cachedRestartIcon.setTint(newSettings ? DesignUtils.getPrimaryTextColor() : 0xff8696a0);
+            itemMenu.setIcon(cachedRestartIcon);
+        }
+        if (InjectedMenuPresentation.shouldShowAsAction(newSettings, inSubMenu)) {
             itemMenu.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
-        } else if (!(menu instanceof SubMenu)) {
-            if (cachedRestartIcon != null) {
-                cachedRestartIcon.setTint(0xff8696a0);
-                itemMenu.setIcon(cachedRestartIcon);
-            }
         }
         
         itemMenu.setOnMenuItemClickListener(item -> {

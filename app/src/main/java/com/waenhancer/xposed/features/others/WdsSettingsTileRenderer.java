@@ -98,7 +98,11 @@ public class WdsSettingsTileRenderer {
                         id, cat.optString("icon", ""));
                 android.graphics.drawable.Drawable icon =
                         SettingsIconRegistry.resolve(activity, id, iconName);
-                de.robv.android.xposed.XposedBridge.log("[WAEX] Category id: " + id + ", iconName: " + iconName + ", icon: " + icon);
+                if (icon == null) {
+                    de.robv.android.xposed.XposedBridge.log(
+                            "[WAEX] No drawable resolved for settings category '" + id
+                                    + "' (icon name: " + iconName + ")");
+                }
 
                 View row = createWdsRow(activity, title, summary, icon, iconName, v -> {
                     if ("optimization".equals(id)) {
@@ -202,7 +206,9 @@ public class WdsSettingsTileRenderer {
                     icon = com.waenhancer.xposed.utils.DesignUtils.getDrawableByName(iconName);
                 }
                 if (icon == null) {
-                    icon = com.waenhancer.xposed.utils.DesignUtils.getDrawableByName("ic_chevron_right");
+                    // Deliberately the _solid twin: ic_chevron_right tints from a theme attribute,
+                    // which does not resolve in the WhatsApp process and draws blank.
+                    icon = com.waenhancer.xposed.utils.DesignUtils.getDrawableByName("ic_chevron_right_solid");
                 }
                 
                 View catTile = createWdsRow(activity, subTitle, subSummary, icon, iconName, v -> {
