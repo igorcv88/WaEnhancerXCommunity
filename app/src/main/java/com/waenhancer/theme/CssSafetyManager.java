@@ -1,11 +1,16 @@
 package com.waenhancer.theme;
 
+import android.content.Context;
 import android.content.SharedPreferences;
+
+import com.waenhancer.config.SafePrefs;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /** Local CSS validation, temporary testing, rollback and safe-mode state. */
 public final class CssSafetyManager {
@@ -177,20 +182,34 @@ public final class CssSafetyManager {
                 .commit();
     }
 
-    public static void recordThemeFailure(SharedPreferences preferences) {
-        int failures;
-        try {
-            failures = preferences.getInt(KEY_FAILURE_COUNT, 0) + 1;
-        } catch (ClassCastException ignored) {
-            failures = 1;
-        }
-        SharedPreferences.Editor editor = preferences.edit().putInt(KEY_FAILURE_COUNT, failures);
-        if (failures >= 3) editor.putBoolean(KEY_SAFE_MODE, true);
-        editor.apply();
+    /**
+     * Records a theme-application failure and arms safe mode after three of them.
+     *
+     * <p>Both callers run inside the hooked WhatsApp process, where the store is an
+     * {@code XSharedPreferences} and {@code edit()} throws
+     * {@code UnsupportedOperationException("read-only implementation")}. Calling {@code edit()}
+     * directly here let that exception escape {@code doHook()} and disabled the calling theme
+     * feature outright, so the bookkeeping intended to protect the user was breaking the
+     * feature instead. The write is routed through {@link SafePrefs}, which falls back to the
+     * module process when the local store is read-only, and failure to record is never allowed
+     * to propagate.
+     *
+     * @param context context of the calling process, used to reach the module when the local
+     *                store cannot be written; may be null in the module process
+     */
+    public static void recordThemeFailure(Context context, SharedPreferences preferences) {
+        int failures = SafePrefs.getInt(preferences, KEY_FAILURE_COUNT, 0) + 1;
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put(KEY_FAILURE_COUNT, failures);
+        if (failures >= 3) values.put(KEY_SAFE_MODE, true);
+        SafePrefs.put(context, preferences, values);
     }
 
-    public static void clearFailureState(SharedPreferences preferences) {
-        preferences.edit().putInt(KEY_FAILURE_COUNT, 0).apply();
+    public static void clearFailureState(Context context, SharedPreferences preferences) {
+        if (SafePrefs.getInt(preferences, KEY_FAILURE_COUNT, 0) == 0) return;
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put(KEY_FAILURE_COUNT, 0);
+        SafePrefs.put(context, preferences, values);
     }
 
     private static long readLong(SharedPreferences preferences, String key, long fallback) {

@@ -95,11 +95,11 @@ public class CssSafetyStateMachineTest {
     public void threeFailuresArmSafeModeAutomatically() {
         CssSafetyManager.save(prefs, FIRST);
 
-        CssSafetyManager.recordThemeFailure(prefs);
-        CssSafetyManager.recordThemeFailure(prefs);
+        CssSafetyManager.recordThemeFailure(null, prefs);
+        CssSafetyManager.recordThemeFailure(null, prefs);
         assertFalse(prefs.getBoolean(CssSafetyManager.KEY_SAFE_MODE, false));
 
-        CssSafetyManager.recordThemeFailure(prefs);
+        CssSafetyManager.recordThemeFailure(null, prefs);
 
         assertTrue(prefs.getBoolean(CssSafetyManager.KEY_SAFE_MODE, false));
         assertEquals(3, prefs.getInt(CssSafetyManager.KEY_FAILURE_COUNT, 0));
@@ -108,10 +108,10 @@ public class CssSafetyStateMachineTest {
 
     @Test
     public void aSuccessfulPassClearsTheFailureCounter() {
-        CssSafetyManager.recordThemeFailure(prefs);
-        CssSafetyManager.recordThemeFailure(prefs);
+        CssSafetyManager.recordThemeFailure(null, prefs);
+        CssSafetyManager.recordThemeFailure(null, prefs);
 
-        CssSafetyManager.clearFailureState(prefs);
+        CssSafetyManager.clearFailureState(null, prefs);
 
         assertEquals(0, prefs.getInt(CssSafetyManager.KEY_FAILURE_COUNT, 0));
     }
