@@ -56,6 +56,10 @@ public class FloatingBottomBar extends Feature {
     /** How far the morphing blob is pulled in from a tab's own edges. */
     private static final int MORPH_HORIZONTAL_INSET_DP = 8;
     private static final float PILL_TRANSLATION_Z_DP = 8f;
+
+    /** The same two, for a lensed surface. See {@link #applyPillShadow}. */
+    private static final float LENSED_ELEVATION_DP = 5f;
+    private static final float LENSED_TRANSLATION_Z_DP = 2f;
     private static final WeakHashMap<View, Boolean> styledBottomBars = new WeakHashMap<>();
     private static final java.util.Set<Class<?>> hookedItemClasses = new java.util.HashSet<>();
     private static final WeakHashMap<View, Boolean> registeredScrollListeners = new WeakHashMap<>();
@@ -1403,7 +1407,12 @@ public class FloatingBottomBar extends Feature {
 
             // Between the blurred pane and the tabs: the blob has to be lit by the glass above
             // it and sit behind the icons, or it stops reading as something inside the surface.
-            if (hostSpec.morphing) {
+            // Not under the lens. The blob is flat paint on a surface built entirely from
+            // refraction, so it has no glass character at any opacity — dimming it only made it
+            // a fainter sticker. WhatsApp's own capsule already marks the selected tab, so the
+            // surface loses nothing by dropping it. Bringing it back means making it a second
+            // shape in the lens's distance field so it refracts too, not painting it on top.
+            if (hostSpec.morphing && !lensed) {
                 LiquidMorph morph = new LiquidMorph(ctx);
                 morph.applySpec(hostSpec);
                 liquidMorphs.put(bottomNav, morph);
@@ -1532,10 +1541,22 @@ public class FloatingBottomBar extends Feature {
         }
     }
 
+    /**
+     * Raises the pill off the content behind it.
+     *
+     * <p>A lensed surface gets much less of this. 20dp of combined Z casts the wide, dark drop
+     * shadow that belongs under an opaque floating object, and under a pane you are meant to be
+     * looking <em>through</em> it reads as a solid slab sitting on the list — the "moulded bump"
+     * effect. Glass separates itself from its backdrop by refracting it, so it needs only enough
+     * shadow to keep its lower edge from merging into a dark list.</p>
+     */
     private static void applyPillShadow(View view, float density) {
-        view.setElevation(PILL_ELEVATION_DP * density);
+        boolean lensed = LiquidLens.isActiveFor(glassSpec(view.getContext()));
+        float elevation = lensed ? LENSED_ELEVATION_DP : PILL_ELEVATION_DP;
+        float translation = lensed ? LENSED_TRANSLATION_Z_DP : PILL_TRANSLATION_Z_DP;
+        view.setElevation(elevation * density);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.setTranslationZ(PILL_TRANSLATION_Z_DP * density);
+            view.setTranslationZ(translation * density);
         }
     }
 

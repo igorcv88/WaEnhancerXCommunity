@@ -206,12 +206,13 @@ public final class LiquidLens {
     /**
      * Cap on the displacement, as a fraction of the bevel width. Beyond this the rim smears.
      *
-     * <p>A lens is read from the <em>gradient</em> of the displacement across the rim, not from
-     * its magnitude. Pushing the magnitude up past roughly a third of the bevel stops adding
-     * compression and starts dragging recognisable content out of place, which reads as a smear
-     * over the edge rather than as something seen through it.</p>
+     * <p>This is the effect. Cutting it back to a third — while also narrowing the bevel — took
+     * the displacement from 68px to 10px on a phone-sized bar and removed the visible bending
+     * along with the problem it was blamed for; the lit trough was the inverted light vector, not
+     * the magnitude. Kept high enough to compress the backdrop visibly at the edge, short of the
+     * point where recognisable content is dragged bodily out of place and reads as a smear.</p>
      */
-    private static final float MAX_DISPLACEMENT = 0.30f;
+    private static final float MAX_DISPLACEMENT = 0.62f;
 
     /**
      * Widest the bevel may be, as a fraction of the surface's height.
@@ -220,8 +221,12 @@ public final class LiquidLens {
      * half the height — the old limit — the two rims met in the centre of a bottom bar and the
      * pill had no flat body left at all: every pixel was being displaced, lit and shadowed, which
      * is what turned it into a lit trough instead of a pane with a bright edge.</p>
+     *
+     * <p>A third of the height leaves a clear band down the middle while still giving the rim
+     * enough room to be seen bending. Below roughly a quarter the rim gets too narrow to read as
+     * glass thickness and the surface flattens into a plain tinted panel.</p>
      */
-    private static final float MAX_BEVEL_FRACTION = 0.22f;
+    private static final float MAX_BEVEL_FRACTION = 0.34f;
 
     /** Vibrancy applied at full lens strength; 1.0 leaves saturation untouched. */
     private static final float MAX_SATURATION = 1.25f;
