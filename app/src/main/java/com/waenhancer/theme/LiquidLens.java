@@ -110,8 +110,11 @@ public final class LiquidLens {
             + "    float edge = 1.0 - t;\n"
             + "    float slope = edge * edge;\n"
             + "    float height = sqrt(max(2.0 * t - t * t, 0.0));\n"
-            + "    float tilt = clamp((1.0 - t) / max(height, 0.08), 0.0, 6.0);\n"
-            + "    float3 N = normalize(float3(n * tilt * 0.42, 1.0));\n"
+            // Tilt is capped well short of vertical. Let it run to the true meniscus slope and
+            // Fresnel saturates across the whole rim at once, so every grazing term below fires
+            // at full strength together and the edge reads as polished metal rather than glass.
+            + "    float tilt = clamp((1.0 - t) / max(height, 0.12), 0.0, 3.0);\n"
+            + "    float3 N = normalize(float3(n * tilt * 0.22, 1.0));\n"
             + "\n"
             // Refraction, inward only. See the class note: sampling outward reads transparent
             // black off the edge of the child input and rings the outline.
@@ -149,7 +152,11 @@ public final class LiquidLens {
             // side facing away gets a broader, dimmer Fresnel glow. Screenshot-realistic glass
             // is mostly this asymmetry — a rim of uniform brightness reads as a drawn stroke.
             + "    float2 lightDir = normalize(uLight + float2(0.0001, 0.0));\n"
-            + "    float facing = dot(n, lightDir);\n"
+            // uLight is the direction the light travels and screen +Y points down, so a surface
+            // faces the light where its outward normal opposes it. Without this negation the lit
+            // band sat on the bottom edge and the cool glow on top — the lighting exactly
+            // inverted, which is what made the bar read as a lit hole rather than a raised pill.
+            + "    float facing = dot(n, -lightDir);\n"
             + "    float bandW = clamp(uBevel * 0.45, 2.0, 12.0);\n"
             + "    float band = clamp(1.0 - (-d) / bandW, 0.0, 1.0) * cov;\n"
             + "    float lit = pow(max(facing, 0.0), 3.0) * band;\n"
@@ -161,21 +168,25 @@ public final class LiquidLens {
             + "\n"
             // Blinn-Phong off the same normal field, so the highlight moves with the geometry
             // instead of sitting where a gradient happened to be inset to.
-            + "    float3 L = normalize(float3(lightDir, 1.4));\n"
+            + "    float3 L = normalize(float3(-lightDir, 1.4));\n"
             + "    float3 H = normalize(L + float3(0.0, 0.0, 1.0));\n"
             + "    float gloss = pow(max(dot(N, H), 0.0), 48.0) * (0.3 + 0.7 * height);\n"
             + "\n"
             + "    float3 warm = float3(1.0, 0.995, 0.98);\n"
             + "    float3 cool = float3(0.95, 0.975, 1.0);\n"
-            + "    col += warm * (lit * 0.85 + gloss + hair * (0.16 + 0.30 * max(facing, 0.0))) * uSpec;\n"
-            + "    col += cool * opposite * uSpec * 0.55;\n"
+            // These are additive, so their sum is what matters, not any one of them. At full
+            // strength the three together outweighed the backdrop they sit on and the rim went
+            // to white regardless of what was behind it — a lit lip, not a transparent edge.
+            + "    col += warm * (lit * 0.40 + gloss * 0.55\n"
+            + "        + hair * (0.09 + 0.15 * max(facing, 0.0))) * uSpec;\n"
+            + "    col += cool * opposite * uSpec * 0.16;\n"
             + "\n"
             // Inner shadow on the backlit side. Thickness is only legible if the surface is
             // darker where the light did not get through it.
-            + "    float shadowW = clamp(uBevel * 1.6, 4.0, 30.0);\n"
+            + "    float shadowW = clamp(uBevel * 0.9, 4.0, 18.0);\n"
             + "    float shade = pow(clamp(1.0 + d / shadowW, 0.0, 1.0), 1.5)\n"
             + "        * max(-facing, 0.0) * uInnerShadow;\n"
-            + "    col = col * (1.0 - 0.45 * shade);\n"
+            + "    col = col * (1.0 - 0.26 * shade);\n"
             + "\n"
             + "    col = clamp(col, float3(0.0), float3(1.0));\n"
             + "    return half4(half3(col * cov), half(cov));\n"
@@ -192,8 +203,25 @@ public final class LiquidLens {
     private static final float LIGHT_X = 0.45f;
     private static final float LIGHT_Y = 0.89f;
 
-    /** Cap on the displacement, as a fraction of the bevel width. Beyond this the rim smears. */
-    private static final float MAX_DISPLACEMENT = 0.9f;
+    /**
+     * Cap on the displacement, as a fraction of the bevel width. Beyond this the rim smears.
+     *
+     * <p>A lens is read from the <em>gradient</em> of the displacement across the rim, not from
+     * its magnitude. Pushing the magnitude up past roughly a third of the bevel stops adding
+     * compression and starts dragging recognisable content out of place, which reads as a smear
+     * over the edge rather than as something seen through it.</p>
+     */
+    private static final float MAX_DISPLACEMENT = 0.30f;
+
+    /**
+     * Widest the bevel may be, as a fraction of the surface's height.
+     *
+     * <p>The meniscus has to end somewhere short of the middle or the surface is all edge. At
+     * half the height — the old limit — the two rims met in the centre of a bottom bar and the
+     * pill had no flat body left at all: every pixel was being displaced, lit and shadowed, which
+     * is what turned it into a lit trough instead of a pane with a bright edge.</p>
+     */
+    private static final float MAX_BEVEL_FRACTION = 0.22f;
 
     /** Vibrancy applied at full lens strength; 1.0 leaves saturation untouched. */
     private static final float MAX_SATURATION = 1.25f;
@@ -287,9 +315,11 @@ public final class LiquidLens {
             return false;
         }
 
-        // A bevel wider than half the bar would have the two rims meeting in the middle, which
-        // turns the whole surface into edge and loses the clear centre the lens exists to keep.
-        float bevel = Math.max(1f, Math.min(spec.rimWidthDp * density, height * 0.5f));
+        // The rim is bounded by the surface's own height, not only by the variant's request: a
+        // bar is short, and a rim specified in dp that is fine on a card covers a bottom bar
+        // end to end. See MAX_BEVEL_FRACTION.
+        float bevel = Math.max(1f,
+                Math.min(spec.rimWidthDp * density, height * MAX_BEVEL_FRACTION));
         float refract = spec.lensStrength * MAX_DISPLACEMENT * bevel;
         float saturation = 1f + (MAX_SATURATION - 1f) * spec.lensStrength;
 

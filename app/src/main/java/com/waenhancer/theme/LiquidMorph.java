@@ -63,11 +63,21 @@ public final class LiquidMorph extends View {
         setFocusable(false);
     }
 
+    /**
+     * How opaque the blob is painted.
+     *
+     * <p>Deliberately faint. This is flat paint laid over a surface that is otherwise built from
+     * refraction, so it has no glass character of its own and every bit of opacity it carries
+     * reads as a pale sticker on top of the pane rather than as part of it. At the 0.30 it
+     * started at, over a dark bar, it was the most prominent thing on the whole surface.</p>
+     */
+    private static final float BLOB_ALPHA = 0.10f;
+
     /** Paints the blob in the colour this surface's spec calls for. */
     public void applySpec(GlassSpec spec) {
         if (spec == null) return;
         int tint = (spec.highlightColor >>> 24) != 0 ? spec.highlightColor : spec.contentColor;
-        paint.setColor(SemanticTheme.withAlpha(tint, 0.30f));
+        paint.setColor(SemanticTheme.withAlpha(tint, BLOB_ALPHA));
     }
 
     /**
