@@ -1609,6 +1609,45 @@
                   "value": "hyperspace_out"
                 }
               ]
+            },
+            {
+              "key": "glass_dialogs",
+              "type": "switch",
+              "value_type": "boolean",
+              "default": false,
+              "title": "Glass dialogs",
+              "summary": "Draw WaEnhancer's bottom sheets as Advanced Glass"
+            },
+            {
+              "key": "glass_dialogs_variant",
+              "type": "list",
+              "value_type": "string",
+              "default": "advanced",
+              "title": "Dialog glass style",
+              "summary": "%s",
+              "dep": "glass_dialogs",
+              "entries": [
+                {
+                  "label": "Stable",
+                  "value": "stable"
+                },
+                {
+                  "label": "Advanced Glass",
+                  "value": "advanced"
+                },
+                {
+                  "label": "Liquid",
+                  "value": "liquid"
+                },
+                {
+                  "label": "Frost",
+                  "value": "frost"
+                },
+                {
+                  "label": "Clear",
+                  "value": "clear"
+                }
+              ]
             }
           ]
         }

@@ -1370,6 +1370,92 @@ Modelo recomendado:
 - Opus 5 pode realizar uma única revisão final de arquitetura, acessibilidade e performance;
 - não alternar continuamente entre os dois.
 
+#### Estado da F1 — engine implementada
+
+A skill local `iOS Glass` **não** estava instalada no ambiente, então a engine foi
+desenvolvida do zero, como o plano permite. Nada foi copiado do `PillDesignPro`.
+
+Arquitetura, em duas peças, para o preview e a barra real não terem duas matemáticas:
+
+- `com.waenhancer.theme.GlassSpec` — decide **tudo**: cor de preenchimento, raio de blur,
+  borda luminosa, highlight especular, brilho de refração, cor de conteúdo por contraste e
+  se pode animar. Livre de tipos Android, portanto coberto por testes JVM. Reusa
+  `SemanticTheme` para contraste/blend/luminância em vez de duplicar essa aritmética.
+- `com.waenhancer.theme.GlassRenderer` — só pinta o que o spec descreve, e detecta
+  capacidade (`blurSupported`) e redução de movimento (`reduceMotion`).
+
+Variantes (são os presets pedidos): `stable` (o visual pré-engine, para ligar a engine não
+restilizar a barra de ninguém), `advanced`, `liquid`, `frost`, `clear`.
+
+Decisões que valem como invariante:
+
+- **Fallback sem blur não é "só tirar o blur".** Sem blur não há separação do fundo, então
+  o `GlassSpec` sobe o piso de opacidade para 72% e o `usingFallback` fica verdadeiro. Um
+  fallback que apenas removesse o blur deixaria um painel translúcido ilegível sobre
+  conteúdo arbitrário.
+- **Contraste é medido contra a superfície composta**, não contra o fill translúcido
+  isolado. Piso de 3:1 (`MIN_CONTENT_CONTRAST`) — a figura WCAG de texto grande e de
+  elementos não-textuais, que é o que a superfície de vidro é.
+- Blur é recusado em `isLowRamDevice()` e em modo de economia de energia, porque é uma
+  releitura por frame de tudo que está atrás.
+- `FloatingBottomBar.getGlassOverlayColor()`, `resolveGlassFillColor()` e
+  `getGlassStrokeColor()` **foram removidas**: eram uma segunda definição de vidro, mais
+  chata, que não conhecia variante, highlight, refração, fallback nem contraste.
+- `BottomBarPreviewModel.resolvedFillColor()` passou a delegar ao `GlassSpec`, e o preview
+  do editor pinta com o mesmo `GlassRenderer`. O teste correspondente compara contra o
+  `GlassSpec` em vez de um literal, então divergência entre preview e barra falha o build.
+
+Pref nova: `floating_bottom_bar_glass_variant` (`Type.STRING`, `Store.PUBLIC`, lida por
+`getPrefString`). Não entra no `waex_settings_map.json` porque as chaves da barra vivem no
+editor dedicado (`BottomBarCustomizationActivity`), não nas embedded settings — por isso a
+terceira verificação do invariante de prefs (o `WdsSettingsTileRenderer`) não se aplica aqui.
+
+#### Dialogs
+
+`BottomSheetHelper.createStyledDialog()` é o único ponto onde os bottom sheets do módulo
+são criados, então é lá que a decisão vive. Atrás da pref `glass_dialogs`, **desligada por
+default** — o §11.4 pede que o vidro alcance dialogs, não que tome a UI inteira sem pedir.
+Prefs novas: `glass_dialogs` (BOOLEAN) e `glass_dialogs_variant` (STRING), ambas no
+`PreferenceSchema` como `Store.PUBLIC` e expostas em `appearance_main` do
+`waex_settings_map.json` como `switch` e `list` — os dois tipos que o
+`WdsSettingsTileRenderer` sabe renderizar. A opacidade do sheet é constante e não
+configurável: um valor guardado a menos é uma forma a menos de um sheet ficar ilegível.
+
+#### Overdraw e frame time — medido
+
+Overdraw virou propriedade testável em vez de emergir do renderer: `GlassSpec.layerCount()`
+é a fonte, e os testes fixam que `stable` custa **1 camada** (igual ao fundo plano que
+substituiu) e que nenhuma variante passa de 3.
+
+Medição em aparelho — Galaxy S25 Ultra (SM-S938B), Android 16, `dumpsys gfxinfo`, 6 ciclos
+de abrir/fechar o mesmo bottom sheet, sheet confirmado presente nas duas execuções:
+
+| | vidro ligado | vidro desligado |
+|---|---|---|
+| frames | 276 | 280 |
+| janky | 21 (7,61%) | 22 (7,86%) |
+| p50 | 6 ms | 7 ms |
+| p90 | 9 ms | 9 ms |
+| p95 | 11 ms | 13 ms |
+| p99 | 77 ms | 46 ms |
+| GPU p50 | 3 ms | 4 ms |
+
+Leitura honesta: **sem regressão mensurável em p50/p90/p95** — o vidro chega a ficar
+marginalmente à frente, o que indica que a diferença está dentro do ruído. O p99 diverge
+(77 contra 46 ms), mas é cauda de um único frame numa amostra de ~280; não sustenta
+conclusão nenhuma sem uma amostra maior.
+
+**Limites desta medição, que não devem ser omitidos:** foi feita no processo do próprio
+módulo, não dentro do WhatsApp, porque neste aparelho o `com.whatsapp` está
+`enabled=4` (disabled-until-used) e parado; e mede o *sheet*, não a barra. A pilha de
+drawables é a mesma nos dois casos, mas medir a barra sob o `ViewPager` do WhatsApp
+continua pendente. Nota: uma primeira tentativa de medir a `BottomBarCustomizationActivity`
+foi descartada — a activity não é exportada (corretamente), o `am start` falhou com
+`SecurityException` e os números colhidos eram da `MainActivity`.
+
+Falta para fechar o Gate F na parte visual: medir a barra dentro do WhatsApp num aparelho
+com o host ativo, e estender a engine para cards (hoje barra e dialogs consomem).
+
 ### Fase F2 — Element Inspector
 
 - modo temporário de inspeção;

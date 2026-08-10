@@ -97,6 +97,9 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
         addSection("Core");
         addSwitch("Enable floating bar", "floating_bottom_bar", false);
         addSwitch("Glassmorphism", "floating_bottom_bar_glass", true);
+        addDropdown("Glass style", "floating_bottom_bar_glass_variant",
+                new String[]{"Stable", "Advanced Glass", "Liquid", "Frost", "Clear"},
+                new String[]{"stable", "advanced", "liquid", "frost", "clear"}, "advanced");
         addColorField("Fill color", "floating_bottom_bar_fill_color", 0);
         addSwitch("Fully rounded", "floating_bottom_bar_fully_rounded", false);
         addSlider("Corner radius", "floating_bottom_bar_radius");
@@ -354,11 +357,19 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
         // Disabled bar still previews, but reads as inactive.
         previewStage.setAlpha(model.barEnabled ? 1f : 0.45f);
 
-        GradientDrawable pill = new GradientDrawable();
-        pill.setColor(model.resolvedFillColor(PREVIEW_WA_SURFACE));
-        pill.setCornerRadius(model.isFullyRounded()
-                ? dp(PREVIEW_PILL_MAX_RADIUS_DP) : model.radiusDp * density);
-        previewPill.setBackground(pill);
+        float pillRadiusPx = model.isFullyRounded()
+                ? dp(PREVIEW_PILL_MAX_RADIUS_DP) : model.radiusDp * density;
+        if (model.glassEnabled) {
+            // Same renderer the hooked bar uses, so highlight and refraction preview honestly
+            // instead of being approximated by a flat fill here.
+            previewPill.setBackground(com.waenhancer.theme.GlassRenderer.background(
+                    model.glassSpec(PREVIEW_WA_SURFACE), pillRadiusPx, density));
+        } else {
+            GradientDrawable pill = new GradientDrawable();
+            pill.setColor(model.resolvedFillColor(PREVIEW_WA_SURFACE));
+            pill.setCornerRadius(pillRadiusPx);
+            previewPill.setBackground(pill);
+        }
         previewPill.setPadding(0, dp(model.paddingVerticalDp), 0, dp(model.paddingVerticalDp));
 
         ViewGroup.MarginLayoutParams pillParams =

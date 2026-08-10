@@ -26,6 +26,8 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 
 import com.waenhancer.config.BottomBarPreferenceSchema;
+import com.waenhancer.theme.GlassRenderer;
+import com.waenhancer.theme.GlassSpec;
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.utils.DesignUtils;
@@ -1249,10 +1251,17 @@ public class FloatingBottomBar extends Feature {
             if (rootView != null) {
                 windowBg = rootView.getBackground();
             }
+            // Radius and overlay both come from the resolved spec: a device that fell back to
+            // no-blur asks for radius 0 and pays for it with the higher fill opacity the spec
+            // already worked out, instead of blurring at a radius it cannot afford.
+            GlassSpec spec = glassSpec(ctx);
+            float radiusPx = GlassRenderer.blurRadiusPx(spec,
+                    ctx.getResources().getDisplayMetrics().density);
             blurView.setupWith(blurRoot, algorithm)
                     .setFrameClearDrawable(windowBg)
-                    .setBlurRadius(18f)
-                    .setOverlayColor(getGlassOverlayColor(ctx));
+                    .setBlurRadius(Math.max(1f, radiusPx))
+                    .setOverlayColor(spec.fillColor);
+            blurView.setBlurEnabled(radiusPx > 0f);
         } catch (Throwable t) {
             XposedBridge.log(t);
         }
@@ -1372,13 +1381,38 @@ public class FloatingBottomBar extends Feature {
         }
     }
 
-    private static android.graphics.drawable.GradientDrawable createGlassShape(android.content.Context ctx, float density, boolean includeFill) {
-        android.graphics.drawable.GradientDrawable glassShape = new android.graphics.drawable.GradientDrawable();
-        glassShape.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
-        glassShape.setCornerRadius(pillRadiusDp * density);
-        glassShape.setColor(includeFill ? getGlassOverlayColor(ctx) : 0x00000000);
-        glassShape.setStroke(Math.max(1, (int) (0.6f * density)), getGlassStrokeColor(ctx));
-        return glassShape;
+    /**
+     * Resolves the Advanced Glass description for this bar.
+     *
+     * <p>The bar does not decide what glass looks like — {@link GlassSpec} does, and the settings
+     * preview resolves the same spec from the same values. Anything computed here instead would
+     * be a second definition of glass that drifts from the one the user previewed.</p>
+     */
+    private static GlassSpec glassSpec(android.content.Context ctx) {
+        return GlassRenderer.resolveFor(ctx,
+                getPrefString(activePrefs, "floating_bottom_bar_glass_variant",
+                        GlassSpec.Variant.ADVANCED.key()),
+                com.waenhancer.xposed.utils.DesignUtils.isNightMode(ctx),
+                glassFillColor,
+                com.waenhancer.xposed.utils.DesignUtils.getPrimaryColor(),
+                glassOpacity);
+    }
+
+    private static android.graphics.drawable.Drawable createGlassShape(android.content.Context ctx, float density, boolean includeFill) {
+        GlassSpec spec = glassSpec(ctx);
+        if (!includeFill) {
+            // The nav itself only contributes the edge; the fill belongs to the blurred layer
+            // beneath it, or the two stack and the surface reads twice as opaque as configured.
+            android.graphics.drawable.GradientDrawable edge =
+                    new android.graphics.drawable.GradientDrawable();
+            edge.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+            edge.setCornerRadius(pillRadiusDp * density);
+            edge.setColor(0x00000000);
+            edge.setStroke(Math.max(1, Math.round(spec.strokeWidthDp * density)),
+                    spec.strokeColor);
+            return edge;
+        }
+        return GlassRenderer.background(spec, pillRadiusDp * density, density);
     }
 
     private static android.graphics.drawable.GradientDrawable createGlassOutlineShape(android.content.Context ctx, float density) {
@@ -1389,22 +1423,12 @@ public class FloatingBottomBar extends Feature {
         return shape;
     }
 
-    private static int getGlassOverlayColor(android.content.Context ctx) {
-        int alpha = Math.max(0, Math.min(255, Math.round((glassOpacity / 100f) * 255f)));
-        int rgb = resolveGlassFillColor(ctx) & 0x00FFFFFF;
-        return (alpha << 24) | rgb;
-    }
-
-    private static int resolveGlassFillColor(android.content.Context ctx) {
-        if (glassFillColor != 0) {
-            return glassFillColor;
-        }
-        return com.waenhancer.xposed.utils.DesignUtils.isNightMode(ctx) ? 0xff1f2c34 : 0xffffffff;
-    }
-
-    private static int getGlassStrokeColor(android.content.Context ctx) {
-        return com.waenhancer.xposed.utils.DesignUtils.isNightMode(ctx) ? 0x22FFFFFF : 0x26000000;
-    }
+    /*
+     * getGlassOverlayColor(), resolveGlassFillColor() and getGlassStrokeColor() used to live
+     * here. They were a second, flatter definition of glass that knew nothing about variants,
+     * highlights, refraction, the no-blur fallback or contrast. GlassSpec is now the only place
+     * those colours are decided, and the settings preview resolves the same spec.
+     */
 
     private static ViewGroup findMenuView(View tabFrame) {
         if (!(tabFrame instanceof ViewGroup)) return null;
