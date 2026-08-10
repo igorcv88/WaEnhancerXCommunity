@@ -574,22 +574,28 @@ public class HomeFragment extends BaseFragment {
     private void launchFullBackupExport(Context context, String password, boolean includeMedia) {
         FilePicker.setOnUriPickedListener(uri -> {
             char[] secret = password.toCharArray();
-            try (var output = context.getContentResolver().openOutputStream(uri)) {
-                if (output == null) throw new IllegalStateException("Unable to open destination.");
-                output.write(FullBackupManager.export(context, secret, includeMedia));
-                com.waenhancer.ui.helpers.BottomSheetHelper.showInfo(
-                        requireActivity(),
-                        getString(R.string.backup_full_saved_title),
-                        getString(includeMedia
-                                ? R.string.backup_full_saved_message
-                                : R.string.backup_full_saved_message_no_media));
-            } catch (Exception exception) {
-                Log.e("saveFullBackup", "Unable to export full backup", exception);
-                Toast.makeText(context, exception.getMessage(), Toast.LENGTH_LONG).show();
-            } finally {
-                // The password reached the cipher; do not leave it in this buffer.
-                java.util.Arrays.fill(secret, '\0');
-            }
+            runAsync(() -> {
+                try (var output = context.getContentResolver().openOutputStream(uri)) {
+                    if (output == null) throw new IllegalStateException("Unable to open destination.");
+                    output.write(FullBackupManager.export(context, secret, includeMedia));
+                    runOnUiThread(() -> {
+                        if (!isAdded()) return;
+                        com.waenhancer.ui.helpers.BottomSheetHelper.showInfo(
+                                requireActivity(),
+                                getString(R.string.backup_full_saved_title),
+                                getString(includeMedia
+                                        ? R.string.backup_full_saved_message
+                                        : R.string.backup_full_saved_message_no_media));
+                    });
+                } catch (Exception exception) {
+                    Log.e("saveFullBackup", "Unable to export full backup", exception);
+                    runOnUiThread(() -> Toast.makeText(context, exception.getMessage(),
+                            Toast.LENGTH_LONG).show());
+                } finally {
+                    // The password reached the cipher; do not leave it in this buffer.
+                    java.util.Arrays.fill(secret, '\0');
+                }
+            });
         });
         SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US);
         FilePicker.fileSalve.launch("WaEnhancerCommunity-full-"
@@ -610,22 +616,28 @@ public class HomeFragment extends BaseFragment {
                         return;
                     }
                     char[] secret = password.toCharArray();
-                    try {
-                        FullBackupManager.RestoreReport report =
-                                FullBackupManager.restore(context, container, secret);
-                        com.waenhancer.ui.helpers.BottomSheetHelper.showInfo(
-                                requireActivity(),
-                                getString(R.string.backup_full_restored_title),
-                                getString(R.string.backup_full_restored_message,
-                                        report.messages, report.media, report.secrets));
-                    } catch (Exception exception) {
-                        // restore() is transactional and reports its own failure text; a wrong
-                        // password is indistinguishable from a damaged file by design.
-                        Log.e("restoreFullBackup", "Unable to restore full backup", exception);
-                        Toast.makeText(context, exception.getMessage(), Toast.LENGTH_LONG).show();
-                    } finally {
-                        java.util.Arrays.fill(secret, '\0');
-                    }
+                    runAsync(() -> {
+                        try {
+                            FullBackupManager.RestoreReport report =
+                                    FullBackupManager.restore(context, container, secret);
+                            runOnUiThread(() -> {
+                                if (!isAdded()) return;
+                                com.waenhancer.ui.helpers.BottomSheetHelper.showInfo(
+                                        requireActivity(),
+                                        getString(R.string.backup_full_restored_title),
+                                        getString(R.string.backup_full_restored_message,
+                                                report.messages, report.media, report.secrets));
+                            });
+                        } catch (Exception exception) {
+                            // restore() is transactional and reports its own failure text; a wrong
+                            // password is indistinguishable from a damaged file by design.
+                            Log.e("restoreFullBackup", "Unable to restore full backup", exception);
+                            runOnUiThread(() -> Toast.makeText(context, exception.getMessage(),
+                                    Toast.LENGTH_LONG).show());
+                        } finally {
+                            java.util.Arrays.fill(secret, '\0');
+                        }
+                    });
                 });
     }
 

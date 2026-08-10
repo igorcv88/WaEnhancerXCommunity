@@ -125,8 +125,10 @@ public final class UpdateVerifier {
      * one, which the caller signals rather than inferring from the file.
      */
     public static boolean versionIsAcceptable(long installed, long candidate,
-                                              boolean downgradeRequested) {
+                                              boolean downgradeRequested,
+                                              boolean reinstallRequested) {
         if (candidate > installed) return true;
+        if (candidate == installed) return reinstallRequested;
         return downgradeRequested && candidate < installed;
     }
 
@@ -135,9 +137,10 @@ public final class UpdateVerifier {
      *
      * @param expectedSha256    digest published with the release; required
      * @param downgradeRequested true only when the user explicitly chose a downgrade
+     * @param reinstallRequested true only when the user explicitly chose an equal-version build
      */
     public static Result verify(Context context, File apk, String expectedSha256,
-                                boolean downgradeRequested) {
+                                boolean downgradeRequested, boolean reinstallRequested) {
         if (context == null || apk == null || !apk.isFile() || apk.length() == 0) {
             return Result.fail(Failure.UNREADABLE, "The downloaded file is missing or empty.");
         }
@@ -180,7 +183,7 @@ public final class UpdateVerifier {
         }
 
         if (!versionIsAcceptable(versionCode(installed), versionCode(candidate),
-                downgradeRequested)) {
+                downgradeRequested, reinstallRequested)) {
             return Result.fail(Failure.DOWNGRADE,
                     "The download is not newer than the installed version.");
         }

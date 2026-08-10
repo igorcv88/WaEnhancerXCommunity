@@ -198,7 +198,7 @@ public class UpdateDownloader {
     }
 
     public static void showDownloadDialog(Context context, String url, String version) {
-        showDownloadDialog(context, url, version, false, null);
+        showDownloadDialog(context, url, version, false, false, null);
     }
 
     /**
@@ -210,6 +210,12 @@ public class UpdateDownloader {
      */
     public static void showDownloadDialog(Context context, String url, String version,
                                           boolean useRoot, String expectedSha256) {
+        showDownloadDialog(context, url, version, useRoot, false, expectedSha256);
+    }
+
+    public static void showDownloadDialog(Context context, String url, String version,
+                                          boolean useRoot, boolean reinstallRequested,
+                                          String expectedSha256) {
         Activity activity = getActivity(context);
         if (activity == null) return;
 
@@ -274,7 +280,7 @@ public class UpdateDownloader {
                 // touches the installer. Every failure is a refusal, never a warning.
                 final com.waenhancer.security.UpdateVerifier.Result verdict =
                         com.waenhancer.security.UpdateVerifier.verify(
-                                activity, apkFile, expectedSha256, useRoot);
+                                activity, apkFile, expectedSha256, useRoot, reinstallRequested);
 
                 activity.runOnUiThread(() -> {
                     if (dialog.isShowing()) dialog.dismiss();

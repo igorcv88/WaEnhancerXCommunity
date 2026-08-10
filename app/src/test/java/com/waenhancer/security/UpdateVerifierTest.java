@@ -43,19 +43,20 @@ public class UpdateVerifierTest {
 
     @Test
     public void aNewerVersionIsAccepted() {
-        assertTrue(UpdateVerifier.versionIsAcceptable(18001, 18002, false));
+        assertTrue(UpdateVerifier.versionIsAcceptable(18001, 18002, false, false));
     }
 
     @Test
     public void theSameVersionIsNotAnUpdate() {
-        assertFalse(UpdateVerifier.versionIsAcceptable(18001, 18001, false));
-        assertFalse(UpdateVerifier.versionIsAcceptable(18001, 18001, true));
+        assertFalse(UpdateVerifier.versionIsAcceptable(18001, 18001, false, false));
+        assertFalse(UpdateVerifier.versionIsAcceptable(18001, 18001, true, false));
+        assertTrue(UpdateVerifier.versionIsAcceptable(18001, 18001, false, true));
     }
 
     @Test
     public void aDowngradeIsRefusedUnlessExplicitlyRequested() {
-        assertFalse(UpdateVerifier.versionIsAcceptable(18002, 18001, false));
-        assertTrue(UpdateVerifier.versionIsAcceptable(18002, 18001, true));
+        assertFalse(UpdateVerifier.versionIsAcceptable(18002, 18001, false, false));
+        assertTrue(UpdateVerifier.versionIsAcceptable(18002, 18001, true, false));
     }
 
     @Test

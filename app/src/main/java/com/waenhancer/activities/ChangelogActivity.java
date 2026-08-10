@@ -578,7 +578,8 @@ public class ChangelogActivity extends BaseActivity {
             btnUpdate.setOnClickListener(v -> {
                 if (finalIsSwitching && finalSwitchAsset != null) {
                     String downloadUrl = finalSwitchAsset.optString("browser_download_url", "");
-                    UpdateDownloader.showDownloadDialog(v.getContext(), downloadUrl, tagName, downgradesEnabled, publishedSha256);
+                    UpdateDownloader.showDownloadDialog(v.getContext(), downloadUrl, tagName,
+                            downgradesEnabled, true, publishedSha256);
                     return;
                 }
 

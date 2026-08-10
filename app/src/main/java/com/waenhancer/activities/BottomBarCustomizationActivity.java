@@ -46,7 +46,6 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
     private static final int PREVIEW_DEFAULT_FAB_SIZE_DP = 56;
     private static final int PREVIEW_DEFAULT_FAB_RADIUS_DP = 16;
     private static final int PREVIEW_DEFAULT_FAB_MARGIN_DP = 16;
-    private static final int PREVIEW_DEFAULT_FAB_OFFSET_DP = 90;
     private static final int PREVIEW_WA_ACCENT = 0xFF00A884;
     private static final int PREVIEW_WA_INACTIVE = 0xFF8696A0;
     private static final int PREVIEW_WA_ACTIVE_LABEL = 0xFFE9EDEF;
@@ -401,9 +400,9 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
 
         ViewGroup.MarginLayoutParams params =
                 (ViewGroup.MarginLayoutParams) previewFab.getLayoutParams();
-        // The bar sits at the bottom, so the FAB offset is measured up from it, exactly as the
-        // real bar does: the pill's own bottom margin moves the FAB with it.
-        params.bottomMargin = dp(PREVIEW_DEFAULT_FAB_OFFSET_DP + model.fabOffsetDp);
+        // The stored offset is the complete translation above the bar; its bottom margin already
+        // moves the reference position, so adding another stock baseline would double-count it.
+        params.bottomMargin = dp(model.fabOffsetDp);
 
         if (model.isFabMinimal()) {
             params.width = dp(model.minimalFabSizeDp);
