@@ -113,4 +113,34 @@ public class BottomBarGeometryTest {
 
         assertTrue(large > normal);
     }
+
+    @Test
+    public void aMeasuredLabelIsPreferredToAnEstimateOfOne() {
+        int measured = 61;
+        BottomBarGeometry geometry = BottomBarGeometry.resolve(false, 0, 24, 5, 12f, 3,
+                DENSITY, 1f, measured);
+
+        assertEquals(measured, geometry.labelHeightPx);
+        assertEquals(measured, geometry.pillHeightPx - geometry.iconSizePx
+                - geometry.spacingPx - 2 * geometry.verticalPaddingPx);
+    }
+
+    @Test
+    public void aTallerMeasuredLabelReservesMoreRoomRatherThanBeingClipped() {
+        // The label is placed below the icon and the gap, so room the pill never reserved is room
+        // the label is drawn outside of — which clips it away entirely rather than crowding it.
+        BottomBarGeometry estimated = automatic(24, 5, 12f, 3);
+        BottomBarGeometry measured = BottomBarGeometry.resolve(false, 0, 24, 5, 12f, 3,
+                DENSITY, 1f, estimated.labelHeightPx + 20);
+
+        assertEquals(estimated.pillHeightPx + 20, measured.pillHeightPx);
+        assertTrue(measured.naturalContentHeightPx() <= measured.contentHeightPx());
+    }
+
+    @Test
+    public void anUnmeasurableLabelFallsBackToTheEstimate() {
+        assertEquals(automatic(24, 5, 12f, 3).labelHeightPx,
+                BottomBarGeometry.resolve(false, 0, 24, 5, 12f, 3, DENSITY, 1f, 0)
+                        .labelHeightPx);
+    }
 }

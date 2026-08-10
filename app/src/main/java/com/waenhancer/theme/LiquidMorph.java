@@ -130,6 +130,27 @@ public final class LiquidMorph extends View {
         return velocity + acceleration * seconds;
     }
 
+    /**
+      * Takes exactly the space it is given and asks for none.
+      *
+      * <p>Decoration must not drive the layout it decorates. Left to {@code View}'s default, an
+      * unmeasured {@code MATCH_PARENT} child of a {@code wrap_content} FrameLayout answers the
+      * {@code AT_MOST} spec of the first measure pass with the entire available height — and the
+      * host then wraps to that, which put a window-tall pill over the whole screen on the one
+      * variant that installs this view. Reporting zero leaves the pill's height to the tab bar,
+      * and the second pass hands this view the result.</p>
+      */
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        setMeasuredDimension(givenOrNothing(widthMeasureSpec),
+                givenOrNothing(heightMeasureSpec));
+    }
+
+    private static int givenOrNothing(int measureSpec) {
+        return MeasureSpec.getMode(measureSpec) == MeasureSpec.EXACTLY
+                ? MeasureSpec.getSize(measureSpec) : 0;
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         if (!hasTarget || width <= 0f) return;

@@ -83,13 +83,34 @@ public final class BottomBarGeometry {
                                             int iconSizeDp, int spacingDp, float labelTextSp,
                                             int paddingVerticalDp, float density,
                                             float fontScale) {
+        return resolve(manualHeight, manualHeightDp, iconSizeDp, spacingDp, labelTextSp,
+                paddingVerticalDp, density, fontScale, 0);
+    }
+
+    /**
+     * As above, but told what the label actually measures.
+     *
+     * <p>{@link #LABEL_LINE_FACTOR} is an estimate of a line box from a text size, and an estimate
+     * is all the editor's preview can offer — it is describing a bar that is not on screen. The
+     * hooked bar has the real {@code TextView} and can measure it, font padding and line spacing
+     * included. It should: a few pixels short and the label is placed past the bottom of the room
+     * reserved for it and clipped out of existence rather than merely crowded.</p>
+     *
+     * @param labelHeightPxOverride measured label height, or {@code 0} to estimate one
+     */
+    public static BottomBarGeometry resolve(boolean manualHeight, int manualHeightDp,
+                                            int iconSizeDp, int spacingDp, float labelTextSp,
+                                            int paddingVerticalDp, float density,
+                                            float fontScale, int labelHeightPxOverride) {
         float scale = density <= 0f ? 1f : density;
         float fonts = fontScale <= 0f ? 1f : fontScale;
 
         int icon = px(iconSizeDp, scale);
         int spacing = px(spacingDp, scale);
         int padding = px(paddingVerticalDp, scale);
-        int label = Math.round(labelTextSp * scale * fonts * LABEL_LINE_FACTOR);
+        int label = labelHeightPxOverride > 0
+                ? labelHeightPxOverride
+                : Math.round(labelTextSp * scale * fonts * LABEL_LINE_FACTOR);
         int minIcon = px(MIN_ICON_DP, scale);
 
         if (!manualHeight) {

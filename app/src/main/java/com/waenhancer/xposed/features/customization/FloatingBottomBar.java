@@ -559,7 +559,36 @@ public class FloatingBottomBar extends Feature {
                 normalized("floating_bottom_bar_text_size"),
                 Math.round(normalized("floating_bottom_bar_padding_vertical")),
                 metrics.density,
-                fontScale <= 0f ? 1f : fontScale);
+                fontScale <= 0f ? 1f : fontScale,
+                measuredLabelHeight(bar));
+    }
+
+    /**
+     * Height WhatsApp's own label actually occupies, or {@code 0} if it cannot be measured.
+     *
+     * <p>The geometry can estimate a line box from the text size, and the preview has to. Here
+     * the real view is available, and it is worth asking: its font, its line spacing and its font
+     * padding are all WhatsApp's, and an estimate a few pixels short leaves the label placed
+     * below the room reserved for it and clipped away entirely.</p>
+     */
+    private static int measuredLabelHeight(View bar) {
+        try {
+            ViewGroup menu = findMenuView(bar);
+            if (menu == null) return 0;
+            for (int i = 0; i < menu.getChildCount(); i++) {
+                TextView label = findFirstLabel(menu.getChildAt(i));
+                if (label == null) continue;
+                label.setTextSize(TypedValue.COMPLEX_UNIT_SP,
+                        normalized("floating_bottom_bar_text_size"));
+                int unspecified = View.MeasureSpec.makeMeasureSpec(
+                        0, View.MeasureSpec.UNSPECIFIED);
+                label.measure(unspecified, unspecified);
+                int measured = label.getMeasuredHeight();
+                if (measured > 0) return measured;
+            }
+        } catch (Throwable ignored) {
+        }
+        return 0;
     }
 
     /**
@@ -1824,7 +1853,7 @@ public class FloatingBottomBar extends Feature {
                 // a margin change — so growing the icon's bottom margin slid the icon up out of
                 // its own indicator. Moving the label down opens the same gap and leaves the icon
                 // sitting where its indicator expects it.
-                View labelAnchor = labelSpacingAnchor(item);
+                View labelAnchor = labelSpacingAnchor(item, icon);
                 if (labelAnchor != null) {
                     placeLabelAnchor(labelAnchor, geometry);
                 }
@@ -1886,19 +1915,35 @@ public class FloatingBottomBar extends Feature {
     }
 
     /**
-     * The view whose top margin opens the icon-to-label gap: the label group when the item has
-     * one, otherwise the first label itself.
-     */
-    private static View labelSpacingAnchor(View item) {
+      * The view whose top margin opens the icon-to-label gap: the label group when the item has
+      * one, otherwise the label itself.
+      *
+      * <p>It walks up from the label but stops short of any ancestor that also holds the icon.
+      * Climbing all the way to the item's direct child assumed that child was a label group, and
+      * on a build where the item is {@code item > content > (icon, label)} it is not: offsetting
+      * it moved the icon down by the same amount, pushing the whole group out of the bottom of
+      * the item, which is how the labels disappeared instead of moving.</p>
+      */
+    private static View labelSpacingAnchor(View item, ImageView icon) {
         TextView label = findFirstLabel(item);
         if (label == null) return null;
         View candidate = label;
         ViewParent parent = label.getParent();
         while (parent instanceof ViewGroup && parent != item) {
-            candidate = (ViewGroup) parent;
-            parent = candidate.getParent();
+            ViewGroup group = (ViewGroup) parent;
+            if (icon != null && isAncestorOf(group, icon)) break;
+            candidate = group;
+            parent = group.getParent();
         }
         return candidate;
+    }
+
+    private static boolean isAncestorOf(ViewGroup group, View view) {
+        for (ViewParent parent = view.getParent(); parent instanceof ViewGroup;
+                parent = parent.getParent()) {
+            if (parent == group) return true;
+        }
+        return false;
     }
 
     private static ImageView findFirstIcon(View view) {
