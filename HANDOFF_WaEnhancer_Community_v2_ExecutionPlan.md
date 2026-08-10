@@ -690,7 +690,14 @@ Modos aprovados:
 
 `Hidden` deve usar `View.GONE` e impedir que a lógica da barra continue reposicionando um FAB invisível.
 
-### 10.6 Indicador da aba selecionada
+### 10.6 Indicador da aba selecionada — REVOGADA
+
+> **Revogada no Bloco E.** Implementada conforme escrito abaixo, esta seção produziu um
+> segundo indicador desenhado por cima do indicador nativo do WhatsApp, porque o caminho
+> principal (resolver o active indicator do Material Navigation) nunca era alcançável e o
+> fallback aplicava um fundo ao item da aba. A função foi removida por completo; o registro
+> para reimplementação está no adendo ao manifesto de remoção do [Anexo A](#5-manifesto-de-remoção--funções-sem-implementação).
+> O texto abaixo fica apenas como histórico do que foi especificado.
 
 Adicionar seção `Selected Tab Indicator`:
 
@@ -2008,6 +2015,110 @@ sem copiar código fechado.
 - **Descrição:** Press and hold on the color selector in the status to customize it
 - **Telas:** embedded_settings_status.xml, fragment_customization.xml
 - **Strings:** `custom_colors_for_text_status`, `custom_colors_for_text_status_sum`
+
+#### Adendo — remoções por implementação incorreta
+
+As entradas acima foram removidas por **ausência** de implementação. A subsecção abaixo
+registra remoções de natureza diferente: código que existia, executava, e produzia um
+resultado errado. O motivo de estarem no mesmo manifesto é o mesmo: **permitir a
+reimplementação futura** com o registro do que a função prometia e por que falhou.
+
+##### `Selected Tab Indicator` — indicador da aba selecionada (bloco E)
+
+- **Prometia:** seção `Selected Tab Indicator` no editor da Floating Bottom Bar, com onze
+  controles — mostrar/ocultar, largura automática ou manual, altura automática ou manual,
+  raio, padding horizontal, padding vertical, offset vertical, opacidade e cor.
+- **Especificação original:** secção 10.6 deste plano — *"Resolver preferencialmente o ID
+  interno do active indicator do Material Navigation. Se não existir, aplicar o fundo ao
+  icon container. O default deve preservar o comportamento atual."*
+- **Por que falhou:** o ID interno do active indicator do Material Navigation não é
+  alcançável no layout hookado do WhatsApp, então o caminho principal nunca executava. O
+  fallback rodava sempre e aplicava `setBackground()` no **próprio item da aba** — ou seja,
+  desenhava um **segundo** indicador por cima do indicador nativo do WhatsApp, em vez de
+  ajustar o existente. O resultado era visualmente quebrado em todas as abas visitadas.
+- **Chaves removidas (11):** `floating_bottom_bar_indicator_visible`,
+  `floating_bottom_bar_indicator_width_mode`, `floating_bottom_bar_indicator_height_mode`,
+  `floating_bottom_bar_indicator_width`, `floating_bottom_bar_indicator_height`,
+  `floating_bottom_bar_indicator_radius`,
+  `floating_bottom_bar_indicator_padding_horizontal`,
+  `floating_bottom_bar_indicator_padding_vertical`,
+  `floating_bottom_bar_indicator_offset`, `floating_bottom_bar_indicator_opacity`,
+  `floating_bottom_bar_indicator_color`.
+- **Código removido:** `FloatingBottomBar.applySelectedIndicator()` e sua chamada; a classe
+  `TabState` com `rememberOriginalTabState()` / `restoreOriginalTabState()`, que existia
+  apenas para desfazer o estrago do indicador; o campo `indicatorVisible`; a seção inteira
+  do editor em `BottomBarCustomizationActivity`; os campos de indicador em
+  `BottomBarPreviewModel` e `resolvedIndicatorColor()`; as entradas em
+  `BottomBarPreferenceSchema` e `PreferenceSchema`.
+- **Requisito para reimplementar:** só faz sentido reabrir esta função com um caminho que
+  **realmente** alcance e restilize a view de indicador do host. Sem isso, o fallback de
+  desenhar um fundo no item da aba deve ser considerado proibido, não um degradê aceitável.
+  A secção 10.6 deste plano fica revogada por este adendo.
+
+#### Adendo — achados do Bloco E (quebras que só existiam em release)
+
+O Bloco E não removeu funções; corrigiu quatro casos em que a função existia, o debug
+funcionava, e o **release** entregava outra coisa. Ficam registados aqui porque a causa é a
+mesma classe de erro e qualquer código futuro pode repeti-la.
+
+##### `ResId` — mapeamento de recursos morto sob R8
+
+- **Prometia:** espelho mutável de `R` para o processo do WhatsApp, já que os `static final
+  int` de `R` são inlinados pelo javac e `field.set` neles não afeta os call sites.
+- **Por que falhava:** `ResId` não tinha keep rule. Com `-repackageclasses 'Z'` e
+  `android.enableR8.fullMode=true`, a classe virava `Z.hg1`, então
+  `Class.forName("com.waenhancer.xposed.utils.ResId$" + type)` em `WppXposed` lançava
+  sempre; e `initLocal()`, que casa `ResId.<tipo>.<campo>` com `R.<tipo>.<campo>` por
+  **nome**, falhava porque os campos eram renomeados — o R8 chegou a fundir campos
+  estáticos de kotlinx-coroutines, okhttp e androidx.lifecycle dentro de `ResId$array` e
+  `ResId$drawable`. Os dois caminhos morriam em `catch (Exception ignored)`, então todo
+  `ResId.*` ficava 0 e as strings do módulo saíam vazias no processo do WhatsApp.
+- **Correção:** keep explícito de `ResId` e `ResId$*` em `proguard-rules.pro`, com o
+  motivo escrito ao lado da regra. Verificado no `mapping.txt`: identidade preservada.
+
+##### `FloatingBottomBar` — guarda de reentrância por nome de classe
+
+- **Prometia:** não embrulhar duas vezes o mesmo `OnClickListener` das abas.
+- **Por que falhava:** a guarda era `originalListener.getClass().getName().contains(
+  "FloatingBottomBar")`, mas o proxy era uma classe anônima — `FloatingBottomBar$5$1` vira
+  `Z.pd0` sob R8. A guarda era sempre falsa em release e cada `setOnClickListener`
+  empilhava mais um proxy sobre o anterior.
+- **Correção:** proxy promovido a classe nomeada `TabClickProxy` e guarda por
+  `instanceof`, que não depende do nome. As duas cópias da mesma lógica (o hook e
+  `wrapOnClickListener`) passaram a usar a mesma classe — uma fonte de verdade.
+
+##### `UpdateVerifier` — verificação do updater implementada e nunca chamada
+
+- **Prometia:** §9.2 — digest, pacote, assinatura e recusa de downgrade antes de instalar.
+- **Por que falhava:** a classe não tinha **nenhum** chamador; o R8 apagava-a inteira (é
+  assim que foi encontrada, em `usage.txt`). `UpdateDownloader.onSuccess()` ia direto para
+  o instalador. O código de segurança existia, documentado, e não estava no caminho.
+- **Correção:** `UpdateVerifier.verify()` passou a rodar em `onSuccess`, antes do
+  instalador, com recusa e remoção do arquivo em qualquer falha. O digest esperado vem das
+  release notes que o workflow publica (`SHA-256: \`<hex>\``), lido por
+  `UpdateVerifier.extractSha256()` — parser que vive junto de `digestMatches` para o
+  formato publicado e o consumidor não divergirem. Sem digest não há bypass: é recusa.
+
+##### `FullBackupManager` / `FullBackupCrypto` — full backup sem ponto de entrada
+
+- **Prometia:** §6.4 — backup completo, cifrado por senha, com `Deleted for Me` e media.
+- **Por que falhava:** igual ao anterior — zero chamadores, classes inteiras apagadas pelo
+  R8. A UI de backup só conhecia `BackupCodec` (settings em JSON).
+- **Correção:** exportação passou a perguntar o formato (settings/full); o full pede senha
+  e **escolha explícita de media**, porque o manifesto é montado em memória e recusa acima
+  de 96 MB — sem essa opção, um vault grande não teria como ser exportado. A importação
+  detecta o formato pelo magic `WAEXFULL1` via `FullBackupCrypto.isFullBackup()`, e só
+  então escolhe o teto de tamanho e o caminho de restauração.
+
+##### Verificados e descartados
+
+Três suspeitas levantadas pela mesma varredura **não** eram defeitos, e ficam registadas
+para não serem reabertas: `ProviderSharedPreferences` preserva o nome (coberta pelo keep de
+`xposed.bridge.**`, confirmado no `mapping.txt`); `WdsSettingsTileRenderer$PrefChangeListener`
+aparece em `usage.txt` por desugaring de lambda, não por falta de implementação; e
+`downgrades_enabled` alimentar o parâmetro `useRoot` é intencional — é um único toggle
+("instalar via root, que é o único caminho onde downgrade é permitido"), com o switch
+`switch_root_install` e verificação real de root por trás.
 
 
 ### 6. Superfície IPC e componentes exportados

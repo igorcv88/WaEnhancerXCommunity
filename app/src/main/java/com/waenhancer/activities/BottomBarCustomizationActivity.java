@@ -1,17 +1,16 @@
 package com.waenhancer.activities;
 
 import android.content.SharedPreferences;
-import android.content.res.ColorStateList;
 import android.graphics.Color;
-import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.InputType;
-import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -22,12 +21,14 @@ import androidx.preference.PreferenceManager;
 
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.materialswitch.MaterialSwitch;
 import com.google.android.material.slider.Slider;
 import com.google.android.material.textfield.MaterialAutoCompleteTextView;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
 import com.waenhancer.BuildConfig;
+import com.waenhancer.R;
 import com.waenhancer.config.BottomBarPreferenceSchema;
 import com.waenhancer.config.BottomBarPreviewModel;
 
@@ -40,19 +41,26 @@ import java.util.Map;
 /** Complete open-source editor for the classic floating bottom bar. */
 public class BottomBarCustomizationActivity extends AppCompatActivity {
 
-    private static final String[] PREVIEW_TAB_LABELS = {"Chats", "Updates", "Communities", "Calls"};
-    private static final int PREVIEW_SELECTED_TAB = 0;
-    private static final int PREVIEW_DEFAULT_FAB_SIZE_DP = 56;
-    private static final int PREVIEW_DEFAULT_FAB_MARGIN_DP = 12;
     /** Any radius at or beyond half the pill height reads as fully rounded. */
     private static final int PREVIEW_PILL_MAX_RADIUS_DP = 48;
+    private static final int PREVIEW_DEFAULT_FAB_SIZE_DP = 56;
+    private static final int PREVIEW_DEFAULT_FAB_RADIUS_DP = 16;
+    private static final int PREVIEW_DEFAULT_FAB_MARGIN_DP = 16;
+    private static final int PREVIEW_WA_ACCENT = 0xFF00A884;
+    private static final int PREVIEW_WA_INACTIVE = 0xFF8696A0;
+    private static final int PREVIEW_WA_ACTIVE_LABEL = 0xFFE9EDEF;
+    private static final int PREVIEW_WA_SURFACE = 0xFF1F2C34;
 
     private SharedPreferences prefs;
     private LinearLayout controls;
-    private FrameLayout previewStage;
+    private View previewStage;
     private LinearLayout previewPill;
-    private MaterialButton previewFab;
-    private final List<TextView> previewItems = new ArrayList<>();
+    private FrameLayout previewPillContainer;
+    private MaterialCardView previewFab;
+    private ImageView previewFabIcon;
+    /** One entry per mock tab, in on-screen order. */
+    private final List<ImageView> previewIcons = new ArrayList<>();
+    private final List<TextView> previewLabels = new ArrayList<>();
     private final Map<String, Slider> sliders = new LinkedHashMap<>();
 
     @Override
@@ -118,21 +126,6 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
         addColorField("Minimal FAB background", "floating_bottom_bar_minimal_fab_color", 0);
         addColorField("Minimal FAB icon", "floating_bottom_bar_minimal_fab_icon_color", Color.WHITE);
 
-        addSection("Selected tab indicator");
-        addSwitch("Show indicator", "floating_bottom_bar_indicator_visible", false);
-        addDropdown("Indicator width", "floating_bottom_bar_indicator_width_mode",
-                new String[]{"Automatic", "Manual"}, new String[]{"automatic", "manual"}, "automatic");
-        addDropdown("Indicator height", "floating_bottom_bar_indicator_height_mode",
-                new String[]{"Automatic", "Manual"}, new String[]{"automatic", "manual"}, "automatic");
-        addSlider("Indicator width", "floating_bottom_bar_indicator_width");
-        addSlider("Indicator height", "floating_bottom_bar_indicator_height");
-        addSlider("Indicator radius", "floating_bottom_bar_indicator_radius");
-        addSlider("Horizontal padding", "floating_bottom_bar_indicator_padding_horizontal");
-        addSlider("Vertical padding", "floating_bottom_bar_indicator_padding_vertical");
-        addSlider("Vertical offset", "floating_bottom_bar_indicator_offset");
-        addSlider("Indicator opacity", "floating_bottom_bar_indicator_opacity");
-        addColorField("Indicator color", "floating_bottom_bar_indicator_color", 0);
-
         addSection("Presets");
         LinearLayout presetRow = new LinearLayout(this);
         presetRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -158,6 +151,15 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
         return root;
     }
 
+    /**
+     * Inflates the mock WhatsApp screen ported from upstream.
+     *
+     * <p>This fork used to build the preview by hand out of four bare {@code TextView}s whose
+     * "icon" was {@code android.R.drawable.presence_invisible} — so the preview showed neither
+     * real icons nor anything resembling the bar that lands in WhatsApp. Worse, it was a second,
+     * independent implementation of the layout maths in {@code FloatingBottomBar}, and the two
+     * drifted: the same slider moved both by different amounts.
+     */
     private View buildPreviewFooter() {
         LinearLayout footer = new LinearLayout(this);
         footer.setOrientation(LinearLayout.VERTICAL);
@@ -165,42 +167,32 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
         footer.setElevation(dp(8));
 
         TextView caption = new TextView(this);
-        caption.setText("Live preview");
+        caption.setText(R.string.bottom_bar_preview_caption);
         caption.setTextSize(12);
         caption.setTextColor(resolvePrimary());
-        caption.setPadding(dp(20), dp(10), dp(20), 0);
+        caption.setPadding(dp(20), dp(10), dp(20), dp(6));
         footer.addView(caption);
 
-        previewStage = new FrameLayout(this);
-        previewStage.setPadding(dp(4), dp(10), dp(4), dp(10));
+        View preview = LayoutInflater.from(this)
+                .inflate(R.layout.view_bottom_bar_preview, footer, false);
 
-        previewPill = new LinearLayout(this);
-        previewPill.setOrientation(LinearLayout.HORIZONTAL);
-        previewPill.setGravity(Gravity.CENTER);
-        for (String label : PREVIEW_TAB_LABELS) {
-            TextView item = new TextView(this);
-            item.setText(label);
-            item.setGravity(Gravity.CENTER);
-            item.setSingleLine(true);
-            previewItems.add(item);
-            previewPill.addView(item, new LinearLayout.LayoutParams(0,
-                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        }
-        previewStage.addView(previewPill, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM));
+        previewStage = preview.findViewById(R.id.preview_stage);
+        previewPill = preview.findViewById(R.id.preview_bottom_bar);
+        previewPillContainer = preview.findViewById(R.id.preview_pill_container);
+        previewFab = preview.findViewById(R.id.preview_fab);
+        previewFabIcon = preview.findViewById(R.id.preview_fab_icon);
 
-        previewFab = new MaterialButton(this);
-        previewFab.setText("+");
-        previewFab.setTextSize(20);
-        previewFab.setInsetTop(0);
-        previewFab.setInsetBottom(0);
-        previewFab.setPadding(0, 0, 0, 0);
-        previewStage.addView(previewFab, new FrameLayout.LayoutParams(dp(56), dp(56),
-                Gravity.END | Gravity.BOTTOM));
+        previewIcons.add(preview.findViewById(R.id.preview_icon_chats));
+        previewIcons.add(preview.findViewById(R.id.preview_icon_updates));
+        previewIcons.add(preview.findViewById(R.id.preview_icon_communities));
+        previewIcons.add(preview.findViewById(R.id.preview_icon_calls));
 
-        footer.addView(previewStage, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(160)));
+        previewLabels.add(preview.findViewById(R.id.preview_label_chats));
+        previewLabels.add(preview.findViewById(R.id.preview_label_updates));
+        previewLabels.add(preview.findViewById(R.id.preview_label_communities));
+        previewLabels.add(preview.findViewById(R.id.preview_label_calls));
+
+        footer.addView(preview);
         return footer;
     }
 
@@ -253,8 +245,13 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
                              String defaultValue) {
         TextInputLayout layout = new TextInputLayout(this);
         layout.setHint(title);
+        // Without an end icon in dropdown mode, Material never installs the delegate that opens
+        // the popup on touch, so tapping the field only focused it and no list ever appeared.
+        layout.setEndIconMode(TextInputLayout.END_ICON_DROPDOWN_MENU);
+
         MaterialAutoCompleteTextView input = new MaterialAutoCompleteTextView(this);
         input.setInputType(InputType.TYPE_NULL);
+        input.setKeyListener(null);
         input.setAdapter(new ArrayAdapter<>(this,
                 android.R.layout.simple_dropdown_item_1line, entries));
         String current = prefs.getString(key, defaultValue);
@@ -264,6 +261,9 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
             prefs.edit().putString(key, values[position]).apply();
             notifyChanged();
         });
+        // Belt and braces: open the list on tap regardless of how the end-icon delegate resolves
+        // against the current theme, which is what silently failed before.
+        input.setOnClickListener(v -> input.showDropDown());
         layout.addView(input);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -327,11 +327,7 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
                 "floating_bottom_bar_fill_color", "floating_bottom_bar_fully_rounded",
                 "floating_bottom_bar_height_mode", "floating_bottom_bar_scroll_hide_mode",
                 "floating_bottom_bar_fab_mode", "floating_bottom_bar_minimal_fab_color",
-                "floating_bottom_bar_minimal_fab_icon_color",
-                "floating_bottom_bar_indicator_visible",
-                "floating_bottom_bar_indicator_width_mode",
-                "floating_bottom_bar_indicator_height_mode",
-                "floating_bottom_bar_indicator_color"
+                "floating_bottom_bar_minimal_fab_icon_color"
         };
         for (String key : keys) editor.remove(key);
         editor.apply();
@@ -359,16 +355,14 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
         previewStage.setAlpha(model.barEnabled ? 1f : 0.45f);
 
         GradientDrawable pill = new GradientDrawable();
-        pill.setColor(model.resolvedFillColor(resolveSurface()));
+        pill.setColor(model.resolvedFillColor(PREVIEW_WA_SURFACE));
         pill.setCornerRadius(model.isFullyRounded()
                 ? dp(PREVIEW_PILL_MAX_RADIUS_DP) : model.radiusDp * density);
-        pill.setStroke(dp(1), withAlpha(resolvePrimary(), 0.30f));
         previewPill.setBackground(pill);
-        previewPill.setPadding(dp(4), dp(model.paddingVerticalDp),
-                dp(4), dp(model.paddingVerticalDp));
+        previewPill.setPadding(0, dp(model.paddingVerticalDp), 0, dp(model.paddingVerticalDp));
 
-        FrameLayout.LayoutParams pillParams =
-                (FrameLayout.LayoutParams) previewPill.getLayoutParams();
+        ViewGroup.MarginLayoutParams pillParams =
+                (ViewGroup.MarginLayoutParams) previewPill.getLayoutParams();
         pillParams.leftMargin = dp(model.sideMarginDp);
         pillParams.rightMargin = dp(model.sideMarginDp);
         pillParams.bottomMargin = dp(model.bottomMarginDp);
@@ -376,76 +370,57 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
                 ? dp(model.manualHeightDp) : ViewGroup.LayoutParams.WRAP_CONTENT;
         previewPill.setLayoutParams(pillParams);
 
-        applyTabStyling(model, density);
+        applyTabStyling(model);
         applyFabStyling(model);
     }
 
-    private void applyTabStyling(BottomBarPreviewModel model, float density) {
-        int indicatorColor = model.resolvedIndicatorColor(resolvePrimary());
-        for (int i = 0; i < previewItems.size(); i++) {
-            TextView item = previewItems.get(i);
-            item.setTextSize(model.textSizeSp);
-            item.setTextColor(resolveOnSurface());
-            item.setCompoundDrawablePadding(dp(model.iconLabelSpacingDp));
+    private void applyTabStyling(BottomBarPreviewModel model) {
+        for (int i = 0; i < previewIcons.size(); i++) {
+            ImageView icon = previewIcons.get(i);
+            ViewGroup.LayoutParams iconParams = icon.getLayoutParams();
+            iconParams.width = dp(model.iconSizeDp);
+            iconParams.height = dp(model.iconSizeDp);
+            icon.setLayoutParams(iconParams);
 
-            Drawable glyph = getDrawable(android.R.drawable.presence_invisible);
-            if (glyph != null) {
-                glyph = glyph.mutate();
-                int size = dp(model.iconSizeDp);
-                glyph.setBounds(0, 0, size, size);
-                glyph.setTint(resolveOnSurface());
-            }
-            item.setCompoundDrawables(null, glyph, null, null);
+            TextView label = previewLabels.get(i);
+            label.setTextSize(model.textSizeSp);
+            // The first tab is the selected one in the mock, so it keeps WhatsApp's active colours.
+            label.setTextColor(i == 0 ? PREVIEW_WA_ACTIVE_LABEL : PREVIEW_WA_INACTIVE);
 
-            boolean selected = i == PREVIEW_SELECTED_TAB;
-            if (model.indicatorVisible && selected) {
-                GradientDrawable indicator = new GradientDrawable();
-                indicator.setColor(indicatorColor);
-                indicator.setCornerRadius(model.indicatorRadiusDp * density);
-                item.setBackground(indicator);
-                item.setTranslationY(model.indicatorOffsetDp * density);
-                item.setPadding(dp(model.indicatorPaddingHorizontalDp),
-                        dp(model.indicatorPaddingVerticalDp),
-                        dp(model.indicatorPaddingHorizontalDp),
-                        dp(model.indicatorPaddingVerticalDp));
-            } else {
-                item.setBackground(null);
-                item.setTranslationY(0f);
-                item.setPadding(0, 0, 0, 0);
-            }
-
-            LinearLayout.LayoutParams itemParams =
-                    (LinearLayout.LayoutParams) item.getLayoutParams();
-            boolean manualBox = model.indicatorVisible && selected;
-            itemParams.width = manualBox && model.indicatorManualWidth
-                    ? dp(model.indicatorWidthDp) : 0;
-            itemParams.weight = manualBox && model.indicatorManualWidth ? 0f : 1f;
-            itemParams.height = manualBox && model.indicatorManualHeight
-                    ? dp(model.indicatorHeightDp) : ViewGroup.LayoutParams.WRAP_CONTENT;
-            item.setLayoutParams(itemParams);
+            ViewGroup.MarginLayoutParams labelParams =
+                    (ViewGroup.MarginLayoutParams) label.getLayoutParams();
+            labelParams.topMargin = dp(model.iconLabelSpacingDp);
+            label.setLayoutParams(labelParams);
         }
     }
 
     private void applyFabStyling(BottomBarPreviewModel model) {
         previewFab.setVisibility(model.isFabHidden() ? View.GONE : View.VISIBLE);
-        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) previewFab.getLayoutParams();
+        if (model.isFabHidden()) return;
+
+        ViewGroup.MarginLayoutParams params =
+                (ViewGroup.MarginLayoutParams) previewFab.getLayoutParams();
+        // The stored offset is the complete translation above the bar; its bottom margin already
+        // moves the reference position, so adding another stock baseline would double-count it.
         params.bottomMargin = dp(model.fabOffsetDp);
 
         if (model.isFabMinimal()) {
             params.width = dp(model.minimalFabSizeDp);
             params.height = dp(model.minimalFabSizeDp);
             params.rightMargin = dp(model.minimalFabMarginDp);
-            previewFab.setBackgroundTintList(ColorStateList.valueOf(
-                    model.resolvedMinimalFabColor(resolvePrimary())));
-            previewFab.setTextColor(model.minimalFabIconColor);
-            previewFab.setCornerRadius(dp(model.minimalFabRadiusDp));
+            previewFab.setCardBackgroundColor(
+                    model.resolvedMinimalFabColor(PREVIEW_WA_ACCENT));
+            previewFab.setRadius(dp(model.minimalFabRadiusDp));
+            previewFabIcon.setImageTintList(
+                    android.content.res.ColorStateList.valueOf(model.minimalFabIconColor));
         } else {
             params.width = dp(PREVIEW_DEFAULT_FAB_SIZE_DP);
             params.height = dp(PREVIEW_DEFAULT_FAB_SIZE_DP);
             params.rightMargin = dp(PREVIEW_DEFAULT_FAB_MARGIN_DP);
-            previewFab.setBackgroundTintList(ColorStateList.valueOf(resolvePrimary()));
-            previewFab.setTextColor(Color.WHITE);
-            previewFab.setCornerRadius(dp(PREVIEW_DEFAULT_FAB_SIZE_DP / 2));
+            previewFab.setCardBackgroundColor(PREVIEW_WA_ACCENT);
+            previewFab.setRadius(dp(PREVIEW_DEFAULT_FAB_RADIUS_DP));
+            previewFabIcon.setImageTintList(
+                    android.content.res.ColorStateList.valueOf(Color.parseColor("#111b21")));
         }
         previewFab.setLayoutParams(params);
     }

@@ -23,6 +23,8 @@ import androidx.preference.PreferenceManager;
 
 import com.waenhancer.App;
 import com.waenhancer.backup.BackupCodec;
+import com.waenhancer.backup.FullBackupCrypto;
+import com.waenhancer.backup.FullBackupManager;
 import com.waenhancer.BuildConfig;
 import com.waenhancer.R;
 import com.waenhancer.UpdateChecker;
@@ -55,6 +57,13 @@ import rikka.core.util.IOUtils;
 import java.io.File;
 
 public class HomeFragment extends BaseFragment {
+
+    /**
+     * Import cap for a full backup container. {@code FullBackupManager} builds and validates its
+     * manifest wholly in memory and caps media at 96 MB, which Base64 inflates to roughly 4/3 of
+     * that; this leaves headroom over the largest container the exporter can produce.
+     */
+    private static final long MAX_FULL_BACKUP_BYTES = 160L * 1024L * 1024L;
 
     private static final String RELEASES_URL = "https://github.com/igorcv88/WaEnhancerX/releases";
     private static final String LATEST_STABLE_URL = "https://github.com/igorcv88/WaEnhancerX/releases/latest";
@@ -128,7 +137,7 @@ public class HomeFragment extends BaseFragment {
 
         binding.exportBtn.setOnClickListener(view -> {
             animateClick(view);
-            saveConfigs(this.getContext());
+            chooseExportFormat(this.getContext());
         });
 
         binding.importBtn.setOnClickListener(view -> {
@@ -501,6 +510,137 @@ public class HomeFragment extends BaseFragment {
         }
     }
 
+    /**
+     * Two backups exist and they carry different things, so the user picks before exporting.
+     *
+     * <p>The settings export is the allowlisted, shareable JSON. The full backup is the
+     * password-encrypted container from {@link FullBackupManager}: deleted messages, their media
+     * and the private secrets, none of which the settings export is allowed to contain.</p>
+     */
+    private void chooseExportFormat(Context context) {
+        com.waenhancer.ui.helpers.BottomSheetHelper.showSingleChoice(
+                requireActivity(),
+                getString(R.string.backup_export_choose_title),
+                new CharSequence[]{
+                        getString(R.string.backup_export_settings_option),
+                        getString(R.string.backup_export_full_option)},
+                new CharSequence[]{"settings", "full"},
+                null,
+                (index, value) -> {
+                    if ("full".equals(value)) {
+                        saveFullBackup(context);
+                    } else {
+                        saveConfigs(context);
+                    }
+                });
+    }
+
+    /** Password-encrypted export of deleted data, its media and the private secrets. */
+    private void saveFullBackup(Context context) {
+        if (FilePicker.fileSalve == null) {
+            Toast.makeText(context,
+                    "Please use the standalone WaEnhancer Community app for file operations.",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        com.waenhancer.ui.helpers.BottomSheetHelper.showInput(
+                requireActivity(),
+                getString(R.string.backup_full_password_title),
+                getString(R.string.backup_full_password_hint),
+                getString(R.string.backup_continue),
+                password -> {
+                    if (password == null || password.trim().isEmpty()) {
+                        Toast.makeText(context, R.string.backup_full_password_required,
+                                Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    // Media is a real choice, not a confirmation. FullBackupManager builds the
+                    // manifest in memory and refuses past 96 MB of media, so a large vault can
+                    // only be exported at all without it.
+                    com.waenhancer.ui.helpers.BottomSheetHelper.showSingleChoice(
+                            requireActivity(),
+                            getString(R.string.backup_full_media_title),
+                            new CharSequence[]{
+                                    getString(R.string.backup_full_media_include),
+                                    getString(R.string.backup_full_media_exclude)},
+                            new CharSequence[]{"with_media", "no_media"},
+                            null,
+                            (index, value) -> launchFullBackupExport(
+                                    context, password, "with_media".equals(value)));
+                });
+    }
+
+    private void launchFullBackupExport(Context context, String password, boolean includeMedia) {
+        FilePicker.setOnUriPickedListener(uri -> {
+            char[] secret = password.toCharArray();
+            runAsync(() -> {
+                try (var output = context.getContentResolver().openOutputStream(uri)) {
+                    if (output == null) throw new IllegalStateException("Unable to open destination.");
+                    output.write(FullBackupManager.export(context, secret, includeMedia));
+                    runOnUiThread(() -> {
+                        if (!isAdded()) return;
+                        com.waenhancer.ui.helpers.BottomSheetHelper.showInfo(
+                                requireActivity(),
+                                getString(R.string.backup_full_saved_title),
+                                getString(includeMedia
+                                        ? R.string.backup_full_saved_message
+                                        : R.string.backup_full_saved_message_no_media));
+                    });
+                } catch (Exception exception) {
+                    Log.e("saveFullBackup", "Unable to export full backup", exception);
+                    runOnUiThread(() -> Toast.makeText(context, exception.getMessage(),
+                            Toast.LENGTH_LONG).show());
+                } finally {
+                    // The password reached the cipher; do not leave it in this buffer.
+                    java.util.Arrays.fill(secret, '\0');
+                }
+            });
+        });
+        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US);
+        FilePicker.fileSalve.launch("WaEnhancerCommunity-full-"
+                + format.format(new Date()) + ".waeb");
+    }
+
+    /** Restores a full backup once the user supplies the password it was sealed with. */
+    private void restoreFullBackup(Context context, byte[] container) {
+        com.waenhancer.ui.helpers.BottomSheetHelper.showInput(
+                requireActivity(),
+                getString(R.string.backup_full_restore_title),
+                getString(R.string.backup_full_password_hint),
+                getString(R.string.backup_restore),
+                password -> {
+                    if (password == null || password.isEmpty()) {
+                        Toast.makeText(context, R.string.backup_full_password_required,
+                                Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    char[] secret = password.toCharArray();
+                    runAsync(() -> {
+                        try {
+                            FullBackupManager.RestoreReport report =
+                                    FullBackupManager.restore(context, container, secret);
+                            runOnUiThread(() -> {
+                                if (!isAdded()) return;
+                                com.waenhancer.ui.helpers.BottomSheetHelper.showInfo(
+                                        requireActivity(),
+                                        getString(R.string.backup_full_restored_title),
+                                        getString(R.string.backup_full_restored_message,
+                                                report.messages, report.media, report.secrets));
+                            });
+                        } catch (Exception exception) {
+                            // restore() is transactional and reports its own failure text; a wrong
+                            // password is indistinguishable from a damaged file by design.
+                            Log.e("restoreFullBackup", "Unable to restore full backup", exception);
+                            runOnUiThread(() -> Toast.makeText(context, exception.getMessage(),
+                                    Toast.LENGTH_LONG).show());
+                        } finally {
+                            java.util.Arrays.fill(secret, '\0');
+                        }
+                    });
+                });
+    }
+
     private void saveConfigs(Context context) {
         if (FilePicker.fileSalve == null) {
             Toast.makeText(context,
@@ -574,17 +714,39 @@ public class HomeFragment extends BaseFragment {
         FilePicker.setOnUriPickedListener(uri -> {
             try (var input = context.getContentResolver().openInputStream(uri)) {
                 if (input == null) throw new IllegalStateException("Unable to open backup.");
+
+                // Which format this is decides the size cap, so read the magic first. A settings
+                // JSON stays on the 2 MB limit; a full backup carries media and cannot.
+                byte[] prefix = new byte[FullBackupCrypto.MAGIC_LENGTH];
+                int prefixRead = 0;
+                while (prefixRead < prefix.length) {
+                    int read = input.read(prefix, prefixRead, prefix.length - prefixRead);
+                    if (read == -1) break;
+                    prefixRead += read;
+                }
+                boolean isFullBackup = prefixRead == prefix.length
+                        && FullBackupCrypto.isFullBackup(prefix);
+                long limit = isFullBackup ? MAX_FULL_BACKUP_BYTES : BackupCodec.MAX_BYTES;
+
                 java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+                buffer.write(prefix, 0, prefixRead);
                 byte[] chunk = new byte[8192];
-                int total = 0;
+                long total = prefixRead;
                 int read;
                 while ((read = input.read(chunk)) != -1) {
                     total += read;
-                    if (total > BackupCodec.MAX_BYTES) {
-                        throw new BackupCodec.BackupException(
-                                "Backup exceeds the 2 MB safety limit.");
+                    if (total > limit) {
+                        throw new BackupCodec.BackupException(isFullBackup
+                                ? "Full backup exceeds the " + (MAX_FULL_BACKUP_BYTES / (1024 * 1024))
+                                        + " MB safety limit."
+                                : "Backup exceeds the 2 MB safety limit.");
                     }
                     buffer.write(chunk, 0, read);
+                }
+
+                if (isFullBackup) {
+                    restoreFullBackup(context, buffer.toByteArray());
+                    return;
                 }
 
                 SharedPreferences preferences =
@@ -606,7 +768,9 @@ public class HomeFragment extends BaseFragment {
                 Toast.makeText(context, exception.getMessage(), Toast.LENGTH_LONG).show();
             }
         });
-        FilePicker.fileCapture.launch(new String[]{"application/json"});
+        // A full backup is not JSON and has no registered type, so the picker cannot filter on
+        // one MIME any more; the magic check above is what actually decides the format.
+        FilePicker.fileCapture.launch(new String[]{"*/*"});
     }
 
     private boolean isInitialCheck = true;

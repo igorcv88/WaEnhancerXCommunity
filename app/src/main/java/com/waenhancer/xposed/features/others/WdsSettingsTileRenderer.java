@@ -242,13 +242,17 @@ public class WdsSettingsTileRenderer {
     }
 
     private static void renderPrefsArray(Context context, LinearLayout container, JSONArray prefsArray, SharedPreferences prefs, PrefChangeListener listener) {
-        try {
-            Map<String, View> tileViews = new HashMap<>();
-            
-            for (int j = 0; j < prefsArray.length(); j++) {
+        Map<String, View> tileViews = new HashMap<>();
+
+        for (int j = 0; j < prefsArray.length(); j++) {
+            // Per-entry isolation: this loop used to sit inside one big try/catch, so a single
+            // malformed or mistyped preference (reading a StringSet as a boolean, for instance)
+            // aborted the whole screen and every row below it silently vanished.
+            String key = "?";
+            try {
                 JSONObject pref = prefsArray.getJSONObject(j);
                 String type = pref.getString("type");
-                String key = pref.getString("key");
+                key = pref.getString("key");
                 String title = pref.getString("title");
                 boolean isEnabled = pref.optBoolean("enabled", true);
                 if (!isEnabled) {
@@ -256,7 +260,7 @@ public class WdsSettingsTileRenderer {
                 }
                 String summary = pref.optString("summary", "");
 
-                View tile = null;
+                View tile;
                 if (!isEnabled) {
                     final String displayTitle = title;
                     tile = createWdsRow(context, title, summary, null, v -> {
@@ -272,19 +276,44 @@ public class WdsSettingsTileRenderer {
                         }
                     });
                 } else {
-                    if ("switch".equals(type)) {
-                        boolean def = pref.optBoolean("default", false);
-                        tile = createSwitchTile(context, key, title, summary, def, prefs, listener, tileViews, prefsArray);
-                    } else if ("list".equals(type)) {
-                        tile = createListTile(context, pref, prefs, listener);
-                    } else if ("multi".equals(type)) {
-                        tile = createMultiTile(context, pref, prefs, listener);
-                    } else if ("text".equals(type)) {
-                        tile = createTextTile(context, pref, prefs, listener);
-                    } else if ("action".equals(type)) {
-                        tile = createActionTile(context, pref);
-                    } else {
-                        tile = createWdsRow(context, title, summary, null, null);
+                    switch (type) {
+                        case "switch": {
+                            boolean def = pref.optBoolean("default", false);
+                            tile = createSwitchTile(context, key, title, summary, def, prefs, listener, tileViews, prefsArray);
+                            break;
+                        }
+                        case "list":
+                            tile = createListTile(context, pref, prefs, listener);
+                            break;
+                        case "multi":
+                            tile = createMultiTile(context, pref, prefs, listener);
+                            break;
+                        case "text":
+                            tile = createTextTile(context, pref, prefs, listener);
+                            break;
+                        case "slider":
+                            tile = createSliderTile(context, pref, prefs, listener);
+                            break;
+                        case "color":
+                            tile = createColorTile(context, pref, prefs, listener);
+                            break;
+                        case "action":
+                            tile = createActionTile(context, pref);
+                            break;
+                        // These need a picker the host process cannot host safely: the module's
+                        // picker activities are deliberately not exported. Send the user to the
+                        // module app instead of drawing a row that does nothing when tapped.
+                        case "file":
+                        case "contact_picker":
+                        case "forward_rules":
+                        case "theme_manager":
+                            tile = createOpenInModuleTile(context, pref, prefs);
+                            break;
+                        default:
+                            de.robv.android.xposed.XposedBridge.log(
+                                    "[WAEX] Unknown settings tile type '" + type + "' for key " + key);
+                            tile = createOpenInModuleTile(context, pref, prefs);
+                            break;
                     }
                 }
 
@@ -292,10 +321,13 @@ public class WdsSettingsTileRenderer {
                     tileViews.put(key, tile);
                     container.addView(tile);
                 }
+            } catch (Exception e) {
+                de.robv.android.xposed.XposedBridge.log(
+                        "[WAEX] Skipped settings tile '" + key + "': " + e);
             }
+        }
 
-            checkDependencies(prefsArray, prefs, tileViews);
-        } catch (Exception ignored) {}
+        checkDependencies(prefsArray, prefs, tileViews);
     }
 
     private static View createWdsRow(Context context, String title, String summary, android.graphics.drawable.Drawable icon, View.OnClickListener clickListener) {
@@ -589,46 +621,311 @@ public class WdsSettingsTileRenderer {
     private static View createMultiTile(Context context, JSONObject pref, SharedPreferences prefs, PrefChangeListener listener) {
         try {
             String key = pref.getString("key");
-            String title = pref.getString("title");
-            String summary = pref.optString("summary", "");
+            String title = resolveString(context, pref.getString("title"));
+            String summary = resolveString(context, pref.optString("summary", ""));
+            // Whether the feature reads a Set<String> or a comma-joined String. Writing the wrong
+            // one is invisible in the UI and silently disables the feature: `hidetabs` is read by
+            // HideTabs as a StringSet, but this tile used to always write a String.
+            boolean asStringSet = "string_set".equals(pref.optString("value_type", "string"));
             JSONArray entriesJson = pref.getJSONArray("entries");
 
             String[] entries = new String[entriesJson.length()];
             String[] values = new String[entriesJson.length()];
             for (int i = 0; i < entriesJson.length(); i++) {
                 JSONObject entryObj = entriesJson.getJSONObject(i);
-                entries[i] = entryObj.getString("label");
+                entries[i] = resolveString(context, entryObj.getString("label"));
                 values[i] = String.valueOf(entryObj.get("value"));
             }
 
-            return createWdsRow(context, title, summary, null, v -> {
-                String savedVal = prefs.getString(key, "");
-                boolean[] checkedStates = new boolean[values.length];
-                for (int i = 0; i < values.length; i++) {
-                    checkedStates[i] = savedVal.contains(values[i]);
-                }
+            final View[] rowHolder = new View[1];
+            rowHolder[0] = createWdsRow(context, title,
+                    multiSummary(summary, entries, selectedFlags(prefs, key, values, asStringSet)),
+                    null, v -> {
+                boolean[] checkedStates = selectedFlags(prefs, key, values, asStringSet);
 
                 AlertDialogWpp builder = new AlertDialogWpp(context);
                 builder.setTitle(title);
-                builder.setMultiChoiceItems(entries, checkedStates, (dialog, which, isChecked) -> {
-                    checkedStates[which] = isChecked;
-                });
+                builder.setMultiChoiceItems(entries, checkedStates, (dialog, which, isChecked) ->
+                        checkedStates[which] = isChecked);
                 builder.setPositiveButton("OK", (dialog, which) -> {
-                    StringBuilder sb = new StringBuilder();
-                    for (int i = 0; i < values.length; i++) {
-                        if (checkedStates[i]) {
-                            if (sb.length() > 0) sb.append(",");
-                            sb.append(values[i]);
+                    if (asStringSet) {
+                        java.util.Set<String> selected = new java.util.LinkedHashSet<>();
+                        for (int i = 0; i < values.length; i++) {
+                            if (checkedStates[i]) selected.add(values[i]);
                         }
+                        prefs.edit().putStringSet(key, selected).apply();
+                        if (listener != null) listener.onPrefChanged(key, selected);
+                    } else {
+                        StringBuilder sb = new StringBuilder();
+                        for (int i = 0; i < values.length; i++) {
+                            if (checkedStates[i]) {
+                                if (sb.length() > 0) sb.append(",");
+                                sb.append(values[i]);
+                            }
+                        }
+                        String result = sb.toString();
+                        prefs.edit().putString(key, result).apply();
+                        if (listener != null) listener.onPrefChanged(key, result);
                     }
-                    String result = sb.toString();
-                    prefs.edit().putString(key, result).apply();
-                    if (listener != null) listener.onPrefChanged(key, result);
+                    updateSummary(rowHolder[0], multiSummary(summary, entries, checkedStates));
                 });
                 builder.setNegativeButton("Cancel", null);
                 builder.show();
             });
+            return rowHolder[0];
         } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Reads the stored selection in whichever shape the feature expects, never throwing. */
+    private static boolean[] selectedFlags(SharedPreferences prefs, String key, String[] values,
+                                           boolean asStringSet) {
+        boolean[] flags = new boolean[values.length];
+        try {
+            if (asStringSet) {
+                java.util.Set<String> stored = prefs.getStringSet(key, null);
+                if (stored == null) return flags;
+                for (int i = 0; i < values.length; i++) flags[i] = stored.contains(values[i]);
+            } else {
+                String stored = prefs.getString(key, "");
+                if (stored == null || stored.isEmpty()) return flags;
+                java.util.List<String> parts = java.util.Arrays.asList(stored.split(","));
+                for (int i = 0; i < values.length; i++) flags[i] = parts.contains(values[i]);
+            }
+        } catch (Exception e) {
+            de.robv.android.xposed.XposedBridge.log(
+                    "[WAEX] Could not read multi-select '" + key + "': " + e);
+        }
+        return flags;
+    }
+
+    private static String multiSummary(String summary, String[] entries, boolean[] checked) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < entries.length && i < checked.length; i++) {
+            if (!checked[i]) continue;
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(entries[i]);
+        }
+        if (sb.length() == 0) return summary.isEmpty() ? "None selected" : summary;
+        return sb.toString();
+    }
+
+    private static void updateSummary(View row, String text) {
+        try {
+            TextView summaryView = row.findViewWithTag("wds_summary");
+            if (summaryView != null) summaryView.setText(text);
+        } catch (Exception ignored) {}
+    }
+
+    /**
+     * Numeric slider in a dialog. Ranges come from the settings map; without them the tile used to
+     * fall through to an inert text row (this is what "Increase Video Size Limit (MB)" was).
+     */
+    private static View createSliderTile(Context context, JSONObject pref, SharedPreferences prefs, PrefChangeListener listener) {
+        try {
+            String key = pref.getString("key");
+            String title = resolveString(context, pref.getString("title"));
+            String summary = resolveString(context, pref.optString("summary", ""));
+            float min = (float) pref.optDouble("min", 0d);
+            float max = (float) pref.optDouble("max", 100d);
+            float step = (float) pref.optDouble("step", 1d);
+            float def = (float) pref.optDouble("default", min);
+            if (max <= min) max = min + 1f;
+            if (step <= 0f) step = 1f;
+
+            final View[] rowHolder = new View[1];
+            final float fMin = min, fMax = max, fStep = step, fDef = def;
+
+            rowHolder[0] = createWdsRow(context, title,
+                    sliderSummary(summary, readFloat(prefs, key, fDef)), null, v -> {
+                float current = clamp(readFloat(prefs, key, fDef), fMin, fMax);
+                float density = context.getResources().getDisplayMetrics().density;
+
+                // A framework SeekBar on purpose: Material's Slider needs a Material theme, and
+                // this dialog is built against WhatsApp's activity, which does not provide one.
+                int steps = Math.max(1, Math.round((fMax - fMin) / fStep));
+                android.widget.SeekBar seekBar = new android.widget.SeekBar(context);
+                seekBar.setMax(steps);
+                seekBar.setProgress(Math.round((current - fMin) / fStep));
+
+                TextView valueLabel = createWdsTextView(context);
+                valueLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+                valueLabel.setGravity(Gravity.CENTER);
+                valueLabel.setText(formatValue(fMin + seekBar.getProgress() * fStep));
+                seekBar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+                    @Override
+                    public void onProgressChanged(android.widget.SeekBar bar, int progress, boolean fromUser) {
+                        valueLabel.setText(formatValue(fMin + progress * fStep));
+                    }
+
+                    @Override
+                    public void onStartTrackingTouch(android.widget.SeekBar bar) {}
+
+                    @Override
+                    public void onStopTrackingTouch(android.widget.SeekBar bar) {}
+                });
+
+                LinearLayout box = new LinearLayout(context);
+                box.setOrientation(LinearLayout.VERTICAL);
+                int margin = (int) (24 * density);
+                box.setPadding(margin, margin / 2, margin, margin / 2);
+                box.addView(valueLabel);
+                box.addView(seekBar);
+
+                AlertDialogWpp builder = new AlertDialogWpp(context);
+                builder.setTitle(title);
+                builder.setView(box);
+                builder.setPositiveButton("Save", (dialog, which) -> {
+                    float value = clamp(fMin + seekBar.getProgress() * fStep, fMin, fMax);
+                    prefs.edit().putFloat(key, value).apply();
+                    if (listener != null) listener.onPrefChanged(key, value);
+                    updateSummary(rowHolder[0], sliderSummary(summary, value));
+                });
+                builder.setNegativeButton("Cancel", null);
+                builder.show();
+            });
+            return rowHolder[0];
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Hex colour entry. {@code #00000000} means "use the theme default", as the summaries say. */
+    private static View createColorTile(Context context, JSONObject pref, SharedPreferences prefs, PrefChangeListener listener) {
+        try {
+            String key = pref.getString("key");
+            String title = resolveString(context, pref.getString("title"));
+            String summary = resolveString(context, pref.optString("summary", ""));
+
+            final View[] rowHolder = new View[1];
+            rowHolder[0] = createWdsRow(context, title,
+                    colorSummary(summary, readInt(prefs, key, 0)), null, v -> {
+                float density = context.getResources().getDisplayMetrics().density;
+                EditText input = new EditText(context);
+                input.setSingleLine(true);
+                input.setText(formatColor(readInt(prefs, key, 0)));
+                input.setTextColor(0xFFE9EDEF);
+                int margin = (int) (24 * density);
+
+                LinearLayout box = new LinearLayout(context);
+                box.setOrientation(LinearLayout.VERTICAL);
+                box.setPadding(margin, margin / 2, margin, margin / 2);
+                box.addView(input);
+
+                AlertDialogWpp builder = new AlertDialogWpp(context);
+                builder.setTitle(title);
+                builder.setView(box);
+                builder.setPositiveButton("Save", (dialog, which) -> {
+                    Integer parsed = parseColorValue(input.getText().toString());
+                    if (parsed == null) {
+                        com.waenhancer.xposed.utils.Utils.showToast(
+                                "Use #RRGGBB or #AARRGGBB", android.widget.Toast.LENGTH_SHORT);
+                        return;
+                    }
+                    prefs.edit().putInt(key, parsed).apply();
+                    if (listener != null) listener.onPrefChanged(key, parsed);
+                    updateSummary(rowHolder[0], colorSummary(summary, parsed));
+                });
+                builder.setNegativeButton("Cancel", null);
+                builder.show();
+            });
+            return rowHolder[0];
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * A row for settings whose editor lives in the module app — file pickers, contact pickers, the
+     * theme manager. Those activities are intentionally not exported, so the host process cannot
+     * launch them directly; opening the module is the honest alternative to an inert row.
+     */
+    private static View createOpenInModuleTile(Context context, JSONObject pref, SharedPreferences prefs) {
+        try {
+            String key = pref.getString("key");
+            String title = resolveString(context, pref.getString("title"));
+            String summary = resolveString(context, pref.optString("summary", ""));
+            String current = "";
+            try {
+                Object stored = prefs.getAll().get(key);
+                if (stored instanceof String && !((String) stored).isEmpty()) {
+                    current = (String) stored;
+                }
+            } catch (Exception ignored) {}
+            String shown = !current.isEmpty() ? current
+                    : (summary.isEmpty() ? "Set this in the WaEnhancerX app" : summary);
+
+            return createWdsRow(context, title, shown, null, v -> {
+                try {
+                    com.waenhancer.xposed.utils.Utils.openModule(context);
+                } catch (Throwable t) {
+                    de.robv.android.xposed.XposedBridge.log(
+                            "[WAEX] Failed to open the module app: " + t.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static float readFloat(SharedPreferences prefs, String key, float fallback) {
+        try {
+            Object raw = prefs.getAll().get(key);
+            if (raw instanceof Number) return ((Number) raw).floatValue();
+            if (raw instanceof String) return Float.parseFloat((String) raw);
+        } catch (Exception ignored) {}
+        return fallback;
+    }
+
+    private static int readInt(SharedPreferences prefs, String key, int fallback) {
+        try {
+            Object raw = prefs.getAll().get(key);
+            if (raw instanceof Number) return ((Number) raw).intValue();
+            if (raw instanceof String) {
+                Integer parsed = parseColorValue((String) raw);
+                if (parsed != null) return parsed;
+            }
+        } catch (Exception ignored) {}
+        return fallback;
+    }
+
+    private static float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static String formatValue(float value) {
+        return Math.abs(value - Math.round(value)) < 0.001f
+                ? Integer.toString(Math.round(value))
+                : String.format(java.util.Locale.US, "%.1f", value);
+    }
+
+    private static String sliderSummary(String summary, float value) {
+        String shown = formatValue(value);
+        if (summary.contains("%s")) return summary.replace("%s", shown);
+        return summary.isEmpty() ? shown : summary + " — " + shown;
+    }
+
+    private static String colorSummary(String summary, int color) {
+        String shown = formatColor(color);
+        if (summary.contains("%s")) return summary.replace("%s", shown);
+        return summary.isEmpty() ? shown : summary + " — " + shown;
+    }
+
+    private static String formatColor(int color) {
+        return String.format(java.util.Locale.US, "#%08X", color);
+    }
+
+    private static Integer parseColorValue(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        if (value.isEmpty()) return null;
+        if ("0".equals(value)) return 0;
+        try {
+            if (!value.startsWith("#")) value = "#" + value;
+            if (value.length() == 7) value = "#FF" + value.substring(1);
+            if (value.length() != 9) return null;
+            return (int) Long.parseLong(value.substring(1), 16);
+        } catch (RuntimeException ignored) {
             return null;
         }
     }
@@ -687,19 +984,44 @@ public class WdsSettingsTileRenderer {
         }
     }
 
+    /** Rows that navigate somewhere instead of storing a value. */
+    private static final Map<String, String> ACTION_TARGETS = new HashMap<>();
+
+    static {
+        ACTION_TARGETS.put("open_deleted_messages", "com.waenhancer.activities.DeletedMessagesActivity");
+        ACTION_TARGETS.put("call_recording_manage", "com.waenhancer.activities.RecordingsActivity");
+    }
+
     private static View createActionTile(Context context, JSONObject pref) {
         try {
             String key = pref.getString("key");
-            String title = pref.getString("title");
-            String summary = pref.optString("summary", "");
+            String title = resolveString(context, pref.getString("title"));
+            String summary = resolveString(context, pref.optString("summary", ""));
 
             return createWdsRow(context, title, summary, null, v -> {
-                if ("open_deleted_messages".equals(key)) {
+                String target = ACTION_TARGETS.get(key);
+                // Only activities the manifest exports can be started from WhatsApp's process.
+                // Everything else goes through the module app, which is allowed to open them.
+                if (target == null) {
                     try {
-                        android.content.Intent intent = new android.content.Intent();
-                        intent.setClassName(context.getPackageName(), "com.waenhancer.activities.DeletedMessagesActivity");
-                        context.startActivity(intent);
-                    } catch (Exception ignored) {}
+                        com.waenhancer.xposed.utils.Utils.openModule(context);
+                    } catch (Throwable t) {
+                        de.robv.android.xposed.XposedBridge.log(
+                                "[WAEX] Failed to open the module app for '" + key + "': " + t.getMessage());
+                    }
+                    return;
+                }
+                try {
+                    android.content.Intent intent = new android.content.Intent();
+                    intent.setClassName(com.waenhancer.BuildConfig.APPLICATION_ID, target);
+                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(intent);
+                } catch (Throwable t) {
+                    de.robv.android.xposed.XposedBridge.log(
+                            "[WAEX] Failed to open '" + target + "': " + t.getMessage());
+                    try {
+                        com.waenhancer.xposed.utils.Utils.openModule(context);
+                    } catch (Throwable ignored) {}
                 }
             });
         } catch (Exception e) {

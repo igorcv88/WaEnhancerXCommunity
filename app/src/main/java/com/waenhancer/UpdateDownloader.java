@@ -198,10 +198,24 @@ public class UpdateDownloader {
     }
 
     public static void showDownloadDialog(Context context, String url, String version) {
-        showDownloadDialog(context, url, version, false);
+        showDownloadDialog(context, url, version, false, false, null);
     }
 
-    public static void showDownloadDialog(Context context, String url, String version, boolean useRoot) {
+    /**
+     * @param expectedSha256 digest published with the release, from
+     *                       {@link com.waenhancer.security.UpdateVerifier#extractSha256(String)}.
+     *                       A {@code null} here is not a bypass: verification refuses the install.
+     * @param useRoot        installs through {@code pm install}, which is also the only path on
+     *                       which a downgrade is permitted
+     */
+    public static void showDownloadDialog(Context context, String url, String version,
+                                          boolean useRoot, String expectedSha256) {
+        showDownloadDialog(context, url, version, useRoot, false, expectedSha256);
+    }
+
+    public static void showDownloadDialog(Context context, String url, String version,
+                                          boolean useRoot, boolean reinstallRequested,
+                                          String expectedSha256) {
         Activity activity = getActivity(context);
         if (activity == null) return;
 
@@ -262,8 +276,20 @@ public class UpdateDownloader {
 
             @Override
             public void onSuccess(File apkFile) {
+                // Still on the download thread here: hash and parse the archive before anything
+                // touches the installer. Every failure is a refusal, never a warning.
+                final com.waenhancer.security.UpdateVerifier.Result verdict =
+                        com.waenhancer.security.UpdateVerifier.verify(
+                                activity, apkFile, expectedSha256, useRoot, reinstallRequested);
+
                 activity.runOnUiThread(() -> {
                     if (dialog.isShowing()) dialog.dismiss();
+                    if (!verdict.ok) {
+                        //noinspection ResultOfMethodCallIgnored
+                        apkFile.delete();
+                        Toast.makeText(activity, verdict.detail, Toast.LENGTH_LONG).show();
+                        return;
+                    }
                     if (useRoot) {
                         installApkWithRoot(activity, apkFile);
                     } else {

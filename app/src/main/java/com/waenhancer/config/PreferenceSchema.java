@@ -168,15 +168,6 @@ public final class PreferenceSchema {
         add(entries, "floating_bottom_bar_horizontal_margin", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "floating_bottom_bar_icon_label_spacing", Type.FLOAT, Sensitivity.PRIVATE_SETTING, Store.PRIVATE);
         add(entries, "floating_bottom_bar_icon_size", Type.FLOAT, Sensitivity.PRIVATE_SETTING, Store.PRIVATE);
-        add(entries, "floating_bottom_bar_indicator_color", Type.INT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
-        add(entries, "floating_bottom_bar_indicator_height", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
-        add(entries, "floating_bottom_bar_indicator_offset", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
-        add(entries, "floating_bottom_bar_indicator_opacity", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
-        add(entries, "floating_bottom_bar_indicator_padding_horizontal", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
-        add(entries, "floating_bottom_bar_indicator_padding_vertical", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
-        add(entries, "floating_bottom_bar_indicator_radius", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
-        add(entries, "floating_bottom_bar_indicator_visible", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
-        add(entries, "floating_bottom_bar_indicator_width", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "floating_bottom_bar_manual_height", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "floating_bottom_bar_minimal_fab_color", Type.INT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "floating_bottom_bar_minimal_fab_icon_color", Type.INT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);

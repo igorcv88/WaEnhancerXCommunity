@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="bottom_bar_preview_disclaimer">ℹ️ Concept preview. Final margins, system navigation bar padding, and FAB vertical spacing may vary slightly depending on your device screen and settings.</string>
+    <string name="bottom_bar_preview_chat_name">WaEnhancerX</string>
+    <string name="bottom_bar_preview_chat_message">Concept preview looks amazing! 🔥</string>
+    <string name="bottom_bar_preview_chat_time">11:42 AM</string>
+    <string name="bottom_bar_preview_tab_chats">Chats</string>
+    <string name="bottom_bar_preview_tab_updates">Updates</string>
+    <string name="bottom_bar_preview_tab_communities">Communities</string>
+    <string name="bottom_bar_preview_tab_calls">Calls</string>
+    <string name="bottom_bar_preview_caption">Live preview</string>
+</resources>

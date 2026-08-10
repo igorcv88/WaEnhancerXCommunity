@@ -70,7 +70,6 @@ public class FloatingBottomBar extends Feature {
     private static boolean pillManualHeight = false;
     private static int fabVisibleOffsetDp = FAB_VISIBLE_OFFSET_DP;
     private static String fabMode = "default";
-    private static boolean indicatorVisible = false;
     private static SharedPreferences activePrefs;
 
     public FloatingBottomBar(@NonNull ClassLoader loader, @NonNull SharedPreferences preferences) {
@@ -97,7 +96,6 @@ public class FloatingBottomBar extends Feature {
         pillManualHeightDp = Math.round(normalized("floating_bottom_bar_manual_height"));
         fabVisibleOffsetDp = Math.round(normalized("floating_bottom_bar_fab_offset"));
         fabMode = getPrefString(activePrefs, "floating_bottom_bar_fab_mode", "default");
-        indicatorVisible = prefs.getBoolean("floating_bottom_bar_indicator_visible", false);
 
 
         // Hook the tab frame container
@@ -149,25 +147,9 @@ public class FloatingBottomBar extends Feature {
                                             try {
                                                 final View.OnClickListener originalListener = (View.OnClickListener) param2.args[0];
                                                 if (originalListener == null) return;
-                                                if (originalListener.getClass().getName().contains("FloatingBottomBar")) return;
+                                                if (originalListener instanceof TabClickProxy) return;
 
-                                                View itemView = (View) param2.thisObject;
-                                                View.OnClickListener proxyListener = new View.OnClickListener() {
-                                                    @Override
-                                                    public void onClick(View v) {
-                                                        try {
-                                                            int tabId = v.getId();
-                                                            View parentBottomNav = findBottomNavForView(v);
-                                                            if (parentBottomNav != null) {
-                                                                handleTabSelectionChanged(parentBottomNav, tabId);
-                                                            }
-                                                        } catch (Throwable t) {
-                                                            XposedBridge.log("[WAEX-FBB] Error in proxy onClick: " + t);
-                                                        }
-                                                        originalListener.onClick(v);
-                                                    }
-                                                };
-                                                param2.args[0] = proxyListener;
+                                                param2.args[0] = new TabClickProxy(null, originalListener);
                                             } catch (Throwable t) {
                                                 XposedBridge.log("[WAEX-FBB] Error wrapping setOnClickListener: " + t);
                                             }
@@ -1338,58 +1320,6 @@ public class FloatingBottomBar extends Feature {
         return null;
     }
 
-    /** Original tab appearance captured before the indicator ever touched it. */
-    private static final class TabState {
-        Drawable background;
-        float translationY;
-        int paddingLeft;
-        int paddingTop;
-        int paddingRight;
-        int paddingBottom;
-        int layoutWidth;
-        int layoutHeight;
-    }
-
-    private static final WeakHashMap<View, TabState> originalTabStates = new WeakHashMap<>();
-
-    private static void rememberOriginalTabState(View item) {
-        if (originalTabStates.containsKey(item)) return;
-        TabState state = new TabState();
-        state.background = item.getBackground();
-        state.translationY = item.getTranslationY();
-        state.paddingLeft = item.getPaddingLeft();
-        state.paddingTop = item.getPaddingTop();
-        state.paddingRight = item.getPaddingRight();
-        state.paddingBottom = item.getPaddingBottom();
-        ViewGroup.LayoutParams params = item.getLayoutParams();
-        if (params != null) {
-            state.layoutWidth = params.width;
-            state.layoutHeight = params.height;
-        }
-        originalTabStates.put(item, state);
-    }
-
-    private static void restoreOriginalTabState(View item) {
-        TabState state = originalTabStates.get(item);
-        if (state == null) {
-            item.setBackground(null);
-            return;
-        }
-        // Restore WhatsApp's own ripple, offset, padding and measured size instead of leaving the
-        // indicator's values behind on every tab the user has visited.
-        item.setBackground(state.background);
-        item.setTranslationY(state.translationY);
-        item.setPadding(state.paddingLeft, state.paddingTop,
-                state.paddingRight, state.paddingBottom);
-        ViewGroup.LayoutParams params = item.getLayoutParams();
-        if (params != null
-                && (params.width != state.layoutWidth || params.height != state.layoutHeight)) {
-            params.width = state.layoutWidth;
-            params.height = state.layoutHeight;
-            item.setLayoutParams(params);
-        }
-    }
-
     private static float normalized(String key) {
         try {
             if (activePrefs != null) {
@@ -1501,7 +1431,6 @@ public class FloatingBottomBar extends Feature {
             if (height <= 0) height = (int) (80 * density);
 
             boolean isMetaAiActive = isMetaAiTabActive(bottomNav);
-            applySelectedIndicator(bottomNav, tabId, density);
             // Re-assert the metrics: WhatsApp re-lays out the items on selection.
             applyTabMetrics(bottomNav);
 
@@ -1528,52 +1457,14 @@ public class FloatingBottomBar extends Feature {
         }
     }
 
-    private static void applySelectedIndicator(View bottomNav, int selectedId, float density) {
-        if (!indicatorVisible) return;
-        try {
-            ViewGroup menu = findMenuView(bottomNav);
-            if (menu == null) return;
-            for (int i = 0; i < menu.getChildCount(); i++) {
-                View item = menu.getChildAt(i);
-                rememberOriginalTabState(item);
-                if (item.getId() != selectedId) {
-                    restoreOriginalTabState(item);
-                    continue;
-                }
-                GradientDrawable indicator = new GradientDrawable();
-                int color = getPrefColor(activePrefs,
-                        "floating_bottom_bar_indicator_color", 0);
-                if (color == 0) color = DesignUtils.getPrimaryColor();
-                int opacity = Math.round(normalized(
-                        "floating_bottom_bar_indicator_opacity"));
-                indicator.setColor((Math.max(0, Math.min(255,
-                        Math.round(opacity * 2.55f))) << 24) | (color & 0x00FFFFFF));
-                indicator.setCornerRadius(normalized(
-                        "floating_bottom_bar_indicator_radius") * density);
-                item.setBackground(indicator);
-                item.setTranslationY(normalized(
-                        "floating_bottom_bar_indicator_offset") * density);
-                int horizontal = Math.round(normalized(
-                        "floating_bottom_bar_indicator_padding_horizontal") * density);
-                int vertical = Math.round(normalized(
-                        "floating_bottom_bar_indicator_padding_vertical") * density);
-                item.setPadding(horizontal, vertical, horizontal, vertical);
-                if ("manual".equals(getPrefString(activePrefs,
-                        "floating_bottom_bar_indicator_width_mode", "automatic"))) {
-                    ViewGroup.LayoutParams params = item.getLayoutParams();
-                    params.width = Math.round(normalized(
-                            "floating_bottom_bar_indicator_width") * density);
-                    if ("manual".equals(getPrefString(activePrefs,
-                            "floating_bottom_bar_indicator_height_mode", "automatic"))) {
-                        params.height = Math.round(normalized(
-                                "floating_bottom_bar_indicator_height") * density);
-                    }
-                    item.setLayoutParams(params);
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-    }
+    /*
+     * The selected-tab indicator used to live here. Section 10.6 of the execution plan asked it to
+     * resolve Material Navigation's internal active-indicator view and restyle that; no such view
+     * is reachable in the hooked layout, so the fallback path ran instead and set a background on
+     * the tab item itself. That drew a *second* indicator on top of WhatsApp's own, which is the
+     * opposite of what the feature promised. Removed in full — see the removal manifest in
+     * HANDOFF_WaEnhancer_Community_v2_ExecutionPlan.md.
+     */
 
     /** Original icon and label metrics, captured before any custom sizing was applied. */
     private static final class TabMetrics {
@@ -1799,22 +1690,44 @@ public class FloatingBottomBar extends Feature {
         return null;
     }
 
+    /**
+     * Click proxy that reports the tab selection before delegating to WhatsApp's own listener.
+     *
+     * <p>It is a named class on purpose. The re-entrancy guard used to be
+     * {@code getClass().getName().contains("FloatingBottomBar")}, but R8 renames anonymous inner
+     * classes ({@code FloatingBottomBar$5$1 -> Z.pd0}), so that test was always false in release
+     * builds and a fresh proxy was stacked on top of the previous one on every
+     * {@code setOnClickListener} call. {@code instanceof} does not depend on the name.
+     */
+    private static final class TabClickProxy implements View.OnClickListener {
+        private final View bottomNav;
+        private final View.OnClickListener delegate;
+
+        /** @param bottomNav the owning bar, or {@code null} to resolve it from the clicked view */
+        TabClickProxy(View bottomNav, View.OnClickListener delegate) {
+            this.bottomNav = bottomNav;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void onClick(View v) {
+            try {
+                View nav = bottomNav != null ? bottomNav : findBottomNavForView(v);
+                if (nav != null) {
+                    handleTabSelectionChanged(nav, v.getId());
+                }
+            } catch (Throwable t) {
+                XposedBridge.log("[WAEX-FBB] Error in tab click proxy: " + t);
+            }
+            delegate.onClick(v);
+        }
+    }
+
     private static void wrapOnClickListener(final View bottomNav, final View itemView) {
         try {
             final View.OnClickListener originalListener = getOnClickListener(itemView);
-            if (originalListener != null && !originalListener.getClass().getName().contains("FloatingBottomBar")) {
-                itemView.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        try {
-                            int tabId = v.getId();
-                            handleTabSelectionChanged(bottomNav, tabId);
-                        } catch (Throwable t) {
-                            XposedBridge.log("[WAEX-FBB] Error in wrapped onClick: " + t);
-                        }
-                        originalListener.onClick(v);
-                    }
-                });
+            if (originalListener != null && !(originalListener instanceof TabClickProxy)) {
+                itemView.setOnClickListener(new TabClickProxy(bottomNav, originalListener));
             }
         } catch (Throwable t) {
             XposedBridge.log("[WAEX-FBB] Error wrapping listener: " + t);

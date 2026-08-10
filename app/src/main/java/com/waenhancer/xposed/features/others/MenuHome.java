@@ -101,7 +101,14 @@ public class MenuHome extends Feature {
             if (cachedNewChatIcon == null) cachedNewChatIcon = DesignUtils.getDrawable(R.drawable.ic_contacts);
             if (cachedNewChatIcon != null) cachedNewChatIcon.setTint(iconTint);
             
-            cachedRecordingsIcon = DesignUtils.getDrawable(R.drawable.ic_privacy); // Fallback icon
+            // Prefer WhatsApp's own microphone glyph so the row matches the rest of the menu;
+            // ic_menu_recordings is the module's 24dp twin. This used to point at ic_privacy — a
+            // padlock, and declared at 56dp, so it rendered at more than twice the size of every
+            // other entry and pushed itself out of the icon column.
+            cachedRecordingsIcon = DesignUtils.getDrawableByName("vec_ic_mic");
+            if (cachedRecordingsIcon == null) {
+                cachedRecordingsIcon = DesignUtils.getDrawable(R.drawable.ic_menu_recordings);
+            }
             if (cachedRecordingsIcon != null) cachedRecordingsIcon.setTint(iconTint);
 
         } catch (Throwable e) {

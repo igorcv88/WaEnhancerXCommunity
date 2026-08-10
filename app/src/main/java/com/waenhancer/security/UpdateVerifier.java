@@ -89,6 +89,26 @@ public final class UpdateVerifier {
         return text.toString();
     }
 
+    /**
+     * Pulls the expected digest out of a GitHub release body.
+     *
+     * <p>The release workflow appends exactly one {@code SHA-256: `<hex>`} line to every release
+     * note it publishes, so that line is the channel through which the published digest reaches
+     * this class. Parsing lives here, next to {@link #digestMatches}, so the published format and
+     * the code that consumes it cannot drift apart.</p>
+     *
+     * @return the lowercase digest, or {@code null} when the notes carry none — which
+     *         {@link #verify} then treats as a refusal, not as permission to skip the check
+     */
+    public static String extractSha256(String releaseBody) {
+        if (releaseBody == null) return null;
+        java.util.regex.Matcher matcher = SHA256_IN_NOTES.matcher(releaseBody);
+        return matcher.find() ? matcher.group(1).toLowerCase(Locale.ROOT) : null;
+    }
+
+    private static final java.util.regex.Pattern SHA256_IN_NOTES =
+            java.util.regex.Pattern.compile("SHA-256:\\s*`?([0-9a-fA-F]{64})`?");
+
     /** Compares digests case-insensitively and without leaking through timing. */
     public static boolean digestMatches(String expected, String actual) {
         if (expected == null || actual == null) return false;
@@ -105,8 +125,10 @@ public final class UpdateVerifier {
      * one, which the caller signals rather than inferring from the file.
      */
     public static boolean versionIsAcceptable(long installed, long candidate,
-                                              boolean downgradeRequested) {
+                                              boolean downgradeRequested,
+                                              boolean reinstallRequested) {
         if (candidate > installed) return true;
+        if (candidate == installed) return reinstallRequested;
         return downgradeRequested && candidate < installed;
     }
 
@@ -115,9 +137,10 @@ public final class UpdateVerifier {
      *
      * @param expectedSha256    digest published with the release; required
      * @param downgradeRequested true only when the user explicitly chose a downgrade
+     * @param reinstallRequested true only when the user explicitly chose an equal-version build
      */
     public static Result verify(Context context, File apk, String expectedSha256,
-                                boolean downgradeRequested) {
+                                boolean downgradeRequested, boolean reinstallRequested) {
         if (context == null || apk == null || !apk.isFile() || apk.length() == 0) {
             return Result.fail(Failure.UNREADABLE, "The downloaded file is missing or empty.");
         }
@@ -160,7 +183,7 @@ public final class UpdateVerifier {
         }
 
         if (!versionIsAcceptable(versionCode(installed), versionCode(candidate),
-                downgradeRequested)) {
+                downgradeRequested, reinstallRequested)) {
             return Result.fail(Failure.DOWNGRADE,
                     "The download is not newer than the installed version.");
         }

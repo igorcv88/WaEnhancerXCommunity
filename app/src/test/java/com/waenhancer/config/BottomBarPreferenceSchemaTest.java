@@ -31,9 +31,11 @@ public class BottomBarPreferenceSchemaTest {
 
     @Test
     public void preservesNegativeOffsetWithinRange() {
+        // fab_offset is now the only control whose range reaches below zero; the indicator offset
+        // this used to cover was removed together with the selected-tab indicator.
         assertEquals(-12f,
                 BottomBarPreferenceSchema.normalize(
-                        "floating_bottom_bar_indicator_offset", -12f),
+                        "floating_bottom_bar_fab_offset", -12f),
                 0.001f);
     }
 }

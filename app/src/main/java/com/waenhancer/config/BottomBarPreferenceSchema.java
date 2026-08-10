@@ -42,13 +42,6 @@ public final class BottomBarPreferenceSchema {
         add(specs, "floating_bottom_bar_minimal_fab_radius", 24, 0, 36, 1);
         add(specs, "floating_bottom_bar_minimal_fab_opacity", 100, 10, 100, 5);
         add(specs, "floating_bottom_bar_minimal_fab_margin", 16, 0, 48, 1);
-        add(specs, "floating_bottom_bar_indicator_width", 40, 16, 96, 1);
-        add(specs, "floating_bottom_bar_indicator_height", 32, 2, 56, 1);
-        add(specs, "floating_bottom_bar_indicator_radius", 18, 0, 32, 1);
-        add(specs, "floating_bottom_bar_indicator_padding_horizontal", 8, 0, 24, 1);
-        add(specs, "floating_bottom_bar_indicator_padding_vertical", 4, 0, 16, 1);
-        add(specs, "floating_bottom_bar_indicator_offset", 0, -24, 24, 1);
-        add(specs, "floating_bottom_bar_indicator_opacity", 18, 0, 100, 1);
         SPECS = Collections.unmodifiableMap(specs);
     }
 
@@ -140,7 +133,6 @@ public final class BottomBarPreferenceSchema {
                 values.put("floating_bottom_bar_padding_vertical", 10f);
                 values.put("floating_bottom_bar_icon_label_spacing", 5f);
                 values.put("floating_bottom_bar_manual_height", 82f);
-                values.put("floating_bottom_bar_indicator_height", 42f);
                 break;
             case "stable_glass":
             default:

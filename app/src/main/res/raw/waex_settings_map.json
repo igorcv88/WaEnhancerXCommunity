@@ -691,9 +691,9 @@
             },
             {
               "key": "open_deleted_messages",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
+              "type": "action",
+              "value_type": "string",
+              "default": null,
               "title": "Deleted By Me",
               "summary": "View messages deleted by others"
             },
@@ -1163,18 +1163,18 @@
             },
             {
               "key": "call_recording_settings",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
+              "type": "action",
+              "value_type": "string",
+              "default": null,
               "title": "Recording Settings",
               "summary": "Choose how call audio is captured. Root mode provides better quality but requires a rooted device.",
               "dep": "call_recording_enable"
             },
             {
               "key": "call_recording_manage",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
+              "type": "action",
+              "value_type": "string",
+              "default": null,
               "title": "Manage Recordings",
               "summary": "Browse, play, share and delete saved call recordings.",
               "dep": "call_recording_enable"
@@ -1240,7 +1240,10 @@
               "value_type": "float",
               "default": 60.0,
               "title": "Increase Video Size Limit (MB)",
-              "summary": ""
+              "summary": "",
+              "min": 30,
+              "max": 90,
+              "step": 10
             },
             {
               "key": "videoquality",
@@ -1343,7 +1346,10 @@
               "value_type": "float",
               "default": 2.0,
               "title": "Voice Note Speed",
-              "summary": ""
+              "summary": "",
+              "min": 0.1,
+              "max": 5,
+              "step": 0.1
             },
             {
               "key": "audio_transcription",
@@ -1465,7 +1471,10 @@
               "default": 60.0,
               "title": "Wallpaper Transparency",
               "summary": "",
-              "dep": "wallpaper"
+              "dep": "wallpaper",
+              "min": 0,
+              "max": 100,
+              "step": 1
             },
             {
               "key": "wallpaper_alpha_toolbar",
@@ -1474,7 +1483,10 @@
               "default": 75.0,
               "title": "Toolbar Transparency",
               "summary": "",
-              "dep": "wallpaper"
+              "dep": "wallpaper",
+              "min": 0,
+              "max": 100,
+              "step": 1
             },
             {
               "key": "wallpaper_alpha_navigation",
@@ -1483,15 +1495,40 @@
               "default": 15.0,
               "title": "Navigation Transparency",
               "summary": "",
-              "dep": "wallpaper"
+              "dep": "wallpaper",
+              "min": 0,
+              "max": 100,
+              "step": 1
             },
             {
               "key": "hidetabs",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
+              "type": "multi",
+              "value_type": "string_set",
+              "default": null,
               "title": "Hide Tabs on Home",
-              "summary": "Hide tabs on the home screen such as Updates, Communities and Calls"
+              "summary": "Hide tabs on the home screen such as Updates, Communities and Calls",
+              "entries": [
+                {
+                  "label": "@string/updates",
+                  "value": "300"
+                },
+                {
+                  "label": "@string/communities",
+                  "value": "600"
+                },
+                {
+                  "label": "@string/calls",
+                  "value": "400"
+                },
+                {
+                  "label": "@string/tools",
+                  "value": "700"
+                },
+                {
+                  "label": "@string/meta_ai",
+                  "value": "1000"
+                }
+              ]
             },
             {
               "key": "bubble_color",
@@ -1622,9 +1659,9 @@
             },
             {
               "key": "manage_supported_versions",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
+              "type": "action",
+              "value_type": "string",
+              "default": null,
               "title": "Manage Supported Versions",
               "summary": "Add, edit, or delete custom supported versions",
               "dep": "customize_supported_versions"
@@ -1647,9 +1684,9 @@
             },
             {
               "key": "bootloader_spoofer_verify",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
+              "type": "action",
+              "value_type": "string",
+              "default": null,
               "title": "Verify Spoofer",
               "summary": "Check spoofer trust chain, keys, and expiration"
             },
