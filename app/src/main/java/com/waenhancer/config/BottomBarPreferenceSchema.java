@@ -30,7 +30,9 @@ public final class BottomBarPreferenceSchema {
         Map<String, Spec> specs = new LinkedHashMap<>();
         add(specs, "floating_bottom_bar_radius", 28, 0, 64, 1);
         add(specs, "floating_bottom_bar_bottom_margin", 22, 0, 64, 1);
-        add(specs, "floating_bottom_bar_horizontal_margin", 16, 0, 48, 1);
+        // 48dp a side is barely a quarter of a phone screen; the pill is a floating element and
+        // people reasonably want it much narrower than the display.
+        add(specs, "floating_bottom_bar_horizontal_margin", 16, 0, 96, 1);
         add(specs, "floating_bottom_bar_fab_offset", 80, -32, 128, 1);
         add(specs, "floating_bottom_bar_glass_opacity", 35, 10, 100, 5);
         add(specs, "floating_bottom_bar_icon_size", 24, 16, 40, 1);

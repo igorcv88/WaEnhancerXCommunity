@@ -61,7 +61,20 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
     /** One entry per mock tab, in on-screen order. */
     private final List<ImageView> previewIcons = new ArrayList<>();
     private final List<TextView> previewLabels = new ArrayList<>();
-    private final Map<String, Slider> sliders = new LinkedHashMap<>();
+    private final Map<String, SliderControl> sliders = new LinkedHashMap<>();
+
+    /** A slider and the caption above it, so a value written in code updates both. */
+    private static final class SliderControl {
+        final Slider slider;
+        final TextView caption;
+        final String title;
+
+        SliderControl(Slider slider, TextView caption, String title) {
+            this.slider = slider;
+            this.caption = caption;
+            this.title = title;
+        }
+    }
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -99,7 +112,8 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
         addSwitch("Glassmorphism", "floating_bottom_bar_glass", true);
         addDropdown("Glass style", "floating_bottom_bar_glass_variant",
                 new String[]{"Stable", "Advanced Glass", "Liquid", "Frost", "Clear"},
-                new String[]{"stable", "advanced", "liquid", "frost", "clear"}, "advanced");
+                new String[]{"stable", "advanced", "liquid", "frost", "clear"}, "advanced",
+                this::adoptGlassStyleOpacity);
         addColorField("Fill color", "floating_bottom_bar_fill_color", 0);
         addSwitch("Fully rounded", "floating_bottom_bar_fully_rounded", false);
         addSlider("Corner radius", "floating_bottom_bar_radius");
@@ -240,12 +254,20 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
             label.setText(title + ": " + format(normalized));
             notifyChanged();
         });
-        sliders.put(key, slider);
+        sliders.put(key, new SliderControl(slider, label, title));
         controls.addView(slider);
     }
 
     private void addDropdown(String title, String key, String[] entries, String[] values,
                              String defaultValue) {
+        addDropdown(title, key, entries, values, defaultValue, null);
+    }
+
+    /**
+     * @param onPicked run after the new value is stored, for choices that move other controls
+     */
+    private void addDropdown(String title, String key, String[] entries, String[] values,
+                             String defaultValue, java.util.function.Consumer<String> onPicked) {
         TextInputLayout layout = new TextInputLayout(this);
         layout.setHint(title);
         // Without an end icon in dropdown mode, Material never installs the delegate that opens
@@ -262,6 +284,7 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
         input.setText(entries[Math.max(0, selected)], false);
         input.setOnItemClickListener((parent, view, position, id) -> {
             prefs.edit().putString(key, values[position]).apply();
+            if (onPicked != null) onPicked.accept(values[position]);
             notifyChanged();
         });
         // Belt and braces: open the list on tap regardless of how the end-icon delegate resolves
@@ -272,6 +295,30 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         params.topMargin = dp(8);
         controls.addView(layout, params);
+    }
+
+    /**
+     * Moves the opacity slider to the value the chosen glass style is designed around.
+     *
+     * <p>Style and opacity are not independent settings. Each style scales the opacity it is
+     * given, so "Liquid" at the opacity that suits "Frost" is an opaque bar with a lit edge, and
+     * "Frost" at Liquid's opacity is not frost at all — which is how five visibly different
+     * treatments ended up looking like one. Picking a style now lands on that style's own
+     * opacity; the slider stays free afterwards for anyone who wants to push it.</p>
+     */
+    private void adoptGlassStyleOpacity(String variantKey) {
+        int recommended = com.waenhancer.theme.GlassSpec.Variant.from(variantKey)
+                .recommendedOpacityPercent();
+        setSliderValue("floating_bottom_bar_glass_opacity", recommended);
+    }
+
+    private void setSliderValue(String key, float value) {
+        float normalized = BottomBarPreferenceSchema.normalize(key, value);
+        prefs.edit().putFloat(key, normalized).apply();
+        SliderControl control = sliders.get(key);
+        if (control == null) return;
+        control.slider.setValue(normalized);
+        control.caption.setText(control.title + ": " + format(normalized));
     }
 
     private void addColorField(String title, String key, int defaultValue) {

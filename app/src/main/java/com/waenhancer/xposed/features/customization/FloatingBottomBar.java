@@ -25,7 +25,6 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
-import com.waenhancer.config.BottomBarPreferenceSchema;
 import com.waenhancer.theme.GlassRenderer;
 import com.waenhancer.theme.GlassSpec;
 import com.waenhancer.xposed.core.Feature;
@@ -58,6 +57,19 @@ public class FloatingBottomBar extends Feature {
     private static final WeakHashMap<View, Float> targetTranslations = new WeakHashMap<>();
     private static final WeakHashMap<View, Integer> originalBottomPaddings = new WeakHashMap<>();
     private static final WeakHashMap<View, Boolean> fabListeners = new WeakHashMap<>();
+    /** Known homes of WhatsApp's FAB across builds; all are tried, none is required. */
+    private static final String[] FAB_CLASS_CANDIDATES = {
+            "com.whatsapp.wds.components.fab.WDSFab",
+            "com.whatsapp.ui.wds.components.fab.WDSFab",
+            "com.whatsapp.WaFab",
+    };
+    /**
+     * How far above the pill the FAB is lifted in the z axis. The pill itself already sits at
+     * {@code PILL_ELEVATION_DP + PILL_TRANSLATION_Z_DP}; without clearing that the FAB is drawn
+     * underneath the bar and simply disappears behind it.
+     */
+    private static final float FAB_Z_CLEARANCE_DP = 8f;
+    private static final WeakHashMap<View, Boolean> styledFabs = new WeakHashMap<>();
     private static final WeakHashMap<View, FrameLayout> glassHosts = new WeakHashMap<>();
     private static final WeakHashMap<View, BlurView> glassBlurViews = new WeakHashMap<>();
     private static boolean scrollHideEnabled = true;
@@ -211,19 +223,7 @@ public class FloatingBottomBar extends Feature {
                         // Clear backgrounds of immediate children to prevent solid white rectangular overlays
                         makeChildrenTransparent(view);
 
-                        // Adjust padding to center items within floating pill
-                        // Pro: tighter 3dp; Regular: original 6dp
-                        int paddingVertical = dp(density,
-                                Math.round(normalized("floating_bottom_bar_padding_vertical")));
-                        view.setPadding(view.getPaddingLeft(), paddingVertical,
-                                view.getPaddingRight(), paddingVertical);
-                        if (pillManualHeight) {
-                            ViewGroup.LayoutParams heightParams = view.getLayoutParams();
-                            if (heightParams != null) {
-                                heightParams.height = dp(density, pillManualHeightDp);
-                                view.setLayoutParams(heightParams);
-                            }
-                        }
+                        applyBarVerticalMetrics(view, density);
 
                         // Attach LayoutChangeListener to enforce margins, overriding parent-forced layout passes
                         view.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
@@ -235,12 +235,14 @@ public class FloatingBottomBar extends Feature {
                                 if (isUpdating) return;
                                 isUpdating = true;
                                 try {
+                                    // With glass on, the margins belong to the host that wraps
+                                    // this bar; only the height is still the bar's own.
                                     ViewGroup.LayoutParams lp = v.getLayoutParams();
-                                    if (lp instanceof ViewGroup.MarginLayoutParams) {
+                                    if (!glassHosts.containsKey(v)
+                                            && lp instanceof ViewGroup.MarginLayoutParams) {
                                         ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
                                         int marginSide = dp(density, pillSideMarginDp);
                                         int marginBottom = dp(density, pillBottomMarginDp);
-                                        if (glassHosts.containsKey(v)) return;
                                         if (mlp.leftMargin != marginSide || mlp.rightMargin != marginSide || mlp.bottomMargin != marginBottom) {
                                             mlp.leftMargin = marginSide;
                                             mlp.rightMargin = marginSide;
@@ -248,6 +250,7 @@ public class FloatingBottomBar extends Feature {
                                             v.setLayoutParams(mlp);
                                         }
                                     }
+                                    applyBarHeight(v, density);
                                 } finally {
                                     isUpdating = false;
                                 }
@@ -341,66 +344,47 @@ public class FloatingBottomBar extends Feature {
             XposedBridge.log(t);
         }
 
-        // Hook WDSFab constructors to add attach state change and layout change listeners.
-        // This guarantees shifting the FABs up by 80dp to float cleanly above the bottom bar,
-        // and overrides CoordinatorLayout behaviors that try to reset the translation.
-        try {
-            Class<?> wdsFabClass = XposedHelpers.findClass("com.whatsapp.ui.wds.components.fab.WDSFab", classLoader);
-            XposedBridge.hookAllConstructors(wdsFabClass, new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    final View fab = (View) param.thisObject;
-                    if (fab == null) return;
-                    if ("hidden".equals(fabMode)) {
-                        fab.setVisibility(View.GONE);
-                        return;
-                    }
-                    if ("minimal".equals(fabMode)) {
-                        applyMinimalFab(fab);
-                    }
-                    fab.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
-                        @Override
-                        public void onViewAttachedToWindow(View v) {
-                            if (fabListeners.containsKey(v)) return;
-                            fabListeners.put(v, true);
-                            v.post(() -> {
-                                try {
-                                    float density = v.getContext().getResources().getDisplayMetrics().density;
-                                    ViewGroup rootLayout = getRootLayout(v);
-                                    v.setTranslationY(getFabVisibleTranslation(density));
-                                    
-                                    v.setElevation(20 * density);
-                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                                        v.setTranslationZ(12 * density);
+        // Keep every FAB above the pill and in whatever mode the user picked.
+        //
+        // This used to hang off a single hard-coded class name. WhatsApp moved WDSFab to a
+        // different package, findClass threw, and the whole block - Hidden, Minimal, the
+        // elevation that keeps the button above the bar - was skipped, which is why none of the
+        // FAB controls did anything and the button sat behind the pill. The constructor hook is
+        // now best-effort across the known names, and the styling itself no longer depends on it:
+        // the same work is redone from the view-tree sweep, which finds the button by its class
+        // hierarchy rather than by one exact name.
+        for (String candidate : FAB_CLASS_CANDIDATES) {
+            try {
+                Class<?> fabClass = XposedHelpers.findClass(candidate, classLoader);
+                XposedBridge.hookAllConstructors(fabClass, new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        final View fab = (View) param.thisObject;
+                        if (fab == null) return;
+                        fab.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+                            @Override
+                            public void onViewAttachedToWindow(View v) {
+                                if (fabListeners.containsKey(v)) return;
+                                fabListeners.put(v, true);
+                                v.post(() -> applyFabStyle(v));
+                                v.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+                                    @Override
+                                    public void onLayoutChange(View view, int l, int t, int r,
+                                                               int b, int ol, int ot, int or,
+                                                               int ob) {
+                                        applyFabStyle(view);
                                     }
-                                    
-                                    // Add layout listener to keep translation and elevation on layout passes
-                                    v.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
-                                        @Override
-                                        public void onLayoutChange(View view, int left, int top, int right, int bottom,
-                                                                   int oldLeft, int oldTop, int oldRight, int oldBottom) {
-                                            try {
-                                                float d = view.getContext().getResources().getDisplayMetrics().density;
-                                                view.setTranslationY(getFabVisibleTranslation(d));
-                                                
-                                                view.setElevation(20 * d);
-                                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                                                    view.setTranslationZ(12 * d);
-                                                }
-                                            } catch (Throwable ignored) {}
-                                        }
-                                    });
-                                } catch (Throwable ignored) {}
-                            });
-                        }
+                                });
+                            }
 
-                        @Override
-                        public void onViewDetachedFromWindow(View v) {}
-                    });
-                }
-            });
-        } catch (Throwable t) {
-            XposedBridge.log(t);
+                            @Override
+                            public void onViewDetachedFromWindow(View v) {}
+                        });
+                    }
+                });
+            } catch (Throwable ignored) {
+                // Expected for every name this build of WhatsApp does not use.
+            }
         }
 
         // Hook ViewPager page dispatch events directly to intercept page changes
@@ -505,6 +489,55 @@ public class FloatingBottomBar extends Feature {
             }
         } catch (Throwable t) {
             XposedBridge.log("[WAEX-FBB] Error hooking item selection listener: " + t);
+        }
+    }
+
+    /**
+     * Applies the vertical padding and, when asked for, the manual pill height.
+     *
+     * <p>Padding alone never reached zero. A Material navigation bar carries a minimum height of
+     * its own (and so does each tab item), so the pill bottomed out at that minimum no matter how
+     * far the slider came down, leaving a band of dead space above and below the tabs. Clearing
+     * those minimums is what lets the pill actually shrink to its content.</p>
+     */
+    private static void applyBarVerticalMetrics(View bar, float density) {
+        int paddingVertical = dp(density,
+                Math.round(normalized("floating_bottom_bar_padding_vertical")));
+
+        bar.setMinimumHeight(0);
+        bar.setPadding(bar.getPaddingLeft(), paddingVertical,
+                bar.getPaddingRight(), paddingVertical);
+
+        ViewGroup menu = findMenuView(bar);
+        if (menu != null) {
+            menu.setMinimumHeight(0);
+            menu.setPadding(menu.getPaddingLeft(), 0, menu.getPaddingRight(), 0);
+            for (int i = 0; i < menu.getChildCount(); i++) {
+                View item = menu.getChildAt(i);
+                item.setMinimumHeight(0);
+                item.setPadding(item.getPaddingLeft(), 0, item.getPaddingRight(), 0);
+            }
+        }
+
+        applyBarHeight(bar, density);
+    }
+
+    /**
+     * Forces the manual pill height when that mode is on, and hands the height back to the
+     * content otherwise.
+     *
+     * <p>Called again after the bar is re-parented into the overlay root: the move installs fresh
+     * layout params, which is what silently discarded the manual height set at attach time and
+     * made the Manual option indistinguishable from Automatic.</p>
+     */
+    private static void applyBarHeight(View bar, float density) {
+        ViewGroup.LayoutParams params = bar.getLayoutParams();
+        if (params == null) return;
+        int target = pillManualHeight
+                ? dp(density, pillManualHeightDp) : ViewGroup.LayoutParams.WRAP_CONTENT;
+        if (params.height != target) {
+            params.height = target;
+            bar.setLayoutParams(params);
         }
     }
 
@@ -708,12 +741,11 @@ public class FloatingBottomBar extends Feature {
                 }
             });
 
-            // 5. Adjust initial position of FABs to float above the pill
+            // 5. Style the FABs so they float above the pill in the mode the user picked.
             rootLayout.postDelayed(() -> {
                 try {
-                    java.util.List<View> fabs = findFabs(rootLayout);
-                    for (View fab : fabs) {
-                        fab.setTranslationY(getFabVisibleTranslation(density));
+                    for (View fab : findFabs(rootLayout)) {
+                        applyFabStyle(fab);
                     }
                 } catch (Throwable ignored) {}
             }, 500);
@@ -879,6 +911,9 @@ public class FloatingBottomBar extends Feature {
             
             java.util.List<View> fabs = findFabs(root);
             for (View fab : fabs) {
+                // A FAB created after the initial sweep reaches us here first; decorate it now so
+                // it is already in the right mode and above the pill when it animates.
+                if (!decorateFab(fab)) continue;
                 float targetTranslationY = hide ? 0f : getFabVisibleTranslation(density);
                 Float lastFabTarget = targetTranslations.get(fab);
                 if (lastFabTarget != null && lastFabTarget == targetTranslationY) {
@@ -894,6 +929,59 @@ public class FloatingBottomBar extends Feature {
         } catch (Throwable ignored) {}
     }
 
+    /**
+     * Applies the FAB mode, the z clearance that keeps the button above the pill, and the
+     * vertical offset - everything the FAB controls promise.
+     *
+     * <p>One routine, called from both the constructor hook and the view-tree sweep, so a build
+     * of WhatsApp whose FAB class we cannot name still gets the full treatment.</p>
+     */
+    private static void applyFabStyle(View fab) {
+        if (!decorateFab(fab)) return;
+        try {
+            float density = fab.getResources().getDisplayMetrics().density;
+            Float pending = targetTranslations.get(fab);
+            float target = pending != null ? pending : getFabVisibleTranslation(density);
+            if (fab.getTranslationY() != target) fab.setTranslationY(target);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * Applies the FAB mode and the z clearance, leaving the vertical position alone.
+     *
+     * <p>Split out so the scroll animation can guarantee a newly-created button is in the right
+     * mode and above the pill without fighting the translation it is about to animate.</p>
+     *
+     * @return false when this FAB is hidden and needs no further work
+     */
+    private static boolean decorateFab(View fab) {
+        if (fab == null) return false;
+        try {
+            if ("hidden".equals(fabMode)) {
+                if (fab.getVisibility() != View.GONE) fab.setVisibility(View.GONE);
+                return false;
+            }
+            if (fab.getVisibility() == View.GONE) fab.setVisibility(View.VISIBLE);
+
+            float density = fab.getResources().getDisplayMetrics().density;
+            // Rebuilding the minimal background on every layout pass would allocate a drawable
+            // per frame while the list scrolls.
+            if ("minimal".equals(fabMode) && !styledFabs.containsKey(fab)) {
+                styledFabs.put(fab, true);
+                applyMinimalFab(fab);
+            }
+
+            fab.setElevation((PILL_ELEVATION_DP + FAB_Z_CLEARANCE_DP) * density);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                fab.setTranslationZ((PILL_TRANSLATION_Z_DP + FAB_Z_CLEARANCE_DP) * density);
+            }
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     private static java.util.List<View> findFabs(ViewGroup root) {
         java.util.List<View> fabs = new java.util.ArrayList<>();
         findFabsRecursive(root, fabs);
@@ -905,14 +993,29 @@ public class FloatingBottomBar extends Feature {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) {
                 View child = group.getChildAt(i);
-                String name = child.getClass().getName();
-                if (name.contains("WDSFab") || name.contains("FloatingActionButton")) {
+                if (isFab(child)) {
                     fabs.add(child);
                 } else if (child instanceof ViewGroup) {
                     findFabsRecursive(child, fabs);
                 }
             }
         }
+    }
+
+    /**
+     * Recognises a FAB by its class hierarchy rather than by its own class name, so a subclass
+     * WhatsApp renamed still matches through the superclass it extends.
+     */
+    private static boolean isFab(View view) {
+        for (Class<?> clazz = view.getClass(); clazz != null && clazz != View.class;
+                clazz = clazz.getSuperclass()) {
+            String name = clazz.getName();
+            if (name.contains("WDSFab") || name.contains("FloatingActionButton")
+                    || name.endsWith("Fab")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void hideAdjacentDividers(View bottomNav, ViewGroup originalParent, float density) {
@@ -1220,7 +1323,8 @@ public class FloatingBottomBar extends Feature {
 
             FrameLayout.LayoutParams navLp = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    pillManualHeight ? dp(density, pillManualHeightDp)
+                            : ViewGroup.LayoutParams.WRAP_CONTENT,
                     android.view.Gravity.BOTTOM
             );
             glassHosts.put(bottomNav, host);
@@ -1255,13 +1359,12 @@ public class FloatingBottomBar extends Feature {
             // no-blur asks for radius 0 and pays for it with the higher fill opacity the spec
             // already worked out, instead of blurring at a radius it cannot afford.
             GlassSpec spec = glassSpec(ctx);
-            float radiusPx = GlassRenderer.blurRadiusPx(spec,
-                    ctx.getResources().getDisplayMetrics().density);
+            float radius = GlassRenderer.blurRadius(spec);
             blurView.setupWith(blurRoot, algorithm)
                     .setFrameClearDrawable(windowBg)
-                    .setBlurRadius(Math.max(1f, radiusPx))
+                    .setBlurRadius(Math.max(1f, radius))
                     .setOverlayColor(spec.fillColor);
-            blurView.setBlurEnabled(radiusPx > 0f);
+            blurView.setBlurEnabled(radius > 0f);
         } catch (Throwable t) {
             XposedBridge.log(t);
         }
@@ -1455,8 +1558,10 @@ public class FloatingBottomBar extends Feature {
             if (height <= 0) height = (int) (80 * density);
 
             boolean isMetaAiActive = isMetaAiTabActive(bottomNav);
-            // Re-assert the metrics: WhatsApp re-lays out the items on selection.
+            // Re-assert the metrics: WhatsApp re-lays out the items on selection, which restores
+            // its own label sizes and minimum heights.
             applyTabMetrics(bottomNav);
+            applyBarVerticalMetrics(bottomNav, density);
 
             if (tabId == 1000 || tabId == 1100 || isMetaAiActive) {
                 float targetTranslationY = height + (24 * density);
@@ -1490,105 +1595,83 @@ public class FloatingBottomBar extends Feature {
      * HANDOFF_WaEnhancer_Community_v2_ExecutionPlan.md.
      */
 
-    /** Original icon and label metrics, captured before any custom sizing was applied. */
-    private static final class TabMetrics {
-        int iconWidth;
-        int iconHeight;
-        int iconBottomMargin;
-        float labelTextSizePx;
-    }
-
-    private static final WeakHashMap<View, TabMetrics> originalTabMetrics = new WeakHashMap<>();
-
-    /** True when the user moved this control away from its schema default. */
-    private static boolean isCustomized(String key) {
-        try {
-            return Math.abs(normalized(key) - BottomBarPreferenceSchema.spec(key).defaultValue)
-                    > 0.001f;
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
     /**
      * Applies icon size, label text size and icon-to-label spacing to the real tabs.
      *
-     * <p>Each metric is applied only while the user keeps it away from the schema default, and is
-     * restored to WhatsApp's own value otherwise, so an untouched install looks exactly like the
-     * stock bar.
+     * <p>Every metric is applied unconditionally. These used to be applied only while the value
+     * differed from the schema default, and restored to WhatsApp's own metrics otherwise — which
+     * turned each slider into a step function with a cliff at its default: the icon slider grew
+     * smoothly from 16 to 23dp and then jumped to WhatsApp's intrinsic icon size at 24, because
+     * 24 is the default and the default meant "hands off".</p>
      */
     private static void applyTabMetrics(View bottomNav) {
         try {
             ViewGroup menu = findMenuView(bottomNav);
             if (menu == null) return;
             float density = bottomNav.getContext().getResources().getDisplayMetrics().density;
-            boolean customIcon = isCustomized("floating_bottom_bar_icon_size");
-            boolean customText = isCustomized("floating_bottom_bar_text_size");
-            boolean customSpacing = isCustomized("floating_bottom_bar_icon_label_spacing");
+            int iconSize = Math.round(normalized("floating_bottom_bar_icon_size") * density);
+            int spacing = Math.round(
+                    normalized("floating_bottom_bar_icon_label_spacing") * density);
+            float textSizeSp = normalized("floating_bottom_bar_text_size");
 
             for (int i = 0; i < menu.getChildCount(); i++) {
                 View item = menu.getChildAt(i);
                 ImageView icon = findFirstIcon(item);
-                TextView label = findFirstLabel(item);
-                TabMetrics original = rememberTabMetrics(item, icon, label);
 
                 if (icon != null) {
                     ViewGroup.LayoutParams params = icon.getLayoutParams();
-                    if (params != null) {
-                        int size = customIcon
-                                ? Math.round(normalized("floating_bottom_bar_icon_size") * density)
-                                : original.iconWidth;
-                        int height = customIcon ? size : original.iconHeight;
-                        boolean changed = params.width != size || params.height != height;
-                        params.width = size;
-                        params.height = height;
-
-                        if (params instanceof ViewGroup.MarginLayoutParams) {
-                            ViewGroup.MarginLayoutParams margins =
-                                    (ViewGroup.MarginLayoutParams) params;
-                            int spacing = customSpacing
-                                    ? Math.round(normalized(
-                                            "floating_bottom_bar_icon_label_spacing") * density)
-                                    : original.iconBottomMargin;
-                            changed |= margins.bottomMargin != spacing;
-                            margins.bottomMargin = spacing;
-                        }
-                        if (changed) icon.setLayoutParams(params);
+                    if (params != null
+                            && (params.width != iconSize || params.height != iconSize)) {
+                        params.width = iconSize;
+                        params.height = iconSize;
+                        icon.setLayoutParams(params);
                     }
                 }
 
-                if (label != null) {
-                    if (customText) {
-                        label.setTextSize(TypedValue.COMPLEX_UNIT_SP,
-                                normalized("floating_bottom_bar_text_size"));
-                    } else if (original.labelTextSizePx > 0f
-                            && Math.abs(label.getTextSize() - original.labelTextSizePx) > 0.1f) {
-                        label.setTextSize(TypedValue.COMPLEX_UNIT_PX, original.labelTextSizePx);
+                // Spacing moves the *label*, not the icon. WhatsApp's active-tab indicator is a
+                // separate view positioned from the icon's own placement, and it does not follow
+                // a margin change — so growing the icon's bottom margin slid the icon up out of
+                // its own indicator. Moving the label down opens the same gap and leaves the icon
+                // sitting where its indicator expects it.
+                View labelAnchor = labelSpacingAnchor(item);
+                if (labelAnchor != null) {
+                    ViewGroup.LayoutParams labelParams = labelAnchor.getLayoutParams();
+                    if (labelParams instanceof ViewGroup.MarginLayoutParams) {
+                        ViewGroup.MarginLayoutParams margins =
+                                (ViewGroup.MarginLayoutParams) labelParams;
+                        if (margins.topMargin != spacing) {
+                            margins.topMargin = spacing;
+                            labelAnchor.setLayoutParams(margins);
+                        }
                     }
+                }
+
+                // Every label, not just the first one. A Material navigation item carries two
+                // TextViews — a small label for the unselected state and a large one for the
+                // selected state — so resizing only the first left the active tab at WhatsApp's
+                // own size while its neighbours resized around it.
+                for (TextView label : findLabels(item)) {
+                    label.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp);
                 }
             }
         } catch (Throwable ignored) {
         }
     }
 
-    private static TabMetrics rememberTabMetrics(View item, ImageView icon, TextView label) {
-        TabMetrics existing = originalTabMetrics.get(item);
-        if (existing != null) return existing;
-        TabMetrics metrics = new TabMetrics();
-        if (icon != null) {
-            ViewGroup.LayoutParams params = icon.getLayoutParams();
-            if (params != null) {
-                metrics.iconWidth = params.width;
-                metrics.iconHeight = params.height;
-                if (params instanceof ViewGroup.MarginLayoutParams) {
-                    metrics.iconBottomMargin =
-                            ((ViewGroup.MarginLayoutParams) params).bottomMargin;
-                }
-            }
+    /**
+     * The view whose top margin opens the icon-to-label gap: the label group when the item has
+     * one, otherwise the first label itself.
+     */
+    private static View labelSpacingAnchor(View item) {
+        TextView label = findFirstLabel(item);
+        if (label == null) return null;
+        View candidate = label;
+        ViewParent parent = label.getParent();
+        while (parent instanceof ViewGroup && parent != item) {
+            candidate = (ViewGroup) parent;
+            parent = candidate.getParent();
         }
-        if (label != null) metrics.labelTextSizePx = label.getTextSize();
-        originalTabMetrics.put(item, metrics);
-        return metrics;
+        return candidate;
     }
 
     private static ImageView findFirstIcon(View view) {
@@ -1601,6 +1684,26 @@ public class FloatingBottomBar extends Feature {
             }
         }
         return null;
+    }
+
+    /** Every label in a tab item, in tree order. */
+    private static java.util.List<TextView> findLabels(View view) {
+        java.util.List<TextView> labels = new java.util.ArrayList<>(2);
+        collectLabels(view, labels);
+        return labels;
+    }
+
+    private static void collectLabels(View view, java.util.List<TextView> out) {
+        if (view instanceof TextView) {
+            out.add((TextView) view);
+            return;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                collectLabels(group.getChildAt(i), out);
+            }
+        }
     }
 
     private static TextView findFirstLabel(View view) {

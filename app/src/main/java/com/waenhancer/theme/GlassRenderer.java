@@ -17,6 +17,15 @@ import android.provider.Settings;
  */
 public final class GlassRenderer {
 
+    /**
+     * Ceiling on how far the specular band is pushed off the bottom of the surface, in dp.
+     * Roughly half a bar, so the band always reads as a lit top edge on a pill of any radius.
+     */
+    private static final float HIGHLIGHT_MAX_INSET_DP = 26f;
+
+    /** RenderScript clamps its blur radius here; RenderEffect has no such limit. */
+    private static final float MAX_BLUR_RADIUS = 25f;
+
     private GlassRenderer() { }
 
     /**
@@ -69,8 +78,14 @@ public final class GlassRenderer {
         if (hasHighlight) {
             // Confine the specular band to the top edge. Left full-height it reads as a wash over
             // the whole surface instead of a lit edge.
+            //
+            // The inset is capped independently of the corner radius. "Fully rounded" stores a
+            // radius of 1000dp, and deriving the inset from that pushed the highlight layer
+            // entirely off the drawable — which is why every variant looked the same as soon as
+            // the fully-rounded switch was on.
             int index = layers.size() - 1;
-            stack.setLayerInset(index, 0, 0, 0, Math.round(cornerRadiusPx * 1.5f));
+            int inset = Math.round(Math.min(cornerRadiusPx * 1.5f, HIGHLIGHT_MAX_INSET_DP * density));
+            stack.setLayerInset(index, 0, 0, 0, inset);
         }
         return stack;
     }
@@ -137,11 +152,17 @@ public final class GlassRenderer {
         }
     }
 
-    /** Blur radius in pixels for the blur library, or {@code 0} when the spec asked for none. */
-    public static float blurRadiusPx(GlassSpec spec, float density) {
-        if (spec.blurRadiusDp <= 0f) return 0f;
-        // The blur libraries clamp above 25; going past it costs frames without looking blurrier.
-        return Math.min(25f, spec.blurRadiusDp * Math.min(density, 1.5f));
+    /**
+     * Blur radius to hand the blur library, or {@code 0} when the spec asked for none.
+     *
+     * <p>The library blurs a downscaled copy of the backdrop, so its radius is already
+     * resolution-independent and must not be multiplied by display density: doing that sent
+     * every variant above the library's clamp on a modern phone, so Clear, Liquid, Advanced,
+     * Stable and Frost all blurred by exactly the same amount.</p>
+     */
+    public static float blurRadius(GlassSpec spec) {
+        if (spec.blurRadius <= 0f) return 0f;
+        return Math.min(MAX_BLUR_RADIUS, spec.blurRadius);
     }
 
     private static int alpha(int color) {
