@@ -21,18 +21,24 @@ public final class GlassSpec {
      */
     public enum Variant {
         /** Flat translucent fill and a hairline border. The pre-engine look. */
-        STABLE(1.00f, 14f, 0.00f, 0.00f, 0.6f, 1.00f, 35),
+        STABLE(1.00f, 14f, 0.00f, 0.00f, 0.6f, 1.00f, 35, 0.00f, 0f, 0.00f, 0.00f, 0.00f, false, false),
         /** The default Advanced Glass: real depth, a specular top edge, a soft bottom glow. */
-        ADVANCED(0.86f, 18f, 0.55f, 0.35f, 0.8f, 1.15f, 30),
+        ADVANCED(0.86f, 18f, 0.55f, 0.35f, 0.8f, 1.15f, 30, 0.18f, 10f, 0.10f, 0.50f, 0.30f, false, false),
         /**
-         * Liquid glass: very little fill, a light blur, and most of the effect carried by the
-         * lit edge. Blurring it heavily is what turns liquid glass into frost, so it does not.
+         * Liquid glass. Not a thinner frost: the effect is carried by what the surface does to
+         * the light behind it rather than by how much of it the surface hides.
+         *
+         * <p>A low uniform blur so the backdrop survives, a wide rim that bends and concentrates
+         * that backdrop as it approaches the edge, a fill that retints itself from whatever is
+         * actually behind the bar, and a body that morphs under the finger. Every one of those is
+         * a property the previous definition lacked, which is why "less blur than frost" still
+         * read as frost.</p>
          */
-        LIQUID(0.45f, 8f, 0.95f, 0.85f, 1.4f, 2.10f, 18),
+        LIQUID(0.30f, 6f, 0.85f, 0.90f, 1.2f, 2.30f, 14, 1.00f, 22f, 0.42f, 1.00f, 0.55f, true, true),
         /** Dense and diffuse: the most legible variant over busy or high-contrast backdrops. */
-        FROST(1.18f, 25f, 0.30f, 0.15f, 0.6f, 0.90f, 55),
+        FROST(1.18f, 25f, 0.30f, 0.15f, 0.6f, 0.90f, 55, 0.00f, 0f, 0.00f, 0.00f, 0.00f, false, false),
         /** Almost only a border. Highest backdrop fidelity, lowest legibility guarantee. */
-        CLEAR(0.30f, 4f, 0.85f, 0.60f, 1.6f, 2.40f, 12);
+        CLEAR(0.30f, 4f, 0.85f, 0.60f, 1.6f, 2.40f, 12, 0.55f, 16f, 0.30f, 0.85f, 0.35f, true, false);
 
         final float fillScale;
         final float blurRadius;
@@ -41,10 +47,19 @@ public final class GlassSpec {
         final float strokeWidthDp;
         final float edgeStrength;
         final int recommendedOpacityPercent;
+        final float lensStrength;
+        final float rimWidthDp;
+        final float dispersion;
+        final float specular;
+        final float innerShadow;
+        final boolean adaptive;
+        final boolean morphing;
 
         Variant(float fillScale, float blurRadius, float highlightStrength,
                 float refractionStrength, float strokeWidthDp, float edgeStrength,
-                int recommendedOpacityPercent) {
+                int recommendedOpacityPercent, float lensStrength, float rimWidthDp,
+                float dispersion, float specular, float innerShadow,
+                boolean adaptive, boolean morphing) {
             this.fillScale = fillScale;
             this.blurRadius = blurRadius;
             this.highlightStrength = highlightStrength;
@@ -52,6 +67,13 @@ public final class GlassSpec {
             this.strokeWidthDp = strokeWidthDp;
             this.edgeStrength = edgeStrength;
             this.recommendedOpacityPercent = recommendedOpacityPercent;
+            this.lensStrength = lensStrength;
+            this.rimWidthDp = rimWidthDp;
+            this.dispersion = dispersion;
+            this.specular = specular;
+            this.innerShadow = innerShadow;
+            this.adaptive = adaptive;
+            this.morphing = morphing;
         }
 
         /**
@@ -91,6 +113,12 @@ public final class GlassSpec {
     /** Opacity floor applied when the device cannot blur; see {@link #resolve}. */
     private static final float NO_BLUR_MIN_OPACITY = 0.72f;
 
+    /** How far an adaptive fill is pulled toward its backdrop's colour. See {@link #adaptTo}. */
+    private static final float ADAPTIVE_TINT_WEIGHT = 0.35f;
+
+    /** Widest swing the adaptive edge may take from its resolved alpha, either way. */
+    private static final float ADAPTIVE_EDGE_RANGE = 0.30f;
+
     private static final int WHITE = 0xFFFFFFFF;
     private static final int BLACK = 0xFF000000;
     private static final int DARK_SURFACE = 0xFF1F2C34;
@@ -120,10 +148,39 @@ public final class GlassSpec {
     public final boolean animate;
     /** True when the surface is standing in for blur it could not get. */
     public final boolean usingFallback;
+    /**
+     * How strongly the rim bends the backdrop behind it, 0-1.
+     *
+     * <p>This is the property that separates liquid glass from frost. Frost hides the backdrop
+     * uniformly; a lens leaves the middle almost untouched and does its work at the edge, where
+     * the backdrop is displaced inward and the light it carries is concentrated. Zero on the
+     * variants that are meant to read as a flat pane.</p>
+     */
+    public final float lensStrength;
+    /** Width of the lensed band inside the edge, in dp. Zero when there is no lensing. */
+    public final float rimWidthDp;
+    /**
+     * How far the three colour channels are displaced apart inside the rim, 0-1.
+     *
+     * <p>Real glass has a different refractive index per wavelength, so the band it compresses at
+     * its edge fringes into colour. Displacing all three channels identically is what made the
+     * previous lens read as a smear rather than as an edge.</p>
+     */
+    public final float dispersion;
+    /** Strength of the rim highlight and the gloss the light source puts on the bevel, 0-1. */
+    public final float specular;
+    /** Depth of the shadow inside the backlit edge, 0-1. What makes the surface read as thick. */
+    public final float innerShadow;
+    /** Whether the fill retints itself from the backdrop actually behind the surface. */
+    public final boolean adaptive;
+    /** Whether the surface may morph and stretch under interaction. */
+    public final boolean morphing;
 
     private GlassSpec(int fillColor, float blurRadius, int strokeColor, float strokeWidthDp,
                       int highlightColor, int refractionColor, int contentColor,
-                      boolean animate, boolean usingFallback) {
+                      boolean animate, boolean usingFallback,
+                      float lensStrength, float rimWidthDp, float dispersion, float specular,
+                      float innerShadow, boolean adaptive, boolean morphing) {
         this.fillColor = fillColor;
         this.blurRadius = blurRadius;
         this.strokeColor = strokeColor;
@@ -133,6 +190,13 @@ public final class GlassSpec {
         this.contentColor = contentColor;
         this.animate = animate;
         this.usingFallback = usingFallback;
+        this.lensStrength = lensStrength;
+        this.rimWidthDp = rimWidthDp;
+        this.dispersion = dispersion;
+        this.specular = specular;
+        this.innerShadow = innerShadow;
+        this.adaptive = adaptive;
+        this.morphing = morphing;
     }
 
     /**
@@ -186,6 +250,10 @@ public final class GlassSpec {
         int stroke = SemanticTheme.withAlpha(dark ? WHITE : BLACK,
                 clamp((dark ? 0.16f : 0.14f) * resolved.edgeStrength, 0f, 0.85f));
 
+        // Lensing displaces the blurred backdrop. Where there is no blur there is nothing to
+        // displace, so the fallback drops the lens rather than warping a flat fill.
+        float lens = blurSupported ? resolved.lensStrength : 0f;
+
         return new GlassSpec(
                 fill,
                 blurSupported ? resolved.blurRadius : 0f,
@@ -195,7 +263,60 @@ public final class GlassSpec {
                 refraction,
                 content,
                 !reduceMotion,
-                !blurSupported);
+                !blurSupported,
+                lens,
+                lens <= 0f ? 0f : resolved.rimWidthDp,
+                lens <= 0f ? 0f : resolved.dispersion,
+                lens <= 0f ? 0f : resolved.specular,
+                lens <= 0f ? 0f : resolved.innerShadow,
+                resolved.adaptive && blurSupported,
+                resolved.morphing && !reduceMotion);
+    }
+
+    /**
+     * This surface as it looks over a particular backdrop.
+     *
+     * <p>An adaptive surface is not a fixed colour. Real glass takes on the light around it, so
+     * the fill is pulled a short way toward the backdrop's own hue, the edge brightens over a
+     * dark backdrop and darkens over a light one, and the content colour is re-derived so it
+     * still clears {@link #MIN_CONTENT_CONTRAST} against whatever the fill just became — the
+     * point of adapting is lost if the labels stop being readable in the process.</p>
+     *
+     * <p>Returns {@code this} unchanged for the variants that are not adaptive, so a caller may
+     * hand every surface its backdrop without asking which ones care.</p>
+     *
+     * @param backdropColor the average colour actually behind the surface
+     * @param dark          whether the host is in night mode
+     */
+    public GlassSpec adaptTo(int backdropColor, boolean dark) {
+        if (!adaptive || (backdropColor >>> 24) == 0) return this;
+
+        int fillAlpha = (fillColor >>> 24) & 0xFF;
+        // A short pull only. Taking the backdrop's colour outright would make the bar disappear
+        // into it, which is camouflage rather than glass.
+        int tintedRgb = SemanticTheme.blend(fillColor, backdropColor, ADAPTIVE_TINT_WEIGHT)
+                & 0x00FFFFFF;
+        int adaptedFill = (fillAlpha << 24) | tintedRgb;
+
+        double backdropLuminance = SemanticTheme.relativeLuminance(backdropColor);
+        // Bright backdrop: the edge has to darken to stay visible. Dark backdrop: it lights up.
+        float edgeShift = (float) (0.5d - backdropLuminance) * ADAPTIVE_EDGE_RANGE;
+        int adaptedStroke = SemanticTheme.withAlpha(
+                backdropLuminance > 0.5d ? BLACK : WHITE,
+                clamp(baseEdgeAlpha() + edgeShift, 0.05f, 0.85f));
+
+        int composited = SemanticTheme.blend(backdropColor, 0xFF000000 | tintedRgb,
+                fillAlpha / 255f);
+        int adaptedContent = SemanticTheme.ensureTextContrast(
+                SemanticTheme.bestTextColor(composited), composited, MIN_CONTENT_CONTRAST);
+
+        return new GlassSpec(adaptedFill, blurRadius, adaptedStroke, strokeWidthDp,
+                highlightColor, refractionColor, adaptedContent, animate, usingFallback,
+                lensStrength, rimWidthDp, dispersion, specular, innerShadow, adaptive, morphing);
+    }
+
+    private float baseEdgeAlpha() {
+        return ((strokeColor >>> 24) & 0xFF) / 255f;
     }
 
     /**

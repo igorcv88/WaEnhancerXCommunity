@@ -120,6 +120,16 @@ public final class SemanticTheme {
         return (lighter + 0.05) / (darker + 0.05);
     }
 
+    /**
+     * WCAG relative luminance of a colour, 0 (black) to 1 (white).
+     *
+     * <p>Exposed so surfaces that adapt to their backdrop can ask how bright that backdrop is
+     * without keeping a second copy of the coefficients.</p>
+     */
+    public static double relativeLuminance(int color) {
+        return luminance(color);
+    }
+
     private static double luminance(int color) {
         double r = linear(red(color) / 255.0);
         double g = linear(green(color) / 255.0);
