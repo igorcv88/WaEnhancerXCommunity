@@ -122,6 +122,15 @@ public class FloatingBottomBar extends Feature {
         fabVisibleOffsetDp = Math.round(normalized("floating_bottom_bar_fab_offset"));
         fabMode = getPrefString(activePrefs, "floating_bottom_bar_fab_mode", "default");
 
+        // Emitted before anything can go wrong, so its absence is itself a result: no line means
+        // this module never ran in this process, which is a different problem from any decision
+        // the glass engine could make afterwards.
+        XposedBridge.log("glass boot: glassEnabled=" + glassEnabled
+                + " variant=" + getPrefString(activePrefs, "floating_bottom_bar_glass_variant",
+                        GlassSpec.Variant.STABLE.key())
+                + " opacity=" + glassOpacity
+                + " lensSupported=" + LiquidLens.isSupported());
+
 
         // Hook the tab frame container
         Class<?> loadTabFrameClass = Unobfuscator.loadTabFrameClass(classLoader);
@@ -1430,6 +1439,11 @@ public class FloatingBottomBar extends Feature {
 
             setupBlurView(blurView, blurRoot != null ? blurRoot : targetRoot, bottomNav);
             targetRoot.addView(host, hostLp);
+            XposedBridge.log("glass host installed: lensed=" + lensed
+                    + " variant=" + getPrefString(activePrefs,
+                            "floating_bottom_bar_glass_variant", GlassSpec.Variant.STABLE.key())
+                    + " fill=#" + Integer.toHexString(hostSpec.fillColor)
+                    + " blur=" + hostSpec.blurRadius);
             return host;
         } catch (Throwable t) {
             XposedBridge.log(t);
