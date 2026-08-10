@@ -382,8 +382,8 @@ public class PrivacyFragment extends BasePreferenceFragment {
             return;
         }
 
-        com.google.android.material.bottomsheet.BottomSheetDialog dialog = 
-                new com.google.android.material.bottomsheet.BottomSheetDialog(requireContext());
+        com.google.android.material.bottomsheet.BottomSheetDialog dialog =
+                com.waenhancer.ui.helpers.BottomSheetHelper.createStyledDialog(requireContext());
         
         LinearLayout layout = new LinearLayout(requireContext());
         layout.setOrientation(LinearLayout.VERTICAL);

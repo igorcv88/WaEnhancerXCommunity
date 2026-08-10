@@ -1391,7 +1391,7 @@ public class FloatingBottomBar extends Feature {
     private static GlassSpec glassSpec(android.content.Context ctx) {
         return GlassRenderer.resolveFor(ctx,
                 getPrefString(activePrefs, "floating_bottom_bar_glass_variant",
-                        GlassSpec.Variant.ADVANCED.key()),
+                        GlassSpec.Variant.STABLE.key()),
                 com.waenhancer.xposed.utils.DesignUtils.isNightMode(ctx),
                 glassFillColor,
                 com.waenhancer.xposed.utils.DesignUtils.getPrimaryColor(),

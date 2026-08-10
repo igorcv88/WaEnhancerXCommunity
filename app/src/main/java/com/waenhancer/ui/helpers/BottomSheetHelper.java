@@ -9,6 +9,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.LinearLayout;
 
 import com.google.android.material.bottomsheet.BottomSheetDialog;
@@ -329,6 +330,14 @@ public class BottomSheetHelper {
 
     private static void applyGlass(View bottomSheet, Context context) {
         try {
+            // BottomSheetDialog inserts the caller's root directly inside this container. The
+            // helper layouts use opaque shape drawables there, which would otherwise cover the
+            // glass installed on the container.
+            if (bottomSheet instanceof ViewGroup
+                    && ((ViewGroup) bottomSheet).getChildCount() > 0) {
+                ((ViewGroup) bottomSheet).getChildAt(0)
+                        .setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            }
             android.content.SharedPreferences prefs =
                     androidx.preference.PreferenceManager.getDefaultSharedPreferences(context);
             boolean dark = (context.getResources().getConfiguration().uiMode

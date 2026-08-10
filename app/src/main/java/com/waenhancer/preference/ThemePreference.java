@@ -75,17 +75,10 @@ public class ThemePreference extends Preference implements FilePicker.OnUriPicke
         var sharedPreferences = getSafeSharedPreferences();
         var folder_name = sharedPreferences.getString(getKey(), null);
 
-        com.google.android.material.bottomsheet.BottomSheetDialog builder = new com.google.android.material.bottomsheet.BottomSheetDialog(
-                context);
+        com.google.android.material.bottomsheet.BottomSheetDialog builder =
+                com.waenhancer.ui.helpers.BottomSheetHelper.createStyledDialog(context);
         View dialogView = LayoutInflater.from(context).inflate(R.layout.preference_theme, null);
         builder.setContentView(dialogView);
-        builder.setOnShowListener(d -> {
-            com.google.android.material.bottomsheet.BottomSheetDialog bsd = (com.google.android.material.bottomsheet.BottomSheetDialog) d;
-            View bottomSheet = bsd.findViewById(com.google.android.material.R.id.design_bottom_sheet);
-            if (bottomSheet != null) {
-                bottomSheet.setBackgroundResource(android.R.color.transparent);
-            }
-        });
 
         LinearLayout folderListContainer = dialogView.findViewById(R.id.folder_list_container);
         Button newTheme = dialogView.findViewById(R.id.create_theme_button);
