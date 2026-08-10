@@ -4,6 +4,7 @@ import android.graphics.Color;
 import android.graphics.RenderEffect;
 import android.graphics.RuntimeShader;
 import android.os.Build;
+import android.util.Log;
 import android.view.View;
 
 /**
@@ -216,7 +217,24 @@ public final class LiquidLens {
      */
     private static volatile boolean broken;
 
+    /** Log tag for the one thing about this class that is not visible on screen: why it declined. */
+    private static final String TAG = "WaEnhancerX/Lens";
+
+    /**
+     * Why the last {@link #apply} call did what it did.
+     *
+     * <p>A lens that declines is indistinguishable on screen from a lens that was never asked
+     * for — both leave the surface exactly as the fallback painted it. That makes "nothing
+     * changed" an ambiguous symptom, and this is what disambiguates it.</p>
+     */
+    private static volatile String status = "not attempted";
+
     private LiquidLens() { }
+
+    /** Human-readable account of the last {@link #apply} call. Diagnostic only. */
+    public static String status() {
+        return status;
+    }
 
     /** Whether this device can run the lens at all. */
     public static boolean isSupported() {
@@ -248,14 +266,26 @@ public final class LiquidLens {
      * @return true when a lens is now installed
      */
     public static boolean apply(View view, GlassSpec spec, float cornerRadiusPx, float density) {
-        if (view == null) return false;
+        if (view == null) {
+            status = "no view";
+            return false;
+        }
         if (!isActiveFor(spec)) {
+            status = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                    ? "declined: needs Android 13, device is API " + Build.VERSION.SDK_INT
+                    : broken ? "declined: shader previously rejected by this device"
+                    : spec == null ? "declined: no spec"
+                    : "declined: variant has no lens (lensStrength=" + spec.lensStrength
+                            + ") - pick Liquid, Advanced or Clear as the glass style";
             clear(view);
             return false;
         }
         int width = view.getWidth();
         int height = view.getHeight();
-        if (width <= 0 || height <= 0) return false;
+        if (width <= 0 || height <= 0) {
+            status = "deferred: surface not measured yet (" + width + "x" + height + ")";
+            return false;
+        }
 
         // A bevel wider than half the bar would have the two rims meeting in the middle, which
         // turns the whole surface into edge and loses the clear centre the lens exists to keep.
@@ -266,7 +296,10 @@ public final class LiquidLens {
         String key = width + "x" + height + ":" + cornerRadiusPx + ":" + bevel + ":" + refract
                 + ":" + spec.dispersion + ":" + spec.specular + ":" + spec.innerShadow
                 + ":" + spec.fillColor + ":" + saturation;
-        if (key.equals(installed.get(view))) return true;
+        if (key.equals(installed.get(view))) {
+            status = "active (unchanged)";
+            return true;
+        }
 
         try {
             RuntimeShader shader = new RuntimeShader(SHADER);
@@ -287,11 +320,16 @@ public final class LiquidLens {
 
             view.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"));
             installed.put(view, key);
+            status = "active: " + width + "x" + height + " bevel=" + bevel + "px refract="
+                    + refract + "px dispersion=" + spec.dispersion;
             return true;
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
             // A device that refuses the shader keeps the layered rim rather than losing the bar,
-            // and stops being asked again.
+            // and stops being asked again. Logged rather than swallowed: a rejected shader and a
+            // variant with no lens look identical on screen, and only one of them is a bug.
             broken = true;
+            status = "shader rejected by this device: " + t;
+            Log.e(TAG, "AGSL lens rejected; falling back to the layered rim", t);
             clear(view);
             return false;
         }

@@ -1676,12 +1676,40 @@ public class FloatingBottomBar extends Feature {
             BlurView blurView = glassBlurViews.get(bottomNav);
             if (blurView != null) {
                 LiquidLens.apply(blurView, spec, pillCornerRadiusPx(blurView, density), density);
+                logGlassState(spec);
             }
 
             LiquidMorph morph = liquidMorphs.get(bottomNav);
             if (morph != null) {
                 morph.applySpec(spec);
                 moveMorphToSelectedTab(bottomNav, morph, density);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** The last line {@link #logGlassState} emitted, so a per-layout call logs once per change. */
+    private static String lastGlassLog;
+
+    /**
+     * Reports what the glass engine actually decided, once per change.
+     *
+     * <p>Every way the lens can decline produces the same thing on screen — the surface the
+     * fallback already painted. "It looks the same as before" therefore does not distinguish a
+     * variant with no lens from a shader the driver rejected from an engine that never ran, and
+     * those have entirely different fixes. This is the only place that difference is visible.</p>
+     */
+    private static void logGlassState(GlassSpec spec) {
+        try {
+            String variant = getPrefString(activePrefs, "floating_bottom_bar_glass_variant",
+                    GlassSpec.Variant.STABLE.key());
+            String line = "glass: variant=" + variant
+                    + " blur=" + spec.blurRadius
+                    + " fallback=" + spec.usingFallback
+                    + " lens=" + LiquidLens.status();
+            if (!line.equals(lastGlassLog)) {
+                lastGlassLog = line;
+                XposedBridge.log(line);
             }
         } catch (Throwable ignored) {
         }
