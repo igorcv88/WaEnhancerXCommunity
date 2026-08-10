@@ -21,9 +21,9 @@ public final class GlassSpec {
      */
     public enum Variant {
         /** Flat translucent fill and a hairline border. The pre-engine look. */
-        STABLE(1.00f, 14f, 0.00f, 0.00f, 0.6f, 1.00f, 35, 0.00f, 0f, false, false),
+        STABLE(1.00f, 14f, 0.00f, 0.00f, 0.6f, 1.00f, 35, 0.00f, 0f, 0.00f, 0.00f, 0.00f, false, false),
         /** The default Advanced Glass: real depth, a specular top edge, a soft bottom glow. */
-        ADVANCED(0.86f, 18f, 0.55f, 0.35f, 0.8f, 1.15f, 30, 0.18f, 10f, false, false),
+        ADVANCED(0.86f, 18f, 0.55f, 0.35f, 0.8f, 1.15f, 30, 0.18f, 10f, 0.10f, 0.50f, 0.30f, false, false),
         /**
          * Liquid glass. Not a thinner frost: the effect is carried by what the surface does to
          * the light behind it rather than by how much of it the surface hides.
@@ -34,11 +34,11 @@ public final class GlassSpec {
          * a property the previous definition lacked, which is why "less blur than frost" still
          * read as frost.</p>
          */
-        LIQUID(0.30f, 6f, 0.85f, 0.90f, 1.2f, 2.30f, 14, 1.00f, 22f, true, true),
+        LIQUID(0.30f, 6f, 0.85f, 0.90f, 1.2f, 2.30f, 14, 1.00f, 22f, 0.42f, 1.00f, 0.55f, true, true),
         /** Dense and diffuse: the most legible variant over busy or high-contrast backdrops. */
-        FROST(1.18f, 25f, 0.30f, 0.15f, 0.6f, 0.90f, 55, 0.00f, 0f, false, false),
+        FROST(1.18f, 25f, 0.30f, 0.15f, 0.6f, 0.90f, 55, 0.00f, 0f, 0.00f, 0.00f, 0.00f, false, false),
         /** Almost only a border. Highest backdrop fidelity, lowest legibility guarantee. */
-        CLEAR(0.30f, 4f, 0.85f, 0.60f, 1.6f, 2.40f, 12, 0.55f, 16f, true, false);
+        CLEAR(0.30f, 4f, 0.85f, 0.60f, 1.6f, 2.40f, 12, 0.55f, 16f, 0.30f, 0.85f, 0.35f, true, false);
 
         final float fillScale;
         final float blurRadius;
@@ -49,12 +49,16 @@ public final class GlassSpec {
         final int recommendedOpacityPercent;
         final float lensStrength;
         final float rimWidthDp;
+        final float dispersion;
+        final float specular;
+        final float innerShadow;
         final boolean adaptive;
         final boolean morphing;
 
         Variant(float fillScale, float blurRadius, float highlightStrength,
                 float refractionStrength, float strokeWidthDp, float edgeStrength,
                 int recommendedOpacityPercent, float lensStrength, float rimWidthDp,
+                float dispersion, float specular, float innerShadow,
                 boolean adaptive, boolean morphing) {
             this.fillScale = fillScale;
             this.blurRadius = blurRadius;
@@ -65,6 +69,9 @@ public final class GlassSpec {
             this.recommendedOpacityPercent = recommendedOpacityPercent;
             this.lensStrength = lensStrength;
             this.rimWidthDp = rimWidthDp;
+            this.dispersion = dispersion;
+            this.specular = specular;
+            this.innerShadow = innerShadow;
             this.adaptive = adaptive;
             this.morphing = morphing;
         }
@@ -152,6 +159,18 @@ public final class GlassSpec {
     public final float lensStrength;
     /** Width of the lensed band inside the edge, in dp. Zero when there is no lensing. */
     public final float rimWidthDp;
+    /**
+     * How far the three colour channels are displaced apart inside the rim, 0-1.
+     *
+     * <p>Real glass has a different refractive index per wavelength, so the band it compresses at
+     * its edge fringes into colour. Displacing all three channels identically is what made the
+     * previous lens read as a smear rather than as an edge.</p>
+     */
+    public final float dispersion;
+    /** Strength of the rim highlight and the gloss the light source puts on the bevel, 0-1. */
+    public final float specular;
+    /** Depth of the shadow inside the backlit edge, 0-1. What makes the surface read as thick. */
+    public final float innerShadow;
     /** Whether the fill retints itself from the backdrop actually behind the surface. */
     public final boolean adaptive;
     /** Whether the surface may morph and stretch under interaction. */
@@ -160,7 +179,8 @@ public final class GlassSpec {
     private GlassSpec(int fillColor, float blurRadius, int strokeColor, float strokeWidthDp,
                       int highlightColor, int refractionColor, int contentColor,
                       boolean animate, boolean usingFallback,
-                      float lensStrength, float rimWidthDp, boolean adaptive, boolean morphing) {
+                      float lensStrength, float rimWidthDp, float dispersion, float specular,
+                      float innerShadow, boolean adaptive, boolean morphing) {
         this.fillColor = fillColor;
         this.blurRadius = blurRadius;
         this.strokeColor = strokeColor;
@@ -172,6 +192,9 @@ public final class GlassSpec {
         this.usingFallback = usingFallback;
         this.lensStrength = lensStrength;
         this.rimWidthDp = rimWidthDp;
+        this.dispersion = dispersion;
+        this.specular = specular;
+        this.innerShadow = innerShadow;
         this.adaptive = adaptive;
         this.morphing = morphing;
     }
@@ -243,6 +266,9 @@ public final class GlassSpec {
                 !blurSupported,
                 lens,
                 lens <= 0f ? 0f : resolved.rimWidthDp,
+                lens <= 0f ? 0f : resolved.dispersion,
+                lens <= 0f ? 0f : resolved.specular,
+                lens <= 0f ? 0f : resolved.innerShadow,
                 resolved.adaptive && blurSupported,
                 resolved.morphing && !reduceMotion);
     }
@@ -286,7 +312,7 @@ public final class GlassSpec {
 
         return new GlassSpec(adaptedFill, blurRadius, adaptedStroke, strokeWidthDp,
                 highlightColor, refractionColor, adaptedContent, animate, usingFallback,
-                lensStrength, rimWidthDp, adaptive, morphing);
+                lensStrength, rimWidthDp, dispersion, specular, innerShadow, adaptive, morphing);
     }
 
     private float baseEdgeAlpha() {

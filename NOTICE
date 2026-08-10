@@ -1,1 +1,13 @@
 This project contains third-party components under their respective licenses.
+The liquid-glass optical model in app/src/main/java/com/waenhancer/theme/LiquidLens.java
+is ported from two MIT-licensed projects:
+
+  QWEA0/Liquid-Glass-Android — https://github.com/QWEA0/Liquid-Glass-Android
+  Copyright (c) QWEA0. MIT License.
+  Ported: rounded-rect SDF coverage, gradient-derived surface normal, inward
+  refraction with per-channel dispersion, and the inner shadow.
+
+  Prismal — https://github.com/styropyr0/Prismal
+  Copyright (c) Saurav Sajeev. MIT License.
+  Ported: circular meniscus thickness profile, Schlick-Fresnel term, and the
+  split between the lit rim and the opposite-side glow.

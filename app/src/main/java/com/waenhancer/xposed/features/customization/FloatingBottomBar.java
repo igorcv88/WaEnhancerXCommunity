@@ -1370,10 +1370,19 @@ public class FloatingBottomBar extends Feature {
                 host.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
             }
 
+            // With the lens active the shader owns the fill, the rim and the shape's own
+            // antialiased coverage, so nothing else may paint them. A background drawable here
+            // would be a flat wash with no detail in it, and the lens would be refracting that
+            // instead of the backdrop — which is exactly why the previous build read as tinted
+            // grey. An outline clip would hard-cut the edge the shader just feathered.
+            GlassSpec hostSpec = glassSpec(ctx);
+            boolean lensed = LiquidLens.isActiveFor(hostSpec);
             BlurView blurView = new BlurView(ctx);
-            blurView.setBackground(createGlassShape(ctx, density, true));
+            if (!lensed) {
+                blurView.setBackground(createGlassShape(ctx, density, true));
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                blurView.setClipToOutline(true);
+                blurView.setClipToOutline(!lensed);
                 blurView.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
             }
 
@@ -1385,7 +1394,6 @@ public class FloatingBottomBar extends Feature {
 
             // Between the blurred pane and the tabs: the blob has to be lit by the glass above
             // it and sit behind the icons, or it stops reading as something inside the surface.
-            GlassSpec hostSpec = glassSpec(ctx);
             if (hostSpec.morphing) {
                 LiquidMorph morph = new LiquidMorph(ctx);
                 morph.applySpec(hostSpec);
@@ -1449,10 +1457,15 @@ public class FloatingBottomBar extends Feature {
             // already worked out, instead of blurring at a radius it cannot afford.
             GlassSpec spec = glassSpec(ctx);
             float radius = GlassRenderer.blurRadius(spec);
+            // The overlay is a flat colour composited over the blur before the lens ever runs.
+            // Under a lens it halves the backdrop's contrast and leaves nothing to refract, so
+            // the tint is handed to the shader instead and applied after the displacement.
+            int overlay = LiquidLens.isActiveFor(spec) ? android.graphics.Color.TRANSPARENT
+                    : spec.fillColor;
             blurView.setupWith(blurRoot, algorithm)
                     .setFrameClearDrawable(windowBg)
                     .setBlurRadius(Math.max(1f, radius))
-                    .setOverlayColor(spec.fillColor);
+                    .setOverlayColor(overlay);
             blurView.setBlurEnabled(radius > 0f);
         } catch (Throwable t) {
             XposedBridge.log(t);
@@ -1617,6 +1630,12 @@ public class FloatingBottomBar extends Feature {
     private static android.graphics.drawable.Drawable createGlassShape(
             android.content.Context ctx, float density, boolean includeFill, GlassSpec spec) {
         if (!includeFill) {
+            if (LiquidLens.isActiveFor(spec)) {
+                // The lens derives its rim from the same distance field it refracts with, so it
+                // already traces the true outline. A stroke drawn over that is a second edge at
+                // a slightly different radius, and reads as the drawn border it is.
+                return new android.graphics.drawable.ColorDrawable(0x00000000);
+            }
             // The nav itself only contributes the edge; the fill belongs to the blurred layer
             // beneath it, or the two stack and the surface reads twice as opaque as configured.
             android.graphics.drawable.GradientDrawable edge =
@@ -1694,8 +1713,16 @@ public class FloatingBottomBar extends Feature {
         GlassSpec spec = glassSpecFor(bottomNav);
         BlurView blurView = glassBlurViews.get(bottomNav);
         if (blurView != null) {
-            blurView.setOverlayColor(spec.fillColor);
-            blurView.setBackground(createGlassShape(bottomNav.getContext(), density, true, spec));
+            if (LiquidLens.isActiveFor(spec)) {
+                // The adapted tint reaches the surface through the shader's uniform, which
+                // refreshLiquid rebuilds because fillColor is part of the lens cache key.
+                blurView.setOverlayColor(android.graphics.Color.TRANSPARENT);
+                LiquidLens.apply(blurView, spec, pillCornerRadiusPx(blurView, density), density);
+            } else {
+                blurView.setOverlayColor(spec.fillColor);
+                blurView.setBackground(
+                        createGlassShape(bottomNav.getContext(), density, true, spec));
+            }
         }
         bottomNav.setBackground(createGlassShape(bottomNav.getContext(), density, false, spec));
         host.invalidate();

@@ -279,6 +279,61 @@ public class GlassSpecTest {
         assertFalse(spec.adaptive);
     }
 
+    /**
+     * A lens is an optical model, not a displacement. Bending the backdrop without splitting it
+     * per channel and lighting the rim off the same geometry is what made the previous build read
+     * as a tinted blur, so a variant that lenses must carry all four properties or none.
+     */
+    @Test
+    public void aLensingVariantCarriesTheWholeOpticalModel() {
+        for (GlassSpec.Variant variant : GlassSpec.Variant.values()) {
+            GlassSpec spec = resolve(variant, true, true);
+            String name = variant.name();
+            if (spec.lensStrength > 0f) {
+                assertTrue(name + " lenses but does not disperse", spec.dispersion > 0f);
+                assertTrue(name + " lenses but has no specular", spec.specular > 0f);
+                assertTrue(name + " lenses but has no thickness", spec.innerShadow > 0f);
+            } else {
+                assertEquals(name, 0f, spec.dispersion, 0f);
+                assertEquals(name, 0f, spec.specular, 0f);
+                assertEquals(name, 0f, spec.innerShadow, 0f);
+            }
+        }
+    }
+
+    /** Liquid is the most optically active of the family; that is what the name is for. */
+    @Test
+    public void liquidDispersesAndLightsMoreThanTheOtherLenses() {
+        GlassSpec liquid = resolve(GlassSpec.Variant.LIQUID, true, true);
+        GlassSpec advanced = resolve(GlassSpec.Variant.ADVANCED, true, true);
+
+        assertTrue(liquid.dispersion > advanced.dispersion);
+        assertTrue(liquid.specular > advanced.specular);
+        assertTrue(liquid.innerShadow > advanced.innerShadow);
+    }
+
+    /** The optics go with the lens: no blur, no lens, and therefore no rim to light. */
+    @Test
+    public void theFallbackDropsTheOpticsWithTheLens() {
+        GlassSpec spec = resolve(GlassSpec.Variant.LIQUID, true, false);
+
+        assertEquals(0f, spec.dispersion, 0f);
+        assertEquals(0f, spec.specular, 0f);
+        assertEquals(0f, spec.innerShadow, 0f);
+    }
+
+    /** Adapting to a backdrop retints the surface; it does not change what the surface is. */
+    @Test
+    public void adaptingKeepsTheOpticalModelIntact() {
+        GlassSpec spec = resolve(GlassSpec.Variant.LIQUID, true, true);
+        GlassSpec adapted = spec.adaptTo(0xFF2B6CB0, true);
+
+        assertEquals(spec.dispersion, adapted.dispersion, 0f);
+        assertEquals(spec.specular, adapted.specular, 0f);
+        assertEquals(spec.innerShadow, adapted.innerShadow, 0f);
+        assertEquals(spec.rimWidthDp, adapted.rimWidthDp, 0f);
+    }
+
     /** Reduced motion stops the surface moving, whatever the variant would like to do. */
     @Test
     public void reducedMotionStopsTheMorph() {
