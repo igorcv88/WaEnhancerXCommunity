@@ -226,6 +226,25 @@
     <string name="wallpaper_in_home_screen_sum">Show selected wallpaper in home screen with transparency</string>
     <string name="configs_imported">Configs imported</string>
     <string name="configs_saved">Configs saved</string>
+
+    <!-- Full backup (encrypted deleted data, media and private secrets) -->
+    <string name="backup_export_choose_title">What do you want to export?</string>
+    <string name="backup_export_settings_option">Settings only — shareable JSON</string>
+    <string name="backup_export_full_option">Full backup — encrypted, includes deleted data</string>
+    <string name="backup_full_password_title">Backup password</string>
+    <string name="backup_full_password_hint">Password</string>
+    <string name="backup_full_password_required">A backup password is required.</string>
+    <string name="backup_continue">Continue</string>
+    <string name="backup_restore">Restore</string>
+    <string name="backup_full_media_title">Include saved media?</string>
+    <string name="backup_full_media_include">Include media — larger file</string>
+    <string name="backup_full_media_exclude">Messages and secrets only — no media</string>
+    <string name="backup_full_saved_title">Full backup saved</string>
+    <string name="backup_full_saved_message">Keep the file and its password together. Neither one opens the backup on its own — the password cannot be recovered.</string>
+    <string name="backup_full_saved_message_no_media">Saved without media: your deleted messages and secrets are in the file, the media files are not.\n\nKeep the file and its password together — the password cannot be recovered.</string>
+    <string name="backup_full_restore_title">Restore full backup</string>
+    <string name="backup_full_restored_title">Full backup restored</string>
+    <string name="backup_full_restored_message">Restored %1$d messages, %2$d media files and %3$d saved secrets.</string>
     <string name="backup_settings">Backup Settings</string>
     <string name="import_settings">Import</string>
     <string name="export_settings">Export</string>

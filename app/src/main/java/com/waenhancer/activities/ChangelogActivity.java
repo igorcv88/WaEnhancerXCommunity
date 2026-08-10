@@ -569,11 +569,16 @@ public class ChangelogActivity extends BaseActivity {
             final JSONObject finalSwitchAsset = switchAsset;
             final JSONObject finalReleaseAsset = releaseAsset;
             final JSONObject finalDebugAsset = debugAsset;
+            // The release workflow appends "SHA-256: `<hex>`" to every set of release notes it
+            // publishes; that line is how the expected digest reaches the verifier. Notes without
+            // one yield null, and the verifier refuses rather than installing unchecked.
+            final String publishedSha256 = com.waenhancer.security.UpdateVerifier
+                    .extractSha256(release.optString("body", ""));
 
             btnUpdate.setOnClickListener(v -> {
                 if (finalIsSwitching && finalSwitchAsset != null) {
                     String downloadUrl = finalSwitchAsset.optString("browser_download_url", "");
-                    UpdateDownloader.showDownloadDialog(v.getContext(), downloadUrl, tagName, downgradesEnabled);
+                    UpdateDownloader.showDownloadDialog(v.getContext(), downloadUrl, tagName, downgradesEnabled, publishedSha256);
                     return;
                 }
 
@@ -591,7 +596,7 @@ public class ChangelogActivity extends BaseActivity {
                 if (apkAssets.size() == 1) {
                     JSONObject asset = apkAssets.get(0);
                     String downloadUrl = asset.optString("browser_download_url", "");
-                    UpdateDownloader.showDownloadDialog(v.getContext(), downloadUrl, tagName, downgradesEnabled);
+                    UpdateDownloader.showDownloadDialog(v.getContext(), downloadUrl, tagName, downgradesEnabled, publishedSha256);
                 } else {
                     final List<JSONObject> choices = new ArrayList<>();
                     List<String> items = new ArrayList<>();
@@ -620,7 +625,7 @@ public class ChangelogActivity extends BaseActivity {
                             .setItems(items.toArray(new String[0]), (dialog, which) -> {
                                 JSONObject selectedAsset = choices.get(which);
                                 String downloadUrl = selectedAsset.optString("browser_download_url", "");
-                                UpdateDownloader.showDownloadDialog(v.getContext(), downloadUrl, tagName, downgradesEnabled);
+                                UpdateDownloader.showDownloadDialog(v.getContext(), downloadUrl, tagName, downgradesEnabled, publishedSha256);
                             })
                             .setNegativeButton(R.string.cancel, (dialog, which) -> dialog.dismiss())
                             .show();

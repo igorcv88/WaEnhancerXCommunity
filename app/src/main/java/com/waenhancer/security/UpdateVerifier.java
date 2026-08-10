@@ -89,6 +89,26 @@ public final class UpdateVerifier {
         return text.toString();
     }
 
+    /**
+     * Pulls the expected digest out of a GitHub release body.
+     *
+     * <p>The release workflow appends exactly one {@code SHA-256: `<hex>`} line to every release
+     * note it publishes, so that line is the channel through which the published digest reaches
+     * this class. Parsing lives here, next to {@link #digestMatches}, so the published format and
+     * the code that consumes it cannot drift apart.</p>
+     *
+     * @return the lowercase digest, or {@code null} when the notes carry none — which
+     *         {@link #verify} then treats as a refusal, not as permission to skip the check
+     */
+    public static String extractSha256(String releaseBody) {
+        if (releaseBody == null) return null;
+        java.util.regex.Matcher matcher = SHA256_IN_NOTES.matcher(releaseBody);
+        return matcher.find() ? matcher.group(1).toLowerCase(Locale.ROOT) : null;
+    }
+
+    private static final java.util.regex.Pattern SHA256_IN_NOTES =
+            java.util.regex.Pattern.compile("SHA-256:\\s*`?([0-9a-fA-F]{64})`?");
+
     /** Compares digests case-insensitively and without leaking through timing. */
     public static boolean digestMatches(String expected, String actual) {
         if (expected == null || actual == null) return false;

@@ -34,7 +34,6 @@ public class BottomBarPreviewModelTest {
         assertEquals(6, model.paddingVerticalDp);
         assertEquals(64, model.manualHeightDp);
         assertEquals("default", model.fabMode);
-        assertFalse(model.indicatorVisible);
         assertFalse(model.manualHeight);
     }
 
@@ -62,32 +61,23 @@ public class BottomBarPreviewModelTest {
         assertEquals(77, model.manualHeightDp);
     }
 
+    /**
+     * The selected-tab indicator was removed: it drew a second indicator over WhatsApp's own
+     * instead of restyling it. Its keys must not resurface in the model.
+     */
     @Test
-    public void everyIndicatorControlReachesTheModel() {
+    public void indicatorKeysAreIgnored() {
         Map<String, Object> prefs = snapshot();
         prefs.put("floating_bottom_bar_indicator_visible", true);
-        prefs.put("floating_bottom_bar_indicator_width_mode", "manual");
-        prefs.put("floating_bottom_bar_indicator_height_mode", "manual");
         prefs.put("floating_bottom_bar_indicator_width", 55f);
-        prefs.put("floating_bottom_bar_indicator_height", 21f);
-        prefs.put("floating_bottom_bar_indicator_radius", 7f);
-        prefs.put("floating_bottom_bar_indicator_padding_horizontal", 13f);
-        prefs.put("floating_bottom_bar_indicator_padding_vertical", 5f);
-        prefs.put("floating_bottom_bar_indicator_offset", -8f);
-        prefs.put("floating_bottom_bar_indicator_opacity", 44f);
 
         BottomBarPreviewModel model = BottomBarPreviewModel.from(prefs);
 
-        assertTrue(model.indicatorVisible);
-        assertTrue(model.indicatorManualWidth);
-        assertTrue(model.indicatorManualHeight);
-        assertEquals(55, model.indicatorWidthDp);
-        assertEquals(21, model.indicatorHeightDp);
-        assertEquals(7, model.indicatorRadiusDp);
-        assertEquals(13, model.indicatorPaddingHorizontalDp);
-        assertEquals(5, model.indicatorPaddingVerticalDp);
-        assertEquals(-8, model.indicatorOffsetDp);
-        assertEquals(44, model.indicatorOpacity);
+        for (java.lang.reflect.Field field : BottomBarPreviewModel.class.getFields()) {
+            assertFalse("indicator field survived removal: " + field.getName(),
+                    field.getName().toLowerCase(java.util.Locale.US).contains("indicator"));
+        }
+        assertEquals(28, model.radiusDp);
     }
 
     @Test
@@ -160,15 +150,6 @@ public class BottomBarPreviewModelTest {
         prefs.put("floating_bottom_bar_fill_color", 0);
 
         assertEquals(0xFF123456, BottomBarPreviewModel.from(prefs).resolvedFillColor(0xFF123456));
-    }
-
-    @Test
-    public void automaticIndicatorColourFallsBackToThePrimary() {
-        Map<String, Object> prefs = snapshot();
-        prefs.put("floating_bottom_bar_indicator_opacity", 100f);
-
-        assertEquals(0x00FFFFFF & 0x4FAF50,
-                BottomBarPreviewModel.from(prefs).resolvedIndicatorColor(0xFF4FAF50) & 0x00FFFFFF);
     }
 
     @Test

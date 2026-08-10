@@ -22,6 +22,24 @@ public final class FullBackupCrypto {
 
     private FullBackupCrypto() { }
 
+    /** Number of leading bytes {@link #isFullBackup} needs in order to decide. */
+    public static final int MAGIC_LENGTH = MAGIC.length;
+
+    /**
+     * Whether these leading bytes open a full backup container.
+     *
+     * <p>Import has to tell an encrypted full backup from a plain settings JSON before it knows
+     * which size cap and which restore path apply. It asks here rather than sniffing the magic
+     * itself, so the byte sequence stays defined in exactly one place.</p>
+     */
+    public static boolean isFullBackup(byte[] prefix) {
+        if (prefix == null || prefix.length < MAGIC.length) return false;
+        for (int i = 0; i < MAGIC.length; i++) {
+            if (prefix[i] != MAGIC[i]) return false;
+        }
+        return true;
+    }
+
     public static byte[] encrypt(byte[] plaintext, char[] password) throws BackupCodec.BackupException {
         if (plaintext == null || password == null || password.length == 0) throw new BackupCodec.BackupException("A backup password is required.");
         byte[] salt = random(SALT_BYTES), iv = random(IV_BYTES), key = null;

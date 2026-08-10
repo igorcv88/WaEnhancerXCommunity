@@ -65,6 +65,16 @@
 -keep class com.waenhancer.preference.SafeSharedPreferences { *; }
 -keep class com.waenhancer.xposed.utils.XPrefManager { *; }
 -keep class com.waenhancer.xposed.utils.XResManager { *; }
+
+# ResId is a mutable mirror of R, populated purely by *name*: WppXposed does
+# Class.forName("com.waenhancer.xposed.utils.ResId$" + type) and ResId.initLocal() matches
+# ResId.<type>.<field> against R.<type>.<field> via getField(field.getName()). Without these
+# keeps R8 repackages ResId into 'Z', renames every field, and even merges unrelated static
+# fields from other libraries into ResId$array / ResId$drawable. Both lookups then throw into
+# `catch (Exception ignored)` and every ResId.* stays 0, so module strings and drawables
+# silently resolve to nothing in release only. Do not remove.
+-keep class com.waenhancer.xposed.utils.ResId { *; }
+-keep class com.waenhancer.xposed.utils.ResId$* { *; }
 -keep class com.waenhancer.model.FilterItem { *; }
 
 

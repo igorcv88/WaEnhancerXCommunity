@@ -254,12 +254,17 @@ public class ReleaseDetailsActivity extends BaseActivity {
             }
 
             final String finalDownloadUrl = downloadUrl;
+            // See ChangelogActivity: the release workflow publishes the APK digest in the notes,
+            // and a missing digest makes the verifier refuse instead of installing unchecked.
+            final String publishedSha256 = com.waenhancer.security.UpdateVerifier
+                    .extractSha256(release.optString("body", ""));
             if (finalDownloadUrl != null) {
                 btnDownload.setVisibility(View.VISIBLE);
                 btnDownload.setOnClickListener(v -> {
                     boolean useRoot = PreferenceManager.getDefaultSharedPreferences(this)
                             .getBoolean("downgrades_enabled", false);
-                    UpdateDownloader.showDownloadDialog(this, finalDownloadUrl, tagName, useRoot);
+                    UpdateDownloader.showDownloadDialog(this, finalDownloadUrl, tagName, useRoot,
+                            publishedSha256);
                 });
             } else {
                 btnDownload.setVisibility(View.GONE);

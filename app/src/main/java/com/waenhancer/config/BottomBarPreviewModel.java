@@ -37,18 +37,6 @@ public final class BottomBarPreviewModel {
     public final int minimalFabColor;
     public final int minimalFabIconColor;
 
-    public final boolean indicatorVisible;
-    public final boolean indicatorManualWidth;
-    public final boolean indicatorManualHeight;
-    public final int indicatorWidthDp;
-    public final int indicatorHeightDp;
-    public final int indicatorRadiusDp;
-    public final int indicatorPaddingHorizontalDp;
-    public final int indicatorPaddingVerticalDp;
-    public final int indicatorOffsetDp;
-    public final int indicatorOpacity;
-    public final int indicatorColor;
-
     private BottomBarPreviewModel(Map<String, ?> snapshot) {
         barEnabled = bool(snapshot, "floating_bottom_bar", false);
         glassEnabled = bool(snapshot, "floating_bottom_bar_glass", true);
@@ -76,22 +64,6 @@ public final class BottomBarPreviewModel {
         minimalFabColor = color(snapshot, "floating_bottom_bar_minimal_fab_color", 0);
         minimalFabIconColor = color(snapshot, "floating_bottom_bar_minimal_fab_icon_color",
                 0xFFFFFFFF);
-
-        indicatorVisible = bool(snapshot, "floating_bottom_bar_indicator_visible", false);
-        indicatorManualWidth = "manual".equals(str(snapshot,
-                "floating_bottom_bar_indicator_width_mode", "automatic"));
-        indicatorManualHeight = "manual".equals(str(snapshot,
-                "floating_bottom_bar_indicator_height_mode", "automatic"));
-        indicatorWidthDp = intOf(snapshot, "floating_bottom_bar_indicator_width");
-        indicatorHeightDp = intOf(snapshot, "floating_bottom_bar_indicator_height");
-        indicatorRadiusDp = intOf(snapshot, "floating_bottom_bar_indicator_radius");
-        indicatorPaddingHorizontalDp = intOf(snapshot,
-                "floating_bottom_bar_indicator_padding_horizontal");
-        indicatorPaddingVerticalDp = intOf(snapshot,
-                "floating_bottom_bar_indicator_padding_vertical");
-        indicatorOffsetDp = intOf(snapshot, "floating_bottom_bar_indicator_offset");
-        indicatorOpacity = intOf(snapshot, "floating_bottom_bar_indicator_opacity");
-        indicatorColor = color(snapshot, "floating_bottom_bar_indicator_color", 0);
     }
 
     public static BottomBarPreviewModel from(Map<String, ?> snapshot) {
@@ -124,12 +96,6 @@ public final class BottomBarPreviewModel {
     public int resolvedMinimalFabColor(int themePrimary) {
         return applyOpacity(minimalFabColor == 0 ? themePrimary : minimalFabColor,
                 minimalFabOpacity);
-    }
-
-    /** @param themePrimary colour to substitute when the indicator colour is "automatic" (0) */
-    public int resolvedIndicatorColor(int themePrimary) {
-        return applyOpacity(indicatorColor == 0 ? themePrimary : indicatorColor,
-                indicatorOpacity);
     }
 
     /**
