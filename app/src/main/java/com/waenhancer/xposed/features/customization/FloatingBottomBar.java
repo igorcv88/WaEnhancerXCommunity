@@ -25,8 +25,11 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
+import com.waenhancer.theme.BackdropSampler;
 import com.waenhancer.theme.GlassRenderer;
 import com.waenhancer.theme.GlassSpec;
+import com.waenhancer.theme.LiquidLens;
+import com.waenhancer.theme.LiquidMorph;
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.utils.DesignUtils;
@@ -50,6 +53,8 @@ public class FloatingBottomBar extends Feature {
     private static final int SCROLL_BOTTOM_PADDING_DP = 126;
     private static final int FAB_VISIBLE_OFFSET_DP = 80;
     private static final float PILL_ELEVATION_DP = 12f;
+    /** How far the morphing blob is pulled in from a tab's own edges. */
+    private static final int MORPH_HORIZONTAL_INSET_DP = 8;
     private static final float PILL_TRANSLATION_Z_DP = 8f;
     private static final WeakHashMap<View, Boolean> styledBottomBars = new WeakHashMap<>();
     private static final java.util.Set<Class<?>> hookedItemClasses = new java.util.HashSet<>();
@@ -72,6 +77,12 @@ public class FloatingBottomBar extends Feature {
     private static final WeakHashMap<View, Boolean> styledFabs = new WeakHashMap<>();
     private static final WeakHashMap<View, FrameLayout> glassHosts = new WeakHashMap<>();
     private static final WeakHashMap<View, BlurView> glassBlurViews = new WeakHashMap<>();
+    /** The morphing blob under the selected tab, for the variants that have one. */
+    private static final WeakHashMap<View, LiquidMorph> liquidMorphs = new WeakHashMap<>();
+    /** One backdrop sampler per bar, so its throttle is per-surface rather than global. */
+    private static final WeakHashMap<View, BackdropSampler> backdropSamplers = new WeakHashMap<>();
+    /** Last colour sampled from behind each bar; 0 until the first sample lands. */
+    private static final WeakHashMap<View, Integer> backdropColors = new WeakHashMap<>();
     private static boolean scrollHideEnabled = true;
     private static String scrollHideMode = "tabs";
     private static boolean glassEnabled = false;
@@ -251,6 +262,7 @@ public class FloatingBottomBar extends Feature {
                                         }
                                     }
                                     applyBarHeight(v, density);
+                                    refreshLiquid(v, density);
                                 } finally {
                                     isUpdating = false;
                                 }
@@ -501,8 +513,8 @@ public class FloatingBottomBar extends Feature {
      * those minimums is what lets the pill actually shrink to its content.</p>
      */
     private static void applyBarVerticalMetrics(View bar, float density) {
-        int paddingVertical = dp(density,
-                Math.round(normalized("floating_bottom_bar_padding_vertical")));
+        com.waenhancer.config.BottomBarGeometry geometry = geometry(bar);
+        int paddingVertical = geometry.verticalPaddingPx;
 
         bar.setMinimumHeight(0);
         bar.setPadding(bar.getPaddingLeft(), paddingVertical,
@@ -516,6 +528,13 @@ public class FloatingBottomBar extends Feature {
                 View item = menu.getChildAt(i);
                 item.setMinimumHeight(0);
                 item.setPadding(item.getPaddingLeft(), 0, item.getPaddingRight(), 0);
+                // A definite box for the item's own layout to work in. Left to itself it sizes
+                // to a Material minimum the pill may be shorter than.
+                ViewGroup.LayoutParams itemParams = item.getLayoutParams();
+                if (itemParams != null && itemParams.height != geometry.contentHeightPx()) {
+                    itemParams.height = geometry.contentHeightPx();
+                    item.setLayoutParams(itemParams);
+                }
             }
         }
 
@@ -523,18 +542,43 @@ public class FloatingBottomBar extends Feature {
     }
 
     /**
-     * Forces the manual pill height when that mode is on, and hands the height back to the
-     * content otherwise.
+     * Resolves the bar's vertical geometry from the current preferences.
+     *
+     * <p>The same call the editor's preview makes, so the two cannot disagree about how tall the
+     * pill is or where its content sits.</p>
+     */
+    private static com.waenhancer.config.BottomBarGeometry geometry(View bar) {
+        android.util.DisplayMetrics metrics =
+                bar.getContext().getResources().getDisplayMetrics();
+        float fontScale = bar.getContext().getResources().getConfiguration().fontScale;
+        return com.waenhancer.config.BottomBarGeometry.resolve(
+                pillManualHeight,
+                pillManualHeightDp,
+                Math.round(normalized("floating_bottom_bar_icon_size")),
+                Math.round(normalized("floating_bottom_bar_icon_label_spacing")),
+                normalized("floating_bottom_bar_text_size"),
+                Math.round(normalized("floating_bottom_bar_padding_vertical")),
+                metrics.density,
+                fontScale <= 0f ? 1f : fontScale);
+    }
+
+    /**
+     * Gives the bar an exact pixel height, in both height modes.
+     *
+     * <p>Automatic mode used to hand the bar {@code WRAP_CONTENT}. WhatsApp's tab frame is a
+     * custom {@code ViewGroup} that does not implement {@code wrap_content}: its measure pass
+     * falls through to {@code View.getDefaultSize}, which answers an {@code AT_MOST} spec with
+     * the entire available height. The glass host then wrapped that, and the pill covered the
+     * window. The height is computed by {@link com.waenhancer.config.BottomBarGeometry} instead,
+     * and the bar is never asked to measure itself.</p>
      *
      * <p>Called again after the bar is re-parented into the overlay root: the move installs fresh
-     * layout params, which is what silently discarded the manual height set at attach time and
-     * made the Manual option indistinguishable from Automatic.</p>
+     * layout params, which is what silently discarded the height set at attach time.</p>
      */
     private static void applyBarHeight(View bar, float density) {
         ViewGroup.LayoutParams params = bar.getLayoutParams();
         if (params == null) return;
-        int target = pillManualHeight
-                ? dp(density, pillManualHeightDp) : ViewGroup.LayoutParams.WRAP_CONTENT;
+        int target = geometry(bar).pillHeightPx;
         if (params.height != target) {
             params.height = target;
             bar.setLayoutParams(params);
@@ -1310,6 +1354,20 @@ public class FloatingBottomBar extends Feature {
             );
             host.addView(blurView, blurLp);
 
+            // Between the blurred pane and the tabs: the blob has to be lit by the glass above
+            // it and sit behind the icons, or it stops reading as something inside the surface.
+            GlassSpec hostSpec = glassSpec(ctx);
+            if (hostSpec.morphing) {
+                LiquidMorph morph = new LiquidMorph(ctx);
+                morph.applySpec(hostSpec);
+                liquidMorphs.put(bottomNav, morph);
+                host.addView(morph, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+            } else {
+                liquidMorphs.remove(bottomNav);
+            }
+
             bottomNav.setBackground(createGlassShape(ctx, density, false));
             if (bottomNav instanceof ViewGroup) {
                 ((ViewGroup) bottomNav).setClipChildren(false);
@@ -1321,10 +1379,12 @@ public class FloatingBottomBar extends Feature {
                 bottomNav.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
             }
 
+            // An exact height in both modes: a wrap_content here is what the host wrapped into a
+            // window-tall pill, because WhatsApp's tab frame answers a wrap_content measure with
+            // all the space it is offered. See BottomBarGeometry.
             FrameLayout.LayoutParams navLp = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    pillManualHeight ? dp(density, pillManualHeightDp)
-                            : ViewGroup.LayoutParams.WRAP_CONTENT,
+                    geometry(bottomNav).pillHeightPx,
                     android.view.Gravity.BOTTOM
             );
             glassHosts.put(bottomNav, host);
@@ -1373,7 +1433,11 @@ public class FloatingBottomBar extends Feature {
     private static void removeGlassHost(View bottomNav) {
         try {
             FrameLayout host = glassHosts.remove(bottomNav);
-            glassBlurViews.remove(bottomNav);
+            BlurView blurView = glassBlurViews.remove(bottomNav);
+            LiquidLens.clear(blurView);
+            liquidMorphs.remove(bottomNav);
+            backdropSamplers.remove(bottomNav);
+            backdropColors.remove(bottomNav);
             if (host != null) {
                 ViewParent parent = host.getParent();
                 if (parent instanceof ViewGroup) {
@@ -1501,8 +1565,28 @@ public class FloatingBottomBar extends Feature {
                 glassOpacity);
     }
 
+    /**
+     * The glass description for one bar, as it looks over the backdrop actually behind it.
+     *
+     * <p>{@link #glassSpec} answers what the variant is; this answers what it currently looks
+     * like. For the adaptive variants those differ, and they have to: a fill and an edge computed
+     * once from the theme cannot react to the content scrolling under them, which is most of what
+     * separates a surface that reads as glass from one that reads as paint.</p>
+     */
+    private static GlassSpec glassSpecFor(View bar) {
+        GlassSpec spec = glassSpec(bar.getContext());
+        Integer backdrop = backdropColors.get(bar);
+        if (backdrop == null || backdrop == 0) return spec;
+        return spec.adaptTo(backdrop,
+                com.waenhancer.xposed.utils.DesignUtils.isNightMode(bar.getContext()));
+    }
+
     private static android.graphics.drawable.Drawable createGlassShape(android.content.Context ctx, float density, boolean includeFill) {
-        GlassSpec spec = glassSpec(ctx);
+        return createGlassShape(ctx, density, includeFill, glassSpec(ctx));
+    }
+
+    private static android.graphics.drawable.Drawable createGlassShape(
+            android.content.Context ctx, float density, boolean includeFill, GlassSpec spec) {
         if (!includeFill) {
             // The nav itself only contributes the edge; the fill belongs to the blurred layer
             // beneath it, or the two stack and the surface reads twice as opaque as configured.
@@ -1516,6 +1600,113 @@ public class FloatingBottomBar extends Feature {
             return edge;
         }
         return GlassRenderer.background(spec, pillRadiusDp * density, density);
+    }
+
+    /**
+     * Brings the liquid layers up to date: what is behind the bar, what that does to its colours,
+     * the refracting rim, and where the blob sits.
+     *
+     * <p>Cheap to call on every layout pass. The backdrop sample is throttled by
+     * {@link BackdropSampler} itself, and the colours are re-derived only when that sample
+     * actually changed.</p>
+     */
+    private static void refreshLiquid(View bottomNav, float density) {
+        try {
+            FrameLayout host = glassHosts.get(bottomNav);
+            if (host == null) return;
+            GlassSpec base = glassSpec(bottomNav.getContext());
+
+            // Sampling draws part of the host's view tree, so it is posted rather than run
+            // from inside the layout callback that got us here: reading a hierarchy while it is
+            // still settling is how a sampler ends up recording a half-laid-out frame.
+            if (base.adaptive) {
+                host.post(() -> sampleBackdrop(bottomNav, host, density));
+            }
+
+            GlassSpec spec = glassSpecFor(bottomNav);
+
+            BlurView blurView = glassBlurViews.get(bottomNav);
+            if (blurView != null) {
+                LiquidLens.apply(blurView, spec, pillCornerRadiusPx(blurView, density), density);
+            }
+
+            LiquidMorph morph = liquidMorphs.get(bottomNav);
+            if (morph != null) {
+                morph.applySpec(spec);
+                moveMorphToSelectedTab(bottomNav, morph, density);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Takes one throttled reading of what is behind the bar and repaints if it moved. */
+    private static void sampleBackdrop(View bottomNav, FrameLayout host, float density) {
+        try {
+            if (glassHosts.get(bottomNav) != host) return;
+            BackdropSampler sampler = backdropSamplers.get(bottomNav);
+            if (sampler == null) {
+                sampler = new BackdropSampler();
+                backdropSamplers.put(bottomNav, sampler);
+            }
+            View root = getRootLayout(bottomNav);
+            int sampled = sampler.sample(root != null ? root : host.getRootView(),
+                    host, android.os.SystemClock.uptimeMillis());
+            Integer previous = backdropColors.get(bottomNav);
+            if (sampled != 0 && (previous == null || previous != sampled)) {
+                backdropColors.put(bottomNav, sampled);
+                applyAdaptedColors(bottomNav, host, density);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Repaints the surfaces whose colours depend on the backdrop that just changed. */
+    private static void applyAdaptedColors(View bottomNav, FrameLayout host, float density) {
+        GlassSpec spec = glassSpecFor(bottomNav);
+        BlurView blurView = glassBlurViews.get(bottomNav);
+        if (blurView != null) {
+            blurView.setOverlayColor(spec.fillColor);
+            blurView.setBackground(createGlassShape(bottomNav.getContext(), density, true, spec));
+        }
+        bottomNav.setBackground(createGlassShape(bottomNav.getContext(), density, false, spec));
+        host.invalidate();
+    }
+
+    /**
+     * The pill's corner radius in pixels, never larger than the pill can actually be.
+     *
+     * <p>"Fully rounded" is stored as 1000dp, which stands in for "half the height" rather than
+     * being a real measurement. Handing that figure to a lens that solves for the distance to the
+     * edge would put the whole surface outside its own shape.</p>
+     */
+    private static float pillCornerRadiusPx(View surface, float density) {
+        float requested = pillRadiusDp * density;
+        int height = surface.getHeight();
+        if (height <= 0) return requested;
+        return Math.min(requested, height / 2f);
+    }
+
+    /** Springs the blob to whichever tab is currently selected. */
+    private static void moveMorphToSelectedTab(View bottomNav, LiquidMorph morph, float density) {
+        ViewGroup menu = findMenuView(bottomNav);
+        if (menu == null || menu.getChildCount() == 0) return;
+
+        View selected = null;
+        for (int i = 0; i < menu.getChildCount(); i++) {
+            View item = menu.getChildAt(i);
+            if (item.isSelected()) {
+                selected = item;
+                break;
+            }
+        }
+        if (selected == null || selected.getWidth() <= 0 || morph.getHeight() <= 0) return;
+
+        // Item coordinates are relative to the menu; the blob lives in the host alongside it.
+        float left = selected.getLeft() + menu.getLeft() + bottomNav.getLeft();
+        android.graphics.RectF bounds = new android.graphics.RectF(
+                left, 0f, left + selected.getWidth(), morph.getHeight());
+        bounds.inset(dp(density, MORPH_HORIZONTAL_INSET_DP), 0f);
+        morph.moveTo(bounds, bounds.height() / 2f);
     }
 
     private static android.graphics.drawable.GradientDrawable createGlassOutlineShape(android.content.Context ctx, float density) {
@@ -1562,6 +1753,7 @@ public class FloatingBottomBar extends Feature {
             // its own label sizes and minimum heights.
             applyTabMetrics(bottomNav);
             applyBarVerticalMetrics(bottomNav, density);
+            refreshLiquid(bottomNav, density);
 
             if (tabId == 1000 || tabId == 1100 || isMetaAiActive) {
                 float targetTranslationY = height + (24 * density);
@@ -1608,10 +1800,9 @@ public class FloatingBottomBar extends Feature {
         try {
             ViewGroup menu = findMenuView(bottomNav);
             if (menu == null) return;
-            float density = bottomNav.getContext().getResources().getDisplayMetrics().density;
-            int iconSize = Math.round(normalized("floating_bottom_bar_icon_size") * density);
-            int spacing = Math.round(
-                    normalized("floating_bottom_bar_icon_label_spacing") * density);
+            com.waenhancer.config.BottomBarGeometry geometry = geometry(bottomNav);
+            int iconSize = geometry.iconSizePx;
+            int spacing = geometry.spacingPx;
             float textSizeSp = normalized("floating_bottom_bar_text_size");
 
             for (int i = 0; i < menu.getChildCount(); i++) {
@@ -1635,15 +1826,7 @@ public class FloatingBottomBar extends Feature {
                 // sitting where its indicator expects it.
                 View labelAnchor = labelSpacingAnchor(item);
                 if (labelAnchor != null) {
-                    ViewGroup.LayoutParams labelParams = labelAnchor.getLayoutParams();
-                    if (labelParams instanceof ViewGroup.MarginLayoutParams) {
-                        ViewGroup.MarginLayoutParams margins =
-                                (ViewGroup.MarginLayoutParams) labelParams;
-                        if (margins.topMargin != spacing) {
-                            margins.topMargin = spacing;
-                            labelAnchor.setLayoutParams(margins);
-                        }
-                    }
+                    placeLabelAnchor(labelAnchor, geometry);
                 }
 
                 // Every label, not just the first one. A Material navigation item carries two
@@ -1652,10 +1835,54 @@ public class FloatingBottomBar extends Feature {
                 // own size while its neighbours resized around it.
                 for (TextView label : findLabels(item)) {
                     label.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp);
+                    label.setVisibility(geometry.labelVisible ? View.VISIBLE : View.GONE);
                 }
             }
         } catch (Throwable ignored) {
         }
+    }
+
+    /**
+     * Positions the label group below the icon, whatever kind of parent the item turns out to be.
+     *
+     * <p>A top margin alone only opens a gap when the parent stacks its children vertically. A
+     * Material navigation item is a {@code FrameLayout} whose children are placed by gravity, so
+     * the margin barely moved the label and it stayed centred — drawn over the icon, and over the
+     * unread badge, exactly as reported on a 51dp bar. Where the parent overlays its children the
+     * label is pinned to the top and offset past the icon by hand; where it stacks them the gap
+     * is all that is needed.</p>
+     */
+    private static void placeLabelAnchor(View labelAnchor,
+                                         com.waenhancer.config.BottomBarGeometry geometry) {
+        ViewGroup.LayoutParams params = labelAnchor.getLayoutParams();
+        if (!(params instanceof ViewGroup.MarginLayoutParams)) return;
+        ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) params;
+
+        int topMargin;
+        if (stacksChildrenVertically(labelAnchor.getParent())) {
+            topMargin = geometry.spacingPx;
+        } else {
+            topMargin = geometry.contentTopOffsetPx() + geometry.iconSizePx + geometry.spacingPx;
+            if (margins instanceof FrameLayout.LayoutParams) {
+                ((FrameLayout.LayoutParams) margins).gravity =
+                        android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL;
+            } else if (margins instanceof android.widget.LinearLayout.LayoutParams) {
+                ((android.widget.LinearLayout.LayoutParams) margins).gravity =
+                        android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL;
+            }
+        }
+
+        if (margins.topMargin != topMargin) {
+            margins.topMargin = topMargin;
+            labelAnchor.setLayoutParams(margins);
+        }
+    }
+
+    /** True when this parent lays its children out one below the next. */
+    private static boolean stacksChildrenVertically(ViewParent parent) {
+        return parent instanceof android.widget.LinearLayout
+                && ((android.widget.LinearLayout) parent).getOrientation()
+                        == android.widget.LinearLayout.VERTICAL;
     }
 
     /**

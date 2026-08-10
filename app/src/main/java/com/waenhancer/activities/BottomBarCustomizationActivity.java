@@ -29,6 +29,7 @@ import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
 import com.waenhancer.BuildConfig;
 import com.waenhancer.R;
+import com.waenhancer.config.BottomBarGeometry;
 import com.waenhancer.config.BottomBarPreferenceSchema;
 import com.waenhancer.config.BottomBarPreviewModel;
 
@@ -417,37 +418,51 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
             pill.setCornerRadius(pillRadiusPx);
             previewPill.setBackground(pill);
         }
-        previewPill.setPadding(0, dp(model.paddingVerticalDp), 0, dp(model.paddingVerticalDp));
+        // The geometry the hooked bar resolves, not a second opinion about it. The preview used
+        // to wrap its content while the real bar was given a height of its own, which is why a
+        // manual height previewed as a well-proportioned pill and shipped as a squashed one.
+        BottomBarGeometry geometry = geometryFor(model);
+
+        previewPill.setPadding(0, geometry.verticalPaddingPx, 0, geometry.verticalPaddingPx);
 
         ViewGroup.MarginLayoutParams pillParams =
                 (ViewGroup.MarginLayoutParams) previewPill.getLayoutParams();
         pillParams.leftMargin = dp(model.sideMarginDp);
         pillParams.rightMargin = dp(model.sideMarginDp);
         pillParams.bottomMargin = dp(model.bottomMarginDp);
-        pillParams.height = model.manualHeight
-                ? dp(model.manualHeightDp) : ViewGroup.LayoutParams.WRAP_CONTENT;
+        pillParams.height = geometry.pillHeightPx;
         previewPill.setLayoutParams(pillParams);
 
-        applyTabStyling(model);
+        applyTabStyling(model, geometry);
         applyFabStyling(model);
     }
 
-    private void applyTabStyling(BottomBarPreviewModel model) {
+    /** The geometry this preview and the hooked bar share; see {@link BottomBarGeometry}. */
+    private BottomBarGeometry geometryFor(BottomBarPreviewModel model) {
+        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+        float fontScale = getResources().getConfiguration().fontScale;
+        return BottomBarGeometry.resolve(model.manualHeight, model.manualHeightDp,
+                model.iconSizeDp, model.iconLabelSpacingDp, model.textSizeSp,
+                model.paddingVerticalDp, metrics.density, fontScale <= 0f ? 1f : fontScale);
+    }
+
+    private void applyTabStyling(BottomBarPreviewModel model, BottomBarGeometry geometry) {
         for (int i = 0; i < previewIcons.size(); i++) {
             ImageView icon = previewIcons.get(i);
             ViewGroup.LayoutParams iconParams = icon.getLayoutParams();
-            iconParams.width = dp(model.iconSizeDp);
-            iconParams.height = dp(model.iconSizeDp);
+            iconParams.width = geometry.iconSizePx;
+            iconParams.height = geometry.iconSizePx;
             icon.setLayoutParams(iconParams);
 
             TextView label = previewLabels.get(i);
             label.setTextSize(model.textSizeSp);
             // The first tab is the selected one in the mock, so it keeps WhatsApp's active colours.
             label.setTextColor(i == 0 ? PREVIEW_WA_ACTIVE_LABEL : PREVIEW_WA_INACTIVE);
+            label.setVisibility(geometry.labelVisible ? View.VISIBLE : View.GONE);
 
             ViewGroup.MarginLayoutParams labelParams =
                     (ViewGroup.MarginLayoutParams) label.getLayoutParams();
-            labelParams.topMargin = dp(model.iconLabelSpacingDp);
+            labelParams.topMargin = geometry.spacingPx;
             label.setLayoutParams(labelParams);
         }
     }

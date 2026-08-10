@@ -241,4 +241,110 @@ public class GlassSpecTest {
                 true, false);
         assertEquals(0, alphaOf(undershoot.fillColor));
     }
+
+    // ---- liquid glass -----------------------------------------------------------------------
+
+    /**
+     * The complaint this section exists for: Liquid looked like frost. It differs from frost by
+     * being a lens rather than a heavier veil, so it has to blur less and bend more.
+     */
+    @Test
+    public void liquidIsALensAndFrostIsNot() {
+        GlassSpec liquid = resolve(GlassSpec.Variant.LIQUID, true, true);
+        GlassSpec frost = resolve(GlassSpec.Variant.FROST, true, true);
+
+        assertTrue(liquid.lensStrength > 0f);
+        assertTrue(liquid.rimWidthDp > 0f);
+        assertEquals(0f, frost.lensStrength, 0f);
+        assertTrue(liquid.blurRadius < frost.blurRadius);
+        assertTrue(alphaOf(liquid.fillColor) < alphaOf(frost.fillColor));
+    }
+
+    /** Only the variants meant to react do; the flat ones stay a fixed colour. */
+    @Test
+    public void onlyTheLensingVariantsAdaptAndMorph() {
+        assertTrue(resolve(GlassSpec.Variant.LIQUID, true, true).adaptive);
+        assertTrue(resolve(GlassSpec.Variant.LIQUID, true, true).morphing);
+        assertFalse(resolve(GlassSpec.Variant.STABLE, true, true).adaptive);
+        assertFalse(resolve(GlassSpec.Variant.FROST, true, true).morphing);
+    }
+
+    /** There is nothing to bend without a blurred backdrop, so the fallback drops the lens. */
+    @Test
+    public void aDeviceWithoutBlurGetsNoLensAndNoAdaptation() {
+        GlassSpec spec = resolve(GlassSpec.Variant.LIQUID, true, false);
+
+        assertEquals(0f, spec.lensStrength, 0f);
+        assertEquals(0f, spec.rimWidthDp, 0f);
+        assertFalse(spec.adaptive);
+    }
+
+    /** Reduced motion stops the surface moving, whatever the variant would like to do. */
+    @Test
+    public void reducedMotionStopsTheMorph() {
+        GlassSpec spec = GlassSpec.resolve(GlassSpec.Variant.LIQUID, true, 0, 0x3B82F6, 35f,
+                true, true);
+
+        assertFalse(spec.morphing);
+        assertFalse(spec.animate);
+    }
+
+    // ---- adaptive tint ----------------------------------------------------------------------
+
+    @Test
+    public void adaptingShiftsTheFillTowardTheBackdrop() {
+        GlassSpec spec = resolve(GlassSpec.Variant.LIQUID, true, true);
+        GlassSpec adapted = spec.adaptTo(0xFF206020, true);
+
+        assertNotEquals(spec.fillColor & 0x00FFFFFF, adapted.fillColor & 0x00FFFFFF);
+        // Adapting is a tint, not a repaint: the configured opacity has to survive it.
+        assertEquals(alphaOf(spec.fillColor), alphaOf(adapted.fillColor));
+    }
+
+    @Test
+    public void adaptingNeverCostsTheSurfaceItsLegibility() {
+        GlassSpec spec = resolve(GlassSpec.Variant.LIQUID, true, true);
+        int[] backdrops = {0xFF000000, 0xFFFFFFFF, 0xFF206020, 0xFFD94F4F, 0xFF3B82F6};
+
+        for (int backdrop : backdrops) {
+            for (boolean dark : new boolean[]{false, true}) {
+                GlassSpec adapted = spec.adaptTo(backdrop, dark);
+                int composited = SemanticTheme.blend(backdrop,
+                        0xFF000000 | (adapted.fillColor & 0x00FFFFFF),
+                        alphaOf(adapted.fillColor) / 255f);
+                double ratio = SemanticTheme.contrastRatio(adapted.contentColor, composited);
+                assertTrue("backdrop " + Integer.toHexString(backdrop) + " dark=" + dark
+                                + " gave " + ratio,
+                        ratio >= GlassSpec.MIN_CONTENT_CONTRAST);
+            }
+        }
+    }
+
+    /** A bright backdrop needs a dark edge to be seen against, and the reverse. */
+    @Test
+    public void theEdgeInvertsWithTheBackdropBrightness() {
+        GlassSpec spec = resolve(GlassSpec.Variant.LIQUID, true, true);
+
+        int overWhite = spec.adaptTo(0xFFFFFFFF, true).strokeColor;
+        int overBlack = spec.adaptTo(0xFF000000, true).strokeColor;
+
+        assertEquals(0x000000, overWhite & 0x00FFFFFF);
+        assertEquals(0xFFFFFF, overBlack & 0x00FFFFFF);
+    }
+
+    /** A caller may hand any surface a backdrop without first asking whether it cares. */
+    @Test
+    public void aNonAdaptiveSurfaceIsUnchangedByItsBackdrop() {
+        GlassSpec spec = resolve(GlassSpec.Variant.FROST, true, true);
+
+        assertEquals(spec, spec.adaptTo(0xFF206020, true));
+    }
+
+    /** No sample yet means no change, rather than a lurch to some default. */
+    @Test
+    public void anEmptySampleLeavesTheSurfaceAlone() {
+        GlassSpec spec = resolve(GlassSpec.Variant.LIQUID, true, true);
+
+        assertEquals(spec, spec.adaptTo(0, true));
+    }
 }
