@@ -21,27 +21,49 @@ public final class GlassSpec {
      */
     public enum Variant {
         /** Flat translucent fill and a hairline border. The pre-engine look. */
-        STABLE(1.00f, 18f, 0.00f, 0.00f),
+        STABLE(1.00f, 14f, 0.00f, 0.00f, 0.6f, 1.00f, 35),
         /** The default Advanced Glass: real depth, a specular top edge, a soft bottom glow. */
-        ADVANCED(0.86f, 24f, 0.55f, 0.35f),
-        /** Thinner fill and a heavier blur, so the backdrop reads through as motion. */
-        LIQUID(0.62f, 34f, 0.75f, 0.55f),
+        ADVANCED(0.86f, 18f, 0.55f, 0.35f, 0.8f, 1.15f, 30),
+        /**
+         * Liquid glass: very little fill, a light blur, and most of the effect carried by the
+         * lit edge. Blurring it heavily is what turns liquid glass into frost, so it does not.
+         */
+        LIQUID(0.45f, 8f, 0.95f, 0.85f, 1.4f, 2.10f, 18),
         /** Dense and diffuse: the most legible variant over busy or high-contrast backdrops. */
-        FROST(1.18f, 40f, 0.30f, 0.15f),
+        FROST(1.18f, 25f, 0.30f, 0.15f, 0.6f, 0.90f, 55),
         /** Almost only a border. Highest backdrop fidelity, lowest legibility guarantee. */
-        CLEAR(0.38f, 16f, 0.85f, 0.60f);
+        CLEAR(0.30f, 4f, 0.85f, 0.60f, 1.6f, 2.40f, 12);
 
         final float fillScale;
-        final float blurRadiusDp;
+        final float blurRadius;
         final float highlightStrength;
         final float refractionStrength;
+        final float strokeWidthDp;
+        final float edgeStrength;
+        final int recommendedOpacityPercent;
 
-        Variant(float fillScale, float blurRadiusDp, float highlightStrength,
-                float refractionStrength) {
+        Variant(float fillScale, float blurRadius, float highlightStrength,
+                float refractionStrength, float strokeWidthDp, float edgeStrength,
+                int recommendedOpacityPercent) {
             this.fillScale = fillScale;
-            this.blurRadiusDp = blurRadiusDp;
+            this.blurRadius = blurRadius;
             this.highlightStrength = highlightStrength;
             this.refractionStrength = refractionStrength;
+            this.strokeWidthDp = strokeWidthDp;
+            this.edgeStrength = edgeStrength;
+            this.recommendedOpacityPercent = recommendedOpacityPercent;
+        }
+
+        /**
+         * The opacity this treatment is designed around, as a percentage.
+         *
+         * <p>Opacity and variant are not independent: a "liquid" pane at 100% opacity is just an
+         * opaque bar with a lit edge, and a "frost" pane at 10% is not frost at all. The editor
+         * moves the opacity slider to this value when the style changes, so picking a style
+         * lands on a look that matches its name — and the slider stays free afterwards.</p>
+         */
+        public int recommendedOpacityPercent() {
+            return recommendedOpacityPercent;
         }
 
         /** Parses a stored preference value, falling back to {@link #ADVANCED}. */
@@ -75,8 +97,16 @@ public final class GlassSpec {
 
     /** Overlay painted on top of the blurred backdrop. Already includes its alpha. */
     public final int fillColor;
-    /** Blur radius in dp, or {@code 0} when this device gets the no-blur fallback. */
-    public final float blurRadiusDp;
+    /**
+     * Backdrop blur strength, or {@code 0} when this device gets the no-blur fallback.
+     *
+     * <p>Expressed in the blur library's own 1-25 scale rather than in dp. The library blurs a
+     * downscaled copy of the backdrop, so its radius is already resolution-independent, and
+     * anything above 25 is clamped by the RenderScript backend. Treating this as dp and
+     * multiplying by density is what previously collapsed four of the five variants onto the
+     * same clamped radius, which is why they all looked alike.</p>
+     */
+    public final float blurRadius;
     /** Luminous edge. */
     public final int strokeColor;
     public final float strokeWidthDp;
@@ -91,11 +121,11 @@ public final class GlassSpec {
     /** True when the surface is standing in for blur it could not get. */
     public final boolean usingFallback;
 
-    private GlassSpec(int fillColor, float blurRadiusDp, int strokeColor, float strokeWidthDp,
+    private GlassSpec(int fillColor, float blurRadius, int strokeColor, float strokeWidthDp,
                       int highlightColor, int refractionColor, int contentColor,
                       boolean animate, boolean usingFallback) {
         this.fillColor = fillColor;
-        this.blurRadiusDp = blurRadiusDp;
+        this.blurRadius = blurRadius;
         this.strokeColor = strokeColor;
         this.strokeWidthDp = strokeWidthDp;
         this.highlightColor = highlightColor;
@@ -151,13 +181,16 @@ public final class GlassSpec {
                     resolved.refractionStrength * (dark ? 0.18f : 0.12f));
         }
 
-        int stroke = SemanticTheme.withAlpha(dark ? WHITE : BLACK, dark ? 0.16f : 0.14f);
+        // The lit edge. On the transparent variants it is most of what the user actually sees,
+        // so it scales with the variant instead of being one hairline shared by all five.
+        int stroke = SemanticTheme.withAlpha(dark ? WHITE : BLACK,
+                clamp((dark ? 0.16f : 0.14f) * resolved.edgeStrength, 0f, 0.85f));
 
         return new GlassSpec(
                 fill,
-                blurSupported ? resolved.blurRadiusDp : 0f,
+                blurSupported ? resolved.blurRadius : 0f,
                 stroke,
-                0.6f,
+                resolved.strokeWidthDp,
                 highlight,
                 refraction,
                 content,

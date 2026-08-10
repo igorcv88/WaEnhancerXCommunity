@@ -79,14 +79,14 @@ public class GlassSpecTest {
     public void theFallbackReportsItselfAndAsksForNoBlur() {
         GlassSpec fallback = resolve(GlassSpec.Variant.LIQUID, false, false);
         assertTrue(fallback.usingFallback);
-        assertEquals(0f, fallback.blurRadiusDp, 0.0001f);
+        assertEquals(0f, fallback.blurRadius, 0.0001f);
     }
 
     @Test
     public void blurCapableDevicesKeepTheVariantsRadiusAndAreNotFlaggedAsFallback() {
         GlassSpec spec = resolve(GlassSpec.Variant.LIQUID, false, true);
         assertFalse(spec.usingFallback);
-        assertTrue(spec.blurRadiusDp > 0f);
+        assertTrue(spec.blurRadius > 0f);
     }
 
     /** Even the most transparent variant must not vanish when it cannot rely on blur. */
@@ -186,6 +186,49 @@ public class GlassSpecTest {
                 + (alphaOf(advanced.highlightColor) > 0 ? 1 : 0)
                 + (alphaOf(advanced.refractionColor) > 0 ? 1 : 0);
         assertEquals(expected, advanced.layerCount());
+    }
+
+    /**
+     * The variants have to be visibly different from one another, which is only true if their
+     * blur radii stay inside the range the blur library honours. When these were treated as dp
+     * and scaled by density, every one of them landed on the library's clamp and the whole
+     * picker became decorative.
+     */
+    @Test
+    public void everyVariantAsksForABlurTheLibraryCanActuallyDistinguish() {
+        java.util.Set<Float> radii = new java.util.HashSet<>();
+        for (GlassSpec.Variant variant : GlassSpec.Variant.values()) {
+            float radius = resolve(variant, true, true).blurRadius;
+            assertTrue(variant + " asked for " + radius + ", outside the library's 1-25 range",
+                    radius >= 1f && radius <= 25f);
+            radii.add(radius);
+        }
+        assertEquals("variants must not collapse onto a shared blur radius",
+                GlassSpec.Variant.values().length, radii.size());
+    }
+
+    /** Liquid glass is thin and lightly blurred; frost is the dense, heavily blurred one. */
+    @Test
+    public void liquidStaysClearerAndLessBlurredThanFrost() {
+        GlassSpec liquid = resolve(GlassSpec.Variant.LIQUID, true, true);
+        GlassSpec frost = resolve(GlassSpec.Variant.FROST, true, true);
+        assertTrue(liquid.blurRadius < frost.blurRadius);
+        assertTrue(alphaOf(liquid.fillColor) < alphaOf(frost.fillColor));
+        // Liquid carries its effect on the edge instead, so its border is the stronger one.
+        assertTrue(liquid.strokeWidthDp > frost.strokeWidthDp);
+        assertTrue(alphaOf(liquid.strokeColor) > alphaOf(frost.strokeColor));
+    }
+
+    /** Each style names an opacity it is designed around; the editor snaps the slider to it. */
+    @Test
+    public void everyVariantRecommendsAnOpacityInsideTheSlidersRange() {
+        for (GlassSpec.Variant variant : GlassSpec.Variant.values()) {
+            int recommended = variant.recommendedOpacityPercent();
+            assertTrue(variant + " recommends " + recommended,
+                    recommended >= 10 && recommended <= 100);
+        }
+        assertTrue(GlassSpec.Variant.CLEAR.recommendedOpacityPercent()
+                < GlassSpec.Variant.FROST.recommendedOpacityPercent());
     }
 
     @Test

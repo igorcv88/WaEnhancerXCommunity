@@ -1,6 +1,7 @@
 package com.waenhancer.config;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -37,5 +38,18 @@ public class BottomBarPreferenceSchemaTest {
                 BottomBarPreferenceSchema.normalize(
                         "floating_bottom_bar_fab_offset", -12f),
                 0.001f);
+    }
+
+    /**
+     * The pill is a floating element, so the side margin has to be able to make it genuinely
+     * narrow. Capped at 48dp it could never take more than about a quarter of a phone screen,
+     * which made the slider feel broken rather than restrained.
+     */
+    @Test
+    public void theSideMarginCanNarrowThePillWellPastAQuarterOfTheScreen() {
+        BottomBarPreferenceSchema.Spec spec =
+                BottomBarPreferenceSchema.spec("floating_bottom_bar_horizontal_margin");
+        assertTrue("a 96dp margin a side is ~47% of a 411dp phone", spec.max >= 96f);
+        assertEquals(0f, spec.min, 0.001f);
     }
 }
