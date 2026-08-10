@@ -75,6 +75,13 @@
 # silently resolve to nothing in release only. Do not remove.
 -keep class com.waenhancer.xposed.utils.ResId { *; }
 -keep class com.waenhancer.xposed.utils.ResId$* { *; }
+
+# GlassSpec.Variant.from() resolves a *persisted* preference string through values() and name().
+# R8 full mode enum-unboxes it (it showed up as R8$$REMOVED$$CLASS$$ in mapping.txt). The
+# transformation is meant to preserve name(), but this is the same shape of name-dependent
+# lookup that silently broke ResId in release, and a stored glass variant that stops resolving
+# would quietly reset every user's bar to the default. Not worth inferring; keep it.
+-keep enum com.waenhancer.theme.GlassSpec$Variant { *; }
 -keep class com.waenhancer.model.FilterItem { *; }
 
 

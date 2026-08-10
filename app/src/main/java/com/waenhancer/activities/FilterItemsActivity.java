@@ -147,7 +147,7 @@ public class FilterItemsActivity extends BaseActivity implements FilterItemsAdap
 
     private void showFilterEditDialog(FilterItem item, boolean isEdit, int position) {
         com.google.android.material.bottomsheet.BottomSheetDialog dialog =
-                new com.google.android.material.bottomsheet.BottomSheetDialog(this);
+                com.waenhancer.ui.helpers.BottomSheetHelper.createStyledDialog(this);
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_filter_edit, null);
         dialog.setContentView(dialogView);
 

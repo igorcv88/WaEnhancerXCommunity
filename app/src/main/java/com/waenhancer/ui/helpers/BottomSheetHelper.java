@@ -9,6 +9,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.LinearLayout;
 
 import com.google.android.material.bottomsheet.BottomSheetDialog;
@@ -290,16 +291,73 @@ public class BottomSheetHelper {
     /**
      * Create a styled BottomSheetDialog with transparent background.
      */
+    /** Corner radius of a bottom sheet, in dp, when it is drawn as glass. */
+    private static final float SHEET_CORNER_DP = 28f;
+
+    /**
+     * Sheet opacity before the variant scales it. Higher than the bar's, because a sheet carries
+     * body text over arbitrary content rather than a row of icons, and is not user-tunable: one
+     * fewer stored value means one fewer way for a sheet to end up unreadable.
+     */
+    private static final float SHEET_GLASS_OPACITY = 88f;
+
     public static BottomSheetDialog createStyledDialog(Context context) {
         BottomSheetDialog dialog = new BottomSheetDialog(context);
         dialog.setOnShowListener(d -> {
             BottomSheetDialog bsd = (BottomSheetDialog) d;
             View bottomSheet = bsd.findViewById(com.google.android.material.R.id.design_bottom_sheet);
-            if (bottomSheet != null) {
+            if (bottomSheet == null) return;
+            // Every bottom sheet in the module is created here, so this is the one place that has
+            // to know whether dialogs are glass. Off by default: the plan's requirement is that
+            // glass reaches dialogs, not that it takes over the whole UI unasked.
+            if (glassDialogsEnabled(context)) {
+                applyGlass(bottomSheet, context);
+            } else {
                 bottomSheet.setBackgroundResource(android.R.color.transparent);
             }
         });
         return dialog;
+    }
+
+    private static boolean glassDialogsEnabled(Context context) {
+        try {
+            return androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+                    .getBoolean("glass_dialogs", false);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static void applyGlass(View bottomSheet, Context context) {
+        try {
+            // BottomSheetDialog inserts the caller's root directly inside this container. The
+            // helper layouts use opaque shape drawables there, which would otherwise cover the
+            // glass installed on the container.
+            if (bottomSheet instanceof ViewGroup
+                    && ((ViewGroup) bottomSheet).getChildCount() > 0) {
+                ((ViewGroup) bottomSheet).getChildAt(0)
+                        .setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            }
+            android.content.SharedPreferences prefs =
+                    androidx.preference.PreferenceManager.getDefaultSharedPreferences(context);
+            boolean dark = (context.getResources().getConfiguration().uiMode
+                    & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                    == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+            com.waenhancer.theme.GlassSpec spec = com.waenhancer.theme.GlassRenderer.resolveFor(
+                    context,
+                    prefs.getString("glass_dialogs_variant",
+                            com.waenhancer.theme.GlassSpec.Variant.ADVANCED.key()),
+                    dark,
+                    0,
+                    0,
+                    SHEET_GLASS_OPACITY);
+            com.waenhancer.theme.GlassRenderer.apply(bottomSheet, spec, SHEET_CORNER_DP);
+        } catch (Throwable throwable) {
+            // A sheet that cannot be glass must still be a readable sheet.
+            android.util.Log.w("BottomSheetHelper", "Falling back to the plain sheet background",
+                    throwable);
+            bottomSheet.setBackgroundResource(android.R.color.transparent);
+        }
     }
 
     private static BottomSheetDialog createDialog(Context context) {

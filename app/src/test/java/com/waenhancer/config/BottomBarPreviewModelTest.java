@@ -5,6 +5,8 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
+import com.waenhancer.theme.GlassSpec;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -120,17 +122,42 @@ public class BottomBarPreviewModelTest {
         assertEquals(BottomBarPreviewModel.FULLY_ROUNDED_RADIUS_DP, model.radiusDp);
     }
 
+    /**
+     * The preview must show the fill the engine resolves, variant scaling included — not the raw
+     * opacity percentage. Asserting against {@link GlassSpec} rather than a literal is the point:
+     * if the two ever diverge, the preview stops predicting the bar and this fails.
+     */
     @Test
-    public void glassOpacityIsFoldedIntoTheFill() {
+    public void theFillMatchesWhatTheGlassEngineResolves() {
         Map<String, Object> prefs = snapshot();
         prefs.put("floating_bottom_bar_glass", true);
         prefs.put("floating_bottom_bar_glass_opacity", 50f);
         prefs.put("floating_bottom_bar_fill_color", 0xFF203040);
+        prefs.put("floating_bottom_bar_glass_variant", "advanced");
 
-        int fill = BottomBarPreviewModel.from(prefs).resolvedFillColor(0xFF000000);
+        BottomBarPreviewModel model = BottomBarPreviewModel.from(prefs);
+        int fill = model.resolvedFillColor(0xFF000000);
 
-        assertEquals(128, (fill >>> 24));
         assertEquals(0x203040, fill & 0x00FFFFFF);
+        assertEquals(GlassSpec.resolve(GlassSpec.Variant.ADVANCED, true, 0xFF203040, 0,
+                50f, true, false).fillColor, fill);
+    }
+
+    /** Changing the variant has to move the preview, or the control is decorative. */
+    @Test
+    public void adifferentVariantProducesADifferentFill() {
+        Map<String, Object> clear = snapshot();
+        clear.put("floating_bottom_bar_glass", true);
+        clear.put("floating_bottom_bar_glass_opacity", 50f);
+        clear.put("floating_bottom_bar_fill_color", 0xFF203040);
+        clear.put("floating_bottom_bar_glass_variant", "clear");
+
+        Map<String, Object> frost = new java.util.HashMap<>(clear);
+        frost.put("floating_bottom_bar_glass_variant", "frost");
+
+        assertNotEquals(
+                BottomBarPreviewModel.from(clear).resolvedFillColor(0xFF000000) >>> 24,
+                BottomBarPreviewModel.from(frost).resolvedFillColor(0xFF000000) >>> 24);
     }
 
     @Test

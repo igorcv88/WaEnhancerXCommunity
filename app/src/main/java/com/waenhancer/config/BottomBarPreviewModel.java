@@ -1,5 +1,8 @@
 package com.waenhancer.config;
 
+import com.waenhancer.theme.GlassSpec;
+import com.waenhancer.theme.SemanticTheme;
+
 import java.util.Map;
 
 /**
@@ -17,6 +20,7 @@ public final class BottomBarPreviewModel {
     public final boolean barEnabled;
     public final boolean glassEnabled;
     public final int glassOpacity;
+    public final String glassVariant;
     public final int fillColor;
     public final int radiusDp;
     public final int sideMarginDp;
@@ -41,6 +45,8 @@ public final class BottomBarPreviewModel {
         barEnabled = bool(snapshot, "floating_bottom_bar", false);
         glassEnabled = bool(snapshot, "floating_bottom_bar_glass", true);
         glassOpacity = intOf(snapshot, "floating_bottom_bar_glass_opacity");
+        glassVariant = str(snapshot, "floating_bottom_bar_glass_variant",
+                GlassSpec.Variant.ADVANCED.key());
         fillColor = color(snapshot, "floating_bottom_bar_fill_color", 0);
         radiusDp = bool(snapshot, "floating_bottom_bar_fully_rounded", false)
                 ? FULLY_ROUNDED_RADIUS_DP
@@ -83,13 +89,30 @@ public final class BottomBarPreviewModel {
     }
 
     /**
-     * Pill fill, with the glass opacity folded in.
+     * Pill fill as the Advanced Glass engine resolves it.
+     *
+     * <p>The preview does not fold the opacity in by itself. It asks {@link GlassSpec} for the
+     * same fill the hooked bar will ask for, so the variant's scaling — and any floor the engine
+     * applies — show up here too. A local copy of that arithmetic would drift the moment a
+     * variant changed.</p>
+     *
+     * <p>Resolved as though blur were available and motion unrestricted: the preview shows the
+     * intended look, not this particular device's fallback.</p>
      *
      * @param themeSurface colour to substitute when the user left the fill on "automatic" (0)
      */
     public int resolvedFillColor(int themeSurface) {
         int base = fillColor == 0 ? themeSurface : fillColor;
-        return glassEnabled ? applyOpacity(base, glassOpacity) : opaque(base);
+        if (!glassEnabled) return opaque(base);
+        return glassSpec(themeSurface).fillColor;
+    }
+
+    /** The glass description this preview is drawing; also the source of its content colour. */
+    public GlassSpec glassSpec(int themeSurface) {
+        int base = fillColor == 0 ? themeSurface : fillColor;
+        boolean dark = SemanticTheme.bestTextColor(opaque(base)) == 0xFFFFFFFF;
+        return GlassSpec.resolve(GlassSpec.Variant.from(glassVariant), dark, base, 0,
+                glassOpacity, true, false);
     }
 
     /** @param themePrimary colour to substitute when the FAB colour is left on "automatic" (0) */

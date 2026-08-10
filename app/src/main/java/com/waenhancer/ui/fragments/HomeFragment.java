@@ -207,7 +207,8 @@ public class HomeFragment extends BaseFragment {
                         + finalDialogDetails + "<b>WhatsApp Version:</b> " + waVersion + "<br>"
                         + "<b>WhatsApp Business Version:</b> " + waBusinessVersion + "<br>";
 
-                var bottomSheetDialog = new com.google.android.material.bottomsheet.BottomSheetDialog(requireContext());
+                var bottomSheetDialog = com.waenhancer.ui.helpers.BottomSheetHelper
+                        .createStyledDialog(requireContext());
                 var sheetView = LayoutInflater.from(requireContext()).inflate(R.layout.bottom_sheet_report_issue, null);
                 bottomSheetDialog.setContentView(sheetView);
 
@@ -477,7 +478,8 @@ public class HomeFragment extends BaseFragment {
 
     private void showResetBottomSheet() {
         var context = requireContext();
-        var bottomSheetDialog = new com.google.android.material.bottomsheet.BottomSheetDialog(context);
+        var bottomSheetDialog = com.waenhancer.ui.helpers.BottomSheetHelper
+                .createStyledDialog(context);
         var sheetView = LayoutInflater.from(context).inflate(R.layout.bottom_sheet_reset, null);
         bottomSheetDialog.setContentView(sheetView);
 
@@ -916,7 +918,9 @@ public class HomeFragment extends BaseFragment {
                         String appName = FeatureLoader.PACKAGE_WPP.equals(packageName) ? "WhatsApp" : "WhatsApp Business";
                         rowView.setOnClickListener(v -> {
                             try {
-                                com.google.android.material.bottomsheet.BottomSheetDialog dialog = new com.google.android.material.bottomsheet.BottomSheetDialog(activity);
+                                com.google.android.material.bottomsheet.BottomSheetDialog dialog =
+                                        com.waenhancer.ui.helpers.BottomSheetHelper
+                                                .createStyledDialog(activity);
                                 View view = LayoutInflater.from(activity).inflate(R.layout.bottom_sheet_action, null);
                                 dialog.setContentView(view);
 
