@@ -29,3 +29,7 @@ app/src/main/java/com/waenhancer/utils/WppTabChecker.java
 # Local environment secrets
 .env.local
 .env
+
+# Windows clipboard/IDE scratch files
+~ClipboardTransferring.tmp
+~$*
