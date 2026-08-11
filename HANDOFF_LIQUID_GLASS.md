@@ -95,8 +95,19 @@ correção certa para a borda ausente, e agora precisa virar condicional.
    (uma ou duas funções seno da posição angular, amplitude ~0.25).
 
 **Critério de aceite (mensurável).** Com `tools/glass_profile.py --edge`, o pico da borda deve
-**variar ao menos 60 de luma** ao longo do perímetro sobre um fundo heterogêneo. Hoje varia
-quase nada — foi exatamente assim que o defeito anterior foi provado.
+**variar ao menos 60 de luma** ao longo do perímetro sobre um fundo heterogêneo.
+
+**Linha de base já aferida** (mesmo screenshot do ponto 3, x de 300 a 1150):
+
+| | min | max | variação |
+|---|---|---|---|
+| borda de cima | 249.5 | 254.0 | **4.5** |
+| borda de baixo | 177.1 | 255.0 | 77.9 |
+
+A borda de cima varia 4.5 e está **saturando em branco** — é a reclamação do "halo contínuo e
+uniforme demais", agora com número. Não precisa adivinhar se melhorou: são esses 4.5 que a
+mudança tem que levar acima de 60. A borda de baixo já passa, então cuidado para não estragá-la
+ao mexer no hairline.
 
 ### 2 — o miolo opaco / falta transmissão de cor
 
@@ -117,10 +128,38 @@ ao branco; multiplicativo preserva as razões de matiz.
 **Cuidado.** `GlassSpec.MIN_CONTENT_CONTRAST` (3.0) é garantia de legibilidade e há testes em
 `GlassSpecTest` em cima disso. Baixar o fill vai empurrar `ensureTextContrast` — rode os testes.
 
-### 3 — falta refração nas bordas
+### 3 — falta refração nas bordas — ✅ FEITO e medido
 
 > "Próximo ao perímetro da cápsula, o fundo deveria sofrer um deslocamento óptico muito pequeno…
 > O centro pode continuar relativamente estável."
+
+**Entregue.** `uBlur` + `sample9()` em `LiquidLens`, raio `t * uBlur` (zero no contorno, cheio a
+um bevel para dentro); `LiquidLens.CAPTURE_BLUR_RADIUS = 1f` e `applyCaptureBlur()` em
+`FloatingBottomBar`. `BLUR_DP_PER_UNIT 0.70`, teto `MAX_BLUR_PX 16` — 14.7px num aparelho 3.5x.
+A dispersão continua um tap nítido por canal, misturada por `fringe = edge²`: a franja é efeito
+de borda, e a borda é onde o raio do blur é ~zero, então borrar R e B custaria 18 amostras para
+reproduzir o que o verde já carrega em todo lugar onde a franja não aparece.
+
+`applyCaptureBlur()` é dirigido pelo **retorno** de `LiquidLens.apply()`, não por `isActiveFor()`.
+Os dois discordam no único caso que importa: um aparelho cujo driver rejeita o AGSL quer lente,
+não pode ter, e ficaria sem o blur do shader **e** sem o da biblioteca. Como `refreshLiquid` roda
+a cada passada de layout, a rejeição — que só se descobre no primeiro `apply` — é corrigida na
+seguinte.
+
+**Medido no aparelho** (1440×3120, cápsula em y 2841–3032):
+
+| | referência | antes | simulado | medido |
+|---|---|---|---|---|
+| borda de cima (pico) | 209–255 | 120, plana | 255 | **253.5** |
+| borda de baixo (pico) | 140–255 | 30 (ausente) | 195 | **187.0** |
+| corpo sobre fundo liso | plano ~36 | curva 30→46→16 | plano 33 | **plano 32.9** (113px) |
+| corpo sobre conteúdo | — | plano (invisível) | — | **32.9 → 161.4** |
+
+O critério era o corpo variar ≥20 de luma onde há conteúdo atrás. Variou **128.5**. O controle
+que faz esse número significar alguma coisa é a terceira linha: onde o fundo é liso o corpo
+continua **exatamente** plano por 113 pixels. Ele não ficou ruidoso, passou a rastrear o fundo.
+Sob o FAB verde o corpo entra em `(28, 116, 66)` — verde, não cinza claro — e volta ao neutro
+assim que o FAB acaba geometricamente.
 
 **Este é o ponto arquitetural, e é uma armadilha.** A refração **já existe** (`uRefract` ≈ 40px
 num aparelho de 1440p) e é invisível. Motivo: o `BlurView` desfoca o backdrop **antes** do
@@ -235,3 +274,12 @@ python tools/glass_profile.py <screenshot> --edge <x0> <x1> --band <y0> <y1>
 Referências em `demo/liquid-glass/`: `navbar-reference-target.png` (alvo contra o qual a borda
 foi calibrada), `navbar-before-optics-fix.jpg` (o domo, para comparação),
 `liquid-glass-full-app-brief.png` (a especificação das Fases 1 e 2).
+
+> **`demo/` não está mais no repositório.** A pasta é `.gitignore`-ada e foi removida de todo o
+> histórico, incluindo as 14 tags: as capturas são de um aparelho real com uma conta real e
+> carregam nomes de contato, fotos de perfil e texto de mensagem, o que não tem nada a ver com o
+> código e não pertence a um repositório público. Os arquivos continuam **no disco de quem já os
+> tinha** — quem clonar do zero não os recebe e vai precisar pedir uma cópia. Os números medidos
+> contra eles estão todos registrados acima, que é justamente por isso que estão aqui em vez de
+> só nas imagens. Vale o mesmo para qualquer screenshot novo: meça, anote o número, não commite
+> a imagem.
