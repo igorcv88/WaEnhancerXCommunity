@@ -69,6 +69,47 @@ _hairline_ dimensionado em dp presente em todo o contorno, duas faixas de borda 
 
 `FloatingBottomBar`: `LENSED_ELEVATION_DP 5` + `LENSED_TRANSLATION_Z_DP 2` (7dp combinados).
 
+## Fase 1 — concluída e validada no aparelho (2026-08-11)
+
+Os itens 1–7 descritos abaixo foram concluídos depois da redação original deste handoff. A seção
+permanece como registro do diagnóstico e dos critérios que orientaram a implementação; os verbos
+no futuro nela não representam trabalho ainda pendente.
+
+- O hairline agora amostra a luminância do backdrop para dentro da borda e recebe variação de
+  baixa frequência ao longo do perímetro. Sobre conteúdo escuro ele recua; sobre conteúdo claro
+  concentra luz localmente.
+- O ganho plano do corpo passou de aditivo para multiplicativo, `MAX_SATURATION` foi para `1.60`,
+  `ADAPTIVE_TINT_WEIGHT` para `0.55` e o `fillScale` de `LIQUID` para `0.18`.
+- A espessura caiu para `MAX_BEVEL_FRACTION 0.26`, `specular 0.75` e `innerShadow 0.31`. O último
+  fica um centésimo acima de `ADVANCED` para preservar o contrato testado entre variantes.
+- O item ativo virou um segundo `sdRoundRect` dentro do shader. Ele tinge e reforça localmente a
+  refração e o specular; `LiquidMorph` continua sendo a mola, mas sob a lente publica seus
+  uniformes em vez de pintar uma bolha externa.
+- O press atualiza `uPress` por 220ms. O `RuntimeShader` e o `RenderEffect` permanecem instalados;
+  somente os uniformes mudam por frame. `spec.animate` continua respeitando redução de movimento.
+
+### Medição final
+
+Quatro capturas 1440×3120 do aparelho foram medidas com `tools/glass_profile.py`, usando
+`x=300..1150`, faixa superior `y=2835..2880`, faixa inferior `y=2990..3040` e passo 10. As
+capturas ficam apenas no disco local porque contêm contatos, fotos e mensagens reais.
+
+| captura | borda superior min→max (variação) | borda inferior min→max (variação) |
+|---|---:|---:|
+| conversas, conteúdo heterogêneo | 52.1→158.8 (**106.7**) | 53.5→97.3 (43.8) |
+| chamadas, fundo predominantemente uniforme | 52.0→101.0 (49.0) | 68.5→89.8 (21.3) |
+| grupos, conteúdo heterogêneo | 52.1→245.9 (**193.8**) | 54.1→77.8 (23.7) |
+| conversas, conteúdo heterogêneo | 52.1→237.4 (**185.3**) | 53.1→77.8 (24.7) |
+
+O critério do ponto 1 era variar pelo menos 60 de luma ao longo da borda sobre fundo
+heterogêneo. As três capturas aplicáveis passaram por 46.7, 133.8 e 125.3 luma de margem. A tela
+de chamadas é o controle esperado: sobre fundo quase uniforme a borda permanece contida em vez
+de fabricar contraste. As quatro capturas também mostram transmissão localizada das cores do
+conteúdo e o item ativo verde integrado ao corpo refrativo, sem a bolha pintada por cima.
+
+Validação de código: 184 testes, compilação Java, lint Release, R8/resource shrinking e assinatura
+APK v2 passaram. A expansão para outras superfícies continua sendo a Fase 2.
+
 ## Fase 1 — os sete retoques ópticos
 
 Referência: `demo/liquid-glass/liquid-glass-full-app-brief.png`.

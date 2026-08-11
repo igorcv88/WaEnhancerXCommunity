@@ -3,6 +3,7 @@ package com.waenhancer.theme;
 import android.graphics.Color;
 import android.graphics.RenderEffect;
 import android.graphics.RuntimeShader;
+import android.animation.ValueAnimator;
 import android.os.Build;
 import android.util.Log;
 import android.view.View;
@@ -93,6 +94,12 @@ public final class LiquidLens {
             + "uniform float4 uTint;\n"
             + "uniform float uSat;\n"
             + "uniform float uBlur;\n"
+            + "uniform float2 uActiveCenter;\n"
+            + "uniform float2 uActiveHalf;\n"
+            + "uniform float uActiveRadius;\n"
+            + "uniform float4 uActiveTint;\n"
+            + "uniform float uActive;\n"
+            + "uniform float uPress;\n"
             + "\n"
             + "float sdRoundRect(float2 p, float2 b, float r) {\n"
             + "    float2 q = abs(p) - b + r;\n"
@@ -157,10 +164,13 @@ public final class LiquidLens {
             + "    float t = clamp(-d / max(uBevel, 1.0), 0.0, 1.0);\n"
             + "    float edge = 1.0 - t;\n"
             + "    float slope = edge * edge;\n"
+            + "    float ad = sdRoundRect(coord - uActiveCenter, uActiveHalf, uActiveRadius);\n"
+            + "    float activeCov = uActive * clamp(0.5 - ad / 1.5, 0.0, 1.0);\n"
+            + "    float activeEdge = activeCov * clamp(1.0 + ad / max(uBevel * 0.45, 1.0), 0.0, 1.0);\n"
             + "\n"
             // Refraction, inward only. See the class note: sampling outward reads transparent
             // black off the edge of the child input and rings the outline.
-            + "    float2 offset = -n * (slope * uRefract);\n"
+            + "    float2 offset = -n * (slope * uRefract) * (1.0 + activeEdge * 0.18);\n"
             + "    float2 lo = float2(1.0, 1.0);\n"
             + "    float2 hi = uSize - float2(1.0, 1.0);\n"
             + "    float2 spread = offset * uDispersion * slope;\n"
@@ -238,6 +248,15 @@ public final class LiquidLens {
             + "        clamp(1.0 - abs(d + hw + sep) / hw, 0.0, 1.0),\n"
             + "        clamp(1.0 - abs(d + hw) / hw, 0.0, 1.0),\n"
             + "        clamp(1.0 - abs(d + hw - sep) / hw, 0.0, 1.0));\n"
+            + "    float2 bgCoord = clamp(coord - n * hw * 2.0, lo, hi);\n"
+            + "    float4 bgSample = float4(content.eval(bgCoord));\n"
+            + "    float3 bgRgb = bgSample.rgb / max(bgSample.a, 0.001);\n"
+            + "    float bgLuma = dot(bgRgb, float3(0.2126, 0.7152, 0.0722));\n"
+            + "    float angle = atan(n.y, n.x);\n"
+            + "    float localLight = 0.78 + 0.14 * sin(angle * 1.7 + 0.6)\n"
+            + "        + 0.10 * sin(angle * 3.1 - 1.2);\n"
+            + "    float hairGain = mix(0.15, 1.0, smoothstep(0.05, 0.45, bgLuma))\n"
+            + "        * clamp(localLight, 0.55, 1.05);\n"
             + "\n"
             + "    float3 warm = float3(1.0, 0.995, 0.98);\n"
             + "    float3 cool = float3(0.95, 0.975, 1.0);\n"
@@ -246,16 +265,18 @@ public final class LiquidLens {
             // thirds of that where it faces away; the two bands behind it fall off inward. These
             // are additive, so the sum is what matters — and all of it is spent within a bevel of
             // an edge, which is what lets the body stay flat.
-            + "    col += hair * (0.45 + 0.60 * max(facing, 0.0)) * uSpec;\n"
-            + "    col += warm * lit * 0.36 * uSpec;\n"
+            + "    col += hair * (0.45 + 0.60 * max(facing, 0.0)) * hairGain * uSpec;\n"
+            + "    col += warm * lit * 0.36 * uSpec * (1.0 + uPress * 0.10);\n"
             + "    col += cool * away * 0.28 * uSpec;\n"
+            + "    col = mix(col, uActiveTint.rgb, uActiveTint.a * activeCov);\n"
+            + "    col += warm * activeEdge * 0.07 * uSpec;\n"
             + "\n"
             // A flat pass-through gain, and flat is the whole point: glass carries a little more
             // light than the gap beside it, but any variation down the body brings the dome back.
             // This replaces a Blinn-Phong term whose exponent of 48, evaluated against a normal
             // that was nearly flat across the body, put its brightest output in the middle of the
             // surface and none of it at the bottom rim — top-lit body shading exactly.
-            + "    col += warm * 0.07 * uSpec;\n"
+            + "    col *= 1.0 + 0.10 * uSpec;\n"
             + "\n"
             // Inner shadow, for the thickness of the pane. Multiplied by t so it vanishes at the
             // outline: it used to peak exactly there, on the same pixels as the rim and on the one
@@ -304,10 +325,10 @@ public final class LiquidLens {
      * enough room to be seen bending. Below roughly a quarter the rim gets too narrow to read as
      * glass thickness and the surface flattens into a plain tinted panel.</p>
      */
-    private static final float MAX_BEVEL_FRACTION = 0.34f;
+    private static final float MAX_BEVEL_FRACTION = 0.26f;
 
     /** Vibrancy applied at full lens strength; 1.0 leaves saturation untouched. */
-    private static final float MAX_SATURATION = 1.25f;
+    private static final float MAX_SATURATION = 1.60f;
 
     /**
      * How much in-shader blur each unit of the spec's own blur radius buys, in dp.
@@ -367,7 +388,18 @@ public final class LiquidLens {
      * and a {@code RenderEffect} per pass would put that cost on every frame of a scroll for no
      * visible difference.</p>
      */
-    private static final java.util.WeakHashMap<View, String> installed = new java.util.WeakHashMap<>();
+    private static final java.util.WeakHashMap<View, ShaderState> installed = new java.util.WeakHashMap<>();
+    private static final java.util.WeakHashMap<View, ValueAnimator> pressAnimators = new java.util.WeakHashMap<>();
+
+    private static final class ShaderState {
+        final String key;
+        final RuntimeShader shader;
+
+        ShaderState(String key, RuntimeShader shader) {
+            this.key = key;
+            this.shader = shader;
+        }
+    }
 
     /**
      * Set once a device has refused to compile the shader.
@@ -467,7 +499,8 @@ public final class LiquidLens {
         String key = width + "x" + height + ":" + cornerRadiusPx + ":" + bevel + ":" + refract
                 + ":" + spec.dispersion + ":" + spec.specular + ":" + spec.innerShadow
                 + ":" + spec.fillColor + ":" + saturation + ":" + hairline + ":" + blur;
-        if (key.equals(installed.get(view))) {
+        ShaderState current = installed.get(view);
+        if (current != null && key.equals(current.key)) {
             status = "active (unchanged)";
             return true;
         }
@@ -490,9 +523,15 @@ public final class LiquidLens {
                     Color.alpha(spec.fillColor) / 255f);
             shader.setFloatUniform("uSat", saturation);
             shader.setFloatUniform("uBlur", blur);
+            shader.setFloatUniform("uActiveCenter", 0f, 0f);
+            shader.setFloatUniform("uActiveHalf", 0f, 0f);
+            shader.setFloatUniform("uActiveRadius", 0f);
+            shader.setFloatUniform("uActiveTint", 0f, 0f, 0f, 0f);
+            shader.setFloatUniform("uActive", 0f);
+            shader.setFloatUniform("uPress", 0f);
 
             view.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"));
-            installed.put(view, key);
+            installed.put(view, new ShaderState(key, shader));
             status = "active: " + width + "x" + height + " bevel=" + bevel + "px refract="
                     + refract + "px dispersion=" + spec.dispersion + " hair=" + hairline
                     + "px blur=" + blur + "px";
@@ -509,12 +548,58 @@ public final class LiquidLens {
         }
     }
 
+    /** Updates the selected-tab lens without reallocating the shader or render effect. */
+    public static void updateActive(View view, float centerX, float centerY, float width,
+                                    float height, float radius, int tintColor, boolean enabled) {
+        ShaderState state = installed.get(view);
+        if (state == null) return;
+        try {
+            state.shader.setFloatUniform("uActiveCenter", centerX, centerY);
+            state.shader.setFloatUniform("uActiveHalf", Math.max(0f, width / 2f),
+                    Math.max(0f, height / 2f));
+            state.shader.setFloatUniform("uActiveRadius", Math.max(0f, radius));
+            state.shader.setFloatUniform("uActiveTint",
+                    Color.red(tintColor) / 255f,
+                    Color.green(tintColor) / 255f,
+                    Color.blue(tintColor) / 255f,
+                    0.14f);
+            state.shader.setFloatUniform("uActive", enabled ? 1f : 0f);
+            view.invalidate();
+        } catch (Throwable t) {
+            Log.w(TAG, "Could not update active lens uniforms", t);
+        }
+    }
+
+    /** Gives the lens a short, restrained response to a tab press. */
+    public static void pulse(View view, boolean animate) {
+        ShaderState state = installed.get(view);
+        if (state == null) return;
+        ValueAnimator previous = pressAnimators.remove(view);
+        if (previous != null) previous.cancel();
+        if (!animate) {
+            state.shader.setFloatUniform("uPress", 0f);
+            return;
+        }
+        ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f, 0f);
+        animator.setDuration(220L);
+        animator.addUpdateListener(value -> {
+            ShaderState live = installed.get(view);
+            if (live == null) return;
+            live.shader.setFloatUniform("uPress", (float) value.getAnimatedValue());
+            view.invalidate();
+        });
+        animator.start();
+        pressAnimators.put(view, animator);
+    }
+
     /** Removes any lens previously installed on {@code view}. */
     public static void clear(View view) {
         if (view == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
         try {
             view.setRenderEffect(null);
             installed.remove(view);
+            ValueAnimator animator = pressAnimators.remove(view);
+            if (animator != null) animator.cancel();
         } catch (Throwable ignored) {
         }
     }

@@ -1413,16 +1413,23 @@ public class FloatingBottomBar extends Feature {
             );
             host.addView(blurView, blurLp);
 
-            // Between the blurred pane and the tabs: the blob has to be lit by the glass above
-            // it and sit behind the icons, or it stops reading as something inside the surface.
-            // Not under the lens. The blob is flat paint on a surface built entirely from
-            // refraction, so it has no glass character at any opacity — dimming it only made it
-            // a fainter sticker. WhatsApp's own capsule already marks the selected tab, so the
-            // surface loses nothing by dropping it. Bringing it back means making it a second
-            // shape in the lens's distance field so it refracts too, not painting it on top.
-            if (hostSpec.morphing && !lensed) {
+            // LiquidMorph remains the critically damped motion controller in both paths. Under a
+            // lens it does not paint: each spring frame updates the second distance field in the
+            // shader, so the selected tab bends and tints the backdrop instead of becoming a
+            // sticker laid over it. The fallback still draws the restrained blob itself.
+            if (hostSpec.morphing) {
                 LiquidMorph morph = new LiquidMorph(ctx);
                 morph.applySpec(hostSpec);
+                if (lensed) {
+                    morph.setStateListener((centerX, width, height, radius) -> {
+                        GlassSpec liveSpec = glassSpecFor(bottomNav);
+                        float verticalInset = Math.min(dp(density, 9), height * 0.22f);
+                        LiquidLens.updateActive(blurView, centerX, height / 2f, width,
+                                Math.max(1f, height - verticalInset * 2f),
+                                Math.max(1f, radius - verticalInset),
+                                liveSpec.refractionColor, true);
+                    }, false);
+                }
                 liquidMorphs.put(bottomNav, morph);
                 host.addView(morph, new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1918,6 +1925,13 @@ public class FloatingBottomBar extends Feature {
             applyTabMetrics(bottomNav);
             applyBarVerticalMetrics(bottomNav, density);
             refreshLiquid(bottomNav, density);
+            BlurView lensView = glassBlurViews.get(bottomNav);
+            if (lensView != null) {
+                LiquidLens.pulse(lensView, glassSpecFor(bottomNav).animate);
+            }
+            // WhatsApp marks the new item selected inside its listener. Re-read on the next loop
+            // so the spring targets the new tab rather than the one that was selected on DOWN.
+            bottomNav.post(() -> refreshLiquid(bottomNav, density));
 
             if (tabId == 1000 || tabId == 1100 || isMetaAiActive) {
                 float targetTranslationY = height + (24 * density);

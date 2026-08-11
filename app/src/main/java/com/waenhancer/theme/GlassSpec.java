@@ -34,7 +34,7 @@ public final class GlassSpec {
          * a property the previous definition lacked, which is why "less blur than frost" still
          * read as frost.</p>
          */
-        LIQUID(0.30f, 6f, 0.85f, 0.90f, 1.2f, 2.30f, 14, 1.00f, 22f, 0.42f, 1.00f, 0.55f, true, true),
+        LIQUID(0.18f, 6f, 0.85f, 0.90f, 1.2f, 2.30f, 14, 1.00f, 22f, 0.42f, 0.75f, 0.31f, true, true),
         /** Dense and diffuse: the most legible variant over busy or high-contrast backdrops. */
         FROST(1.18f, 25f, 0.30f, 0.15f, 0.6f, 0.90f, 55, 0.00f, 0f, 0.00f, 0.00f, 0.00f, false, false),
         /** Almost only a border. Highest backdrop fidelity, lowest legibility guarantee. */
@@ -114,7 +114,7 @@ public final class GlassSpec {
     private static final float NO_BLUR_MIN_OPACITY = 0.72f;
 
     /** How far an adaptive fill is pulled toward its backdrop's colour. See {@link #adaptTo}. */
-    private static final float ADAPTIVE_TINT_WEIGHT = 0.35f;
+    private static final float ADAPTIVE_TINT_WEIGHT = 0.55f;
 
     /** Widest swing the adaptive edge may take from its resolved alpha, either way. */
     private static final float ADAPTIVE_EDGE_RANGE = 0.30f;

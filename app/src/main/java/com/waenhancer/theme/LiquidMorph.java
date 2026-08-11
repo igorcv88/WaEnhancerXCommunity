@@ -26,6 +26,10 @@ import android.view.View;
 @SuppressLint("ViewConstructor")
 public final class LiquidMorph extends View {
 
+    public interface StateListener {
+        void onMorphState(float centerX, float width, float height, float cornerRadius);
+    }
+
     /** Spring stiffness. Higher arrives sooner and overshoots less. */
     private static final float STIFFNESS = 420f;
     /** Damping ratio. Just under 1 leaves a trace of overshoot, which reads as liquid. */
@@ -55,6 +59,8 @@ public final class LiquidMorph extends View {
     private float cornerRadius;
     private boolean hasTarget;
     private long lastFrameNanos;
+    private boolean renderBlob = true;
+    private StateListener stateListener;
 
     public LiquidMorph(Context context) {
         super(context);
@@ -80,6 +86,13 @@ public final class LiquidMorph extends View {
         paint.setColor(SemanticTheme.withAlpha(tint, BLOB_ALPHA));
     }
 
+    /** Uses the spring as a state driver while letting the lens render the selected shape. */
+    public void setStateListener(StateListener listener, boolean renderBlob) {
+        stateListener = listener;
+        this.renderBlob = renderBlob;
+        publishState();
+    }
+
     /**
      * Sends the blob to a tab.
      *
@@ -99,6 +112,7 @@ public final class LiquidMorph extends View {
             centerX = targetCenterX;
             width = targetWidth;
             invalidate();
+            publishState();
             return;
         }
         lastFrameNanos = 0L;
@@ -130,6 +144,13 @@ public final class LiquidMorph extends View {
             postOnAnimation(this::step);
         }
         invalidate();
+        publishState();
+    }
+
+    private void publishState() {
+        if (stateListener != null && hasTarget && width > 0f && getHeight() > 0) {
+            stateListener.onMorphState(centerX, width, getHeight(), cornerRadius);
+        }
     }
 
     /** One step of a critically damped spring, returning the new velocity. */
@@ -163,7 +184,7 @@ public final class LiquidMorph extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
-        if (!hasTarget || width <= 0f) return;
+        if (!renderBlob || !hasTarget || width <= 0f) return;
 
         // Stretch along the direction of travel and thin out across it, conserving roughly the
         // area the blob had at rest. This is the whole of the liquid read: a rigid rectangle

@@ -49,3 +49,5 @@ app/src/main/java/com/waenhancer/utils/WppTabChecker.java
 # references live here and the handoff measures against them - but never
 # committed. See HANDOFF_LIQUID_GLASS.md.
 demo/
+/Screenshot (*.jpg
+/Screenshot (*.png
