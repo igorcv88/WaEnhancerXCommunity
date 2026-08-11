@@ -33,6 +33,11 @@ import android.view.View;
  *   <li><b>Refraction.</b> The backdrop is sampled from further inside than the pixel being
  *       drawn, by an amount that grows toward the edge. That is what compresses the backdrop
  *       into a band at the rim — the single cue that reads as "lens" rather than "tint".</li>
+ *   <li><b>Blur, graduated.</b> Nine taps at a radius that is zero on the outline and full a
+ *       bevel inside. This belongs here rather than in the blur library beneath, because a
+ *       backdrop that arrives pre-blurred has nothing left for the displacement above to bend:
+ *       an even haze pushed sideways is the same even haze. Sharp at the rim, soft in the
+ *       middle.</li>
  *   <li><b>Dispersion.</b> Red, green and blue are displaced by different amounts, so the
  *       compression band fringes into colour the way a real edge does.</li>
  *   <li><b>Rim.</b> A narrow near-white hairline on the outline, all the way round, sampled once
@@ -44,8 +49,9 @@ import android.view.View;
  *       on it, then the variant's own colour.</li>
  * </ol>
  *
- * <p>Run through {@link View#setRenderEffect} on the view that already holds the blurred
- * backdrop, so {@code content} is the real backdrop rather than an approximation of it. The
+ * <p>Run through {@link View#setRenderEffect} on the view that already holds the captured
+ * backdrop, so {@code content} is the real backdrop rather than an approximation of it — and as
+ * sharp as that view can supply it, since this pass does its own blurring. The
  * displacement is always inward: a {@code RuntimeShader} child input only guarantees samples
  * inside the output clip, so reaching outward would read transparent black and ring the outline
  * in black.</p>
@@ -86,10 +92,35 @@ public final class LiquidLens {
             + "uniform float uHair;\n"
             + "uniform float4 uTint;\n"
             + "uniform float uSat;\n"
+            + "uniform float uBlur;\n"
             + "\n"
             + "float sdRoundRect(float2 p, float2 b, float r) {\n"
             + "    float2 q = abs(p) - b + r;\n"
             + "    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;\n"
+            + "}\n"
+            + "\n"
+            // Nine taps of the backdrop, in premultiplied form so the weighted sum stays correct
+            // where the child input is partly transparent. A centre, a ring of four on the axes
+            // and a ring of four on the diagonals: enough structure to read as depth of field
+            // without the banding a single wide ring produces. At radius zero all nine collapse
+            // onto the same texel and this is an expensive way to write content.eval(c) — which
+            // is exactly what happens at the rim, and is the point.
+            + "float4 sample9(float2 c, float rad, float2 lo, float2 hi) {\n"
+            + "    float2 ax = float2(rad * 0.62, 0.0);\n"
+            + "    float2 ay = float2(0.0, rad * 0.62);\n"
+            + "    float dg = rad * 0.7071;\n"
+            + "    float2 d1 = float2(dg, dg);\n"
+            + "    float2 d2 = float2(dg, -dg);\n"
+            + "    float4 acc = float4(content.eval(clamp(c, lo, hi)));\n"
+            + "    acc += float4(content.eval(clamp(c + ax, lo, hi))) * 0.75;\n"
+            + "    acc += float4(content.eval(clamp(c - ax, lo, hi))) * 0.75;\n"
+            + "    acc += float4(content.eval(clamp(c + ay, lo, hi))) * 0.75;\n"
+            + "    acc += float4(content.eval(clamp(c - ay, lo, hi))) * 0.75;\n"
+            + "    acc += float4(content.eval(clamp(c + d1, lo, hi))) * 0.5;\n"
+            + "    acc += float4(content.eval(clamp(c - d1, lo, hi))) * 0.5;\n"
+            + "    acc += float4(content.eval(clamp(c + d2, lo, hi))) * 0.5;\n"
+            + "    acc += float4(content.eval(clamp(c - d2, lo, hi))) * 0.5;\n"
+            + "    return acc / 6.0;\n"
             + "}\n"
             + "\n"
             + "half4 main(float2 coord) {\n"
@@ -136,15 +167,35 @@ public final class LiquidLens {
             + "    float2 cR = clamp(coord + offset - spread, lo, hi);\n"
             + "    float2 cG = clamp(coord + offset, lo, hi);\n"
             + "    float2 cB = clamp(coord + offset + spread, lo, hi);\n"
-            + "    half4 centre = content.eval(cG);\n"
-            + "    float ca = float(centre.a);\n"
+            + "\n"
+            // The blur, graduated: none at the outline, full a bevel inside. This is the half of
+            // the lens that used to be missing, and it was missing because it was happening in the
+            // wrong place. The BlurView blurs the backdrop *before* the shader ever sees it, and
+            // displacing the pixels of a uniform blur produces the same uniform blur — the
+            // refraction above was already 40px wide on a 1440p device and was invisible for
+            // exactly that reason. With the capture arriving sharp, the displacement finally has
+            // structure to bend, and the softness the surface still needs for legibility is spent
+            // where it costs nothing: the middle, well away from the rim that carries the effect.
+            + "    float rad = t * uBlur;\n"
+            + "    float4 back = sample9(cG, rad, lo, hi);\n"
+            + "    float ca = back.a;\n"
             + "    if (ca < 0.01) {\n"
             // Nothing behind the surface to refract — a backdrop that failed to render. Fall back
             // to the flat tint rather than to black.
             + "        return half4(half3(uTint.rgb * cov), half(cov));\n"
             + "    }\n"
-            + "    float3 col = float3(\n"
-            + "        float(content.eval(cR).r), float(centre.g), float(content.eval(cB).b)) / ca;\n"
+            + "    float3 col = back.rgb / ca;\n"
+            // Dispersion stays a single sharp tap per channel, faded in toward the outline. The
+            // fringe is a rim effect and the rim is where rad is near zero, so blurring the red
+            // and blue taps as well would cost eighteen more samples to reproduce what the green
+            // channel already carries everywhere the fringe is not visible.
+            + "    float fringe = edge * edge;\n"
+            + "    if (fringe > 0.004) {\n"
+            + "        float4 sr = float4(content.eval(cR));\n"
+            + "        float4 sb = float4(content.eval(cB));\n"
+            + "        col.r = mix(col.r, sr.r / max(sr.a, 0.001), fringe);\n"
+            + "        col.b = mix(col.b, sb.b / max(sb.a, 0.001), fringe);\n"
+            + "    }\n"
             + "\n"
             // Saturation. Glass concentrates the light it passes, and a touch of vibrancy is what
             // keeps the refracted band from reading as grey mush once it has been blurred.
@@ -259,6 +310,38 @@ public final class LiquidLens {
     private static final float MAX_SATURATION = 1.25f;
 
     /**
+     * How much in-shader blur each unit of the spec's own blur radius buys, in dp.
+     *
+     * <p>The spec's radius is resolution-independent by construction — the blur library works on
+     * a downscaled copy of the backdrop, which is why {@code GlassRenderer.blurRadius} explicitly
+     * refuses to multiply it by density. Here the sampling happens at full resolution, so the
+     * conversion has to be made, and it is made once, here.</p>
+     */
+    private static final float BLUR_DP_PER_UNIT = 0.70f;
+
+    /**
+     * Ceiling on the in-shader blur, in pixels.
+     *
+     * <p>Nine taps is a depth of field, not a Gaussian. Spread them far enough apart and the rings
+     * stop overlapping and start reading as ghosts of the backdrop rather than as a blur of it.
+     * Sixteen pixels keeps the outer ring within about a tap-width of the middle one on a dense
+     * screen; going wider needs more taps, and more taps is the cost that Phase 2 cannot afford
+     * multiplied across many surfaces.</p>
+     */
+    private static final float MAX_BLUR_PX = 16f;
+
+    /**
+     * Radius to hand the blur library when a lens is going to run on top of it.
+     *
+     * <p>Not zero, and not {@code setBlurEnabled(false)}: the BlurView is what captures the
+     * backdrop into the view in the first place, and without it {@code content} arrives empty and
+     * the shader falls through to its flat-tint path. What it must not do is arrive already
+     * blurred — see the note beside {@code rad} in the shader. This is the smallest radius that
+     * still leaves the capture running.</p>
+     */
+    public static final float CAPTURE_BLUR_RADIUS = 1f;
+
+    /**
      * Half-width of the bright hairline on the outline, in dp.
      *
      * <p>In dp rather than px because that is the one thing about this shader that has to hold a
@@ -337,7 +420,8 @@ public final class LiquidLens {
      * it actually changed.</p>
      *
      * @param view           the view whose rendered output is the backdrop to bend; must already
-     *                       be drawing the blurred backdrop, opaque, across its whole bounds
+     *                       be drawing the captured backdrop, opaque, across its whole bounds,
+     *                       and should hand it over unblurred — see {@link #CAPTURE_BLUR_RADIUS}
      * @param spec           the resolved surface
      * @param cornerRadiusPx the surface's corner radius, already clamped to the view
      * @param density        display density
@@ -374,10 +458,15 @@ public final class LiquidLens {
         float saturation = 1f + (MAX_SATURATION - 1f) * spec.lensStrength;
         float hairline = Math.max(MIN_HAIRLINE_PX,
                 Math.min(HAIRLINE_DP * density, MAX_HAIRLINE_PX));
+        // The softness the surface needs is this pass's job now, not the blur library's. A spec
+        // that asked for no blur at all still gets none, and the lens degrades to a sharp
+        // backdrop rather than inventing one.
+        float blur = Math.max(0f,
+                Math.min(MAX_BLUR_PX, spec.blurRadius * BLUR_DP_PER_UNIT * density));
 
         String key = width + "x" + height + ":" + cornerRadiusPx + ":" + bevel + ":" + refract
                 + ":" + spec.dispersion + ":" + spec.specular + ":" + spec.innerShadow
-                + ":" + spec.fillColor + ":" + saturation + ":" + hairline;
+                + ":" + spec.fillColor + ":" + saturation + ":" + hairline + ":" + blur;
         if (key.equals(installed.get(view))) {
             status = "active (unchanged)";
             return true;
@@ -400,11 +489,13 @@ public final class LiquidLens {
                     Color.blue(spec.fillColor) / 255f,
                     Color.alpha(spec.fillColor) / 255f);
             shader.setFloatUniform("uSat", saturation);
+            shader.setFloatUniform("uBlur", blur);
 
             view.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"));
             installed.put(view, key);
             status = "active: " + width + "x" + height + " bevel=" + bevel + "px refract="
-                    + refract + "px dispersion=" + spec.dispersion + " hair=" + hairline + "px";
+                    + refract + "px dispersion=" + spec.dispersion + " hair=" + hairline
+                    + "px blur=" + blur + "px";
             return true;
         } catch (Throwable t) {
             // A device that refuses the shader keeps the layered rim rather than losing the bar,

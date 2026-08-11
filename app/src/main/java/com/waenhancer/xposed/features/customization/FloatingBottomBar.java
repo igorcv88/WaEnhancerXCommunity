@@ -87,6 +87,14 @@ public class FloatingBottomBar extends Feature {
     private static final WeakHashMap<View, BackdropSampler> backdropSamplers = new WeakHashMap<>();
     /** Last colour sampled from behind each bar; 0 until the first sample lands. */
     private static final WeakHashMap<View, Integer> backdropColors = new WeakHashMap<>();
+    /**
+     * Radius currently handed to each BlurView.
+     *
+     * <p>Only so that {@link #applyCaptureBlur} can tell a no-op from a real change: it runs on
+     * every layout pass, and {@code setBlurRadius} invalidates the view whether or not the number
+     * moved.</p>
+     */
+    private static final WeakHashMap<BlurView, Float> captureBlurRadii = new WeakHashMap<>();
     private static boolean scrollHideEnabled = true;
     private static String scrollHideMode = "tabs";
     private static boolean glassEnabled = false;
@@ -1480,16 +1488,51 @@ public class FloatingBottomBar extends Feature {
             // already worked out, instead of blurring at a radius it cannot afford.
             GlassSpec spec = glassSpec(ctx);
             float radius = GlassRenderer.blurRadius(spec);
+            boolean lensed = LiquidLens.isActiveFor(spec);
             // The overlay is a flat colour composited over the blur before the lens ever runs.
             // Under a lens it halves the backdrop's contrast and leaves nothing to refract, so
             // the tint is handed to the shader instead and applied after the displacement.
-            int overlay = LiquidLens.isActiveFor(spec) ? android.graphics.Color.TRANSPARENT
-                    : spec.fillColor;
+            int overlay = lensed ? android.graphics.Color.TRANSPARENT : spec.fillColor;
             blurView.setupWith(blurRoot, algorithm)
                     .setFrameClearDrawable(windowBg)
                     .setBlurRadius(Math.max(1f, radius))
                     .setOverlayColor(overlay);
+            // Still keyed off the spec's radius, not the capture's: a device that could not blur
+            // at all asked for zero, and that decision is the spec's to make.
             blurView.setBlurEnabled(radius > 0f);
+            captureBlurRadii.put(blurView, Math.max(1f, radius));
+            applyCaptureBlur(blurView, spec, lensed);
+        } catch (Throwable t) {
+            XposedBridge.log(t);
+        }
+    }
+
+    /**
+     * Decides how much blur the capture itself should do, given whether a lens is actually running
+     * on top of it.
+     *
+     * <p>A lens bends the backdrop, and a backdrop that arrives already flattened into an even haze
+     * bends into an even haze — which is why the 40px of displacement this bar has been carrying
+     * was invisible on screen. Under a working lens the capture drops to its minimum and the blur
+     * happens inside the shader instead, graduated so that it is absent at the rim where the
+     * bending has to be seen and full in the middle where legibility needs it.</p>
+     *
+     * <p>Driven by {@code lensActive} rather than by {@link LiquidLens#isActiveFor}, because those
+     * two disagree in the one case that matters: a device whose driver rejects the AGSL wants a
+     * lens, cannot have one, and would otherwise be left holding a bar with neither the shader's
+     * blur nor the library's. Called again on every layout pass so that rejection — which is only
+     * discovered at the first {@code apply} — is corrected on the next one.</p>
+     */
+    private static void applyCaptureBlur(BlurView blurView, GlassSpec spec, boolean lensActive) {
+        if (blurView == null || spec == null) return;
+        try {
+            float wanted = lensActive
+                    ? LiquidLens.CAPTURE_BLUR_RADIUS
+                    : Math.max(1f, GlassRenderer.blurRadius(spec));
+            Float current = captureBlurRadii.get(blurView);
+            if (current != null && Math.abs(current - wanted) < 0.01f) return;
+            blurView.setBlurRadius(wanted);
+            captureBlurRadii.put(blurView, wanted);
         } catch (Throwable t) {
             XposedBridge.log(t);
         }
@@ -1710,7 +1753,9 @@ public class FloatingBottomBar extends Feature {
 
             BlurView blurView = glassBlurViews.get(bottomNav);
             if (blurView != null) {
-                LiquidLens.apply(blurView, spec, pillCornerRadiusPx(blurView, density), density);
+                boolean lensActive = LiquidLens.apply(
+                        blurView, spec, pillCornerRadiusPx(blurView, density), density);
+                applyCaptureBlur(blurView, spec, lensActive);
                 logGlassState(spec);
             }
 
