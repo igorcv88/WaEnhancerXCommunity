@@ -14,27 +14,34 @@ import android.view.View;
  * top of it — that is frost with a lit edge, which is what this class used to produce. Glass is an
  * optical model, and the model is what is implemented here: a signed distance field describes the
  * shape, its gradient gives a surface normal, the normal bends the backdrop by a different amount
- * per colour channel, and the same normal lights the rim against a fixed light source. Every one
- * of those steps feeds the next, which is why they have to live in a single shader rather than in
- * a stack of drawables.</p>
+ * per colour channel, and the same normal decides which way each part of the rim faces the light.
+ * Every one of those steps feeds the next, which is why they have to live in a single shader
+ * rather than in a stack of drawables.</p>
+ *
+ * <p>The one rule the whole pass obeys: <b>no term may vary with how far down the surface a pixel
+ * sits.</b> All of the light is spent within a bevel of an edge. A gradient running down the body
+ * is dome shading, and dome shading is what makes a pane read as a moulded plastic bump however
+ * transparent it is — which is the single most common way this effect fails.</p>
  *
  * <h3>What the pass does, in order</h3>
  *
  * <ol>
  *   <li><b>Coverage.</b> The rounded-rectangle SDF is the shape. Pixels outside it return
  *       transparent, so the surface antialiases its own outline and needs no outline clip.</li>
- *   <li><b>Normal.</b> A central difference on the SDF gives the outward 2D normal; the
- *       thickness profile turns that into a 3D one that tips outward as it approaches the rim.</li>
+ *   <li><b>Normal.</b> A central difference on the SDF gives the outward 2D normal, which sweeps
+ *       continuously round the corners and tells every term below which way the surface faces.</li>
  *   <li><b>Refraction.</b> The backdrop is sampled from further inside than the pixel being
  *       drawn, by an amount that grows toward the edge. That is what compresses the backdrop
  *       into a band at the rim — the single cue that reads as "lens" rather than "tint".</li>
  *   <li><b>Dispersion.</b> Red, green and blue are displaced by different amounts, so the
  *       compression band fringes into colour the way a real edge does.</li>
- *   <li><b>Specular.</b> Fresnel drives how reflective the surface is at grazing angles; the rim
- *       is bright where it faces the light and carries a softer, cooler glow where it faces
- *       away. The asymmetry between those two is most of the perceived realism.</li>
- *   <li><b>Inner shadow, tint, saturation.</b> Thickness on the backlit side, then the variant's
- *       own colour.</li>
+ *   <li><b>Rim.</b> A narrow near-white hairline on the outline, all the way round, sampled once
+ *       per channel at slightly different depths so it fringes into colour. Behind it, one soft
+ *       band per side: warm and tight where the surface faces the light, cooler and dimmer where
+ *       it faces away. Both edges get one — an edge that fades out on the far side is the bump
+ *       again.</li>
+ *   <li><b>Inner shadow, tint, saturation.</b> Thickness a little way inside the rim rather than
+ *       on it, then the variant's own colour.</li>
  * </ol>
  *
  * <p>Run through {@link View#setRenderEffect} on the view that already holds the blurred
@@ -50,8 +57,12 @@ import android.view.View;
  * <p>The optical model is ported from two MIT-licensed projects:
  * <a href="https://github.com/QWEA0/Liquid-Glass-Android">QWEA0/Liquid-Glass-Android</a>
  * (SDF coverage, gradient normal, inward refraction with per-channel dispersion, inner shadow)
- * and <a href="https://github.com/styropyr0/Prismal">styropyr0/Prismal</a> (circular thickness
- * profile, Schlick–Fresnel, and the split between the lit rim and the opposite-side glow).</p>
+ * and <a href="https://github.com/styropyr0/Prismal">styropyr0/Prismal</a> (the split between the
+ * lit rim and the opposite-side glow). Prismal's Blinn-Phong gloss and Schlick-Fresnel terms were
+ * ported too and have since been removed: with the surface normal tilted as gently as a thin pane
+ * needs, Fresnel sat at 0.04 everywhere and never lit the far rim, while the gloss put its
+ * brightest output in the middle of the body and none at the bottom edge — between them they
+ * produced the dome this pass now has a rule against.</p>
  */
 public final class LiquidLens {
 
@@ -72,6 +83,7 @@ public final class LiquidLens {
             + "uniform float2 uLight;\n"
             + "uniform float uSpec;\n"
             + "uniform float uInnerShadow;\n"
+            + "uniform float uHair;\n"
             + "uniform float4 uTint;\n"
             + "uniform float uSat;\n"
             + "\n"
@@ -102,19 +114,18 @@ public final class LiquidLens {
             + "    float nLen = length(n);\n"
             + "    n = nLen > 0.0001 ? n / nLen : float2(0.0, -1.0);\n"
             + "\n"
-            // Thickness. t runs 0 at the outline to 1 a full bevel inside. The height profile is
-            // a circular meniscus rather than a linear ramp, so the surface stands up steeply
-            // right at the edge and flattens quickly — a bevel reads as a chamfer, a meniscus
-            // reads as glass.
+            // Thickness. t runs 0 at the outline to 1 a full bevel inside, and slope is its
+            // square, so the surface stands up steeply at the edge and is flat again well before
+            // the body starts.
+            //
+            // Every term below is a function of d, t or n, and not one of them is a function of
+            // how far down the surface a pixel sits. That is deliberate, and it is most of the
+            // difference between glass and plastic: anything that varies smoothly from the top of
+            // the body to the bottom is dome shading, and dome shading is what makes a pane read
+            // as a moulded bump. The light belongs at the two edges or nowhere.
             + "    float t = clamp(-d / max(uBevel, 1.0), 0.0, 1.0);\n"
             + "    float edge = 1.0 - t;\n"
             + "    float slope = edge * edge;\n"
-            + "    float height = sqrt(max(2.0 * t - t * t, 0.0));\n"
-            // Tilt is capped well short of vertical. Let it run to the true meniscus slope and
-            // Fresnel saturates across the whole rim at once, so every grazing term below fires
-            // at full strength together and the edge reads as polished metal rather than glass.
-            + "    float tilt = clamp((1.0 - t) / max(height, 0.12), 0.0, 3.0);\n"
-            + "    float3 N = normalize(float3(n * tilt * 0.22, 1.0));\n"
             + "\n"
             // Refraction, inward only. See the class note: sampling outward reads transparent
             // black off the edge of the child input and rings the outline.
@@ -142,49 +153,65 @@ public final class LiquidLens {
             + "\n"
             + "    col = mix(col, uTint.rgb, uTint.a);\n"
             + "\n"
-            // Schlick-Fresnel. Near the rim the surface is seen almost edge-on, F approaches 1,
-            // and that is where a real pane turns into a mirror. Everything below is scaled by
-            // it, which is why the effect concentrates at the edge without being masked there.
-            + "    float cosVN = clamp(N.z, 0.0, 1.0);\n"
-            + "    float fres = 0.04 + 0.96 * pow(1.0 - cosVN, 5.0);\n"
-            + "\n"
-            // The rim, split by which way it faces. The lit side gets a tight white band; the
-            // side facing away gets a broader, dimmer Fresnel glow. Screenshot-realistic glass
-            // is mostly this asymmetry — a rim of uniform brightness reads as a drawn stroke.
+            // Which way each part of the rim faces the light. uLight is the direction the light
+            // travels and screen +Y points down, so a surface faces the light where its outward
+            // normal opposes it — hence the negation.
             + "    float2 lightDir = normalize(uLight + float2(0.0001, 0.0));\n"
-            // uLight is the direction the light travels and screen +Y points down, so a surface
-            // faces the light where its outward normal opposes it. Without this negation the lit
-            // band sat on the bottom edge and the cool glow on top — the lighting exactly
-            // inverted, which is what made the bar read as a lit hole rather than a raised pill.
             + "    float facing = dot(n, -lightDir);\n"
-            + "    float bandW = clamp(uBevel * 0.45, 2.0, 12.0);\n"
+            + "\n"
+            // One band per side, each a fixed fraction of the bevel. The 12px cap this width
+            // used to carry was 19% of a bottom bar's bevel: it squeezed both bands into a sliver
+            // beside the outline, and since the away-side band was already being scaled by a
+            // Fresnel term pinned at 0.04, the lower half of the pill got no rim at all and its
+            // bottom edge simply faded into the list. A pane whose edge fades out instead of
+            // closing is a bump, whichever side it fades on.
+            + "    float bandW = max(uBevel * 0.6, 3.0);\n"
             + "    float band = clamp(1.0 - (-d) / bandW, 0.0, 1.0) * cov;\n"
             + "    float lit = pow(max(facing, 0.0), 3.0) * band;\n"
-            + "    float opposite = pow(max(-facing, 0.0), 1.2) * band * fres;\n"
+            + "    float away = pow(max(-facing, 0.0), 1.2) * band;\n"
             + "\n"
-            // The hairline: a sub-pixel band exactly on the outline, present all the way round.
-            // It is what gives the surface a crisp boundary once the body has gone transparent.
-            + "    float hair = clamp(1.0 - abs(d + 1.0) / 1.5, 0.0, 1.0);\n"
-            + "\n"
-            // Blinn-Phong off the same normal field, so the highlight moves with the geometry
-            // instead of sitting where a gradient happened to be inset to.
-            + "    float3 L = normalize(float3(-lightDir, 1.4));\n"
-            + "    float3 H = normalize(L + float3(0.0, 0.0, 1.0));\n"
-            + "    float gloss = pow(max(dot(N, H), 0.0), 48.0) * (0.3 + 0.7 * height);\n"
+            // The hairline: a narrow, near-white band just inside the outline, present the whole
+            // way round. This is what the eye reads as the boundary of a sheet of glass, and it
+            // has to stay narrow — a wide band of the same brightness is a lit lip rather than an
+            // edge. Its width comes from the caller in dp, because the 1.5px it used to assume
+            // was sub-pixel on a dense screen and antialiasing removed most of it.
+            //
+            // Sampled once per channel at slightly different depths. Blue is displaced furthest
+            // outward, as the shortest wavelength is, so the edge fringes cool on its outer flank
+            // and warm on its inner one. Dispersion is per-wavelength, and over a dark chat list
+            // the backdrop has no detail left for the refraction above to fringe, so this is where
+            // the colour in a glass edge actually comes from.
+            + "    float hw = max(uHair, 1.0);\n"
+            + "    float sep = hw * 0.35 * uDispersion;\n"
+            + "    float3 hair = float3(\n"
+            + "        clamp(1.0 - abs(d + hw + sep) / hw, 0.0, 1.0),\n"
+            + "        clamp(1.0 - abs(d + hw) / hw, 0.0, 1.0),\n"
+            + "        clamp(1.0 - abs(d + hw - sep) / hw, 0.0, 1.0));\n"
             + "\n"
             + "    float3 warm = float3(1.0, 0.995, 0.98);\n"
             + "    float3 cool = float3(0.95, 0.975, 1.0);\n"
-            // These are additive, so their sum is what matters, not any one of them. At full
-            // strength the three together outweighed the backdrop they sit on and the rim went
-            // to white regardless of what was behind it — a lit lip, not a transparent edge.
-            + "    col += warm * (lit * 0.40 + gloss * 0.55\n"
-            + "        + hair * (0.09 + 0.15 * max(facing, 0.0))) * uSpec;\n"
-            + "    col += cool * opposite * uSpec * 0.16;\n"
             + "\n"
-            // Inner shadow on the backlit side. Thickness is only legible if the surface is
-            // darker where the light did not get through it.
-            + "    float shadowW = clamp(uBevel * 0.9, 4.0, 18.0);\n"
-            + "    float shade = pow(clamp(1.0 + d / shadowW, 0.0, 1.0), 1.5)\n"
+            // The rim saturates to white where it faces the light and settles at roughly two
+            // thirds of that where it faces away; the two bands behind it fall off inward. These
+            // are additive, so the sum is what matters — and all of it is spent within a bevel of
+            // an edge, which is what lets the body stay flat.
+            + "    col += hair * (0.45 + 0.60 * max(facing, 0.0)) * uSpec;\n"
+            + "    col += warm * lit * 0.36 * uSpec;\n"
+            + "    col += cool * away * 0.28 * uSpec;\n"
+            + "\n"
+            // A flat pass-through gain, and flat is the whole point: glass carries a little more
+            // light than the gap beside it, but any variation down the body brings the dome back.
+            // This replaces a Blinn-Phong term whose exponent of 48, evaluated against a normal
+            // that was nearly flat across the body, put its brightest output in the middle of the
+            // surface and none of it at the bottom rim — top-lit body shading exactly.
+            + "    col += warm * 0.07 * uSpec;\n"
+            + "\n"
+            // Inner shadow, for the thickness of the pane. Multiplied by t so it vanishes at the
+            // outline: it used to peak exactly there, on the same pixels as the rim and on the one
+            // side that most needed closing off. It belongs a little way in, where it reads as
+            // thickness rather than as a soft outer fade.
+            + "    float shadowW = clamp(uBevel * 0.9, 4.0, 40.0);\n"
+            + "    float shade = pow(clamp(1.0 + d / shadowW, 0.0, 1.0), 1.5) * t\n"
             + "        * max(-facing, 0.0) * uInnerShadow;\n"
             + "    col = col * (1.0 - 0.26 * shade);\n"
             + "\n"
@@ -230,6 +257,24 @@ public final class LiquidLens {
 
     /** Vibrancy applied at full lens strength; 1.0 leaves saturation untouched. */
     private static final float MAX_SATURATION = 1.25f;
+
+    /**
+     * Half-width of the bright hairline on the outline, in dp.
+     *
+     * <p>In dp rather than px because that is the one thing about this shader that has to hold a
+     * constant apparent size: the hairline is what the eye reads as the boundary of a sheet of
+     * glass. The 1.5px it was previously hard-coded to is sub-pixel on a 3.5x screen, so
+     * antialiasing spread it out and dimmed it, and the pill lost its outline exactly on the
+     * devices with enough resolution to show one.</p>
+     *
+     * <p>The band spans this either side of its centre, so 0.95dp is a little under 7px of total
+     * width at 3.5x — narrow enough to read as an edge rather than as a lit lip.</p>
+     */
+    private static final float HAIRLINE_DP = 0.95f;
+
+    /** Bounds on the hairline in px, so it survives a low-density screen and never becomes a band. */
+    private static final float MIN_HAIRLINE_PX = 1.5f;
+    private static final float MAX_HAIRLINE_PX = 5f;
 
     /**
      * What each view's current effect was built from.
@@ -327,10 +372,12 @@ public final class LiquidLens {
                 Math.min(spec.rimWidthDp * density, height * MAX_BEVEL_FRACTION));
         float refract = spec.lensStrength * MAX_DISPLACEMENT * bevel;
         float saturation = 1f + (MAX_SATURATION - 1f) * spec.lensStrength;
+        float hairline = Math.max(MIN_HAIRLINE_PX,
+                Math.min(HAIRLINE_DP * density, MAX_HAIRLINE_PX));
 
         String key = width + "x" + height + ":" + cornerRadiusPx + ":" + bevel + ":" + refract
                 + ":" + spec.dispersion + ":" + spec.specular + ":" + spec.innerShadow
-                + ":" + spec.fillColor + ":" + saturation;
+                + ":" + spec.fillColor + ":" + saturation + ":" + hairline;
         if (key.equals(installed.get(view))) {
             status = "active (unchanged)";
             return true;
@@ -346,6 +393,7 @@ public final class LiquidLens {
             shader.setFloatUniform("uLight", LIGHT_X, LIGHT_Y);
             shader.setFloatUniform("uSpec", spec.specular);
             shader.setFloatUniform("uInnerShadow", spec.innerShadow);
+            shader.setFloatUniform("uHair", hairline);
             shader.setFloatUniform("uTint",
                     Color.red(spec.fillColor) / 255f,
                     Color.green(spec.fillColor) / 255f,
@@ -356,7 +404,7 @@ public final class LiquidLens {
             view.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"));
             installed.put(view, key);
             status = "active: " + width + "x" + height + " bevel=" + bevel + "px refract="
-                    + refract + "px dispersion=" + spec.dispersion;
+                    + refract + "px dispersion=" + spec.dispersion + " hair=" + hairline + "px";
             return true;
         } catch (Throwable t) {
             // A device that refuses the shader keeps the layered rim rather than losing the bar,
