@@ -33,3 +33,19 @@ app/src/main/java/com/waenhancer/utils/WppTabChecker.java
 # Windows clipboard/IDE scratch files
 ~ClipboardTransferring.tmp
 ~$*
+
+# Signing material. The named entries above (key.jks, key_base64.txt) only ever
+# covered the one filename this project happened to use; a keystore checked in
+# under any other name went straight past them. These match by kind instead.
+*.jks
+*.keystore
+*.p12
+*keystore*base64*
+*key*base64*
+
+# Screenshots and capture material. These are shot on a real device against a
+# real account, so they carry contact names, photos and message text that have
+# nothing to do with the code. Kept on disk - the liquid-glass calibration
+# references live here and the handoff measures against them - but never
+# committed. See HANDOFF_LIQUID_GLASS.md.
+demo/
