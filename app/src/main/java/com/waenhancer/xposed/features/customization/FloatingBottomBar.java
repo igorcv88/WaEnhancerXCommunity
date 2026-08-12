@@ -25,9 +25,10 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
-import com.waenhancer.theme.BackdropSampler;
+import com.waenhancer.theme.GlassBudget;
 import com.waenhancer.theme.GlassRenderer;
 import com.waenhancer.theme.GlassSpec;
+import com.waenhancer.theme.GlassSurface;
 import com.waenhancer.theme.LiquidLens;
 import com.waenhancer.theme.LiquidMorph;
 import com.waenhancer.xposed.core.Feature;
@@ -41,25 +42,23 @@ import de.robv.android.xposed.XposedHelpers;
 
 import java.util.WeakHashMap;
 
-import eightbitlab.com.blurview.BlurAlgorithm;
-import eightbitlab.com.blurview.BlurView;
-import eightbitlab.com.blurview.RenderEffectBlur;
-import eightbitlab.com.blurview.RenderScriptBlur;
-
 public class FloatingBottomBar extends Feature {
 
     private static final int PILL_SIDE_MARGIN_DP = 16;
     private static final int PILL_BOTTOM_MARGIN_DP = 22;
     private static final int SCROLL_BOTTOM_PADDING_DP = 126;
     private static final int FAB_VISIBLE_OFFSET_DP = 80;
-    private static final float PILL_ELEVATION_DP = 12f;
+    /**
+     * The pill's shadow, and the shorter one a lensed pill gets instead.
+     *
+     * <p>Both figures belong to the material rather than to this bar, so both are
+     * {@link GlassSurface}'s. They are named here only because the FAB has to clear whatever the
+     * pill ends up at.</p>
+     */
+    private static final float PILL_ELEVATION_DP = GlassSurface.ELEVATION_DP;
+    private static final float PILL_TRANSLATION_Z_DP = GlassSurface.TRANSLATION_Z_DP;
     /** How far the morphing blob is pulled in from a tab's own edges. */
     private static final int MORPH_HORIZONTAL_INSET_DP = 8;
-    private static final float PILL_TRANSLATION_Z_DP = 8f;
-
-    /** The same two, for a lensed surface. See {@link #applyPillShadow}. */
-    private static final float LENSED_ELEVATION_DP = 5f;
-    private static final float LENSED_TRANSLATION_Z_DP = 2f;
     private static final WeakHashMap<View, Boolean> styledBottomBars = new WeakHashMap<>();
     private static final java.util.Set<Class<?>> hookedItemClasses = new java.util.HashSet<>();
     private static final WeakHashMap<View, Boolean> registeredScrollListeners = new WeakHashMap<>();
@@ -79,22 +78,16 @@ public class FloatingBottomBar extends Feature {
      */
     private static final float FAB_Z_CLEARANCE_DP = 8f;
     private static final WeakHashMap<View, Boolean> styledFabs = new WeakHashMap<>();
-    private static final WeakHashMap<View, FrameLayout> glassHosts = new WeakHashMap<>();
-    private static final WeakHashMap<View, BlurView> glassBlurViews = new WeakHashMap<>();
+    /**
+     * The glass wrapper around each bar, when glass is on.
+     *
+     * <p>The host, the capture, the lens, the backdrop sample and the invariants that tie them
+     * together all live in {@link GlassSurface} now. What is left here is the bar: its height, its
+     * margins, and the blob under the selected tab.</p>
+     */
+    private static final WeakHashMap<View, GlassSurface> glassSurfaces = new WeakHashMap<>();
     /** The morphing blob under the selected tab, for the variants that have one. */
     private static final WeakHashMap<View, LiquidMorph> liquidMorphs = new WeakHashMap<>();
-    /** One backdrop sampler per bar, so its throttle is per-surface rather than global. */
-    private static final WeakHashMap<View, BackdropSampler> backdropSamplers = new WeakHashMap<>();
-    /** Last colour sampled from behind each bar; 0 until the first sample lands. */
-    private static final WeakHashMap<View, Integer> backdropColors = new WeakHashMap<>();
-    /**
-     * Radius currently handed to each BlurView.
-     *
-     * <p>Only so that {@link #applyCaptureBlur} can tell a no-op from a real change: it runs on
-     * every layout pass, and {@code setBlurRadius} invalidates the view whether or not the number
-     * moved.</p>
-     */
-    private static final WeakHashMap<BlurView, Float> captureBlurRadii = new WeakHashMap<>();
     private static boolean scrollHideEnabled = true;
     private static String scrollHideMode = "tabs";
     private static boolean glassEnabled = false;
@@ -270,7 +263,7 @@ public class FloatingBottomBar extends Feature {
                                     // With glass on, the margins belong to the host that wraps
                                     // this bar; only the height is still the bar's own.
                                     ViewGroup.LayoutParams lp = v.getLayoutParams();
-                                    if (!glassHosts.containsKey(v)
+                                    if (!glassSurfaces.containsKey(v)
                                             && lp instanceof ViewGroup.MarginLayoutParams) {
                                         ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
                                         int marginSide = dp(density, pillSideMarginDp);
@@ -791,7 +784,9 @@ public class FloatingBottomBar extends Feature {
                     }
 
                     barOverlay.bringToFront();
-                    applyPillShadow(barOverlay, density);
+                    // A glass host already carries the elevation its own material asks for; only
+                    // the bare bar still needs it applied here.
+                    if (barOverlay == bottomNav) applyPillShadow(barOverlay, density);
                     bottomNav.bringToFront();
 
                     final View animTarget = getBarAnimationTarget(bottomNav);
@@ -1337,8 +1332,8 @@ public class FloatingBottomBar extends Feature {
     }
 
     private static View getBarAnimationTarget(View bottomNav) {
-        FrameLayout host = glassHosts.get(bottomNav);
-        return host != null ? host : bottomNav;
+        GlassSurface surface = glassSurfaces.get(bottomNav);
+        return surface != null ? surface.host() : bottomNav;
     }
 
     private static void makeContainerTransparent(ViewGroup group) {
@@ -1375,79 +1370,20 @@ public class FloatingBottomBar extends Feature {
         return root != null ? root : fallbackRoot;
     }
 
+    /**
+     * Puts the bar behind glass.
+     *
+     * <p>The material is {@link GlassSurface}'s: the host, the capture, the lens, the invariants
+     * that decide which of those is painted, and the budget that decides whether a lens is
+     * affordable at all. What is left here is what is true of this bar and of nothing else — the
+     * exact pill height, and the blob that follows the selected tab.</p>
+     */
     private View installGlassHost(ViewGroup targetRoot, ViewGroup blurRoot, View bottomNav,
                                   ViewGroup.LayoutParams hostLp, float density) {
         try {
             removeGlassHost(bottomNav);
 
-            android.content.Context ctx = bottomNav.getContext();
-            FrameLayout host = new FrameLayout(ctx);
-            host.setClipChildren(false);
-            host.setClipToPadding(false);
-            host.setBackground(createGlassOutlineShape(ctx, density));
-            applyPillShadow(host, density);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                host.setClipToOutline(false);
-                host.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
-            }
-
-            // With the lens active the shader owns the fill, the rim and the shape's own
-            // antialiased coverage, so nothing else may paint them. A background drawable here
-            // would be a flat wash with no detail in it, and the lens would be refracting that
-            // instead of the backdrop — which is exactly why the previous build read as tinted
-            // grey. An outline clip would hard-cut the edge the shader just feathered.
-            GlassSpec hostSpec = glassSpec(ctx);
-            boolean lensed = LiquidLens.isActiveFor(hostSpec);
-            BlurView blurView = new BlurView(ctx);
-            if (!lensed) {
-                blurView.setBackground(createGlassShape(ctx, density, true));
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                blurView.setClipToOutline(!lensed);
-                blurView.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
-            }
-
-            FrameLayout.LayoutParams blurLp = new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-            );
-            host.addView(blurView, blurLp);
-
-            // LiquidMorph remains the critically damped motion controller in both paths. Under a
-            // lens it does not paint: each spring frame updates the second distance field in the
-            // shader, so the selected tab bends and tints the backdrop instead of becoming a
-            // sticker laid over it. The fallback still draws the restrained blob itself.
-            if (hostSpec.morphing) {
-                LiquidMorph morph = new LiquidMorph(ctx);
-                morph.applySpec(hostSpec);
-                if (lensed) {
-                    morph.setStateListener((centerX, width, height, radius) -> {
-                        GlassSpec liveSpec = glassSpecFor(bottomNav);
-                        float verticalInset = Math.min(dp(density, 9), height * 0.22f);
-                        LiquidLens.updateActive(blurView, centerX, height / 2f, width,
-                                Math.max(1f, height - verticalInset * 2f),
-                                Math.max(1f, radius - verticalInset),
-                                liveSpec.refractionColor, true);
-                    }, false);
-                }
-                liquidMorphs.put(bottomNav, morph);
-                host.addView(morph, new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT));
-            } else {
-                liquidMorphs.remove(bottomNav);
-            }
-
-            bottomNav.setBackground(createGlassShape(ctx, density, false));
-            if (bottomNav instanceof ViewGroup) {
-                ((ViewGroup) bottomNav).setClipChildren(false);
-                ((ViewGroup) bottomNav).setClipToPadding(false);
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                bottomNav.setBackgroundTintList(null);
-                bottomNav.setClipToOutline(false);
-                bottomNav.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
-            }
+            final android.content.Context ctx = bottomNav.getContext();
 
             // An exact height in both modes: a wrap_content here is what the host wrapped into a
             // window-tall pill, because WhatsApp's tab frame answers a wrap_content measure with
@@ -1457,109 +1393,85 @@ public class FloatingBottomBar extends Feature {
                     geometry(bottomNav).pillHeightPx,
                     android.view.Gravity.BOTTOM
             );
-            glassHosts.put(bottomNav, host);
-            glassBlurViews.put(bottomNav, blurView);
-            host.addView(bottomNav, navLp);
 
-            setupBlurView(blurView, blurRoot != null ? blurRoot : targetRoot, bottomNav);
-            targetRoot.addView(host, hostLp);
+            GlassSurface.Config config = GlassSurface.Config.of(() -> glassSpec(ctx))
+                    // The bar is the definition of static chrome: laid out once, with the list
+                    // moving behind it. It is also the first of the three lens slots to be spent.
+                    .kind(GlassBudget.Kind.STATIC_CHROME)
+                    .cornerRadiusDp(pillRadiusDp)
+                    .elevated(true)
+                    .build();
+
+            GlassSurface surface = GlassSurface.install(targetRoot, targetRoot.getChildCount(),
+                    hostLp, bottomNav, navLp, blurRoot != null ? blurRoot : targetRoot, config);
+            if (surface == null) throw new IllegalStateException("glass surface refused to install");
+            glassSurfaces.put(bottomNav, surface);
+
+            if (bottomNav instanceof ViewGroup) {
+                ((ViewGroup) bottomNav).setClipChildren(false);
+                ((ViewGroup) bottomNav).setClipToPadding(false);
+            }
+
+            GlassSpec hostSpec = surface.currentSpec();
+            boolean lensed = surface.isLensed();
+            installMorph(surface, bottomNav, hostSpec, lensed, density);
+
             XposedBridge.log("glass host installed: lensed=" + lensed
                     + " variant=" + getPrefString(activePrefs,
                             "floating_bottom_bar_glass_variant", GlassSpec.Variant.STABLE.key())
                     + " fill=#" + Integer.toHexString(hostSpec.fillColor)
-                    + " blur=" + hostSpec.blurRadius);
-            return host;
+                    + " blur=" + hostSpec.blurRadius
+                    + " lensedSurfaces=" + GlassBudget.shared().lensedCount()
+                    + "/" + GlassBudget.MAX_LENSED_SURFACES);
+            return surface.host();
         } catch (Throwable t) {
             XposedBridge.log(t);
-            glassHosts.remove(bottomNav);
-            glassBlurViews.remove(bottomNav);
-            targetRoot.addView(bottomNav, hostLp);
+            glassSurfaces.remove(bottomNav);
+            if (bottomNav.getParent() == null) {
+                targetRoot.addView(bottomNav, hostLp);
+            }
             bottomNav.setBackground(createGlassShape(bottomNav.getContext(), density, true));
             return bottomNav;
         }
     }
 
-    private void setupBlurView(BlurView blurView, ViewGroup blurRoot, View bottomNav) {
-        try {
-            android.content.Context ctx = bottomNav.getContext();
-            BlurAlgorithm algorithm = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                    ? new RenderEffectBlur()
-                    : new RenderScriptBlur(ctx);
-            android.graphics.drawable.Drawable windowBg = null;
-            View rootView = bottomNav.getRootView();
-            if (rootView != null) {
-                windowBg = rootView.getBackground();
-            }
-            // Radius and overlay both come from the resolved spec: a device that fell back to
-            // no-blur asks for radius 0 and pays for it with the higher fill opacity the spec
-            // already worked out, instead of blurring at a radius it cannot afford.
-            GlassSpec spec = glassSpec(ctx);
-            float radius = GlassRenderer.blurRadius(spec);
-            boolean lensed = LiquidLens.isActiveFor(spec);
-            // The overlay is a flat colour composited over the blur before the lens ever runs.
-            // Under a lens it halves the backdrop's contrast and leaves nothing to refract, so
-            // the tint is handed to the shader instead and applied after the displacement.
-            int overlay = lensed ? android.graphics.Color.TRANSPARENT : spec.fillColor;
-            blurView.setupWith(blurRoot, algorithm)
-                    .setFrameClearDrawable(windowBg)
-                    .setBlurRadius(Math.max(1f, radius))
-                    .setOverlayColor(overlay);
-            // Still keyed off the spec's radius, not the capture's: a device that could not blur
-            // at all asked for zero, and that decision is the spec's to make.
-            blurView.setBlurEnabled(radius > 0f);
-            captureBlurRadii.put(blurView, Math.max(1f, radius));
-            applyCaptureBlur(blurView, spec, lensed);
-        } catch (Throwable t) {
-            XposedBridge.log(t);
-        }
-    }
-
     /**
-     * Decides how much blur the capture itself should do, given whether a lens is actually running
-     * on top of it.
+     * Adds the blob under the selected tab, between the capture and the bar's own icons.
      *
-     * <p>A lens bends the backdrop, and a backdrop that arrives already flattened into an even haze
-     * bends into an even haze — which is why the 40px of displacement this bar has been carrying
-     * was invisible on screen. Under a working lens the capture drops to its minimum and the blur
-     * happens inside the shader instead, graduated so that it is absent at the rim where the
-     * bending has to be seen and full in the middle where legibility needs it.</p>
-     *
-     * <p>Driven by {@code lensActive} rather than by {@link LiquidLens#isActiveFor}, because those
-     * two disagree in the one case that matters: a device whose driver rejects the AGSL wants a
-     * lens, cannot have one, and would otherwise be left holding a bar with neither the shader's
-     * blur nor the library's. Called again on every layout pass so that rejection — which is only
-     * discovered at the first {@code apply} — is corrected on the next one.</p>
+     * <p>{@link LiquidMorph} is the critically damped motion controller in both paths. Under a lens
+     * it does not paint: each spring frame updates the second distance field inside the shader, so
+     * the selected tab bends and tints the backdrop instead of becoming a sticker laid over it.
+     * The fallback still draws the restrained blob itself.</p>
      */
-    private static void applyCaptureBlur(BlurView blurView, GlassSpec spec, boolean lensActive) {
-        if (blurView == null || spec == null) return;
-        try {
-            float wanted = lensActive
-                    ? LiquidLens.CAPTURE_BLUR_RADIUS
-                    : Math.max(1f, GlassRenderer.blurRadius(spec));
-            Float current = captureBlurRadii.get(blurView);
-            if (current != null && Math.abs(current - wanted) < 0.01f) return;
-            blurView.setBlurRadius(wanted);
-            captureBlurRadii.put(blurView, wanted);
-        } catch (Throwable t) {
-            XposedBridge.log(t);
+    private static void installMorph(GlassSurface surface, View bottomNav, GlassSpec hostSpec,
+                                     boolean lensed, float density) {
+        if (hostSpec == null || !hostSpec.morphing) {
+            liquidMorphs.remove(bottomNav);
+            return;
         }
+        LiquidMorph morph = new LiquidMorph(bottomNav.getContext());
+        morph.applySpec(hostSpec);
+        if (lensed) {
+            morph.setStateListener((centerX, width, height, radius) -> {
+                GlassSpec liveSpec = glassSpecFor(bottomNav);
+                float verticalInset = Math.min(dp(density, 9), height * 0.22f);
+                LiquidLens.updateActive(surface.captureView(), centerX, height / 2f, width,
+                        Math.max(1f, height - verticalInset * 2f),
+                        Math.max(1f, radius - verticalInset),
+                        liveSpec.refractionColor, true);
+            }, false);
+        }
+        liquidMorphs.put(bottomNav, morph);
+        // Index 1: above the capture the lens runs on, below the bar's own icons and labels.
+        surface.host().addView(morph, 1, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
     private static void removeGlassHost(View bottomNav) {
         try {
-            FrameLayout host = glassHosts.remove(bottomNav);
-            BlurView blurView = glassBlurViews.remove(bottomNav);
-            LiquidLens.clear(blurView);
+            GlassSurface surface = glassSurfaces.remove(bottomNav);
             liquidMorphs.remove(bottomNav);
-            backdropSamplers.remove(bottomNav);
-            backdropColors.remove(bottomNav);
-            if (host != null) {
-                ViewParent parent = host.getParent();
-                if (parent instanceof ViewGroup) {
-                    ((ViewGroup) parent).removeView(host);
-                }
-                host.removeView(bottomNav);
-            }
+            if (surface != null) surface.detach();
         } catch (Throwable ignored) {}
     }
 
@@ -1592,22 +1504,19 @@ public class FloatingBottomBar extends Feature {
     }
 
     /**
-     * Raises the pill off the content behind it.
+     * Raises the pill off the content behind it, for the paths that have no glass host.
      *
-     * <p>A lensed surface gets much less of this. 20dp of combined Z casts the wide, dark drop
-     * shadow that belongs under an opaque floating object, and under a pane you are meant to be
-     * looking <em>through</em> it reads as a solid slab sitting on the list — the "moulded bump"
-     * effect. Glass separates itself from its backdrop by refracting it, so it needs only enough
-     * shadow to keep its lower edge from merging into a dark list.</p>
+     * <p>A glass host applies this itself, from the same two pairs of figures — the shorter one
+     * being why a lensed pane does not read as a solid slab sitting on the list. This is for the
+     * bar that has no host: glass switched off, or a host that failed to install.</p>
      */
     private static void applyPillShadow(View view, float density) {
         boolean lensed = LiquidLens.isActiveFor(glassSpec(view.getContext()));
-        float elevation = lensed ? LENSED_ELEVATION_DP : PILL_ELEVATION_DP;
-        float translation = lensed ? LENSED_TRANSLATION_Z_DP : PILL_TRANSLATION_Z_DP;
+        float elevation = lensed ? GlassSurface.LENSED_ELEVATION_DP : PILL_ELEVATION_DP;
+        float translation = lensed
+                ? GlassSurface.LENSED_TRANSLATION_Z_DP : PILL_TRANSLATION_Z_DP;
         view.setElevation(elevation * density);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.setTranslationZ(translation * density);
-        }
+        view.setTranslationZ(translation * density);
     }
 
     private static View findConversationViewHost(View bottomNav) {
@@ -1701,11 +1610,9 @@ public class FloatingBottomBar extends Feature {
      * separates a surface that reads as glass from one that reads as paint.</p>
      */
     private static GlassSpec glassSpecFor(View bar) {
-        GlassSpec spec = glassSpec(bar.getContext());
-        Integer backdrop = backdropColors.get(bar);
-        if (backdrop == null || backdrop == 0) return spec;
-        return spec.adaptTo(backdrop,
-                com.waenhancer.xposed.utils.DesignUtils.isNightMode(bar.getContext()));
+        GlassSurface surface = glassSurfaces.get(bar);
+        GlassSpec adapted = surface != null ? surface.currentSpec() : null;
+        return adapted != null ? adapted : glassSpec(bar.getContext());
     }
 
     private static android.graphics.drawable.Drawable createGlassShape(android.content.Context ctx, float density, boolean includeFill) {
@@ -1736,35 +1643,19 @@ public class FloatingBottomBar extends Feature {
     }
 
     /**
-     * Brings the liquid layers up to date: what is behind the bar, what that does to its colours,
-     * the refracting rim, and where the blob sits.
+     * Brings the liquid layers up to date: the surface itself, and where the blob sits.
      *
-     * <p>Cheap to call on every layout pass. The backdrop sample is throttled by
-     * {@link BackdropSampler} itself, and the colours are re-derived only when that sample
-     * actually changed.</p>
+     * <p>Cheap to call on every layout pass. {@link GlassSurface#refresh} throttles its own
+     * backdrop sample and rebuilds the lens only when something baked into it moved.</p>
      */
     private static void refreshLiquid(View bottomNav, float density) {
         try {
-            FrameLayout host = glassHosts.get(bottomNav);
-            if (host == null) return;
-            GlassSpec base = glassSpec(bottomNav.getContext());
-
-            // Sampling draws part of the host's view tree, so it is posted rather than run
-            // from inside the layout callback that got us here: reading a hierarchy while it is
-            // still settling is how a sampler ends up recording a half-laid-out frame.
-            if (base.adaptive) {
-                host.post(() -> sampleBackdrop(bottomNav, host, density));
-            }
+            GlassSurface surface = glassSurfaces.get(bottomNav);
+            if (surface == null) return;
+            surface.refresh();
 
             GlassSpec spec = glassSpecFor(bottomNav);
-
-            BlurView blurView = glassBlurViews.get(bottomNav);
-            if (blurView != null) {
-                boolean lensActive = LiquidLens.apply(
-                        blurView, spec, pillCornerRadiusPx(blurView, density), density);
-                applyCaptureBlur(blurView, spec, lensActive);
-                logGlassState(spec);
-            }
+            logGlassState(spec);
 
             LiquidMorph morph = liquidMorphs.get(bottomNav);
             if (morph != null) {
@@ -1802,60 +1693,13 @@ public class FloatingBottomBar extends Feature {
         }
     }
 
-    /** Takes one throttled reading of what is behind the bar and repaints if it moved. */
-    private static void sampleBackdrop(View bottomNav, FrameLayout host, float density) {
-        try {
-            if (glassHosts.get(bottomNav) != host) return;
-            BackdropSampler sampler = backdropSamplers.get(bottomNav);
-            if (sampler == null) {
-                sampler = new BackdropSampler();
-                backdropSamplers.put(bottomNav, sampler);
-            }
-            View root = getRootLayout(bottomNav);
-            int sampled = sampler.sample(root != null ? root : host.getRootView(),
-                    host, android.os.SystemClock.uptimeMillis());
-            Integer previous = backdropColors.get(bottomNav);
-            if (sampled != 0 && (previous == null || previous != sampled)) {
-                backdropColors.put(bottomNav, sampled);
-                applyAdaptedColors(bottomNav, host, density);
-            }
-        } catch (Throwable ignored) {
-        }
-    }
-
-    /** Repaints the surfaces whose colours depend on the backdrop that just changed. */
-    private static void applyAdaptedColors(View bottomNav, FrameLayout host, float density) {
-        GlassSpec spec = glassSpecFor(bottomNav);
-        BlurView blurView = glassBlurViews.get(bottomNav);
-        if (blurView != null) {
-            if (LiquidLens.isActiveFor(spec)) {
-                // The adapted tint reaches the surface through the shader's uniform, which
-                // refreshLiquid rebuilds because fillColor is part of the lens cache key.
-                blurView.setOverlayColor(android.graphics.Color.TRANSPARENT);
-                LiquidLens.apply(blurView, spec, pillCornerRadiusPx(blurView, density), density);
-            } else {
-                blurView.setOverlayColor(spec.fillColor);
-                blurView.setBackground(
-                        createGlassShape(bottomNav.getContext(), density, true, spec));
-            }
-        }
-        bottomNav.setBackground(createGlassShape(bottomNav.getContext(), density, false, spec));
-        host.invalidate();
-    }
-
-    /**
-     * The pill's corner radius in pixels, never larger than the pill can actually be.
-     *
-     * <p>"Fully rounded" is stored as 1000dp, which stands in for "half the height" rather than
-     * being a real measurement. Handing that figure to a lens that solves for the distance to the
-     * edge would put the whole surface outside its own shape.</p>
+    /*
+     * sampleBackdrop(), applyAdaptedColors() and pillCornerRadiusPx() used to live here. All three
+     * were material rather than bar: the throttled reading of what is behind the surface, the
+     * repaint that follows it, and the clamp that keeps a "fully rounded" 1000dp radius from
+     * putting every pixel outside the shape a lens solves against. They are GlassSurface's now,
+     * and every surface added in Phase 2 gets them without a second copy.
      */
-    private static float pillCornerRadiusPx(View surface, float density) {
-        float requested = pillRadiusDp * density;
-        int height = surface.getHeight();
-        if (height <= 0) return requested;
-        return Math.min(requested, height / 2f);
-    }
 
     /** Springs the blob to whichever tab is currently selected. */
     private static void moveMorphToSelectedTab(View bottomNav, LiquidMorph morph, float density) {
@@ -1878,14 +1722,6 @@ public class FloatingBottomBar extends Feature {
                 left, 0f, left + selected.getWidth(), morph.getHeight());
         bounds.inset(dp(density, MORPH_HORIZONTAL_INSET_DP), 0f);
         morph.moveTo(bounds, bounds.height() / 2f);
-    }
-
-    private static android.graphics.drawable.GradientDrawable createGlassOutlineShape(android.content.Context ctx, float density) {
-        android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
-        shape.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
-        shape.setCornerRadius(pillRadiusDp * density);
-        shape.setColor(0x00000000);
-        return shape;
     }
 
     /*
@@ -1925,9 +1761,9 @@ public class FloatingBottomBar extends Feature {
             applyTabMetrics(bottomNav);
             applyBarVerticalMetrics(bottomNav, density);
             refreshLiquid(bottomNav, density);
-            BlurView lensView = glassBlurViews.get(bottomNav);
-            if (lensView != null) {
-                LiquidLens.pulse(lensView, glassSpecFor(bottomNav).animate);
+            GlassSurface surface = glassSurfaces.get(bottomNav);
+            if (surface != null) {
+                LiquidLens.pulse(surface.captureView(), glassSpecFor(bottomNav).animate);
             }
             // WhatsApp marks the new item selected inside its listener. Re-read on the next loop
             // so the spring targets the new tab rather than the one that was selected on DOWN.

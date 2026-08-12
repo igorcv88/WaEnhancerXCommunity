@@ -54,7 +54,9 @@ _hairline_ dimensionado em dp presente em todo o contorno, duas faixas de borda 
 | `theme/GlassRenderer.java` | Fallback em camadas para quem não tem `RuntimeShader` |
 | `theme/LiquidMorph.java` | Blob com mola crítica sob a tab ativa. **Hoje desativado sob a lente** (ver ponto 5) |
 | `theme/BackdropSampler.java` | Cor média atrás da superfície, insumo de `GlassSpec.adaptTo()` |
-| `customization/FloatingBottomBar.java` | O hook. Cria o `BlurView`, aplica a lente, gerencia elevação e geometria |
+| `theme/GlassSurface.java` | **O helper da Fase 2.** Embrulha uma View num host com captura, resolve a lente ou o fallback, e possui as invariantes das duas colunas. Qualquer superfície nova passa por aqui |
+| `theme/GlassBudget.java` | Quanto vidro o processo pode pagar: elegibilidade por `Kind` e teto de lentes vivas. Java puro, assertável em teste |
+| `customization/FloatingBottomBar.java` | O hook. Hoje só a geometria da barra, o morph e o FAB; o material é do `GlassSurface` |
 | `ui/helpers/BottomSheetHelper.java` | Único outro consumidor hoje (usa `GlassRenderer`, não a lente) |
 | `tools/glass_profile.py` | O instrumento de medição. **Use antes de mudar qualquer coisa** |
 
@@ -435,13 +437,72 @@ perfil e agrupamentos de linhas (5).
 
 **A fazer, na ordem:**
 
-1. Extrair de `FloatingBottomBar` o padrão "embrulhar View em host com blur + aplicar lente" para
-   um helper reutilizável. Hoje essa lógica está entrelaçada com a geometria da barra.
+1. ~~Extrair de `FloatingBottomBar` o padrão "embrulhar View em host com blur + aplicar lente"
+   para um helper reutilizável.~~ **Feito e medido em 2026-08-11 — ver abaixo.**
 2. Descoberta de Views resiliente a versão. Siga `FAB_CLASS_CANDIDATES`: lista de candidatos,
    todos tentados, nenhum obrigatório. IDs de recurso por nome, nunca por valor.
 3. Um spec por tipo de superfície. Uma app bar não quer os mesmos parâmetros de uma cápsula
    flutuante — mas todos saem de `GlassSpec`, sem uma segunda cópia da aritmética.
-4. Orçamento de performance antes de espalhar (abaixo).
+4. ~~Orçamento de performance antes de espalhar.~~ **Feito: `GlassBudget`, teto de 3 lentes.**
+
+### Etapa 1 — o helper, extraído e medido (2026-08-11)
+
+`theme/GlassSurface.java` e `theme/GlassBudget.java`. A barra virou o primeiro consumidor: perdeu
+`setupBlurView`, `applyCaptureBlur`, `sampleBackdrop`, `applyAdaptedColors`, `pillCornerRadiusPx`,
+`createGlassOutlineShape` e cinco `WeakHashMap` (viraram um, `glassSurfaces`). Ficou com o que é
+dela: `BottomBarGeometry`, margens, `LiquidMorph` e o FAB.
+
+**`GlassSurface`** possui as invariantes que antes só existiam como comentário no meio da barra:
+
+| | com lente | em camadas |
+|---|---|---|
+| overlay da captura | transparente | `spec.fillColor` |
+| background da captura | nenhum | pilha de `GlassRenderer` |
+| raio da captura | `CAPTURE_BLUR_RADIUS` | o da biblioteca |
+| clip de outline | desligado | ligado |
+| elevação | 5+2dp | 12+8dp |
+
+Mais: `setBlurEnabled` continua keyed pelo spec e **nunca** `false` com raio >0; `applyCaptureBlur`
+continua dirigido pelo **retorno** de `LiquidLens.apply()`; o raio de canto é clampado a
+`min(pedido, altura/2)` para todo mundo. Duas regras novas, que a extração obrigou a explicitar: a
+**pintura segue a intenção e o raio da captura segue o resultado** (só divergem no aparelho cujo
+driver recusa o AGSL); e um pedido de lente ainda não medido **mantém** o slot do orçamento,
+enquanto um recusado pelo driver o devolve.
+
+**`GlassBudget`** decide se a lente é acessível, em Java puro para ser assertável sem aparelho.
+`Kind.STATIC_CHROME` pode receber lente; `Kind.LAYERED` nunca, em nenhum orçamento — o custo
+recusado ali é por frame, não por superfície. Teto de `MAX_LENSED_SURFACES = 3` enquanto as
+superfícies estão sendo trazidas uma a uma; a barra gasta uma. Subir esse número é decisão para
+depois que todas estiverem medidas e nenhuma ainda se mexendo. `grant` é idempotente por holder
+(senão uma barra que faz três layouts consome os três slots) e os holders são fracos.
+
+**Medição — três capturas 1440×3120, a barra em y 2841–3032.** O critério era não mexer em nada:
+
+| região | Fase 1.2 | pós-extração (captura 2, lista escura) |
+|---|---:|---:|
+| fundo | 15.2 | 15.2 |
+| pico da borda superior | 31.7 | **31.7** |
+| rampa para dentro | 15px | 15px |
+| corpo chapado | 16.6 | 16.6–17.1 |
+| borda inferior | 17.1 | 17.1 |
+| razão topo/base | 1,85:1 | **1,85:1** |
+
+Varredura ao longo do comprimento (`--edge 300 1150`): borda inferior sobre lista escura varia
+**5.5** (era 4.0 — abaixo do que o instrumento distingue de ruído de JPEG); borda superior varia
+**144.5** na captura com conteúdo claro atrás (`min 27.8 → max 172.3`), dentro da faixa que a
+Fase 1 já media conforme a captura (106.7, 185.3, 193.8). A mesma coluna `x=900` lê topo **31.7**
+sobre lista escura e **58.3** sobre conteúdo claro, com o corpo idêntico nas duas: é a regra 7
+medida de novo depois da extração.
+
+> Duas armadilhas do instrumento, encontradas aqui e que valem para as próximas superfícies. Uma
+> coluna "sobre lista escura" tem que ser escolhida na captura, não assumida: `x=900` na captura 1
+> atravessa uma linha de mensagem clara, e o corpo sobe de 16.6 a 60 ao longo de 60px — isso é o
+> corpo rastreando o fundo, não borda. E `--edge` perto dos cantos arredondados amostra pixels
+> **fora** da cápsula: um máximo de 248.9 na banda inferior da captura 3 era texto branco da lista
+> em `x=301`, onde a curva do canto já terminou.
+
+Validação de código: 193 testes (eram 184; +9 de `GlassBudgetTest`), compilação Java, lintVital
+Release, R8/resource shrinking e assinatura do APK passaram.
 
 ## Riscos e armadilhas
 
