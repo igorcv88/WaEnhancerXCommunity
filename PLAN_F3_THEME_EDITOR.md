@@ -197,9 +197,27 @@ public final class ThemeResolution {
 }
 ```
 
-> **Nota ao implementador:** se `SemanticTheme.Tokens` não tiver construtor público que aceite
-> um `Map`, adicione-o (ou um factory `Tokens.of(Map)`) em vez de duplicar a classe. Mantenha
-> `SemanticTheme` como a única definição de token.
+> **Mudança obrigatória em `SemanticTheme`:** o construtor de `Tokens` é **privado**
+> (`SemanticTheme.java`, linha 17), então `ThemeResolution` não consegue instanciar. Adicionar
+> um factory à própria `Tokens`, e usá-lo em vez de duplicar a classe:
+>
+> ```java
+> public static Tokens of(Map<String, Integer> values) {
+>     return new Tokens(new LinkedHashMap<>(values));
+> }
+> ```
+>
+> A cópia defensiva importa: `Tokens` promete um mapa imutável, e receber um `Map` do chamador
+> sem copiar quebraria essa promessa.
+>
+> **Cuidado com `Tokens.get()`:** ele **lança** `IllegalArgumentException` em token desconhecido
+> (linha 21-25), não devolve zero. É o comportamento certo — falha alto em vez de pintar preto —
+> mas significa que qualquer consulta a um nome de token errado derruba a tela em vez de produzir
+> uma cor estranha. Só consultar nomes vindos de `ALL_TOKENS`.
+>
+> **Nomes de preset são minúsculos** (`"green"`, `"blue"`, `"cyan"`, `"purple"`, `"orange"`,
+> `"red"`, `"pink"`). `presetColor` normaliza a entrada com `toLowerCase`, então `"Blue"`
+> funciona; mas ao iterar `presets().keySet()` as chaves vêm minúsculas.
 
 - [ ] **Step 4: Run test to verify it passes**
 
