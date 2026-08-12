@@ -41,11 +41,14 @@ import android.view.View;
  *       middle.</li>
  *   <li><b>Dispersion.</b> Red, green and blue are displaced by different amounts, so the
  *       compression band fringes into colour the way a real edge does.</li>
- *   <li><b>Rim.</b> A narrow near-white hairline on the outline, all the way round, sampled once
- *       per channel at slightly different depths so it fringes into colour. Behind it, one soft
- *       band per side: warm and tight where the surface faces the light, cooler and dimmer where
- *       it faces away. Both edges get one — an edge that fades out on the far side is the bump
- *       again.</li>
+ *   <li><b>Rim.</b> A narrow hairline just inside the outline, sampled once per channel at
+ *       slightly different depths so it fringes into colour, and modulated along the perimeter so
+ *       the light arrives in short runs rather than as an even outline. Behind it, one soft band
+ *       per side: warm and tight where the surface faces the light, and almost nothing where it
+ *       faces away — a downward-facing edge cannot catch a specular run from a light above it,
+ *       and a bright lower rim under a bright upper one is the cross section of a tube.</li>
+ *   <li><b>Ambient.</b> A flat lift, so the body reads as a translucent sheet over a black list
+ *       instead of as the same black with a lit outline drawn round it.</li>
  *   <li><b>Inner shadow, tint, saturation.</b> Thickness a little way inside the rim rather than
  *       on it, then the variant's own colour.</li>
  * </ol>
@@ -170,7 +173,19 @@ public final class LiquidLens {
             + "\n"
             // Refraction, inward only. See the class note: sampling outward reads transparent
             // black off the edge of the child input and rings the outline.
-            + "    float2 offset = -n * (slope * uRefract) * (1.0 + activeEdge * 0.18);\n"
+            //
+            // Very slightly weighted toward the rounded ends, where the normal turns horizontal
+            // and the displacement compresses the backdrop into the curve rather than sliding it
+            // along the edge.
+            //
+            // The floor was 0.38 for one build and that was a mistake worth recording: the long
+            // top and bottom runs are most of the border's length, so cutting their displacement
+            // by two thirds took the chromatic fringe off almost the whole outline. The fringe is
+            // the point — it is what makes the edge readable as an optical event rather than as a
+            // drawn line — and it is proportional to this displacement, because the per-channel
+            // taps below are offsets from it. Bias the ends a little; do not starve the sides.
+            + "    float curvature = mix(0.80, 1.0, abs(n.x));\n"
+            + "    float2 offset = -n * (slope * uRefract * curvature) * (1.0 + activeEdge * 0.18);\n"
             + "    float2 lo = float2(1.0, 1.0);\n"
             + "    float2 hi = uSize - float2(1.0, 1.0);\n"
             + "    float2 spread = offset * uDispersion * slope;\n"
@@ -220,16 +235,41 @@ public final class LiquidLens {
             + "    float2 lightDir = normalize(uLight + float2(0.0001, 0.0));\n"
             + "    float facing = dot(n, -lightDir);\n"
             + "\n"
-            // One band per side, each a fixed fraction of the bevel. The 12px cap this width
-            // used to carry was 19% of a bottom bar's bevel: it squeezed both bands into a sliver
-            // beside the outline, and since the away-side band was already being scaled by a
-            // Fresnel term pinned at 0.04, the lower half of the pill got no rim at all and its
-            // bottom edge simply faded into the list. A pane whose edge fades out instead of
-            // closing is a bump, whichever side it fades on.
-            + "    float bandW = max(uBevel * 0.6, 3.0);\n"
+            // Where round the outline this pixel sits, as an angle. Taken from the position
+            // normalised by the half-size rather than from the normal, because the normal is
+            // constant along a straight run: anything keyed to atan(n.y, n.x) can only vary at
+            // the corners, which is why the previous modulation showed up as four dark notches
+            // interrupting an otherwise perfectly even bright outline. This sweeps continuously
+            // along the long edges as well.
+            + "    float2 pn = p / max(hs, float2(1.0, 1.0));\n"
+            + "    float phase = atan(pn.y, pn.x);\n"
+            + "\n"
+            // How much of the light this stretch of rim actually catches. Light on a real
+            // transparent edge arrives in short runs — a few segments bright, most of the
+            // perimeter barely lit at all — and it is that unevenness, not the brightness, that
+            // separates a lit edge from a stroke drawn round a shape. Two incommensurable
+            // harmonics, so nothing repeats over one circuit of the pill and the pattern does not
+            // depend on which tab is selected.
+            + "    float patches = clamp(0.52 + 0.31 * sin(phase * 3.0 + 0.7)\n"
+            + "        + 0.17 * sin(phase * 5.0 - 2.1), 0.06, 1.0);\n"
+            + "\n"
+            // The lower edge is separation, not highlight. A downward-facing surface cannot catch
+            // a specular run from a light above it, and a bright bottom rim beneath a bright top
+            // rim is the cross section of a tube — bright, dark, bright — which is the single
+            // strongest reason the bar read as a moulded relief rather than as a sheet. What
+            // closes the bottom edge instead is the inner shadow below and the short drop shadow
+            // the host casts, both of which read as the pane sitting above the list.
+            + "    float down = clamp(n.y, 0.0, 1.0);\n"
+            + "    float floorDamp = 1.0 - 0.82 * down * down;\n"
+            + "\n"
+            // One band per side, each a fixed fraction of the bevel. Narrow: at 0.6 of the bevel
+            // the band was 35px on a phone-sized bar, wide enough to read as a lit lip rather
+            // than as an edge, and wide enough that the two of them left only a dark strip
+            // between.
+            + "    float bandW = max(uBevel * 0.34, 3.0);\n"
             + "    float band = clamp(1.0 - (-d) / bandW, 0.0, 1.0) * cov;\n"
-            + "    float lit = pow(max(facing, 0.0), 3.0) * band;\n"
-            + "    float away = pow(max(-facing, 0.0), 1.2) * band;\n"
+            + "    float lit = pow(max(facing, 0.0), 3.0) * band * patches;\n"
+            + "    float away = pow(max(-facing, 0.0), 1.4) * band * patches * floorDamp;\n"
             + "\n"
             // The hairline: a narrow, near-white band just inside the outline, present the whole
             // way round. This is what the eye reads as the boundary of a sheet of glass, and it
@@ -243,7 +283,13 @@ public final class LiquidLens {
             // the backdrop has no detail left for the refraction above to fringe, so this is where
             // the colour in a glass edge actually comes from.
             + "    float hw = max(uHair, 1.0);\n"
-            + "    float sep = hw * 0.35 * uDispersion;\n"
+            // How far apart the three channels of the hairline sit. At 0.35 this was about
+            // 0.6px on a dense screen — sub-pixel, so antialiasing averaged the three back into
+            // white and the edge could not carry colour however high dispersion went. Over a dark
+            // chat list the backdrop has no detail left for the refraction above to fringe, so
+            // this is where the colour in the edge actually comes from, and it has to be at least
+            // a pixel or two to survive being resolved.
+            + "    float sep = hw * 0.90 * uDispersion;\n"
             + "    float3 hair = float3(\n"
             + "        clamp(1.0 - abs(d + hw + sep) / hw, 0.0, 1.0),\n"
             + "        clamp(1.0 - abs(d + hw) / hw, 0.0, 1.0),\n"
@@ -252,24 +298,31 @@ public final class LiquidLens {
             + "    float4 bgSample = float4(content.eval(bgCoord));\n"
             + "    float3 bgRgb = bgSample.rgb / max(bgSample.a, 0.001);\n"
             + "    float bgLuma = dot(bgRgb, float3(0.2126, 0.7152, 0.0722));\n"
-            + "    float angle = atan(n.y, n.x);\n"
-            + "    float localLight = 0.78 + 0.14 * sin(angle * 1.7 + 0.6)\n"
-            + "        + 0.10 * sin(angle * 3.1 - 1.2);\n"
-            + "    float hairGain = mix(0.15, 1.0, smoothstep(0.05, 0.45, bgLuma))\n"
-            + "        * clamp(localLight, 0.55, 1.05);\n"
+            // The hairline takes its brightness from what is behind it — glass has no light of
+            // its own — and from the same perimeter modulation as the bands, so the two agree
+            // about which stretches of the outline are lit. The floor stays low: keeping the
+            // shape perceptible over a black list is the ambient's job now, and it does it by
+            // lifting the whole body rather than by drawing a bright line round a dark one.
+            + "    float hairGain = mix(0.26, 1.0, smoothstep(0.05, 0.50, bgLuma))\n"
+            + "        * patches * floorDamp;\n"
             + "\n"
             + "    float3 warm = float3(1.0, 0.995, 0.98);\n"
             + "    float3 cool = float3(0.95, 0.975, 1.0);\n"
             + "\n"
-            // The rim saturates to white where it faces the light and settles at roughly two
-            // thirds of that where it faces away; the two bands behind it fall off inward. These
-            // are additive, so the sum is what matters — and all of it is spent within a bevel of
-            // an edge, which is what lets the body stay flat.
-            + "    col += hair * (0.45 + 0.60 * max(facing, 0.0)) * hairGain * uSpec;\n"
-            + "    col += warm * lit * 0.36 * uSpec * (1.0 + uPress * 0.10);\n"
-            + "    col += cool * away * 0.28 * uSpec;\n"
+            // The rim brightens where it faces the light and very nearly disappears where it does
+            // not. These are additive, so the sum is what matters — and all of it is spent within
+            // a bevel of an edge, which is what lets the body stay flat.
+            //
+            // A bright upper rim is not what made the bar read as a tube; a bright upper rim
+            // *mirrored by a bright lower one* was. With floorDamp and patches carrying that,
+            // the lit side can be strong again — a glint has to be brighter than its surroundings
+            // to be a glint, and the build that halved everything uniformly measured a top edge
+            // only 8 luma above the body, which is no edge at all.
+            + "    col += hair * (0.22 + 0.78 * max(facing, 0.0)) * hairGain * uSpec;\n"
+            + "    col += warm * lit * 0.26 * uSpec * (1.0 + uPress * 0.10);\n"
+            + "    col += cool * away * 0.10 * uSpec;\n"
             + "    col = mix(col, uActiveTint.rgb, uActiveTint.a * activeCov);\n"
-            + "    col += warm * activeEdge * 0.07 * uSpec;\n"
+            + "    col += warm * activeEdge * 0.05 * uSpec;\n"
             + "\n"
             // A flat pass-through gain, and flat is the whole point: glass carries a little more
             // light than the gap beside it, but any variation down the body brings the dome back.
@@ -277,6 +330,15 @@ public final class LiquidLens {
             // that was nearly flat across the body, put its brightest output in the middle of the
             // surface and none of it at the bottom rim — top-lit body shading exactly.
             + "    col *= 1.0 + 0.10 * uSpec;\n"
+            + "\n"
+            // There was a flat ambient addition here, meant to give the body a floor of its own
+            // over a black list. It was the wrong instrument and it was measured as such: adding
+            // a constant to every pixel raises the body and the rim by the same amount, so it
+            // cannot change their ratio — it can only compress it. At 0.063 it put 16 luma into a
+            // body that was 17, and the whole pill measured as one flat (26,33,39) from top to
+            // bottom: a grey slab with no optical structure left in it at all. What separates a
+            // dark pane from a dark backdrop is the rim, the fringe and the drop shadow, all of
+            // which are differences rather than offsets. Do not reintroduce this.
             + "\n"
             // Inner shadow, for the thickness of the pane. Multiplied by t so it vanishes at the
             // outline: it used to peak exactly there, on the same pixels as the rim and on the one
@@ -328,7 +390,7 @@ public final class LiquidLens {
     private static final float MAX_BEVEL_FRACTION = 0.26f;
 
     /** Vibrancy applied at full lens strength; 1.0 leaves saturation untouched. */
-    private static final float MAX_SATURATION = 1.60f;
+    private static final float MAX_SATURATION = 1.55f;
 
     /**
      * How much in-shader blur each unit of the spec's own blur radius buys, in dp.

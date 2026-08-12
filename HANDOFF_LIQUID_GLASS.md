@@ -60,12 +60,15 @@ _hairline_ dimensionado em dp presente em todo o contorno, duas faixas de borda 
 
 ### Parâmetros atuais (variante `LIQUID`)
 
-`GlassSpec.Variant.LIQUID`: `fillScale 0.30`, `blurRadius 6`, `opacidade recomendada 14%`,
-`lensStrength 1.00`, `rimWidthDp 22`, `dispersion 0.42`, `specular 1.00`, `innerShadow 0.55`,
+`GlassSpec.Variant.LIQUID`: `fillScale 0.26`, `blurRadius 5`, `opacidade recomendada 10%`,
+`lensStrength 1.00`, `rimWidthDp 20`, `dispersion 0.55`, `specular 0.60`, `innerShadow 0.26`,
 `adaptive`, `morphing`.
 
-`LiquidLens`: `LIGHT (0.45, 0.89)`, `MAX_DISPLACEMENT 0.62`, `MAX_BEVEL_FRACTION 0.34`,
-`MAX_SATURATION 1.25`, `HAIRLINE_DP 0.95` (limitado a 1.5–5px).
+`LiquidLens`: `LIGHT (0.45, 0.89)`, `MAX_DISPLACEMENT 0.62`, `MAX_BEVEL_FRACTION 0.26`,
+`MAX_SATURATION 1.55`, `HAIRLINE_DP 0.95` (limitado a 1.5–5px).
+
+> Este bloco estava desatualizado até 2026-08-11: listava os valores anteriores à Fase 1, que as
+> próprias notas da Fase 1 mais abaixo contradiziam. Quem mexer nos parâmetros atualiza aqui.
 
 `FloatingBottomBar`: `LENSED_ELEVATION_DP 5` + `LENSED_TRANSLATION_Z_DP 2` (7dp combinados).
 
@@ -109,6 +112,158 @@ conteúdo e o item ativo verde integrado ao corpo refrativo, sem a bolha pintada
 
 Validação de código: 184 testes, compilação Java, lint Release, R8/resource shrinking e assinatura
 APK v2 passaram. A expansão para outras superfícies continua sendo a Fase 2.
+
+## Fase 1.1 — a cápsula lida como seção transversal de tubo (2026-08-11)
+
+A Fase 1 mediu a **variação** da borda ao longo do comprimento e acertou nela. O que ela não mediu
+foi o **perfil vertical**: quanto a borda pesa em relação ao corpo. Sobre uma região preta e
+homogênea, a barra estava sendo lida como relevo — borda clara em cima, faixa escura no centro,
+borda clara embaixo.
+
+### A medição que faltava
+
+`python tools/glass_profile.py <captura> --column 900 --from 2820 --to 3070 --step 2`, numa coluna
+sem ícone, sobre lista escura:
+
+| região | luma | extensão |
+|---|---:|---:|
+| fundo | 15 | — |
+| **pico da borda superior** | **78** | 2px |
+| rampa para dentro | 78→17 | 28px |
+| **corpo, perfeitamente plano** | **17** | 130px |
+| rampa para fora | 17→70 | 26px |
+| **pico da borda inferior** | **70** | 2px |
+
+O corpo ficava **2 luma acima do fundo**. A barra não era uma lâmina com bordas iluminadas: era
+apenas as duas bordas, quase simétricas (78 e 70), com um buraco entre elas. Contraste borda/corpo
+de 4,6:1, e 54% da altura ocupada pelas duas rampas. Uma varredura horizontal na borda devolvia
+35.1 coluna após coluna — o próprio veredito do instrumento, "uniforme demais para vidro".
+
+### Causas e mudanças
+
+1. **As duas bandas eram largas e quase iguais.** `bandW` era `0.6 * uBevel` (≈35px), `lit 0.36` e
+   `away 0.28` sob `specular 0.75`. → `bandW 0.34`, `lit 0.20`, `away 0.10`, `specular 0.42`.
+2. **A borda inferior brilhava tanto quanto a superior.** Uma superfície voltada para baixo não
+   capta reflexo especular de uma luz acima dela. → `floorDamp = 1 - 0.82 * n.y²`, aplicado ao
+   hairline e à banda oposta. O que fecha a borda de baixo agora é a sombra interna mais a sombra
+   projetada curta do host.
+3. **A modulação do perímetro só existia nos cantos.** Era função de `atan(n.y, n.x)`, e a normal
+   é constante ao longo de um trecho reto — daí os pontos escuros pontuais interrompendo uma borda
+   uniforme. → `phase = atan(pn.y, pn.x)` sobre a posição normalizada pela meia-altura, que varre
+   continuamente também nos trechos retos; `patches` usa duas harmônicas incomensuráveis.
+4. **O corpo resolvia para o preto do fundo.** O ganho do corpo era multiplicativo, e multiplicar
+   preto não produz nada. → `uAmbient`, uma adição plana (`0.15 * specular`, teto `0.07`).
+5. **A refração arrastava a lista verticalmente nos trechos retos.** → peso `mix(0.38, 1.0,
+   abs(n.x))`: a refração se concentra nas extremidades arredondadas, onde comprime o fundo contra
+   a curva, em vez de deslocá-lo em bloco no meio da barra.
+
+`ADVANCED` e `CLEAR` desceram junto (`specular` 0.50→0.28 e 0.85→0.40) para preservar o contrato
+testado de que `LIQUID` é a variante opticamente mais ativa.
+
+### O que essa rodada errou, medido no aparelho
+
+O relevo sumiu, e junto com ele sumiu o vidro. Mesma coluna, build da Fase 1.1:
+
+| região | luma |
+|---|---:|
+| fundo | 15 |
+| pico da borda superior | 40 |
+| **corpo, `(26,33,39)` chapado por 190px** | **32** |
+| borda inferior | 31 |
+
+A cápsula inteira virou **um único RGB do topo à base**. Duas causas, e as duas são instrutivas:
+
+1. **`uAmbient` era o instrumento errado, por construção.** Somar uma constante a todos os pixels
+   levanta o corpo e a borda na mesma medida — não muda a razão entre eles, só a comprime. A 0.063
+   ela colocou 16 luma num corpo que valia 17, e virou ~76% do "tint cinza". O que separa uma
+   lâmina escura de um fundo escuro são *diferenças* (borda, franja, sombra projetada), nunca um
+   offset. **Removida, com o comentário no shader explicando por que não voltar.**
+2. **A refração foi cortada justamente onde fica a maior parte da borda.** O piso `mix(0.38, …)`
+   nos trechos retos matou a franja cromática em quase todo o contorno — e a franja é
+   proporcional a esse deslocamento, porque as amostras por canal são offsets dele. Piso para
+   `0.80`. Junto: `sep` do hairline era `hw * 0.35 * dispersion` ≈ **0.6px**, sub-pixel, então o
+   antialiasing remisturava os três canais em branco e a borda não conseguia carregar cor
+   nenhuma por mais que `dispersion` subisse. → `hw * 0.90`.
+
+Também tinha um erro de julgamento meu: cortei a refração dos trechos retos para eliminar um
+arrasto vertical que **o usuário nunca reclamou**. O relatório dele era sobre o relevo; o arrasto
+era incômodo meu.
+
+### Fase 1.2 — reequilíbrio
+
+Fill baixo, dispersão alta, borda assimétrica preservada: `fillScale 0.50→0.26`,
+`opacidade recomendada 20→10%` (piso do slider), `blurRadius 6→5`, `dispersion 0.34→0.55`,
+`specular 0.42→0.60`, `innerShadow 0.22→0.26`, `MAX_SATURATION 1.28→1.55`, `lit 0.20→0.26`,
+piso do `hairGain` `0.20→0.26`.
+
+`floorDamp` e `patches` continuam intactos — foram eles que resolveram o relevo, e é por existirem
+que o lado iluminado pode voltar a ser forte sem trazer o tubo de volta. Uma borda superior só
+8 luma acima do corpo não é borda nenhuma.
+
+### Medição final da Fase 1.2 — validada no aparelho
+
+Captura estática, lista escura, `--column 900 --from 2825 --to 3050 --step 3`:
+
+| região | luma | build original | build cinza |
+|---|---:|---:|---:|
+| fundo | 15.2 | 15 | 15 |
+| **pico da borda superior** | **31.7** | 78 | 40 |
+| rampa para dentro | **15px** | 28px | — |
+| **corpo (165px chapado)** | **16.6** | 17 | 32 |
+| **borda inferior** | **17.1** | 70 | 31 |
+
+Varredura ao longo do comprimento, `--edge 300 1150`:
+
+| borda | min | max | variação |
+|---|---:|---:|---:|
+| superior (`--band 2838 2862`) | 25.7 | 190.6 | **164.9** |
+| inferior (`--band 3018 3036`) | 17.1 | 21.1 | **4.0** |
+
+Os três critérios:
+
+1. **Relevo eliminado.** Razão topo/base era `78:70 = 1,11:1` — praticamente simétrica, que é a
+   definição de seção transversal. Agora `31,7:17,1 = 1,85:1`. A borda inferior fica entre 0,5 e
+   4,5 luma acima do corpo: separação, não highlight.
+2. **Contraste interno.** Borda/corpo caiu de `4,6:1` para `1,9:1` sobre fundo escuro — e sobe a
+   `11:1` sobre conteúdo claro. O material virou adaptativo em vez de constante, que era o pedido.
+3. **Sem veil.** Corpo de volta a 16,6 (era 32 no build cinza), mantendo a lâmina.
+
+A borda superior continua fortemente cromática — `(185,200,59)`, `(58,164,154)`, `(140,210,148)`
+na metade com conteúdo atrás, caindo para `(15,28,34)` na metade escura.
+
+> Registro honesto: os 164.9 de variação **não são ganho desta rodada** — a Fase 1 já media
+> 106–194 nesse critério. O que a Fase 1.2 fez foi preservar essa variação enquanto removia o
+> relevo vertical. Antes as duas coisas estavam acopladas, e foi por isso que a primeira tentativa
+> de remover o relevo levou a variação junto.
+
+**A Fase 1 está encerrada.** Os desvios restantes estão abaixo do que o instrumento distingue de
+ruído de JPEG.
+
+### Regras do material (transferíveis para qualquer superfície)
+
+Destiladas de três rodadas de medição. Valem para toda superfície da Fase 2, não só para a barra.
+
+1. **Vidro é feito de diferenças, nunca de offsets.** Somar constante a todos os pixels não muda
+   razão nenhuma, só comprime. Todo termo tem que ser função de `d`, `t` ou `n`.
+2. **Nenhum termo pode variar com a altura do pixel na superfície.** Gradiente descendo o corpo é
+   sombreamento de domo, e domo lê como plástico moldado por mais transparente que esteja.
+3. **A borda inferior não é highlight.** Superfície voltada para baixo não capta especular de luz
+   acima. `floorDamp` faz isso; sem ele, borda clara em cima + borda clara embaixo = tubo.
+4. **A modulação do perímetro precisa ser paramétrica na posição, não na normal.** A normal é
+   constante num trecho reto: qualquer coisa presa a `atan(n.y, n.x)` só varia nos cantos, e isso
+   aparece como entalhes escuros pontuais numa borda uniforme.
+5. **A franja cromática é proporcional ao deslocamento da refração.** Cortar refração numa região
+   apaga a cor da borda ali. E a separação de canais precisa ter ≥1–2px reais, ou o antialiasing
+   remistura os três em branco.
+6. **Fill baixo, dispersão alta.** Cada ponto de fill é um wash chapado, e wash chapado é a única
+   coisa que garantidamente não parece vidro.
+7. **A borda deve ser discreta sobre fundo escuro e forte sobre conteúdo claro.** Se ela tem o
+   mesmo brilho nos dois casos, é um traço desenhado, não um evento óptico. Medir os dois.
+
+> Nota sobre o slider: `floating_bottom_bar_glass_opacity` é `35, min 10, max 100, passo 5`. O
+> piso de 10% vale para **todas** as variantes; não é default por variante. Baixá-lo para 0 é
+> possível, mas `GlassSpec` deriva `contentColor` do fill composto, então em 0 os ícones perdem a
+> garantia de contraste sobre um avatar claro passando atrás.
 
 ## Fase 1 — os sete retoques ópticos
 
@@ -259,6 +414,12 @@ shader por frame. É preciso guardar a referência do `RuntimeShader` e só atua
 mantendo a chave para mudanças estruturais (tamanho, raio, bevel).
 
 ## Fase 2 — estender para todo o WhatsApp
+
+> **Pré-requisito satisfeito em 2026-08-11.** A Fase 1 está encerrada e medida (ver Fase 1.2). A
+> barra flutuante é a referência de material: qualquer superfície nova tem que medir como ela, e
+> `tools/glass_profile.py` é como se prova isso. Não comece a espalhar antes de ler "O que a
+> Fase 1.1 errou" — os dois erros lá são exatamente os que se repetem ao portar para uma
+> superfície nova.
 
 Telas na prancha: **1. Conversas · 2. Conversa · 3. Chamadas · 4. Cabeçalho da conversa ·
 5. Configurações.**

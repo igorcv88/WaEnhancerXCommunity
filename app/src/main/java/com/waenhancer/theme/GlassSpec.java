@@ -23,7 +23,7 @@ public final class GlassSpec {
         /** Flat translucent fill and a hairline border. The pre-engine look. */
         STABLE(1.00f, 14f, 0.00f, 0.00f, 0.6f, 1.00f, 35, 0.00f, 0f, 0.00f, 0.00f, 0.00f, false, false),
         /** The default Advanced Glass: real depth, a specular top edge, a soft bottom glow. */
-        ADVANCED(0.86f, 18f, 0.55f, 0.35f, 0.8f, 1.15f, 30, 0.18f, 10f, 0.10f, 0.50f, 0.30f, false, false),
+        ADVANCED(0.86f, 18f, 0.55f, 0.35f, 0.8f, 1.15f, 30, 0.18f, 10f, 0.10f, 0.28f, 0.14f, false, false),
         /**
          * Liquid glass. Not a thinner frost: the effect is carried by what the surface does to
          * the light behind it rather than by how much of it the surface hides.
@@ -33,12 +33,19 @@ public final class GlassSpec {
          * actually behind the bar, and a body that morphs under the finger. Every one of those is
          * a property the previous definition lacked, which is why "less blur than frost" still
          * read as frost.</p>
+         *
+         * <p>The fill is very low and the dispersion is very high, and that split is the whole
+         * tuning. What this variant is for is the optical event at the edge — the fringe, the
+         * compression, the glint — and every point of fill works against it, because a fill is a
+         * flat wash and a flat wash is the one thing that cannot look like glass. The build that
+         * tried to carry the look with fill and a flat ambient instead measured as a single
+         * uniform grey from one side of the pill to the other.</p>
          */
-        LIQUID(0.18f, 6f, 0.85f, 0.90f, 1.2f, 2.30f, 14, 1.00f, 22f, 0.42f, 0.75f, 0.31f, true, true),
+        LIQUID(0.26f, 5f, 0.85f, 0.90f, 1.2f, 2.30f, 10, 1.00f, 20f, 0.55f, 0.60f, 0.26f, true, true),
         /** Dense and diffuse: the most legible variant over busy or high-contrast backdrops. */
         FROST(1.18f, 25f, 0.30f, 0.15f, 0.6f, 0.90f, 55, 0.00f, 0f, 0.00f, 0.00f, 0.00f, false, false),
         /** Almost only a border. Highest backdrop fidelity, lowest legibility guarantee. */
-        CLEAR(0.30f, 4f, 0.85f, 0.60f, 1.6f, 2.40f, 12, 0.55f, 16f, 0.30f, 0.85f, 0.35f, true, false);
+        CLEAR(0.30f, 4f, 0.85f, 0.60f, 1.6f, 2.40f, 12, 0.55f, 16f, 0.30f, 0.40f, 0.20f, true, false);
 
         final float fillScale;
         final float blurRadius;
