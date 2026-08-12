@@ -1246,6 +1246,120 @@ python tools/glass_profile.py shot.png --column 1350 --from 2798 --to 2828 --ste
 Critério: núcleo continua com G−R entre −2 e +6 (já passa, não pode regredir) **e** o flanco mais
 saturado cai de `B−G +20` / `G−R +31` para algo abaixo de ±12.
 
+### A cor nunca foi da hairline — era a dispersão da refração, 8,7px a 17px (2026-08-12)
+
+O knob de saturação da franja (`mix(cmin, hair, 0.40)`) foi medido e **funcionou onde deveria e não
+onde importava**, e é essa discordância que resolveu o caso:
+
+| medida | antes | depois | previsto |
+|---|---:|---:|---:|
+| botão `x=1350 y=2812`, G−R | +23 | **+14** | ~+9 |
+| botão `x=1350 y=2816`, B−G | −12 | **−1** | ~−5 |
+| **botão `x=1360 y=2811`, G−R** | **+31** | **+27** | **~+11** |
+
+Em `x=1350` andou quase tudo; em `x=1360` quase nada, contra uma redução de ~55% que a mistura
+**garante matematicamente** na contribuição da hairline. Se o termo caiu 55% e a medida caiu 13%, a
+maior parte daquela cor não vem da hairline.
+
+**A comparação que decide.** Mesmo build, mesmo shader, dois fundos:
+
+| superfície | fundo | incremento do aro sobre o corpo | G−R máx |
+|---|---|---|---:|
+| barra, `x=620` | lista escura uniforme `(10,16,20)` | **`(47,47,47)` — exatamente neutro** | +14 |
+| botão, `x=1360` | wallpaper de rabiscos | fortemente desequilibrado por canal | **+31** |
+
+A cor escala com **estrutura do fundo**. Deslocar um campo chapado não produz nada — então só um
+termo cuja saída dependa da estrutura do fundo **e** seja seletivo por canal pode fazer isso, e no
+passe inteiro existe **um**: o remix da dispersão da refração,
+
+```glsl
+float2 spread = offset * uDispersion * slope;
+col.r = mix(col.r, sr.r / max(sr.a, 0.001), fringe);
+col.b = mix(col.b, sb.b / max(sb.a, 0.001), fringe);
+```
+
+**E a magnitude estava fora de escala.** Botão: `bevel = 98 * 0.26 = 25,5px` →
+`refract = 1.0 * 0.62 * 25,5 = 15,8px` → `spread = 15,8 * 0,55 = **8,7px**`. Barra: `bevel 49,92` →
+`refract 30,95` → `spread = **17px**`. Vermelho e azul eram lidos de **17 a 34 pixels um do outro** —
+sobre um wallpaper padronizado isso não é a mesma imagem duas vezes, são três imagens diferentes
+compostas uma por canal. Contra 1,41px da separação da hairline: **6× a 12× maior.** Todo o trabalho
+das rodadas anteriores foi feito no termo mais silencioso dos dois.
+
+Verde vence porque `col.g` é o único que vem do `sample9` — média de nove taps — enquanto `col.r` e
+`col.b` são taps únicos e nítidos atirados a 8,7px sobre um wallpaper majoritariamente escuro.
+
+> **Regra 18 do material.** Quando um defeito de cor sobrevive a correções que a medição confirma
+> corretas, some o orçamento de **todos** os termos que podem produzi-lo antes de ajustar mais um. Duas
+> dispersões coexistiam neste passe com uma ordem de grandeza entre elas, e a que estava sendo
+> depurada era a menor. Um fundo uniforme contra um estruturado separa as duas numa medição — é o
+> controle que faltou desde o início.
+
+> **Correção do briefing desta tarefa.** Ele dizia que a dispersão da refração "não é suspeita — é um
+> efeito legítimo de aberração cromática espacial e não tem relação com o bug da hairline". Essa
+> premissa nunca foi testada e está **errada**. Foi ela que manteve quatro rodadas olhando para o
+> lugar errado.
+
+**Correção aplicada:** teto em dp no comprimento do vetor `spread`, uniforme `uSpread` novo,
+`SPREAD_DP 0.55` limitado a 1–3px (≈1,9px a 3.5x) — mesma escala da separação da hairline, para as
+duas dispersões do passe finalmente operarem no mesmo tamanho. Abaixo do teto o `spread` continua
+proporcional ao deslocamento, então a **regra 5 continua valendo**: matar a refração numa região
+ainda mata a cor ali. Redução prevista: 78% no botão, 89% na barra. A linha de `status()` agora
+imprime `spread=` para o valor ser conferível no log em vez de deduzido.
+
+**Não verificado no aparelho.** Java compila, 215 testes, 0 falhas.
+
+```bash
+adb exec-out screencap -p > shot.png
+python tools/glass_profile.py shot.png --column 1360 --from 2798 --to 2828 --step 1
+```
+
+Critério: `G−R` no flanco do botão cai de **+31/+27** para ≤ **+14**, ou seja, para o mesmo patamar
+que a barra sobre fundo uniforme já mede. O núcleo branco (`x=1350 y=2814`, G−R +4) não pode
+regredir.
+
+### Fase 2 encerrada por decisão, não por exaustão (2026-08-12)
+
+Depois da Etapa 3, três candidatos adicionais do roadmap original foram avaliados contra o
+critério da própria Fase 2 — só recebe lente quem tem conteúdo heterogêneo **se movendo** atrás —
+e todos reprovaram, cada um por um motivo diferente:
+
+- **Barra de busca (tela 1, Conversas).** Captura mostrou a lista começando logo abaixo de uma
+  linha fina, não passando por baixo do pill de busca. Não há nada para refratar; é a mesma falha
+  do cabeçalho já recusado, só que menor.
+- **Tiles de ação (tela 3, Chamadas: Ligar/Agendar/Teclado/Favoritos).** Um scroll no aparelho
+  mostrou o título "Calls" fixo enquanto a fileira de tiles **rolava junto com a lista**. Isso não
+  é o caso do input/cabeçalho (nada atrás para mover) — é o inverso: os próprios tiles são
+  conteúdo, então são `Kind.LAYERED` por definição, e o orçamento nunca dá lente a isso, em
+  nenhum teto.
+- **Cartão de perfil (tela 5, Configurações).** Mesmo defeito dos tiles, confirmado pelo usuário
+  sem precisar de captura: o cartão é sticky e sobe junto quando a lista rola — `LAYERED` de novo.
+
+**O visualizador de mídia em tela cheia foi identificado como um candidato genuinamente forte, e
+não foi implementado por decisão do usuário, não por reprovação técnica.** Duas superfícies —
+barra superior e barra inferior — pintadas em preto sólido sobre uma foto/vídeo real, que é
+conteúdo tão heterogêneo quanto existe no app (muda por completo a cada mídia, faz pan/zoom sob as
+barras). Um `uiautomator dump` no aparelho, antes de ele desconectar, achou os nomes reais:
+
+| superfície | resource-id | bounds (1440×3120) |
+|---|---|---|
+| barra superior | `toolbar_container` (`FrameLayout`, dentro dele `toolbar`/`actionBar` com `contact_name`, `date_time`, botões de download/forward/edit e `menuitem_overflow`) | `[0,0][1440,296]` |
+| barra inferior | `footer` (`LinearLayout`, contém `media_view_caption_scroll_view`/`caption` e `media_view_reaction_reply_root_layout` com a barra de resposta) | `[0,2763][1440,3120]` |
+
+Faltava só uma coisa antes de escrever o hook: o nome da classe da Activity, para escopar o
+listener como `isConversation()` faz hoje (`activity.getClass().getSimpleName().contains(...)`) —
+o `dumpsys activity activities` que daria isso rodou depois que o dispositivo já tinha caído da
+sessão ADB, e não foi refeito.
+
+**Nenhum código foi escrito para esta superfície.** Nenhum arquivo novo, nenhuma entrada em
+`LiquidGlassSettings` ou `LiquidGlassActivity`. Se uma sessão futura retomar a Fase 2, o
+visualizador de mídia é o próximo candidato por mérito técnico — a tabela acima é o ponto de
+partida, e falta descobrir o nome da Activity e confirmar (uma vez no aparelho) que as duas barras
+não pertencem a uma subárvore de captura que as inclui a si mesmas (regra 8).
+
+**Estado atual, por decisão explícita:** o tema Liquid Glass fica com as duas superfícies já
+medidas e aceitas — a barra flutuante e o botão scroll-to-bottom. Nenhuma expansão adicional está
+em progresso.
+
 ## Riscos e armadilhas
 
 - **Refração de fundo desfocado é invisível.** A armadilha central. Ver Fase 1, ponto 3.

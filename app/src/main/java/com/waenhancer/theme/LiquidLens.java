@@ -290,6 +290,22 @@ public final class LiquidLens {
             // the host casts, both of which read as the pane sitting above the list.
             + "    float down = clamp(n.y, 0.0, 1.0);\n"
             + "    float floorDamp = 1.0 - 0.82 * down * down;\n"
+
+            // Two strengths of the same fall-off, because the two things it damps are not the
+            // same thing. The wide warm band *is* a specular run and must not appear on a
+            // downward-facing edge. The hairline is not a highlight at all - it is the boundary
+            // of the sheet, and a sheet has a boundary all the way round it whatever the light
+            // is doing. Damping the hairline as hard as the band left the pane with a bright
+            // line across its top and nothing anywhere else, which reads as a lit strip laid on
+            // the content rather than as a pane sitting over it. Over a solid backdrop, where
+            // there is no refracted detail left to describe the shape, the hairline is the only
+            // thing that describes it, so it keeps most of its strength on the far side.
+            + "    float hairDamp = 1.0 - 0.30 * down * down;\n"
+            // Same argument for the perimeter modulation. The short lit runs belong to the band;
+            // on the hairline they punch gaps in the outline, and a boundary with gaps in it is
+            // not a boundary. Keep enough of it that the two agree about which stretches are
+            // brightest, not enough for any stretch to disappear.
+            + "    float hairPatches = mix(1.0, patches, 0.35);\n"
             + "\n"
             // One band per side, each a fixed fraction of the bevel. Narrow: at 0.6 of the bevel
             // the band was 35px on a phone-sized bar, wide enough to read as a lit lip rather
@@ -403,7 +419,7 @@ public final class LiquidLens {
             // what gets scaled. Mixing toward the mean would have brightened the flanks instead of
             // damping them; mixing toward grey would have dimmed the core along with them.
             + "    float cmin = min(hair.r, min(hair.g, hair.b));\n"
-            + "    hair = mix(float3(cmin), hair, 0.40);\n"
+            + "    hair = mix(float3(cmin), hair, 0.55);\n"
             // Holds the peak at the brightness the device was last measured at, so the shape change
             // is not also a brightness change. The bottom rim is the criterion with the least
             // headroom in this pass — already reading above the 5-luma ceiling on the button — and
@@ -419,7 +435,7 @@ public final class LiquidLens {
             // shape perceptible over a black list is the ambient's job now, and it does it by
             // lifting the whole body rather than by drawing a bright line round a dark one.
             + "    float hairGain = mix(0.26, 1.0, smoothstep(0.05, 0.50, bgLuma))\n"
-            + "        * patches * floorDamp;\n"
+            + "        * hairPatches * hairDamp;\n"
             + "\n"
             + "    float3 warm = float3(1.0, 0.995, 0.98);\n"
             + "    float3 cool = float3(0.95, 0.975, 1.0);\n"
@@ -433,7 +449,19 @@ public final class LiquidLens {
             // the lit side can be strong again — a glint has to be brighter than its surroundings
             // to be a glint, and the build that halved everything uniformly measured a top edge
             // only 8 luma above the body, which is no edge at all.
-            + "    col += hair * (0.22 + 0.78 * max(facing, 0.0)) * hairGain * uSpec;\n"
+            //
+            // The constant is what makes the outline continuous; the directional term is what
+            // makes it look lit. The previous 0.22/0.78 split put seven eighths of the hairline
+            // into the lit direction, so with the light travelling down and to the right the
+            // top arc came out at 0.91, the left edge at 0.57, the right at 0.22 and the lower
+            // edge at 0.04 - an outline in name only. Over a solid backdrop, with no refracted
+            // detail left to describe the shape, that leaves a single bright line across the
+            // top and nothing else, which is exactly what it was reported as. 0.70/0.22 holds
+            // the top rim where it was last measured (0.90 against 0.91) while the far side
+            // rises to 0.53. That is not the tube reading coming back: the tube was a wide warm
+            // band mirrored below a wide warm band, and that band still takes its full
+            // floorDamp.
+            + "    col += hair * (0.70 + 0.22 * max(facing, 0.0)) * hairGain * uSpec;\n"
             + "    col += warm * lit * 0.26 * uSpec * (1.0 + uPress * 0.10);\n"
             + "    col += cool * away * 0.10 * uSpec;\n"
             + "    col = mix(col, uActiveTint.rgb, uActiveTint.a * activeCov);\n"
@@ -501,8 +529,13 @@ public final class LiquidLens {
      * <p>A third of the height leaves a clear band down the middle while still giving the rim
      * enough room to be seen bending. Below roughly a quarter the rim gets too narrow to read as
      * glass thickness and the surface flattens into a plain tinted panel.</p>
+     *
+     * <p>0.26 was below that floor on a short surface and is now 0.32. On a 109px bottom bar the
+     * difference is a 28px meniscus against a 35px one, and since the displacement is a fraction
+     * of the bevel it takes the refraction with it — 17.5px to 21.7px. The middle of the pill is
+     * still flat, which is the constraint this number exists to enforce.</p>
      */
-    private static final float MAX_BEVEL_FRACTION = 0.26f;
+    private static final float MAX_BEVEL_FRACTION = 0.32f;
 
     /** Vibrancy applied at full lens strength; 1.0 leaves saturation untouched. */
     private static final float MAX_SATURATION = 1.55f;
@@ -514,8 +547,15 @@ public final class LiquidLens {
      * a downscaled copy of the backdrop, which is why {@code GlassRenderer.blurRadius} explicitly
      * refuses to multiply it by density. Here the sampling happens at full resolution, so the
      * conversion has to be made, and it is made once, here.</p>
+     *
+     * <p>Lowered from 0.70 to 0.50 because this term and the refraction are in direct
+     * competition: the graduated blur reaches full strength exactly one bevel in, which is the
+     * far side of the band the displacement is compressing, so by the time the backdrop has been
+     * bent it has also been softened by 12px and there is nothing left to see it bend. 0.50 keeps
+     * the body soft enough for icons and labels while leaving the rim band with structure in
+     * it.</p>
      */
-    private static final float BLUR_DP_PER_UNIT = 0.70f;
+    private static final float BLUR_DP_PER_UNIT = 0.50f;
 
     /**
      * Ceiling on the in-shader blur, in pixels.
@@ -573,12 +613,21 @@ public final class LiquidLens {
      * <p>Sized to sit alongside the hairline's own channel separation (about 1.4px at 3.5x) so the
      * two dispersion mechanisms in this pass finally work at the same scale instead of one being
      * an order of magnitude louder than the other.</p>
+     *
+     * <p>The first version of this cap was 0.55dp / 3px, and it overshot: it was set by how far
+     * the taps could drift before they stopped being the same picture, without asking how far
+     * they have to drift to be seen at all. At 1.9px on a 3.5x screen the three channels resolve
+     * back to one, so the refracted band arrived as a plain blur with no colour in it — the fringe
+     * is the whole reason the band reads as an optical event rather than as a smudge. 1.3dp puts
+     * it at 4.6px here: roughly three times the hairline's own separation, so the two are still
+     * the same order of magnitude, and comfortably under the 8.7-17px that produced the
+     * backdrop-dependent green rim.</p>
      */
-    private static final float SPREAD_DP = 0.55f;
+    private static final float SPREAD_DP = 1.30f;
 
     /** Bounds on that cap in px, so it neither vanishes nor becomes a smear. */
-    private static final float MIN_SPREAD_PX = 1f;
-    private static final float MAX_SPREAD_PX = 3f;
+    private static final float MIN_SPREAD_PX = 2f;
+    private static final float MAX_SPREAD_PX = 6f;
 
     /**
      * What each view's current effect was built from.
