@@ -56,6 +56,10 @@ _hairline_ dimensionado em dp presente em todo o contorno, duas faixas de borda 
 | `theme/BackdropSampler.java` | Cor média atrás da superfície, insumo de `GlassSpec.adaptTo()` |
 | `theme/GlassSurface.java` | **O helper da Fase 2.** Embrulha uma View num host com captura, resolve a lente ou o fallback, e possui as invariantes das duas colunas. Qualquer superfície nova passa por aqui |
 | `theme/GlassBudget.java` | Quanto vidro o processo pode pagar: elegibilidade por `Kind` e teto de lentes vivas. Java puro, assertável em teste |
+| `theme/GlassTargetProbe.java` | Se uma View achada na árvore do WhatsApp é mesmo a superfície procurada. Geometria pura, assertável sem aparelho |
+| `config/LiquidGlassSettings.java` | Em quais superfícies o tema está ligado e qual material elas resolvem. A linha da barra é o seletor de estilo dela, não um booleano paralelo |
+| `activities/LiquidGlassActivity.java` | A página do tema: Styles → General → Liquid Glass. Uma linha por superfície já medida |
+| `customization/ConversationInputGlass.java` | A 2ª superfície: a cápsula de input da conversa. Descoberta por nome e, na falha, por estrutura |
 | `customization/FloatingBottomBar.java` | O hook. Hoje só a geometria da barra, o morph e o FAB; o material é do `GlassSurface` |
 | `ui/helpers/BottomSheetHelper.java` | Único outro consumidor hoje (usa `GlassRenderer`, não a lente) |
 | `tools/glass_profile.py` | O instrumento de medição. **Use antes de mudar qualquer coisa** |
@@ -503,6 +507,488 @@ medida de novo depois da extração.
 
 Validação de código: 193 testes (eram 184; +9 de `GlassBudgetTest`), compilação Java, lintVital
 Release, R8/resource shrinking e assinatura do APK passaram.
+
+### Etapa 2 — a barra de input da conversa, e o Liquid Glass virando tema (2026-08-12)
+
+A Fase 2 deixou de ser "espalhar o material da barra" e virou **um tema**, com uma página própria:
+tab **Styles → General → Liquid Glass** (`LiquidGlassActivity`, aberta pela `Preference`
+`liquid_glass_surfaces`). Cada linha é uma superfície já medida; uma superfície não medida não
+aparece, para a página nunca oferecer um interruptor cujo resultado ninguém olhou.
+
+**A barra não tem booleano próprio nessa página.** Ela já tinha um seletor de estilo antes de o tema
+existir, e dois controles sobre um mesmo estado é como uma tela de configurações começa a se
+contradizer — a página diria Liquid enquanto o editor da barra diz Frost. Então a linha da barra
+**é** o seletor: `LiquidGlassSettings.isBarLiquid` / `setBarLiquid` leem e escrevem
+`floating_bottom_bar_glass_variant`. Ligar seleciona Liquid (e liga `floating_bottom_bar_glass`, e
+adota a opacidade que o estilo foi desenhado para ter); desligar restaura o estilo anterior, guardado
+em `liquid_glass_bar_previous_variant` — inclusive quando esse estilo foi escolhido no editor da
+barra, que agora avisa via `rememberBarVariant`. Quatorze testes em `LiquidGlassSettingsTest` cobrem
+exatamente essa concordância, que é invisível até alguém abrir as duas telas.
+
+**Material único.** Toda superfície do tema resolve `Variant.LIQUID` pela mesma chamada
+`GlassRenderer.resolveFor` que a barra faz, com a opacidade lida de
+`floating_bottom_bar_glass_opacity`. Um segundo slider que tivesse de concordar com o primeiro seria
+uma segunda definição do mesmo material.
+
+#### A superfície: `ConversationInputGlass`
+
+Descoberta em duas camadas. Nomes primeiro (`main_entry_container`, `input_layout_content`,
+`entry_container`, `conversation_entry_container`, `main_entry_container_holder` — todos tentados,
+nenhum obrigatório, sempre por `getIdentifier` via `Utils.getID`), e **estrutura como decisão**: se
+nenhum nome resolve, sobe-se a partir de `entry` até o primeiro ancestral que tenha background, não
+contenha mic/enviar e passe `GlassTargetProbe.isInputRow`. O container que *desenha* a cápsula é, por
+definição, o que precisa perder o background para a lente ter o que refratar — achá-lo pelo que
+desenha acerta o alvo por dois motivos ao mesmo tempo.
+
+`GlassTargetProbe` é aritmética pura sobre números puros (36–80dp de altura, ≥55% da largura da tela,
+razão ≥3:1), com oito testes. É a metade da descoberta que se prova sem aparelho, e é a que decide
+entre a cápsula e o rodapé inteiro — errar aqui põe o mic dentro do painel e parece bug de shader.
+
+`GlassSurface.wrap()` (não `install()`), `Kind.STATIC_CHROME` (2ª das 3 lentes),
+`cornerRadiusDp(1000)` clampado pelo helper a metade da altura. Soltura por
+`onViewDetachedFromWindow`: sem isso, três conversas empilhadas gastam o orçamento inteiro em
+superfícies que ninguém está olhando. Descoberta com retry limitado (6 × 150ms), porque a geometria é
+o que identifica a linha e o primeiro frame depois de `RESUMED` não a tem de forma confiável.
+
+#### Zero divergências de parâmetro, e por quê
+
+A etapa pedia justificar cada parâmetro que divergisse de `LIQUID`. Nenhum diverge. A aritmética que
+já existe absorve a diferença de altura (previsões a 3.5x, h≈48dp contra os ≈64dp da barra):
+
+| | barra | input | quem escala |
+|---|---:|---:|---|
+| bevel | 58px | 43,7px | `min(rimWidthDp·d, h·0.26)` |
+| refract | 36,1px | 27,1px | `lensStrength·0.62·bevel` |
+| corpo chapado | 108px | 80,6px | consequência do bevel |
+| hairline | 3,3px | 3,3px | dp fixo, por projeto |
+| blur no shader | 12,25px | 12,25px | independe da altura |
+
+Uma segunda cópia de qualquer uma dessas contas seria a duplicação que a etapa 1 acabou de eliminar.
+
+#### O que ainda NÃO foi medido
+
+**Nada desta etapa foi visto num aparelho.** Não havia dispositivo conectado (`adb devices` vazio), e
+o shader só se verifica no aparelho. Os números acima são previsões da aritmética, não medições, e
+duas divergências já são esperadas e precisam de medição antes de virarem parâmetro:
+
+1. **Borda superior proporcionalmente mais forte.** O hairline é 2,0% da altura aqui contra 1,5% na
+   barra. Se a razão topo/base estourar acima de 1,7:1 por cima, o culpado é este, e a correção é um
+   hairline em fração da altura.
+2. **Extremidades são semicírculos completos** (raio = h/2), então a região onde
+   `mix(0.80, 1.0, |n.x|)` concentra refração é proporcionalmente maior que na barra. Previsão: mais
+   compressão nas pontas. Se virar smear, o parâmetro é `MAX_DISPLACEMENT`, e só então ele deixa de
+   ser constante e vira propriedade do spec.
+
+Como medir, quando houver aparelho:
+
+```bash
+# perfil vertical, coluna escolhida NA captura sobre wallpaper liso
+python tools/glass_profile.py <captura> --column <x> --from <y0> --to <y1> --step 2
+# borda ao longo do comprimento — recuar x0/x1 em >=84px de cada ponta
+python tools/glass_profile.py <captura> --edge <x0> <x1> --band <y0> <y1>
+```
+
+> **Terceira armadilha do instrumento, específica desta superfície.** O raio é metade da altura, então
+> a curva do canto ocupa ~84px de cada lado a 3.5x — o dobro do que ocupava na barra. Amostrar
+> `--edge` dentro disso lê pixels de fora da cápsula, que foi o falso 248.9 da etapa 1.
+
+Duas capturas obrigatórias, wallpaper claro e escuro: a regra 7 só se prova nas duas. Critério de
+aceite: topo/base ≥ 1,7:1, borda inferior ≤ ~5 luma acima do corpo, corpo chapado sobre fundo liso,
+borda superior variando ≥ 60 luma sobre fundo heterogêneo.
+
+Um item conhecido a olhar na primeira captura: `GlassSurface` desliga `clipChildren` apenas no pai
+imediato do host. Se o rodapé acima dele ainda recortar, a sombra curta que fecha a borda inferior
+some — e a borda inferior é justamente o critério mais sensível.
+
+Validação de código: 215 testes (eram 193; +8 de `GlassTargetProbeTest`, +14 de
+`LiquidGlassSettingsTest`), compilação Java, lintVital Release, R8/resource shrinking e assinatura do
+APK passaram.
+
+#### Primeira medição no aparelho — três defeitos, uma causa raiz (2026-08-12)
+
+O primeiro build no aparelho pareceu "embaçado", com halo em volta dos ícones e um fantasma da
+câmera que ficava para trás quando o WhatsApp a escondia ao começar a digitar. Medido antes de tocar
+em qualquer coisa, na captura da conversa:
+
+| medida | valor |
+|---|---|
+| corpo, `--column 700 --from 1600 --to 1820` | `(32,43,49)` por 130px |
+| corpo, `--edge 260 900 --band 1700 1740` | `(32,43,49)` **idêntico bit a bit** por 520px |
+| fundo (wallpaper) | 15.2 |
+| rastro acima do clipe, `y=1668` | 41 → 49 → 41 num arco de ~40px |
+
+Duas leituras decidem tudo. Borrar um wallpaper de rabiscos deixa variação de alguns luma; **520
+pixels do mesmo RGB não é backdrop borrado, é cor sólida**. E um arco simétrico de 8 luma centrado
+num ícone, acima da tinta dele, é uma **cópia borrada do próprio ícone**.
+
+**Causa raiz: o alvo estava dentro da árvore capturada.** A biblioteca de blur captura desenhando a
+raiz inteira num bitmap e pula **apenas a própria view de captura**. O alvo é *irmão* dela dentro do
+host, não filho — então ele era desenhado na captura, e uma cópia borrada do conteúdo da superfície
+aparecia por baixo do conteúdo nítido. Daí o halo, e daí o fantasma da câmera sobreviver ao ícone.
+(O sumiço da câmera ao digitar é comportamento do próprio WhatsApp; nosso era o fantasma.)
+
+Os outros dois caem junto:
+
+1. **Corpo chapado.** `blurRoot` foi escolhido por adivinhação de nome e caiu numa subárvore que
+   contém o rodapé mas **não** desenha o wallpaper nem a lista. A captura ficou sendo só o
+   `frameClearDrawable` — o fundo da janela, sólido — mais os nossos próprios ícones. Refratar uma
+   cor chapada produz uma cor chapada.
+2. **Fill aplicado duas vezes** no caminho em camadas: `GlassRenderer.background()` já carrega
+   `spec.fillColor` na base, e `setOverlayColor(spec.fillColor)` o aplicava de novo por baixo. É a
+   superfície lendo com o dobro da opacidade configurada — a mesma regra que o javadoc do
+   `GlassSurface` já enunciava para o background do alvo, uma camada mais para dentro. Vale para
+   **toda** superfície não-lente, a barra inclusive.
+
+**A correção.** `GlassSurface.CaptureExcludedHost`: o host distingue a passada de captura pelo
+canvas — a biblioteca desenha num canvas de software, e uma view numa janela acelerada é desenhada
+num de hardware, então *canvas de software em janela de hardware* é a captura, e o host não desenha
+nada nela. Janela genuinamente por software fica de fora da regra, porque lá o teste não distingue
+os dois casos e uma superfície que nunca desenha é pior que um halo.
+
+Isso também **muda o contrato do `blurRoot`**: conter o próprio host deixou de ser problema, e a
+descoberta parou de precisar adivinhar um ancestral que desenhe o conteúdo sem conter a superfície —
+para a maioria das superfícies esse ancestral não existe. A linha de input agora captura
+`android.R.id.content` inteiro, que garantidamente desenha wallpaper e lista.
+
+> **Regra 8 do material, aprendida aqui.** A superfície não pode estar dentro da própria captura.
+> Vale para toda superfície da Fase 2, e o sintoma é diagnóstico: halo simétrico em volta do
+> conteúdo *dela*, não do fundo.
+
+Nada disso foi reverificado no aparelho ainda. O log de instalação agora imprime `fill`, `blur`,
+`fallback`, o alvo, o `blurRoot` e o `status()` da lente, para a próxima captura ser conferível
+contra um fato em vez de contra uma dedução.
+
+#### Segunda medição — o halo morreu, a linha de input foi descartada (2026-08-12)
+
+`CaptureExcludedHost` funcionou, e é medido: em `y=1668`, acima da tinta do clipe, a linha ficou
+**41 constante** ao longo de todo o trecho (era 41→49→41), e a tinta em `y=1700` assenta sobre 41
+exato, sem saia (era 55/64/112/92/95/93/67/56/48). Fantasma da câmera resolvido junto.
+
+O corpo, porém, continuou `(32,43,49)` — **byte a byte igual ao build anterior**, imune tanto à
+correção do fill duplicado quanto à troca do `blurRoot`. Só uma coisa explica imunidade a duas
+correções mais um halo que sobreviveu a ~1/10 da sua força: **a cápsula é desenhada por um filho do
+alvo, a ~0.9 de alpha, e o nosso vidro estava atrás dela o tempo todo.** Daí a terceira correção,
+`GlassSurface.takeOverFullBleedDescendants()`: o takeover de background agora alcança descendentes
+que cobrem ≥85% da superfície, restaurando-os no detach. Um background em algo menor é estilo do
+próprio elemento — um badge, um estado selecionado, um anel de avatar — e não é nosso para remover.
+
+> **Regra 9 do material.** A view que o hook acha não é necessariamente a view que desenha. Se a
+> superfície é imune às suas correções, procure quem está pintando por cima antes de mexer em mais
+> um parâmetro.
+
+**A linha de input foi removida**, e o motivo é medido, não estético:
+
+| região | variação de luma |
+|---|---:|
+| atrás da linha de input (só wallpaper) | **48,9** |
+| onde flutua o botão scroll-to-bottom | 203,5 |
+| chips inline "Yesterday" / "unread" | 235,3 |
+| lista de mensagens em geral | 235,0 |
+
+O WhatsApp preenche a lista com padding para que os balões parem **acima** da cápsula, então atrás
+dela só existe wallpaper — e wallpaper é fixo à janela: rolar a conversa não muda um pixel ali. O
+backdrop nem varia (48,9, abaixo dos 60 do critério) nem se move. É a tela de chamadas da Fase 1,
+permanente. Pagar uma captura por frame por um backdrop constante não se justifica.
+
+> **Critério de seleção da Fase 2, que vale para toda superfície daqui em diante:** só recebe lente
+> a superfície que tem conteúdo heterogêneo **se movendo** atrás dela. Todo o resto é um painel
+> tingido que custa um shader. Medir os dois lados com `--edge`/patch antes de escrever o hook.
+
+**Cabeçalho da conversa: recusado pelo mesmo critério.** A lista não passa por baixo dele; começa
+abaixo. Vidro ali mostra wallpaper estático. E ele carrega a foto e o nome: uma borda refrativa de
+~12dp encostada num avatar circular de ~40dp compete com o anel do avatar na mesma escala, que lê
+como erro de renderização em vez de material.
+
+**Chips de data / "unread": recusados por ora, e a razão corrige uma recomendação minha.** Os que
+aparecem na conversa são **linhas inline da lista**, não pills fixos — rolam com o conteúdo, logo são
+`Kind.LAYERED`, que nunca recebe lente em orçamento nenhum. O pill de data realmente fixo é outro, o
+transitório que aparece durante a rolagem.
+
+#### Etapa 3 — o botão scroll-to-bottom
+
+`ConversationScrollButtonGlass`. Var 203 atrás, mudando a cada frame de fling; a superfície mais
+barata da tela; e a **primeira redonda** — raio = metade da altura nos dois eixos, então o rim curva
+por todo o contorno em vez de só nas pontas. Regime óptico novo, a medir em vez de assumir.
+
+Descoberta: 5 nomes candidatos (todos tentados, nenhum obrigatório) e, na falha, varredura estrutural
+por forma + posição. `GlassTargetProbe.isRoundButton` (28–72dp, desvio do quadrado ≤18%, 8 testes)
+mais três testes de posição que a geometria não dá: à direita de 60% da tela, **acima do topo do
+`entry`** — senão o botão de mic passa em tudo, e ele é a resposta errada duas vezes: pertence à
+linha de input e não tem nada atrás — e **fora de qualquer container que rola**, porque uma view que
+rola com o conteúdo é `LAYERED` por definição e passaria por baixo da recusa do orçamento, que é
+informado do `Kind` em vez de perguntá-lo.
+
+**Primeira tentativa no aparelho: nenhum log, nenhum efeito.** A causa era de projeto e eu deveria
+tê-la previsto: **o botão não existe quando a conversa abre.** Ele só é criado quando a lista sai do
+fim, e a descoberta consultava a árvore 8 vezes a cada 250ms depois do `RESUMED` — dois segundos
+procurando uma view que ainda não tinha sido criada, e depois desistia para sempre. Superfície
+transitória não se busca por polling; espera-se a árvore avisar.
+
+Trocado por um `OnGlobalLayoutListener` no decor, com throttle de 300ms e scan pulado enquanto já
+houver superfície viva. O listener fica pela vida da tela em vez de se desregistrar no primeiro
+sucesso, porque o botão é destruído e recriado toda vez que a lista chega ao fim e sai dele.
+
+Duas correções de instrumentação junto, porque o silêncio não distinguia quatro falhas diferentes
+(pref desligada, módulo não carregado, descoberta falhou, driver recusou o shader):
+
+- A linha de boot passou a ser emitida **antes** do check da pref, como a `glass boot` da barra. A
+  ausência dela agora significa uma coisa só: esta feature não rodou neste processo.
+- `dumpCandidatesOnce`: na primeira falha de descoberta, uma varredura única despeja toda view de
+  20–96dp, mais qualquer uma cujo nome contenha `scroll`/`unseen`/`jump`, com nome de recurso,
+  classe, bounds, visibilidade, se está dentro de container que rola e se tem background. Custa uma
+  caminhada de árvore na vida do processo e converte adivinhação de nome em fato.
+
+**Segunda tentativa: a descoberta acertou, a superfície não.** O watcher achou o botão — a captura
+agora lê conteúdo real, dá para reconhecer a foto atrás dela borrada — mas a sequência no aparelho
+foi: botão original → círculo branco em volta → **retângulo borrado de arestas duras** no lugar dele.
+Medido na captura: aresta esquerda dura em `x=1272`, superior em `y=2779`, ~168×161px (48×46dp), do
+tamanho e na posição do botão. Dois defeitos independentes:
+
+1. **A pintura seguia a intenção, não o resultado.** A regra antiga — "a pintura segue a intenção e o
+   raio da captura segue o resultado" — apoiava-se em intenção e resultado só divergirem no aparelho
+   cujo driver recusa o shader. Divergem também numa superfície **ainda não medida**, e ali a pintura
+   com lente (sem background, sem fill, sem clip de outline, porque o shader é dono dos três) deixa a
+   captura na tela como um retângulo borrado sem forma. A barra nunca mostrou isso porque a lente
+   dela roda. Agora `paint`, `applyCaptureBlur` e `applyElevation` seguem todos o **resultado**: uma
+   superfície esperando a lente recebe o visual em camadas, que é uma superfície que funciona, e
+   troca quando a lente de fato roda.
+2. **O host não seguia a visibilidade do alvo.** Visibilidade é do alvo, e o host é uma view que o app
+   hospedeiro nunca ouviu falar: quando o WhatsApp esconde o botão, o alvo some dentro de um wrapper
+   que fica exatamente onde estava, e o que sobra na tela é um painel de vidro com nada dentro. A
+   barra resolveu isso hookando a única classe cuja visibilidade lhe interessava; uma superfície
+   descoberta por forma não tem classe para hookar, então `GlassSurface.followTargetVisibility()`
+   espelha o estado por um `OnPreDrawListener` — pre-draw e não layout, porque ir a `GONE` não
+   necessariamente relayouta o host. Alpha vai junto, para um botão que faz fade-in não chegar atrás
+   de um vidro já em força total.
+
+> **Regra 10 do material.** Uma superfície embrulhada tem dois estados que o wrapper não herda de
+> graça: a forma, que só existe quando a lente roda, e a visibilidade, que continua sendo do alvo.
+
+**Terceira tentativa: o log resolveu, e expôs um runaway.** O despejo diagnóstico deu o nome real —
+**`scroll_bottom`**, `android.widget.FrameLayout` 168×138 — depois de cinco chutes errados
+(`scroll_to_bottom_btn`, `scroll_to_bottom`, `conversation_scroll_to_bottom`, `scroll_down_btn`,
+`unseen_messages_indicator`). Mas antes disso o log mostrou a feature embrulhando, a cada 300ms, o
+botão de vídeo, o de chamada, o `menuitem_overflow` e depois o mesmo `Z.oj0` vinte vezes, até
+`lensedSurfaces=3/3`. Os botões do cabeçalho sumiram da tela.
+
+Três causas, todas de descoberta e nenhuma de material:
+
+1. **O teste de posição aprovava o canto superior direito inteiro.** "À direita de 60% da tela" vale
+   para vídeo, chamada e overflow, todos redondos e do tamanho certo. Faltava o outro eixo:
+   `TOP_EDGE_FRACTION 0.45` — este botão flutua na metade de baixo da área de mensagens.
+2. **O teste do rodapé não excluía nada, e parecia que sim.** `footerTop=2997` num `screen=1440x2992`:
+   com o teclado fechado o `entry` fica no limite da tela, e um limite igual ou além do fim do display
+   aprova tudo. Agora um valor fora de `(0, altura)` é descartado e o teste se declara ausente, que é
+   honesto; um teste que não exclui nada é pior que nenhum, porque lê como um.
+3. **A superfície embrulhava o próprio embrulho.** O host herda os LayoutParams do alvo, logo tem o
+   mesmo tamanho e a mesma posição — e uma descoberta que identifica por forma e posição identifica o
+   host com igual entusiasmo. `GlassSurface.isGlassHost()` agora existe para a descoberta reconhecer o
+   próprio trabalho, a varredura não desce dentro de um host, e a feature passou a possuir **uma**
+   superfície: enquanto houver uma viva e anexada, nem escaneia.
+
+> **Regra 11 do material.** Descoberta por forma tem de reconhecer o próprio host, e quem embrulha
+> tem de possuir no máximo uma superfície por vez. Sem as duas, o wrapper vira alvo do próprio
+> wrapper e o orçamento de lentes some em segundos.
+
+Uma quarta, de instrumentação: a linha de install só consegue dizer `deferred: surface not measured
+yet (0x0)`, porque nada foi medido no instante do wrap — e foi exatamente o que os vinte registros
+diziam. Agora há uma linha `settled`, emitida uma vez por superfície no primeiro layout com largura,
+que reporta o `status()` real da lente.
+
+**Quarta tentativa: o runaway morreu, a lente rodou, e o alvo estava errado.** Uma única instalação,
+como planejado — e no `input_attach_button`, o botão de clipe da barra de input. Mas a linha nova
+entregou o primeiro dado positivo desta etapa:
+
+```
+settled lensed=true host=144x144 status=active: 144x144 bevel=37.44px refract=23.2128px
+        dispersion=0.55 hair=2.85px blur=10.5px
+```
+
+**A lente roda numa geometria pequena e redonda.** Nunca tinha sido observado. 144px é 1/6,7 da
+largura da barra flutuante (960px) e o motor não caiu para fallback; o bisel escalou para 37,44px
+contra 49,92px da barra, ou seja, ele está limitado pela altura da superfície e não pelo pedido em dp
+da variante — que é exatamente o que `LiquidLens` deveria fazer numa superfície redonda, e agora está
+medido em vez de suposto.
+
+Sobre o alvo errado: **não existe teste de forma que separe os dois.** O clipe é redondo, tem 144px,
+fica à direita de 60% da largura e bem abaixo de 45% da altura. Ele passa em todos os critérios
+legitimamente, porque é geometricamente indistinguível do alvo. Acrescentar um sexto teste seria
+ajustar limiares até que este aparelho, nesta versão, nesta conversa, respondesse certo.
+
+A falha real estava em **quando** o fallback estrutural rodava: ele só era chamado quando o nome não
+resolvia, e este botão não existe na maior parte do tempo — só enquanto a lista está rolada para
+cima. O fallback era portanto invocado quase exclusivamente sob a única condição que garante que a
+resposta certa não está na árvore. E uma busca obrigada a devolver algo devolve.
+
+A busca estrutural foi **removida**. A identidade agora vem só do nome do recurso; forma e posição
+continuam, mas rebaixadas ao que sempre deveriam ter sido: a confirmação de que a view já foi
+medida e está onde este botão fica, não a decisão de quem ela é. Não achar nada virou a resposta
+ordinária, não uma falha a contornar.
+
+> **Regra 12 do material.** Um fallback de descoberta que só roda quando o alvo nomeado está ausente
+> é chamado justamente quando a resposta certa não está na árvore. Se o alvo é transiente, o fallback
+> não é uma rede de segurança: é um gerador de falsos positivos com cobertura quase total.
+
+215 testes, 0 falhas; Java, lintVital Release, R8 e assinatura passaram. Falta medir o material no
+alvo certo.
+
+**Quinta tentativa: alvo certo, view errada.** O botão correto foi encontrado, e o vidro apareceu —
+como um anel oblongo em volta do botão cinza, que continuou opaco por cima. Medido na captura:
+
+| | posição absoluta | tamanho |
+|---|---|---|
+| vidro (host) | x 1271–1433, y 2776–2913 | **162 × 137** |
+| disco cinza original | x 1306–1404, y 2808–2906 | **98 × 98** |
+
+O `scroll_bottom` é uma **caixa de toque** de 168×138 com folga para sombra; o botão que desenha é um
+filho de 98×98 encostado no canto inferior direito dela. Três sintomas, uma causa:
+
+1. **O cinza sobreviveu.** `takeOverTargetBackground` pegou o fundo do FrameLayout, que é nulo. O
+   disco é pintado pelo filho, e `takeOverFullBleedDescendants` recusou-o por regra correta: 98×98 em
+   168×138 cobre **41%**, abaixo dos 85% exigidos. O limiar certo, aplicado à view errada.
+2. **O vidro ficou oblongo.** `cornerRadiusDp(1000)` limita ao meio da altura (69px) contra uma
+   largura de 168 — um estádio, não um círculo.
+3. **A franja cromática explodiu.** `bevel=37.44px` derivou de 138px de altura e foi esfregada sobre
+   um disco de 98px: mais de um terço da largura, daí o arco-íris preenchendo o anel inteiro em vez
+   de um fio na borda.
+
+Nenhum deles é do material. `findButton` agora desce do nome até a view que desenha — o maior
+descendente com forma de botão redondo que tenha `background` ou seja `ImageView`, até 3 níveis — e
+despeja a subárvore uma vez para que a escolha seja conferível contra o aparelho em vez de deduzida.
+
+> **Regra 13 do material.** A view que o *nome do recurso* aponta não é necessariamente a que tem a
+> forma. Um id de botão costuma nomear o alvo de toque, com folga para sombra e badge; embrulhar a
+> caixa em vez do disco erra o raio, o tamanho do bisel e o dono do fundo de uma vez só — e os três
+> parecem defeitos ópticos independentes.
+
+Um segundo relato, **não medido**: o vidro aparece em força total alguns instantes antes do botão
+materializar. Hipótese a verificar, não conclusão — se o WhatsApp anima a entrada com `Animation`
+antiga em vez de `ViewPropertyAnimator`, `getAlpha()` permanece 1.0 durante o fade e o espelho de
+visibilidade da `regra 10` não tem o que espelhar. Provável que mude sozinho ao embrulhar o filho,
+que é justamente quem anima; medir depois de conferir o alvo.
+
+215 testes, 0 falhas; build de release limpo.
+
+### Etapa 3 aceita opticamente — e a linha ciano, que era do helper (2026-08-12)
+
+**O botão passou.** Circular, 98×98, cinza original eliminado, chevron sobre vidro. Perfil vertical
+medido em `x=1320`, fora do chevron:
+
+| | valor |
+|---|---|
+| borda superior (pico) | 41,1 |
+| corpo | 16,4 |
+| borda inferior | 20,1 |
+| **razão topo/base** | **2,0 : 1** (critério ≥ 1,7) |
+| **base acima do corpo** | **3,7 luma** (critério ≤ ~5) |
+
+Sem relevo, corpo chapado. A geometria circular não exigiu nenhum parâmetro divergente — só o alvo
+certo.
+
+**A linha verde.** Amostrando o aro de 15 em 15 graus, o arco superior destoa do resto:
+
+| ângulo | rgb | G−R |
+|---|---|---|
+| 240° | (60, 87, 72) | +27 |
+| 255° | (55, 89, 88) | **+34** |
+| 270° | (42, 69, 76) | +27 |
+| resto do aro | ~(11, 22, 28) | +9 a +11 |
+
+O perfil radial em 270°, canal a canal, mostra **duas faixas empilhadas**: uma neutra em r=45–48,
+pico (54,56,53) — o especular, que é `warm = (1.0, 0.995, 0.98)`, correto — e uma ciano em r=49–52,
+pico (44,80,92), **fora** dela. Os picos por canal caem em R=47, G=49, B=50: separação de 1,5–3px,
+exatamente o que a regra 5 pede. **A dispersão está certa.** O que está errado é qual flanco fica
+exposto.
+
+Primeira hipótese, **descartada pelo usuário antes de ser aplicada**: escala. A hairline é absoluta
+(`hair=2.85px` idêntico na barra e no botão), então ocupa 4,4% da dimensão menor na barra e 8,7% no
+botão, e um fio de 4px num arco de 150px lê como mancha. Plausível, e falso — a mesma linha aparece
+**na barra flutuante**. Um relato do aparelho matou uma hipótese que a aritmética sustentava; é o
+método funcionando.
+
+A causa real é assimetria de **fundo**, não de amplitude. Os três taps eram simétricos em torno de
+`-hw` e com amplitude igual, o que parecia certo e não era: o que está atrás deles não é simétrico.
+
+```
+R em d = -(hw + sep) = -4,26   → cai sobre o corpo iluminado, some no especular
+G em d = -hw         = -2,85
+B em d = -(hw - sep) = -1,44   → tenda alcança d = +1,41, TRANSBORDA o contorno
+```
+
+O flanco azul encosta no fundo quase preto, onde é a única coisa brilhante em pixels ao redor; o
+vermelho nunca aparece. A borda então franja só frio, e uma franja de um só matiz é uma linha
+colorida, não dispersão. A conta bate com a medida: `hairGain ≈ 0.26` (fundo escuro já amortece),
+`col += hair * 0.26` dá +66 em 0–255 sobre uma base de 20 — o pico B medido é 76.
+
+Correção: deslocar a hairline inteira para dentro em um `sep`, de modo que o canal mais externo
+tenha o pico no centro da própria hairline em vez de cavalgar o contorno. A separação entre canais
+fica intacta, que é o que carrega a cor.
+
+> **Regra 14 do material.** Dois flancos de uma franja com a mesma amplitude não têm a mesma
+> visibilidade se o que está atrás deles for diferente. O flanco interno compete com o corpo
+> iluminado; o externo, com o fundo. Simetria na fórmula não é simetria na percepção — e o resultado
+> é uma borda que franja um matiz só.
+
+**Não medido no aparelho.** 215 testes, 0 falhas; build de release limpo.
+
+### Medição da correção da regra 14 — pendência fechada, resultado negativo (2026-08-12)
+
+Três capturas do aparelho (`Screenshot.jpg`, `Screenshot (1).jpg`, `Screenshot (2).jpg`, todas
+1440×3120, nenhuma comitada — seguem a mesma regra de qualquer captura anterior). A primeira e a
+segunda mostram o botão scroll-to-bottom sobre conteúdo real; a terceira mostra a barra flutuante
+sobre a lista de conversas.
+
+**Botão — coluna central, `x=1355` (fora do chevron), `--column 1355 --from 2800 --to 2935`:**
+
+| região | valor |
+|---|---:|
+| pico da borda superior | **67,5** (y=2811) |
+| corpo (plano, `y=2895..2910`) | **16,4** |
+| pico da borda inferior | **39,2** (y=2922) |
+| razão topo/base | **1,72 : 1** (critério ≥ 1,7 — passa, no limite) |
+| base acima do corpo | **22,8 luma** (critério ≤ ~5 — **reprova**, 4,5× o teto) |
+
+A razão passa por pouco porque a borda inferior também subiu, não porque ficou contida. Na medição
+da Etapa 3 (pré-correção da regra 14) a borda inferior era 20,1 e ficava 3,7 acima do corpo — dentro
+do critério. Agora ela é quase o dobro (39,2) e a distância ao corpo é 6× maior. **Regra 3 do
+material** (a borda de baixo não é highlight) está sendo violada de novo, e não estava antes desta
+mudança.
+
+**A linha verde continua lá**, só que mudou de flanco. Varredura horizontal `--edge 1280 1430 --band
+2800 2825`: entre `x=1322` e `x=1378` (56px de um arco de ~110px, centrados no topo) o pico por
+coluna é dominado por verde — `(43,75,64)` em x=1328, `(60,90,88)` em x=1346, G−R chegando a **+34**.
+Uma varredura fina canal a canal em `x=1340`, `y=2795..2825`, confirma que a dispersão em si está
+intacta — os três canais separam por ~2px como a regra 5 pede (`B` no pico em y=2812, `G` em y=2814,
+`R` em y=2816) — mas só B e G ficam visíveis contra o fundo escuro; R cai sobre o corpo iluminado e
+some no specular, exatamente a assimetria que a regra 14 documentou. **A correção deslocou o grupo
+inteiro de taps por um `sep` em bloco**, o que preserva o espaçamento entre canais e troca qual canal
+fica por dentro — mas não muda a causa: o flanco que cai sobre o corpo aceso sempre vai desaparecer,
+não importa qual canal seja. Antes era o vermelho contra o fundo e o azul sumindo no corpo (franja
+fria); agora é o azul/verde contra o fundo e o vermelho sumindo no corpo (franja ainda fria, só que
+com outro canal ausente). É a mesma reprovação, deslocada.
+
+Hipótese para a próxima rodada, **não aplicada** (não dá para testar sem aparelho): o deslocamento em
+bloco também empurrou o footprint total da hairline para fora, o que é o candidato mais provável para
+o ganho na borda inferior (39,2 vs 20,1) — os três *tents* se sobrepõem mais fora do contorno em vez
+de ficarem centrados nele. Corrigir a assimetria de visibilidade provavelmente exige mexer em
+`bgLuma`/`hairGain` por canal (ou pelo menos por flanco), não só recentralizar os três taps juntos.
+
+**Barra — coluna `x=900` e `x=1000`, fora do pill de destaque da aba:** pico da borda superior
+25,0–31,2 (varia com o x, como esperado pela regra 7), corpo plano em 16,6, borda inferior 17,1 (em
+`x=900`, quase indistinguível do corpo). Razão 1,7–1,85:1, base acima do corpo ≈0,5 luma — dentro dos
+dois critérios, e coerente com a linha de base já validada da Fase 1.2 (31,7 / 16,6 / 17,1). A barra
+não mostrou o mesmo agravamento do botão nestas capturas. Uma varredura `--edge 300 1150 --band 2838
+2862` cruzou por dentro do pill verde-escuro da aba "mensagens" (mesmo y=2845 em toda coluna, uma
+assinatura de gradiente de UI, não de ruído por pixel) — não serve como medida da hairline e não deve
+ser reaproveitada sem excluir esse intervalo de x.
+
+**Veredito do portão: não passa.** O critério do usuário era `topo/base >= 1,7:1` (o botão passa,
+raspando), `borda inferior <= ~5 luma acima do corpo` (o botão reprova em 22,8) e `variação >= 60 ao
+longo do topo sobre fundo heterogêneo` (não medido de forma limpa em nenhuma das duas capturas — a
+varredura do botão ficou dentro de uma faixa estreita demais para avaliar continuidade, e a da barra
+ficou contaminada pelo pill). **Nenhuma superfície nova foi iniciada** — nem cabeçalho de
+configurações, nem cabeçalho de chamadas — porque a pendência que este ciclo deveria fechar continua
+aberta, com um efeito colateral medido que não existia antes (regra 3 violada no botão).
 
 ## Riscos e armadilhas
 

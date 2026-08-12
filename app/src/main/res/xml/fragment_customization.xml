@@ -129,6 +129,11 @@
             app:summary="@string/list_animations_home_screen_sum"
             app:title="@string/list_animations_home_screen" />
 
+        <Preference
+            app:key="liquid_glass_surfaces"
+            app:summary="@string/liquid_glass_sum"
+            app:title="@string/liquid_glass" />
+
     </PreferenceCategory>
 
     <PreferenceCategory

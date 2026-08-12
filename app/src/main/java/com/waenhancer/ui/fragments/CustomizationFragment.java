@@ -9,6 +9,7 @@ import androidx.preference.PreferenceManager;
 
 import com.waenhancer.R;
 import com.waenhancer.activities.BottomBarCustomizationActivity;
+import com.waenhancer.activities.LiquidGlassActivity;
 import com.waenhancer.activities.FilterItemsActivity;
 import com.waenhancer.ui.fragments.base.BasePreferenceFragment;
 
@@ -22,6 +23,14 @@ public class CustomizationFragment extends BasePreferenceFragment {
         if (filterItemsPref != null) {
             filterItemsPref.setOnPreferenceClickListener(preference -> {
                 startActivity(new Intent(requireContext(), FilterItemsActivity.class));
+                return true;
+            });
+        }
+
+        Preference liquidGlassPref = findPreference("liquid_glass_surfaces");
+        if (liquidGlassPref != null) {
+            liquidGlassPref.setOnPreferenceClickListener(preference -> {
+                startActivity(new Intent(requireContext(), LiquidGlassActivity.class));
                 return true;
             });
         }

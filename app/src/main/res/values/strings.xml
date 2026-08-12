@@ -526,6 +526,8 @@
     <string name="floating_bottom_bar_scroll_hide">Hide bottom navigation on scroll</string>
     <string name="floating_bottom_bar_scroll_hide_sum">Animate bottom pill bar downward to hide when scrolling down, and show it again when scrolling up</string>
     <string name="floating_bottom_bar_glass">Glassmorphism Effect</string>
+    <string name="liquid_glass">Liquid Glass</string>
+    <string name="liquid_glass_sum">Choose which surfaces are drawn as liquid glass</string>
     <string name="floating_bottom_bar_glass_sum">Apply a translucent blurred glass effect to the bottom pill bar</string>
     <string name="floating_bottom_bar_fill_color">Pill Fill Color</string>
     <string name="floating_bottom_bar_glass_opacity">Glass Opacity</string>

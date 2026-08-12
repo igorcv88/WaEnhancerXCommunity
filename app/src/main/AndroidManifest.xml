@@ -121,6 +121,10 @@
             android:parentActivityName=".activities.MainActivity"
             android:theme="@style/AppTheme" />
         <activity
+            android:name=".activities.LiquidGlassActivity"
+            android:parentActivityName=".activities.MainActivity"
+            android:theme="@style/AppTheme" />
+        <activity
             android:name=".activities.RecordingsActivity"
             android:exported="true"
             android:parentActivityName=".activities.MainActivity"

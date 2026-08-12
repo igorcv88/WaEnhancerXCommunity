@@ -165,6 +165,8 @@ public final class PreferenceSchema {
         add(entries, "floating_bottom_bar_glass", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "floating_bottom_bar_glass_opacity", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "floating_bottom_bar_glass_variant", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "liquid_glass_scroll_button", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "liquid_glass_bar_previous_variant", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "glass_dialogs", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "glass_dialogs_variant", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "floating_bottom_bar_height_mode", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);

@@ -48,6 +48,7 @@ import com.waenhancer.xposed.features.customization.CustomThemeV2;
 import com.waenhancer.xposed.features.customization.CustomTime;
 import com.waenhancer.xposed.features.customization.CustomToolbar;
 import com.waenhancer.xposed.features.customization.CustomView;
+import com.waenhancer.xposed.features.customization.ConversationScrollButtonGlass;
 import com.waenhancer.xposed.features.customization.FloatingBottomBar;
 import com.waenhancer.xposed.features.customization.HideSeenView;
 import com.waenhancer.xposed.features.customization.HideTabs;
@@ -987,6 +988,7 @@ public class FeatureLoader {
                 HideTabs.class,
                 SeparateGroup.class,
                 FloatingBottomBar.class,
+                ConversationScrollButtonGlass.class,
                 IGStatus.class,
                 LiteMode.class,
                 MediaQuality.class,

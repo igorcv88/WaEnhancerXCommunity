@@ -12,6 +12,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.view.ViewParent;
+import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 
 import java.util.function.Supplier;
@@ -65,6 +66,13 @@ import eightbitlab.com.blurview.RenderScriptBlur;
  * lit pane rather than a lens.</p>
  */
 public final class GlassSurface {
+
+    /**
+     * How much of the surface a descendant must cover before its background counts as the chrome
+     * being replaced rather than as that element's own styling, and how deep to look.
+     */
+    private static final float FULL_BLEED_MIN_COVERAGE = 0.85f;
+    private static final int FULL_BLEED_MAX_DEPTH = 3;
 
     /** Elevation and Z of a surface the user is not meant to see through, in dp. */
     public static final float ELEVATION_DP = 12f;
@@ -169,6 +177,12 @@ public final class GlassSurface {
     private final ViewGroup.LayoutParams originalLayoutParams;
     private final Drawable originalBackground;
 
+    /** Descendant backgrounds taken over along with the target's, and what they were. */
+    private final java.util.Map<View, Drawable> takenOverDescendants =
+            new java.util.LinkedHashMap<>();
+
+    private ViewTreeObserver.OnPreDrawListener visibilitySync;
+
     private BackdropSampler sampler;
     private int backdropColor;
     private Float captureRadius;
@@ -200,8 +214,11 @@ public final class GlassSurface {
      * is what once turned the bottom bar into a window-tall pill.</p>
      *
      * @param target   the view to put behind glass; must currently be attached to a ViewGroup
-     * @param blurRoot the view tree the capture reads from — an ancestor that draws the content
-     *                 meant to show through, and not one that contains this surface's own host
+     * @param blurRoot the view tree the capture reads from: an ancestor that draws the content
+     *                 meant to show through. It may contain this surface's own host — see
+     *                 {@code CaptureExcludedHost} — and it had better draw the wallpaper and the
+     *                 list, because a root that draws neither leaves the capture showing nothing
+     *                 but the window background, flat
      * @return the surface, or {@code null} when the target cannot be wrapped
      */
     public static GlassSurface wrap(View target, ViewGroup blurRoot, Config config) {
@@ -231,7 +248,7 @@ public final class GlassSurface {
             Context ctx = target.getContext();
             float density = ctx.getResources().getDisplayMetrics().density;
 
-            FrameLayout host = new FrameLayout(ctx);
+            FrameLayout host = new CaptureExcludedHost(ctx);
             host.setClipChildren(false);
             host.setClipToPadding(false);
             // A transparent shape of the right radius: nothing to see, but it is what the outline
@@ -265,11 +282,25 @@ public final class GlassSurface {
             GlassSurface surface = new GlassSurface(target, host, blurView, blurRoot, config,
                     previousParent, previousIndex, previousLp, target.getBackground());
             surface.setupCapture();
+            surface.followTargetVisibility();
             surface.refresh();
             return surface;
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    /**
+     * Whether this view is a wrapper installed by this class.
+     *
+     * <p>A host inherits the target's layout params, so it lands at the same size and in the same
+     * place — which means a discovery that identifies its target by shape and position will happily
+     * identify a host as well, wrap it in a second host, and go round again. The scroll button did
+     * exactly that: twenty wrappers in six seconds and the whole lens budget spent. Discovery has
+     * to be able to recognise our own work.</p>
+     */
+    public static boolean isGlassHost(View view) {
+        return view instanceof CaptureExcludedHost;
     }
 
     /** The wrapper that now holds the target. This, not the target, is what moves and animates. */
@@ -343,16 +374,49 @@ public final class GlassSurface {
             }
             lensed = wantsLens;
 
-            // Painting follows the intent, the capture radius follows the result. They differ for
-            // exactly one device: the one whose driver refuses the shader. It wants a lens, cannot
-            // have one, and must not be left holding a surface with neither the shader's blur nor
-            // the library's.
-            paint(spec, wantsLens);
+            // Both follow the result, and that word is doing work. Painting used to follow the
+            // intent, on the reasoning that intent and result differ only for a device whose
+            // driver refuses the shader. They also differ for a surface that is not measured yet,
+            // and there the lensed painting - no background, no fill, no outline clip, because the
+            // shader owns all three - leaves the capture on screen as a hard-edged blurred
+            // rectangle. That is what the scroll button showed: an unshaped blur, since the lens
+            // that was going to shape it never ran. A surface still waiting for its lens gets the
+            // layered look, which is a working surface, and switches when the lens actually runs.
+            paint(spec, lensRunning);
             applyCaptureBlur(spec, lensRunning);
-            if (config.elevated) applyElevation(wantsLens);
+            if (config.elevated) applyElevation(lensRunning);
         } catch (Throwable ignored) {
             // A surface that cannot refresh keeps whatever it last painted. Throwing here would
             // take the host app's layout pass down with it.
+        }
+    }
+
+    /**
+     * Keeps the wrapper as visible as the thing it wraps.
+     *
+     * <p>Visibility belongs to the target, and the host is a view the host app has never heard of:
+     * when WhatsApp hides the scroll-to-bottom button the target goes away inside a wrapper that
+     * stays exactly where it was, and what is left on screen is a pane of glass with nothing in it.
+     * The floating bar solved the same problem by hooking the one class whose visibility it cared
+     * about; a surface discovered by shape has no class to hook, so the state is mirrored
+     * instead.</p>
+     *
+     * <p>A pre-draw listener rather than a layout one: going to {@code GONE} does not necessarily
+     * lay the host out again, and the check is two comparisons. Alpha comes along for the ride so a
+     * button that fades in does not arrive behind glass that is already at full strength.</p>
+     */
+    private void followTargetVisibility() {
+        visibilitySync = () -> {
+            if (!detached) {
+                int wanted = target.getVisibility();
+                if (host.getVisibility() != wanted) host.setVisibility(wanted);
+                if (host.getAlpha() != target.getAlpha()) host.setAlpha(target.getAlpha());
+            }
+            return true;
+        };
+        try {
+            host.getViewTreeObserver().addOnPreDrawListener(visibilitySync);
+        } catch (Throwable ignored) {
         }
     }
 
@@ -363,6 +427,10 @@ public final class GlassSurface {
         try {
             GlassBudget.shared().release(this);
             LiquidLens.clear(blurView);
+            if (visibilitySync != null) {
+                host.getViewTreeObserver().removeOnPreDrawListener(visibilitySync);
+                visibilitySync = null;
+            }
             host.removeView(target);
             ViewParent parent = host.getParent();
             if (parent instanceof ViewGroup) {
@@ -370,6 +438,10 @@ public final class GlassSurface {
             }
             if (config.takeOverTargetBackground) {
                 target.setBackground(originalBackground);
+                for (java.util.Map.Entry<View, Drawable> entry : takenOverDescendants.entrySet()) {
+                    entry.getKey().setBackground(entry.getValue());
+                }
+                takenOverDescendants.clear();
             }
             if (originalParent != null && target.getParent() == null) {
                 int index = Math.max(0, Math.min(originalIndex, originalParent.getChildCount()));
@@ -453,8 +525,12 @@ public final class GlassSurface {
             blurView.setOverlayColor(Color.TRANSPARENT);
             blurView.setClipToOutline(false);
         } else {
+            // The layered stack already carries the fill in its base, and it is drawn over the
+            // blurred capture. Setting the overlay to the same colour applies it a second time,
+            // which is the surface reading at twice the opacity the user configured - the same
+            // mistake as painting the fill on the target, one layer further in.
             blurView.setBackground(GlassRenderer.background(spec, cornerRadiusPx(), density));
-            blurView.setOverlayColor(spec.fillColor);
+            blurView.setOverlayColor(Color.TRANSPARENT);
             blurView.setClipToOutline(true);
         }
 
@@ -463,6 +539,50 @@ public final class GlassSurface {
             target.setBackground(targetBackground(spec, lensedNow, density));
             target.setClipToOutline(false);
             target.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+            takeOverFullBleedDescendants();
+        }
+    }
+
+    /**
+     * Clears any descendant that paints the chrome we are replacing.
+     *
+     * <p>The view a hook finds is not always the view that draws. On WhatsApp's message input the
+     * rounded capsule is painted by a child of the container the resource name points at, and
+     * taking over only the container leaves that child covering the glass: the surface measured as
+     * {@code (32,43,49)}, identical across 520 pixels, unchanged by two separate corrections to how
+     * the fill was composed — because none of it was ever visible. The tell was the ghost around
+     * the icons surviving at about a tenth of its strength, which is a near-opaque sheet sitting
+     * over it.</p>
+     *
+     * <p>Only descendants that cover essentially the whole surface are touched. A background on
+     * something smaller is that element's own styling — a badge, a selected state, an avatar ring —
+     * and is not ours to remove.</p>
+     */
+    private void takeOverFullBleedDescendants() {
+        if (!(target instanceof ViewGroup)) return;
+        collectFullBleed((ViewGroup) target, 0);
+        for (View view : takenOverDescendants.keySet()) {
+            if (view.getBackground() != null) {
+                view.setBackgroundTintList(null);
+                view.setBackground(null);
+            }
+        }
+    }
+
+    private void collectFullBleed(ViewGroup group, int depth) {
+        if (depth > FULL_BLEED_MAX_DEPTH) return;
+        int targetArea = target.getWidth() * target.getHeight();
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child == null) continue;
+            int area = child.getWidth() * child.getHeight();
+            if (child.getBackground() != null && targetArea > 0
+                    && area >= targetArea * FULL_BLEED_MIN_COVERAGE) {
+                if (!takenOverDescendants.containsKey(child)) {
+                    takenOverDescendants.put(child, child.getBackground());
+                }
+            }
+            if (child instanceof ViewGroup) collectFullBleed((ViewGroup) child, depth + 1);
         }
     }
 
@@ -526,6 +646,39 @@ public final class GlassSurface {
             paint(spec, lensed);
             host.invalidate();
         } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * The wrapper, with one job beyond holding the target: staying out of the capture.
+     *
+     * <p>The blur library captures by drawing the whole root tree into a bitmap, and it skips only
+     * the capture view itself. The target sits <em>beside</em> that view rather than inside it, so
+     * it is captured — and a blurred copy of the surface's own contents is then painted underneath
+     * the sharp ones. On the conversation input row that measured as an 8-luma skirt reaching 40px
+     * out from each icon, and as a blurred ghost of the camera button left behind after WhatsApp
+     * hid it.</p>
+     *
+     * <p>The capture is told apart from a real frame by its canvas: the library draws into a
+     * software canvas backed by a bitmap, while a view in a hardware-accelerated window is drawn
+     * into a hardware one. So a software canvas in a hardware window is the capture pass, and this
+     * host draws nothing into it. A window that is genuinely software-rendered is left alone,
+     * because there the test cannot tell the two apart and a surface that never draws is a worse
+     * failure than a halo.</p>
+     *
+     * <p>This is also what frees the caller from finding an ancestor that draws the content but
+     * does not contain this host. For most surfaces no such ancestor exists.</p>
+     */
+    private static final class CaptureExcludedHost extends FrameLayout {
+
+        CaptureExcludedHost(Context context) {
+            super(context);
+        }
+
+        @Override
+        protected void dispatchDraw(android.graphics.Canvas canvas) {
+            if (isHardwareAccelerated() && !canvas.isHardwareAccelerated()) return;
+            super.dispatchDraw(canvas);
         }
     }
 

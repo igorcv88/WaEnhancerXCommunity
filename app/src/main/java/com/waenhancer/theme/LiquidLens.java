@@ -290,10 +290,25 @@ public final class LiquidLens {
             // this is where the colour in the edge actually comes from, and it has to be at least
             // a pixel or two to survive being resolved.
             + "    float sep = hw * 0.90 * uDispersion;\n"
+            // Biased inward by one separation, so the outermost channel peaks at the hairline's
+            // own centre instead of riding the outline. Measured cause of a cyan arc across the
+            // top of every lensed surface — the bar as well as the button, which is what ruled
+            // out surface size as the explanation.
+            //
+            // The three taps were symmetric about -hw and had equal amplitude, which looked
+            // right and was not: what sits behind them is not symmetric. The inner flank falls on
+            // the lit body of the glass and disappears into the specular; the outer flank spilled
+            // past the outline (its tent reached d = +sep) onto a near-black backdrop, where it
+            // was the only bright thing for pixels around. Same amplitude, one of them exposed.
+            // So the edge fringed cool and never warm, and a fringe with only one hue is a
+            // coloured line rather than dispersion.
+            //
+            // Separation between channels is untouched — that is what carries the colour at all,
+            // and below about a pixel antialiasing averages it back to white.
             + "    float3 hair = float3(\n"
+            + "        clamp(1.0 - abs(d + hw + 2.0 * sep) / hw, 0.0, 1.0),\n"
             + "        clamp(1.0 - abs(d + hw + sep) / hw, 0.0, 1.0),\n"
-            + "        clamp(1.0 - abs(d + hw) / hw, 0.0, 1.0),\n"
-            + "        clamp(1.0 - abs(d + hw - sep) / hw, 0.0, 1.0));\n"
+            + "        clamp(1.0 - abs(d + hw) / hw, 0.0, 1.0));\n"
             + "    float2 bgCoord = clamp(coord - n * hw * 2.0, lo, hi);\n"
             + "    float4 bgSample = float4(content.eval(bgCoord));\n"
             + "    float3 bgRgb = bgSample.rgb / max(bgSample.a, 0.001);\n"

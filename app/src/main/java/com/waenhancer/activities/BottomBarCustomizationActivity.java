@@ -311,6 +311,11 @@ public class BottomBarCustomizationActivity extends AppCompatActivity {
         int recommended = com.waenhancer.theme.GlassSpec.Variant.from(variantKey)
                 .recommendedOpacityPercent();
         setSliderValue("floating_bottom_bar_glass_opacity", recommended);
+        // The Liquid Glass page's bar row is this same picker seen from the other side, and its
+        // off switch restores whatever style was chosen before. A choice made here is that
+        // "before", so it has to be recorded here too or turning the theme off would put back a
+        // style the user had already moved away from.
+        com.waenhancer.config.LiquidGlassSettings.rememberBarVariant(prefs, variantKey);
     }
 
     private void setSliderValue(String key, float value) {
