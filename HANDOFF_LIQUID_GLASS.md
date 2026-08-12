@@ -931,7 +931,7 @@ fica intacta, que é o que carrega a cor.
 
 **Não medido no aparelho.** 215 testes, 0 falhas; build de release limpo.
 
-### Medição da correção da regra 14 — pendência fechada, resultado negativo (2026-08-12)
+### Medição da correção da regra 14 — a franja continua, ganho compensatório aplicado sem testar (2026-08-12)
 
 Três capturas do aparelho (`Screenshot.jpg`, `Screenshot (1).jpg`, `Screenshot (2).jpg`, todas
 1440×3120, nenhuma comitada — seguem a mesma regra de qualquer captura anterior). A primeira e a
@@ -950,9 +950,13 @@ sobre a lista de conversas.
 
 A razão passa por pouco porque a borda inferior também subiu, não porque ficou contida. Na medição
 da Etapa 3 (pré-correção da regra 14) a borda inferior era 20,1 e ficava 3,7 acima do corpo — dentro
-do critério. Agora ela é quase o dobro (39,2) e a distância ao corpo é 6× maior. **Regra 3 do
-material** (a borda de baixo não é highlight) está sendo violada de novo, e não estava antes desta
-mudança.
+do critério; agora é 39,2 e 22,8. **Correção sobre a primeira versão deste registro:** eu atribui essa
+diferença à mudança de código sem qualificar a comparação. As duas medições vêm de **capturas
+diferentes** — fundos, avatares e conteúdo de conversa diferentes — e `hairGain` é derivado
+diretamente da luminância de fundo amostrada. Uma parte real da diferença de 39,2 vs 20,1 pode ser
+só o fundo desta captura sendo mais claro atrás da borda inferior, não a mudança da regra 14. Não é
+uma comparação controlada, então a regra 3 **pode** estar sendo violada de novo, mas o número sozinho
+não prova causa — falta uma captura da mesma cena antes/depois para isolar isso.
 
 **A linha verde continua lá**, só que mudou de flanco. Varredura horizontal `--edge 1280 1430 --band
 2800 2825`: entre `x=1322` e `x=1378` (56px de um arco de ~110px, centrados no topo) o pico por
@@ -960,18 +964,22 @@ coluna é dominado por verde — `(43,75,64)` em x=1328, `(60,90,88)` em x=1346,
 Uma varredura fina canal a canal em `x=1340`, `y=2795..2825`, confirma que a dispersão em si está
 intacta — os três canais separam por ~2px como a regra 5 pede (`B` no pico em y=2812, `G` em y=2814,
 `R` em y=2816) — mas só B e G ficam visíveis contra o fundo escuro; R cai sobre o corpo iluminado e
-some no specular, exatamente a assimetria que a regra 14 documentou. **A correção deslocou o grupo
-inteiro de taps por um `sep` em bloco**, o que preserva o espaçamento entre canais e troca qual canal
-fica por dentro — mas não muda a causa: o flanco que cai sobre o corpo aceso sempre vai desaparecer,
-não importa qual canal seja. Antes era o vermelho contra o fundo e o azul sumindo no corpo (franja
-fria); agora é o azul/verde contra o fundo e o vermelho sumindo no corpo (franja ainda fria, só que
-com outro canal ausente). É a mesma reprovação, deslocada.
+some no specular, o mesmo padrão que a regra 14 documentou, só que com outro canal ausente. A
+correção deslocou o grupo inteiro de taps por um `sep` em bloco, o que preserva o espaçamento entre
+canais e troca qual canal fica por dentro — sem necessariamente mudar a causa.
 
-Hipótese para a próxima rodada, **não aplicada** (não dá para testar sem aparelho): o deslocamento em
-bloco também empurrou o footprint total da hairline para fora, o que é o candidato mais provável para
-o ganho na borda inferior (39,2 vs 20,1) — os três *tents* se sobrepõem mais fora do contorno em vez
-de ficarem centrados nele. Corrigir a assimetria de visibilidade provavelmente exige mexer em
-`bgLuma`/`hairGain` por canal (ou pelo menos por flanco), não só recentralizar os três taps juntos.
+**Mas há um furo nessa leitura, e vale registrar em vez de esconder.** Os três *tents* são a mesma
+forma transladada três vezes, então são simétricos por construção: na posição mais provável de
+dominar uma busca por pico de luminância — o pico do próprio G, porque G carrega 71% do peso de luma
+— R e B caem exatamente no mesmo valor (0,505 cada, antes de qualquer ganho). O déficit de vermelho
+medido pode então ser cor real do fundo naquela linha específica em vez de assimetria da forma. Não
+dá para separar as duas coisas sem uma captura da mesma cena.
+
+**Mudança aplicada, não verificada:** `hair *= float3(1.18, 1.06, 1.0)` em `LiquidLens.java`, um
+reforço pequeno e deliberadamente conservador no tap mais profundo (vermelho) e no do meio (verde).
+Pequeno o bastante para não fazer mal se o déficit for conteúdo e não forma; grande o bastante para
+testar a hipótese. Compila limpo, 215 testes passam — mas isso não verifica o shader, que só se
+confirma no aparelho. Falta a próxima captura, da mesma cena, para saber se ajudou.
 
 **Barra — coluna `x=900` e `x=1000`, fora do pill de destaque da aba:** pico da borda superior
 25,0–31,2 (varia com o x, como esperado pela regra 7), corpo plano em 16,6, borda inferior 17,1 (em
@@ -989,6 +997,254 @@ varredura do botão ficou dentro de uma faixa estreita demais para avaliar conti
 ficou contaminada pelo pill). **Nenhuma superfície nova foi iniciada** — nem cabeçalho de
 configurações, nem cabeçalho de chamadas — porque a pendência que este ciclo deveria fechar continua
 aberta, com um efeito colateral medido que não existia antes (regra 3 violada no botão).
+
+### A linha verde era a forma do tap, não o fundo nem o ganho (2026-08-12)
+
+Terceira tentativa de matar a franja de um matiz só. As duas anteriores mexeram em **onde** os taps
+ficam e em **quanto** cada canal vale; esta mexe em **que forma eles têm**, que era o que faltava
+olhar.
+
+**O diagnóstico.** Os taps eram triângulos: cada canal com pico num ponto, caindo linearmente dos
+dois lados. Três triângulos a `sep` de distância significam que o do meio atinge o pico exatamente
+onde os dois de fora já caíram para `1 - sep/hw`. Simulado em Python contra os parâmetros do
+aparelho (`hw = 2.85px`, `uDispersion = 0.55`, logo `sep = 1.41px`):
+
+| perfil | linha mais brilhante da hairline | luma | G−R | G−B |
+|---|---|---:|---:|---:|
+| triângulo, sem ganho | `(0.506, 0.999, 0.504)` | 0.858 | **+0.49** | **+0.50** |
+| triângulo + ganho `(1.18,1.06,1.0)` | `(0.598, 1.058, 0.504)` | 0.920 | **+0.46** | **+0.56** |
+| **trapézio + envelope (aplicado)** | **`(0.999, 0.999, 0.999)`** | 0.999 | **0.000** | **0.000** |
+
+A linha mais brilhante da hairline era **verde saturado por construção**. E é verde porque verde é
+o canal do meio, por nenhum outro motivo: não depende do fundo, do tamanho da superfície nem da
+geometria — que é exatamente o que os relatos diziam, o mesmo matiz na barra e no botão redondo,
+sobre conteúdos completamente diferentes. A hipótese do verde do WhatsApp vazando pelo `bgCoord`
+fica **descartada**: `bgLuma` alimenta `hairGain`, que é um escalar aplicado igual aos três canais,
+e não pode produzir preferência de canal nenhuma.
+
+Isso também explica as duas rodadas anteriores, que até aqui pareciam dois fatos soltos:
+
+- **Por que era ciano antes da regra 14.** O triângulo do azul transbordava o contorno e caía sobre
+  fundo quase preto; a exposição vencia a forma. Enviesar o grupo para dentro tirou o transbordo e
+  deixou aparecer o máximo da própria forma — daí virar verde. Uma causa, dois sintomas.
+- **Por que o ganho plano não fez nada.** Nessa mesma linha R e B valem **igual** por construção
+  (0.505 cada), então não existe déficit por canal ali para um ganho corrigir. O `(1.18, 1.06, 1.0)`
+  levou G−R de +0.49 para +0.46. Estava resolvendo a camada errada do problema.
+
+**A correção.** Uma borda real não franja assim porque uma borda real não é um pico. Dispersar uma
+faixa de branco **mais larga que o deslocamento de comprimento de onda** dá núcleo branco com flanco
+quente de um lado e frio do outro. Então cada tap ganhou topo chato de meia-largura
+`max(hw*0.5, sep)` — dimensionada a partir de `sep`, não de uma fração fixa de `hw`, para o núcleo
+branco valer em qualquer `dispersion` que uma variante peça, não só nos 0.55 do `LIQUID`. Mais um
+**envelope acromático** sobre o grupo inteiro, senão os flancos segurariam um canal sozinho em
+amplitude cheia por ~1,5px de cada lado — trocando uma linha colorida por duas, uma vermelha
+saturada e uma azul. Sob o envelope os flancos saem escuros e tingidos (≈`(0.53, 0.31, 0.0)` quente
+por dentro, o espelho frio por fora) com o núcleo em `(1, 1, 1)`.
+
+Dois efeitos colaterais checados na simulação em vez de descobertos no aparelho:
+
+- **A hairline não engorda.** Extensão acesa 5,78px contra 6,38px dos triângulos.
+- **O pico subiria 16%** (luma 1.0 contra 0.858). Como a borda inferior é o critério com menos folga
+  neste passe — já reprovando em 22,8 luma acima do corpo contra o teto de ~5 — a mudança de forma
+  foi feita **a pico constante**, com `hair *= 0.86`, em vez de cobrar as duas coisas de uma vez.
+
+`hair *= float3(1.18, 1.06, 1.0)` foi **removido**: sabidamente inerte, e manter um termo que não
+faz nada no meio de um passe que se depura por medição custa uma rodada de aparelho por vez que
+alguém suspeita dele.
+
+> **Regra 15 do material.** Uma franja de N canais discretos só é branca no meio se cada tap for
+> mais largo que a separação entre eles. Com taps em pico, o canal do meio é o máximo de luminância
+> da franja inteira, e a borda lê como uma linha da cor desse canal — independentemente de fundo,
+> escala e posição. Nenhum reposicionamento e nenhum ganho por canal corrige isso, porque na linha
+> que domina a percepção os dois canais externos são iguais entre si.
+
+**Não verificado no aparelho.** `./gradlew :app:compileWhatsappDebugJavaWithJavac
+:app:testWhatsappDebugUnitTest` limpo, 215 testes, 0 falhas — o que só prova que o Java compila; o
+AGSL não se compila no desktop. Os números acima são **simulação**, não medição.
+
+### Medição do trapézio — a forma estava certa, a largura do núcleo era 0,028px (2026-08-12)
+
+Duas capturas novas (`Screenshot (1).jpg`, botão sobre wallpaper; `Screenshot (2).jpg`, barra na
+tela de grupos; ambas 1440×3120, nenhuma comitada). Relato do usuário: a linha ficou "um pouco mais
+escura, mas do mesmo tamanho e ainda presente" — e só deu para notar o "mais escura" comparando as
+duas capturas lado a lado no escuro. Ou seja: efeito real, mas abaixo do limiar de percepção.
+
+**A medição que decidiu tudo** é o perfil vertical na coluna mais brilhante do aro superior da
+barra, `x=620` — 7px de borda sobre fundo uniforme, a amostra menos ruidosa disponível:
+
+| y | rgb | G−R | B−G |
+|---:|---|---:|---:|
+| 2840 (contorno) | `(9, 16, 22)` | +7 | +6 |
+| 2841 | `(28, 38, 47)` | +10 | **+9** |
+| 2842 | `(32, 48, 61)` | +16 | **+13** |
+| 2843 | `(38, 56, 68)` | +18 | +12 |
+| 2844 | `(50, 67, 74)` | +17 | +7 |
+| **2845 (pico)** | **`(59, 73, 74)`** | +14 | **+1** |
+| 2846 | `(51, 60, 55)` | +9 | **−5** |
+| 2847 | `(39, 45, 41)` | +6 | **−4** |
+| 2848 | `(30, 35, 39)` | +5 | +4 |
+
+**No eixo B−G o trapézio funciona exatamente como projetado:** `+13 → +1 → −5`, flanco frio por
+fora, núcleo neutro, flanco quente por dentro. Isso é dispersão se comportando certo, e é a
+primeira vez que a franja varre dois matizes opostos em vez de um só. A correção **está rodando e
+está certa em forma**.
+
+**No eixo G−R ela nunca cruza zero.** Descontando a base local, o incremento vai `+8 → +6 → −2`:
+oscila, mas o núcleo mantém ~11% de excesso de verde.
+
+**A causa é um erro de dimensionamento meu, e a aritmética é direta.** O núcleo branco só tem a
+largura em que o topo chato **excede** a separação. Eu dimensionei `plateau = max(hw*0.5, sep)`:
+
+```
+hw       = 2,850px
+sep      = hw * 0,90 * 0,55 = 1,411px
+plateau  = max(1,425 ; 1,411) = 1,425px
+núcleo branco = 2 * (plateau − sep) = 2 * 0,014 = 0,028px
+```
+
+**Um núcleo de 0,028px não é um núcleo.** Escrevi o topo chato "pelo menos tão largo quanto a
+separação" e implementei exatamente isso — igual, não maior. Com margem de 1% os três canais só
+coincidem num ponto, e o verde continua vencendo o meio, de onde vem "um pouco mais escura, mesmo
+tamanho, ainda presente": o `*0.86` mudou o brilho, a forma não mudou nada perceptível.
+
+**Correção.** O núcleo virou uma largura própria e o resto deriva dele em vez de derivar de `hw`:
+
+| | antes | agora |
+|---|---|---|
+| `core` (meia-largura acromática) | — (emergia de um `max`) | `max(0.9, hw*0.32)` = 0,912px |
+| `ramp` (roll-off, dá cor aos flancos) | `hw − plateau` = 1,425 | `max(hw*0.5, 1.0)` = 1,425 |
+| `reach` (meia-extensão do tap) | `hw` = 2,850 | `sep + core + ramp` = 3,748 |
+| **núcleo branco** | **0,028px** | **1,85px** |
+
+Três termos que não podem mais colapsar um no outro, que era o que um único `max()` permitia
+silenciosamente. Simulado nos números do próprio aparelho: núcleo branco de 1,85px com amplitude
+0,67–0,83 contra flancos que picam em 0,50 — a parte mais brilhante da linha passa a ser branca e o
+matiz fica confinado às bordas dela.
+
+O alcance do envelope subiu junto, para `reach + sep`. Foi trade-off medido na simulação: com o
+envelope justo (`reach`) a faixa visível termina **2,1px antes do contorno**, e um anel escuro entre
+a borda da forma e o próprio brilho dela lê como traço desenhado. Com `reach + sep` a folga cai para
+1,15px, ao custo de 8,0px de faixa visível contra os 7,3px da forma anterior.
+
+> **Regra 16 do material.** Num tap com topo chato, o núcleo acromático mede `topo − separação`,
+> não `topo`. Dimensionar o topo como "pelo menos a separação" produz um núcleo de largura zero e
+> nenhuma mudança visível. A largura acromática tem que ser um parâmetro próprio, somado à
+> separação — nunca o resultado de um `max()` entre elas.
+
+**Duas hipóteses descartadas nesta rodada, com número:**
+
+- **O verde não vem do fundo verde do WhatsApp.** `bgLuma` alimenta só `hairGain`, que é escalar
+  aplicado igual aos três canais e não pode gerar preferência de canal. E o topo do aro recebe
+  `warm = (1.0, 0.995, 0.98)`, que empurra para o lado oposto.
+- **O verde não é (só) o tint da superfície.** Modelei o passe inteiro contra o fundo medido e ele
+  prevê o corpo com erro < 1: fundo `(11,16,20)` → após `uSat 1.55` `(8.7, 16.4, 22.6)` → após tint e
+  ganho `(9.5, 17.7, 24.3)`, contra **`(9, 18, 25)` medido**. O corpo carrega G−R ≈ +9 e isso é real
+  — o tema escuro do WhatsApp já é um teal (G−R +5) e `uSat` o amplifica. Mas o *incremento* do aro
+  sobre o corpo é neutro em vários pontos medidos (`(15,15,13)` em `x=900`, `(18,18,18)` no botão),
+  então a base explica o matiz do corpo, não a linha. Se depois do núcleo de 1,85px ainda sobrar
+  linha, **aí** `MAX_SATURATION` é o próximo parâmetro, e o piso é o G−R +5 do próprio fundo.
+
+**Não verificado no aparelho.** Java compila, 215 testes, 0 falhas. Os números do núcleo são
+simulação.
+
+Para a próxima captura, a medição que vale é **esta**, e não uma varredura `--edge`: a coluna mais
+brilhante do aro superior, passo 1, canal a canal. Foi a única que distinguiu "a forma não está
+rodando" de "a forma está rodando e o núcleo tem largura zero", e as duas hipóteses previam o mesmo
+`--edge`.
+
+```bash
+python tools/glass_profile.py <captura> --column 620 --from 2836 --to 2860 --step 1
+```
+
+Critério: **G−R deve cruzar zero** ao longo do perfil, como B−G já faz. Um núcleo com G−R entre −2 e
++2 em 2 ou 3 linhas seguidas é a prova de que o núcleo branco existe.
+
+> **Armadilha do instrumento, nova.** As capturas são JPEG, e JPEG subamostra croma. Num detalhe de
+> 2–3px isso **fabrica** franja colorida: as leituras de flanco do corte horizontal do botão
+> (`(9,21,43)` à esquerda, `(35,24,32)` à direita, num aro de 2px) não são confiáveis para cor. Só
+> regiões de ≥4px sobre fundo uniforme servem para julgar matiz — daí a coluna `x=620`. **PNG
+> resolveria isto de vez**, se o aparelho permitir capturar sem compressão.
+
+**O que medir na próxima captura**, das duas superfícies, `Screenshot`-style 1440×3120:
+
+```bash
+# botão scroll-to-bottom: perfil vertical fora do chevron
+python tools/glass_profile.py <captura> --column 1355 --from 2800 --to 2935 --step 1
+# arco superior do botão, canal a canal — é aqui que G-R chegava a +34
+python tools/glass_profile.py <captura> --edge 1280 1430 --band 2800 2825 --step 2
+# barra flutuante, coluna fora do pill da aba
+python tools/glass_profile.py <captura> --column 900 --from 2825 --to 3050 --step 3
+```
+
+Critério desta rodada: no arco superior do botão, **G−R ≤ ~+12** (o resto do aro já media +9 a +11;
+o arco de cima media +27 a +34). Secundário, e ainda em aberto de antes: borda inferior do botão
+≤ ~5 luma acima do corpo, que a captura anterior reprovou em 22,8 — mas aquele número veio de uma
+captura diferente da que deu o 3,7 da Etapa 3, então **não** é comparação controlada. Duas capturas
+da mesma cena antes/depois continuam sendo o que falta para isolar isso.
+
+### O núcleo branco existe e foi medido — o que faltava era a *quantidade* de cor (2026-08-12)
+
+Primeiras capturas em **PNG** (`screenshots (1).png`, `screenshots (2).png`, 1440×3120, via
+`adb exec-out screencap -p`), o que elimina de vez a dúvida do croma subamostrado do JPEG. Relato do
+usuário: "por que nada está mudando?".
+
+**Está mudando, e desta vez dá para provar.** Perfil radial pelo arco superior do botão, `x=1350`,
+passo 1:
+
+| y | rgb | luma | G−R | B−G | leitura |
+|---:|---|---:|---:|---:|---|
+| 2810 | `(40, 55, 75)` | 53,3 | +15 | **+20** | azul |
+| 2812 | `(47, 70, 80)` | 65,8 | +23 | +10 | ciano |
+| **2814** | **`(75, 79, 85)`** | **78,6** | **+4** | +6 | **branco (pico)** |
+| 2816 | `(52, 58, 46)` | 55,9 | +6 | **−12** | amarelo |
+| 2817 | `(39, 40, 37)` | 39,6 | **+1** | −3 | quente |
+| corpo | `(18, 27, 34)` | 25,6 | +9 | +6 | — |
+
+**azul → ciano → branco → amarelo.** É exatamente a sequência projetada, com o núcleo neutro (G−R
++4 contra a linha de base +9 do corpo). O critério da rodada anterior — "G−R tem que cruzar zero" —
+**passa**. Compare com a primeira rodada, onde a linha mais brilhante era `(0.506, 0.999, 0.504)`,
+verde puro, sem nada branco em lugar nenhum.
+
+**E ainda assim o usuário vê a mesma coisa.** A razão está no mesmo perfil: o flanco pica em luma
+53 contra um núcleo de 78 — **68%**. Uma franja com 68% do brilho do núcleo não é franja, é um
+arco-íris com um fio branco no meio, e lê como aro colorido por mais correta que a sequência de
+matizes esteja. Pior: onde o arco é mais fraco (`x=1360`) o núcleo nunca chega a branco e o matiz
+do flanco vence sozinho — `(23, 54, 62)`, G−R **+31**.
+
+> **Regra 17 do material, e é a lição das três rodadas juntas.** *Onde* a cor está e *quanta* cor
+> existe são dois parâmetros independentes. As três correções — reposicionar o grupo (regra 14),
+> ganho por canal, topo chato (regras 15/16) — mexeram todas na **distribuição** do matiz e
+> **nenhuma** na amplitude. Por isso cada uma mediu como progresso real e nenhuma mudou a
+> impressão. Quando um defeito sobrevive a três correções que se provaram corretas na medição,
+> o parâmetro errado está sendo ajustado, não o valor.
+
+**Correção: um knob só, ortogonal a tudo que já foi medido.**
+
+```glsl
+float cmin = min(hair.r, min(hair.g, hair.b));
+hair = mix(float3(cmin), hair, 0.40);
+```
+
+Mistura em direção ao **menor canal**, não ao cinza nem à média. No núcleo os três canais são
+iguais, então `cmin` é igual a eles e isto é **exatamente um no-op**: brilho de pico, largura do
+núcleo, extensão da faixa e a leitura da borda inferior ficam todos intactos — é isso que torna
+seguro girar este número sem remedir o resto. Só onde um canal já caiu é que `cmin` se afasta dele,
+e aí o excesso é o que é escalado. Misturar para a média **clarearia** os flancos em vez de
+amortecê-los; misturar para o cinza escureceria o núcleo junto.
+
+`0.40` reduz o croma dos flancos a 40%: o `B−R` de +39 medido em `x=1360` cai para ≈+16.
+
+**Não verificado no aparelho.** Java compila, 215 testes, 0 falhas.
+
+Próxima medição — a mesma coluna, e agora em PNG:
+
+```bash
+adb exec-out screencap -p > shot.png
+python tools/glass_profile.py shot.png --column 1350 --from 2798 --to 2828 --step 1
+```
+
+Critério: núcleo continua com G−R entre −2 e +6 (já passa, não pode regredir) **e** o flanco mais
+saturado cai de `B−G +20` / `G−R +31` para algo abaixo de ±12.
 
 ## Riscos e armadilhas
 

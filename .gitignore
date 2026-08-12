@@ -51,3 +51,5 @@ app/src/main/java/com/waenhancer/utils/WppTabChecker.java
 demo/
 /Screenshot (*.jpg
 /Screenshot (*.png
+screenshots*
+screenshot*

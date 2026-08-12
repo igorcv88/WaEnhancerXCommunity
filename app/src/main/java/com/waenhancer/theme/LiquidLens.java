@@ -42,7 +42,10 @@ import android.view.View;
  *   <li><b>Dispersion.</b> Red, green and blue are displaced by different amounts, so the
  *       compression band fringes into colour the way a real edge does.</li>
  *   <li><b>Rim.</b> A narrow hairline just inside the outline, sampled once per channel at
- *       slightly different depths so it fringes into colour, and modulated along the perimeter so
+ *       slightly different depths so it fringes into colour — each tap
+ *       flat-topped across at least that separation, so the core of the line stays white and only
+ *       its two flanks carry hue, which is what makes it a fringe rather than a coloured stroke —
+ *       and modulated along the perimeter so
  *       the light arrives in short runs rather than as an even outline. Behind it, one soft band
  *       per side: warm and tight where the surface faces the light, and almost nothing where it
  *       faces away — a downward-facing edge cannot catch a specular run from a light above it,
@@ -94,6 +97,7 @@ public final class LiquidLens {
             + "uniform float uSpec;\n"
             + "uniform float uInnerShadow;\n"
             + "uniform float uHair;\n"
+            + "uniform float uSpread;\n"
             + "uniform float4 uTint;\n"
             + "uniform float uSat;\n"
             + "uniform float uBlur;\n"
@@ -188,7 +192,32 @@ public final class LiquidLens {
             + "    float2 offset = -n * (slope * uRefract * curvature) * (1.0 + activeEdge * 0.18);\n"
             + "    float2 lo = float2(1.0, 1.0);\n"
             + "    float2 hi = uSize - float2(1.0, 1.0);\n"
+            // How far apart the three channels are sampled. This was a straight fraction of the
+            // displacement, and the displacement is large by design — which made this the biggest
+            // uncontrolled term in the pass and, it turns out, the actual source of the coloured
+            // rim that three rounds of hairline work could not shift.
+            //
+            // Measured 2026-08-12, same build, two backdrops: over the bar's uniform dark list the
+            // rim's increment over the body is (47,47,47) — exactly neutral — while over the
+            // conversation wallpaper the button's rim reaches G-R +31. Displacing a flat field
+            // produces nothing, so a term whose output scales with backdrop *structure* is the
+            // only kind that can do that, and this is the only structure-dependent, channel-
+            // selective term there is.
+            //
+            // The magnitude says the same thing. On the button, bevel 25.5px gives refract 15.8px
+            // and so spread = 15.8 * 0.55 = 8.7px; on the bar it is 17px. Red and blue were being
+            // read 17 to 34 pixels apart from each other — different wallpaper entirely — against
+            // the hairline's 1.41px. Green won because it alone comes from sample9's nine-tap
+            // average while red and blue are single sharp taps thrown that far out onto a mostly
+            // dark wallpaper.
+            //
+            // Capped in dp, for the same reason the hairline is: this is a fringe, and a fringe has
+            // to hold a constant apparent width. It stays proportional to the displacement below
+            // the cap, so regra 5 still holds — starve the refraction in a region and the colour
+            // there still goes with it.
             + "    float2 spread = offset * uDispersion * slope;\n"
+            + "    float spreadLen = length(spread);\n"
+            + "    spread = spreadLen > uSpread ? spread * (uSpread / max(spreadLen, 0.0001)) : spread;\n"
             + "    float2 cR = clamp(coord + offset - spread, lo, hi);\n"
             + "    float2 cG = clamp(coord + offset, lo, hi);\n"
             + "    float2 cB = clamp(coord + offset + spread, lo, hi);\n"
@@ -290,25 +319,96 @@ public final class LiquidLens {
             // this is where the colour in the edge actually comes from, and it has to be at least
             // a pixel or two to survive being resolved.
             + "    float sep = hw * 0.90 * uDispersion;\n"
-            // Biased inward by one separation, so the outermost channel peaks at the hairline's
-            // own centre instead of riding the outline. Measured cause of a cyan arc across the
-            // top of every lensed surface — the bar as well as the button, which is what ruled
-            // out surface size as the explanation.
+            // Why this used to draw a coloured line instead of a fringe, and why two rounds of
+            // moving the taps about could not fix it.
             //
-            // The three taps were symmetric about -hw and had equal amplitude, which looked
-            // right and was not: what sits behind them is not symmetric. The inner flank falls on
-            // the lit body of the glass and disappears into the specular; the outer flank spilled
-            // past the outline (its tent reached d = +sep) onto a near-black backdrop, where it
-            // was the only bright thing for pixels around. Same amplitude, one of them exposed.
-            // So the edge fringed cool and never warm, and a fringe with only one hue is a
-            // coloured line rather than dispersion.
+            // The taps were triangles: each channel peaked at a point and fell away linearly on
+            // both sides. Three triangles a distance sep apart means the middle one peaks where
+            // the outer two have already dropped to 1 - sep/hw. At the shipped dispersion that is
+            // 0.505, so the brightest row of the whole hairline is (0.505, 1.0, 0.505) — a
+            // saturated green, and the row a viewer's eye picks out as "the line", since green
+            // alone carries 71% of the luma weight. It is green because green is the middle
+            // channel, and for no other reason: it does not depend on the backdrop, the surface
+            // size or the geometry, which is exactly what the reports said — the same hue on the
+            // bar and on the round button, over completely different content.
             //
-            // Separation between channels is untouched — that is what carries the colour at all,
-            // and below about a pixel antialiasing averages it back to white.
+            // That also explains the two failed rounds. Before the group was biased inward, blue's
+            // triangle spilled past the outline onto near-black backdrop and its exposure beat the
+            // shape, so the line read cyan; biasing it inward removed the spill and left the
+            // shape's own maximum showing, so the line turned green. And a flat per-channel gain
+            // could never have touched it: at that same row red and blue are equal by
+            // construction, so there is no per-channel deficit there for a gain to correct.
+            //
+            // A real edge does not fringe this way because a real edge is not a spike. Disperse a
+            // band of white wider than the wavelength shift and you get a white core with a warm
+            // flank on one side and a cool flank on the other. So give each tap a flat top at
+            // least as wide as the separation: over the core all three channels are saturated
+            // together and the line is white, and colour survives only on the two flanks, where
+            // one channel has rolled off and another has not.
+            //
+            // The first attempt at this sized the flat top as max(hw * 0.5, sep) and shipped. It
+            // measured as almost no change, and the arithmetic says why: the white core is only as
+            // wide as the flat top *exceeds* the separation, and hw * 0.5 = 1.425px against a
+            // sep of 1.411px is an all-white core 0.028px wide. A core narrower than a pixel is
+            // not a core, so green went on winning the middle. The device confirmed the shape was
+            // doing something — along the brightest rim, B-G swept +13 -> +1 -> -5 from the outer
+            // flank through the centre to the inner one, which is dispersion behaving correctly —
+            // while G-R never crossed zero, which is that missing core.
+            //
+            // So the core is now a width in its own right, and everything else is derived from it
+            // rather than from hw. The tap reaches sep (to place the neighbouring channel) plus
+            // core (the achromatic centre) plus ramp (the roll-off that gives the flanks their
+            // colour), and the three of them cannot silently collapse into each other the way a
+            // single max() let them. Simulated at the device's own numbers: a 1.85px white core at
+            // 0.67-0.83 amplitude, against flanks that peak at 0.50 — so the brightest part of the
+            // line is white and the hue is confined to its edges, which is the whole difference
+            // between a fringe and a coloured stroke.
+            //
+            // "reach" rather than "half": half is a type in SkSL, and this shader cannot be
+            // compiled anywhere but on a device, so a name that might be reserved is a whole
+            // install cycle to find out about.
+            + "    float core = max(0.9, hw * 0.32);\n"
+            + "    float ramp = max(hw * 0.5, 1.0);\n"
+            + "    float reach = sep + core + ramp;\n"
             + "    float3 hair = float3(\n"
-            + "        clamp(1.0 - abs(d + hw + 2.0 * sep) / hw, 0.0, 1.0),\n"
-            + "        clamp(1.0 - abs(d + hw + sep) / hw, 0.0, 1.0),\n"
-            + "        clamp(1.0 - abs(d + hw) / hw, 0.0, 1.0));\n"
+            + "        clamp((reach - abs(d + reach + 2.0 * sep)) / ramp, 0.0, 1.0),\n"
+            + "        clamp((reach - abs(d + reach + sep)) / ramp, 0.0, 1.0),\n"
+            + "        clamp((reach - abs(d + reach)) / ramp, 0.0, 1.0));\n"
+            // One achromatic envelope over the whole group, so the hairline still tapers to
+            // nothing at both ends. Without it the flanks would hold a single channel at full
+            // amplitude for a pixel and a half either side — a saturated red edge and a saturated
+            // blue one, which trades one coloured line for two.
+            //
+            // Its reach is (reach + sep) rather than reach alone, and that is the cheaper of two
+            // measured trade-offs: the tighter envelope leaves the visible band ending 2.1px short
+            // of the outline, which is a dark ring between the shape's edge and its own highlight,
+            // and a dark ring reads as a drawn stroke. This one closes that to 1.15px for 8.0px of
+            // visible band against the previous shape's 7.3px.
+            + "    hair *= clamp(1.0 - abs(d + reach + sep) / (reach + sep), 0.0, 1.0);\n"
+            // How saturated the two flanks are allowed to get, which is a different question from
+            // where they sit — and the one three rounds of this bug never asked.
+            //
+            // Measured on the device once the white core finally existed: the profile through the
+            // top arc runs blue -> cyan -> white -> yellow exactly as designed, but the flanks
+            // reach luma 53 against a core of 78. A fringe at 68% of the core's brightness is not
+            // a fringe, it is a rainbow with a thin white line through it, and it reads as a
+            // coloured rim however correct the hue sequence is. Worse, where the arc is dimmer the
+            // core never resolves to white at all and the flank hue wins outright.
+            //
+            // mix toward the smallest channel rather than toward grey or toward the mean. Over the
+            // core all three channels are equal, so cmin equals them and this is exactly a no-op —
+            // the peak brightness, the core width and the bottom-rim reading are all untouched,
+            // which is what makes this safe to turn without re-measuring everything else. Only
+            // where a channel has rolled off does cmin fall away from it, and there the excess is
+            // what gets scaled. Mixing toward the mean would have brightened the flanks instead of
+            // damping them; mixing toward grey would have dimmed the core along with them.
+            + "    float cmin = min(hair.r, min(hair.g, hair.b));\n"
+            + "    hair = mix(float3(cmin), hair, 0.40);\n"
+            // Holds the peak at the brightness the device was last measured at, so the shape change
+            // is not also a brightness change. The bottom rim is the criterion with the least
+            // headroom in this pass — already reading above the 5-luma ceiling on the button — and
+            // paying for two things at once is how the last two rounds became unreadable.
+            + "    hair *= 0.86;\n"
             + "    float2 bgCoord = clamp(coord - n * hw * 2.0, lo, hi);\n"
             + "    float4 bgSample = float4(content.eval(bgCoord));\n"
             + "    float3 bgRgb = bgSample.rgb / max(bgSample.a, 0.001);\n"
@@ -458,6 +558,29 @@ public final class LiquidLens {
     private static final float MAX_HAIRLINE_PX = 5f;
 
     /**
+     * Ceiling on the per-channel sampling offset in the refraction, in dp.
+     *
+     * <p>In dp for the same reason {@link #HAIRLINE_DP} is: this produces a fringe, and a fringe
+     * has to hold a constant apparent width rather than growing with the surface.</p>
+     *
+     * <p>Uncapped it was a flat fraction of the displacement, which put it at 8.7px on a
+     * phone-sized round button and 17px on the bar — so red and blue were read from up to 34px
+     * apart, which over a patterned wallpaper is not the same picture twice. That is not chromatic
+     * aberration, it is three different images composited one per channel, and it was measured as
+     * the source of the coloured rim: neutral to within a unit over a uniform backdrop, G-R +31
+     * over a patterned one, from the same build.</p>
+     *
+     * <p>Sized to sit alongside the hairline's own channel separation (about 1.4px at 3.5x) so the
+     * two dispersion mechanisms in this pass finally work at the same scale instead of one being
+     * an order of magnitude louder than the other.</p>
+     */
+    private static final float SPREAD_DP = 0.55f;
+
+    /** Bounds on that cap in px, so it neither vanishes nor becomes a smear. */
+    private static final float MIN_SPREAD_PX = 1f;
+    private static final float MAX_SPREAD_PX = 3f;
+
+    /**
      * What each view's current effect was built from.
      *
      * <p>The shader bakes in the view's size and radius, so it has to be rebuilt when those
@@ -567,6 +690,8 @@ public final class LiquidLens {
         float saturation = 1f + (MAX_SATURATION - 1f) * spec.lensStrength;
         float hairline = Math.max(MIN_HAIRLINE_PX,
                 Math.min(HAIRLINE_DP * density, MAX_HAIRLINE_PX));
+        float spread = Math.max(MIN_SPREAD_PX,
+                Math.min(SPREAD_DP * density, MAX_SPREAD_PX));
         // The softness the surface needs is this pass's job now, not the blur library's. A spec
         // that asked for no blur at all still gets none, and the lens degrades to a sharp
         // backdrop rather than inventing one.
@@ -575,7 +700,8 @@ public final class LiquidLens {
 
         String key = width + "x" + height + ":" + cornerRadiusPx + ":" + bevel + ":" + refract
                 + ":" + spec.dispersion + ":" + spec.specular + ":" + spec.innerShadow
-                + ":" + spec.fillColor + ":" + saturation + ":" + hairline + ":" + blur;
+                + ":" + spec.fillColor + ":" + saturation + ":" + hairline + ":" + blur
+                + ":" + spread;
         ShaderState current = installed.get(view);
         if (current != null && key.equals(current.key)) {
             status = "active (unchanged)";
@@ -593,6 +719,7 @@ public final class LiquidLens {
             shader.setFloatUniform("uSpec", spec.specular);
             shader.setFloatUniform("uInnerShadow", spec.innerShadow);
             shader.setFloatUniform("uHair", hairline);
+            shader.setFloatUniform("uSpread", spread);
             shader.setFloatUniform("uTint",
                     Color.red(spec.fillColor) / 255f,
                     Color.green(spec.fillColor) / 255f,
@@ -611,7 +738,7 @@ public final class LiquidLens {
             installed.put(view, new ShaderState(key, shader));
             status = "active: " + width + "x" + height + " bevel=" + bevel + "px refract="
                     + refract + "px dispersion=" + spec.dispersion + " hair=" + hairline
-                    + "px blur=" + blur + "px";
+                    + "px blur=" + blur + "px spread=" + spread + "px";
             return true;
         } catch (Throwable t) {
             // A device that refuses the shader keeps the layered rim rather than losing the bar,
