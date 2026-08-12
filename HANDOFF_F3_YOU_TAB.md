@@ -113,8 +113,25 @@ para longe das posições escondidas.
 Com uma aba inserida, `originalTabs` passa a conter o ID novo, e a ordem entre os dois hooks
 deixa de ser indiferente.
 
-**Ordem obrigatória: `YouTab` antes de `HideTabs`.** Isso vira ordem explícita no
-`FeatureRegistry`, **com um comentário dizendo o motivo** — não sorte de ordem de registro.
+**A ordem não pode ser buscada na ordem de registro das features.** `FeatureLoader.plugins()`
+dispara cada feature com `CompletableFuture.runAsync` num work-stealing pool — a posição no array
+`classes` **não** determina a ordem de execução. Qualquer plano que dependa dela é sorte
+disfarçada de projeto.
+
+**O mecanismo determinístico é a prioridade de hook do Xposed.** Os dois hooks em
+`loadTabListMethod` recebem prioridade explícita via `XC_MethodHook(priority)`, que ordena hooks
+no mesmo método independentemente de quem foi instalado primeiro:
+
+- `YouTab` insere `700` com prioridade **alta**;
+- `HideTabs` remove os escondidos com prioridade **normal** (a que já tem).
+
+Assim `HideTabs` sempre vê a lista já com a aba `You` e sincroniza `originalTabs`/`activeTabs`
+com ela. A mudança em `HideTabs` é uma constante de prioridade, nada mais — **com um comentário
+dizendo o motivo**, para que ninguém a remova por parecer supérflua.
+
+Nota: `originalTabs` também é alimentado por `loadOnTabItemAddMethod`, que dispara por aba
+adicionada ao menu e portanto veria o `700` de qualquer forma. A prioridade existe para o caminho
+do `loadTabListMethod`, onde as duas features escrevem na mesma `ArrayList`.
 
 Nota: esconder a aba `You` é *desligar a feature*, não incluí-la em `hidetabs`. O ID `700` nunca
 deve aparecer na lista de abas escondidas; se aparecer, é bug.
