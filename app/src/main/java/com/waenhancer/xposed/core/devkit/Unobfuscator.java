@@ -3469,6 +3469,22 @@ public class Unobfuscator {
         });
     }
 
+    public synchronized static Field loadGetCurrentPageInHomeField(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getField(classLoader, () -> {
+            var method = loadAddOptionSearchBarMethod(classLoader);
+            var methodData = dexkit.getMethodData(method);
+            if (methodData != null) {
+                for (var uField : methodData.getUsingFields()) {
+                    if (uField.getField().getDeclaredClassName().equals(methodData.getDeclaredClassName())
+                            && "int".equals(uField.getField().getTypeName())) {
+                        return uField.getField().getFieldInstance(classLoader);
+                    }
+                }
+            }
+            throw new NoSuchFieldException("CurrentPageInHome field not found");
+        });
+    }
+
     public static Method loadAddMenuAndroidX(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> findFirstMethodUsingStrings(classLoader,
                 StringMatchType.Contains, "Maximum number of items supported by"));

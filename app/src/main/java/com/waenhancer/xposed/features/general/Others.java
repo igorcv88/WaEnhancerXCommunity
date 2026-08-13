@@ -1606,7 +1606,7 @@ public class Others extends Feature {
                     }
                 }
 
-                if ((view.getId() == searchBarID || view.findViewById(searchBarID) != null) && !Objects.equals(filterChats, "2")) {
+                if (view != null && (view.getId() == searchBarID || view.findViewById(searchBarID) != null) && !Objects.equals(filterChats, "2")) {
                     param.setResult(null);
                 }
             }
@@ -1622,9 +1622,9 @@ public class Others extends Feature {
 
         try {
             Method addSeachBar = Unobfuscator.loadAddOptionSearchBarMethod(classLoader);
+            Field curPageField = Unobfuscator.loadGetCurrentPageInHomeField(classLoader);
             XposedBridge.hookMethod(addSeachBar, new XC_MethodHook() {
                 private Object homeActivity;
-                private Field pageIdField;
                 private int originPageId;
 
                 @Override
@@ -1636,25 +1636,24 @@ public class Others extends Feature {
                     if (Modifier.isStatic(param.method.getModifiers())) {
                         homeActivity = param.args[0];
                     }
-                    pageIdField = XposedHelpers.findField(homeActivity.getClass(), "A01");
                     originPageId = 0;
-                    if (pageIdField.getType() == int.class) {
-                        originPageId = pageIdField.getInt(homeActivity);
-                        pageIdField.setInt(homeActivity, 1);
+                    if (curPageField.getType() == int.class) {
+                        originPageId = curPageField.getInt(homeActivity);
+                        curPageField.setInt(homeActivity, 1);
                     }
                 }
 
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     if (originPageId != 0) {
-                        pageIdField.setInt(homeActivity, originPageId);
+                        curPageField.setInt(homeActivity, originPageId);
                     }
                 }
             });
         } catch (Throwable ignored) {
         }
 
-        XposedHelpers.findAndHookMethod(WppCore.getHomeActivityClass(classLoader), "onCreateOptionsMenu", Menu.class, new XC_MethodHook() {
+        XposedHelpers.findAndHookMethod(WppCore.getHomeActivityClass(classLoader), "onPrepareOptionsMenu", Menu.class, new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 var menu = (Menu) param.args[0];
