@@ -4084,6 +4084,14 @@ public class Unobfuscator {
         });
     }
 
+    public static @androidx.annotation.NonNull Class<?> loadBottomBarConfigClass(@androidx.annotation.NonNull ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getClass(classLoader, () -> {
+            Class<?> clazz = findFirstClassUsingStrings(classLoader, StringMatchType.Contains, "BottomBarConfig(");
+            if (clazz != null) return clazz;
+            throw new ClassNotFoundException("BottomBarConfig class not found");
+        });
+    }
+
     public static Method loadAntiRevokeFStatusMethod(@androidx.annotation.NonNull ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
             var fStatusKeyClass = loadFStatusKeyClass(classLoader);

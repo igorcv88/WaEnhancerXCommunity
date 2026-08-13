@@ -53,9 +53,8 @@ public class MediaQuality extends Feature {
         // Disable manual calculation ProcessMediaQuality
         Others.propsBoolean.put(14447, false);
 
-        // Enable Media Quality selection for Stories
-        var hookMediaQualitySelection = Unobfuscator.loadMediaQualitySelectionMethod(classLoader);
-        XposedBridge.hookMethod(hookMediaQualitySelection, XC_MethodReplacement.returnConstant(true));
+        // Enable Media Quality selection for Stories with dual fallback
+        enableMediaQualityForStories();
 
         if (videoQuality) {
             Others.propsBoolean.put(5549, true);
@@ -97,9 +96,15 @@ public class MediaQuality extends Feature {
                         field.setBoolean(videoProcessor, false);
                     }
                     var fieldMediaDataVideoConfiguration = ReflectionUtils.getFieldByType(videoProcessor.getClass(), MediaDataVideoConfiguration);
-                    var mediaDataVideoConfiguration = fieldMediaDataVideoConfiguration.get(videoProcessor);
-                    var fieldforceSingleTranscoding = fieldsMediaDataVideoConfiguration.get("forceSingleTranscoding");
-                    fieldforceSingleTranscoding.setBoolean(mediaDataVideoConfiguration, true);
+                    if (fieldMediaDataVideoConfiguration != null) {
+                        var mediaDataVideoConfiguration = fieldMediaDataVideoConfiguration.get(videoProcessor);
+                        if (mediaDataVideoConfiguration != null) {
+                            var fieldforceSingleTranscoding = fieldsMediaDataVideoConfiguration.get("forceSingleTranscoding");
+                            if (fieldforceSingleTranscoding != null) {
+                                fieldforceSingleTranscoding.setBoolean(mediaDataVideoConfiguration, true);
+                            }
+                        }
+                    }
                 }
             });
 
@@ -468,6 +473,35 @@ public class MediaQuality extends Feature {
         return new Pair<>(scaledWidth, scaledHeight);
     }
 
+
+    private void enableMediaQualityForStories() {
+        boolean legacyHooked = false;
+        try {
+            Method hookMediaQualitySelection = Unobfuscator.loadMediaQualitySelectionMethod(classLoader);
+            XposedBridge.hookMethod(hookMediaQualitySelection, XC_MethodReplacement.returnConstant(true));
+            legacyHooked = true;
+        } catch (Throwable t) {
+            XposedBridge.log("[WAEX] loadMediaQualitySelectionMethod failed, trying BottomBarConfig: " + t.getMessage());
+        }
+
+        if (!legacyHooked) {
+            try {
+                Class<?> bottomBarConfigClass = Unobfuscator.loadBottomBarConfigClass(classLoader);
+                var fieldsBottomBarConfig = Unobfuscator.getAllMapFields(bottomBarConfigClass);
+                XposedBridge.hookAllConstructors(bottomBarConfigClass, new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        Field supportsHdQuality = fieldsBottomBarConfig.get("supportsHdQuality");
+                        if (supportsHdQuality != null) {
+                            supportsHdQuality.set(param.thisObject, true);
+                        }
+                    }
+                });
+            } catch (Throwable t) {
+                XposedBridge.log("[WAEX] loadBottomBarConfigClass failed: " + t.getMessage());
+            }
+        }
+    }
 
     @NonNull
     @Override
