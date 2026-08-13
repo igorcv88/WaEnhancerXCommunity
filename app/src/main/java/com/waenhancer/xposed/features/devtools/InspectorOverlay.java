@@ -201,6 +201,11 @@ public class InspectorOverlay {
         this.session = session;
     }
 
+    /** Lets the owner (Task B3) read the current session state (for expiry checks). */
+    public InspectorSession getSession() {
+        return session;
+    }
+
     public void detach() {
         if (contentRoot != null) {
             try {
