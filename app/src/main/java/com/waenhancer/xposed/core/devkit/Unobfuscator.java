@@ -2689,15 +2689,23 @@ public class Unobfuscator {
 
     public synchronized static Method loadOnInsertReceipt(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
-            var method = dexkit
-                    .findMethod(FindMethod.create()
-                            .matcher(MethodMatcher.create().addUsingString("INSERT_RECEIPT_USER").paramCount(1)))
-                    .singleOrNull();
-            if (method == null)
+            var methods = dexkit.findMethod(FindMethod.create()
+                    .matcher(MethodMatcher.create().addUsingString("INSERT_RECEIPT_USER").paramCount(1)));
+            if (methods == null || methods.size() != 1) {
                 throw new RuntimeException("OnInsertReceipt method not found");
-            return method.getMethodInstance(classLoader);
+            }
+            return methods.get(0).getMethodInstance(classLoader);
         });
+    }
 
+    public synchronized static Method loadSeenReceiptForStatus(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            var method = findFirstMethodUsingStrings(classLoader, StringMatchType.Contains,
+                    "StatusReceiptStore/insertOrUpdateSeenReceiptForStatus");
+            if (method == null)
+                throw new NoSuchMethodException("SeenReceiptForStatus method not found");
+            return method;
+        });
     }
 
     public synchronized static Method loadSendAudioTypeMethod(ClassLoader classLoader) throws Exception {
@@ -3294,6 +3302,11 @@ public class Unobfuscator {
                 if (!methodList.isEmpty())
                     return methodList.get(0).getClassInstance(classLoader);
             }
+
+            try {
+                return classLoader.loadClass("com.whatsapp.ui.coreui.ConversationsFilterTextView");
+            } catch (ClassNotFoundException ignored) {}
+
             throw new RuntimeException("FilterItemClass Not Found");
         });
     }
@@ -3461,6 +3474,22 @@ public class Unobfuscator {
                 throw new NoSuchMethodError("MenuSearch not found in HomeActivity");
 
             return methodData.get(0).getMethodInstance(classLoader);
+        });
+    }
+
+    public synchronized static Field loadGetCurrentPageInHomeField(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getField(classLoader, () -> {
+            var method = loadAddOptionSearchBarMethod(classLoader);
+            var methodData = dexkit.getMethodData(method);
+            if (methodData != null) {
+                for (var uField : methodData.getUsingFields()) {
+                    if (uField.getField().getDeclaredClassName().equals(methodData.getDeclaredClassName())
+                            && "int".equals(uField.getField().getTypeName())) {
+                        return uField.getField().getFieldInstance(classLoader);
+                    }
+                }
+            }
+            throw new NoSuchFieldException("CurrentPageInHome field not found");
         });
     }
 
@@ -4063,6 +4092,22 @@ public class Unobfuscator {
         });
     }
 
+    public static @androidx.annotation.NonNull Class<?> loadBottomBarConfigClass(@androidx.annotation.NonNull ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getClass(classLoader, () -> {
+            Class<?> clazz = findFirstClassUsingStrings(classLoader, StringMatchType.Contains, "BottomBarConfig(");
+            if (clazz != null) return clazz;
+            throw new ClassNotFoundException("BottomBarConfig class not found");
+        });
+    }
+
+    public static @androidx.annotation.NonNull Class<?> loadFMediaStatusClass(@androidx.annotation.NonNull ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getClass(classLoader, () -> {
+            Class<?> clazz = findFirstClassUsingStrings(classLoader, StringMatchType.Contains, "FStatusMedia/mediaDataV2");
+            if (clazz != null) return clazz;
+            throw new ClassNotFoundException("FMediaStatus class not found");
+        });
+    }
+
     public static Method loadAntiRevokeFStatusMethod(@androidx.annotation.NonNull ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
             var fStatusKeyClass = loadFStatusKeyClass(classLoader);
@@ -4212,6 +4257,16 @@ public class Unobfuscator {
                                     .usingStrings(Collections.singletonList("class"), StringMatchType.Contains, false)
                     )
             );
+            if (methods.isEmpty()) {
+                methods = classData.findMethod(
+                        FindMethod.create().matcher(
+                                MethodMatcher.create()
+                                        .addInvoke(methodReceiptData.getDescriptor())
+                                        .paramCount(1)
+                                        .paramTypes(messageInfoClass.getName())
+                        )
+                );
+            }
             if (methods.isEmpty()) return null;
             return methods.get(0).getMethodInstance(classLoader);
         });
@@ -4220,12 +4275,19 @@ public class Unobfuscator {
     public synchronized static Method[] loadReceiptCallersMethod(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethods(classLoader, () -> {
             var methodReceiptMainCaller = loadReceiptMainCallerMethod(classLoader);
+            if (methodReceiptMainCaller == null) return null;
             var methodData = dexkit.getMethodData(methodReceiptMainCaller);
             if (methodData == null) return null;
             var methods = new ArrayList<Method>();
             for (var methodCaller : methodData.getCallers()) {
-                if (methodCaller.getParamCount() > 1 && methodCaller.getParamTypes().get(0).getSimpleName().equals("Message")) {
-                    methods.add(methodCaller.getMethodInstance(classLoader));
+                if (methodCaller.getParamCount() > 0) {
+                    var paramTypes = methodCaller.getParamTypes();
+                    for (var pt : paramTypes) {
+                        if ("Message".equals(pt.getSimpleName()) || "android.os.Message".equals(pt.getName())) {
+                            methods.add(methodCaller.getMethodInstance(classLoader));
+                            break;
+                        }
+                    }
                 }
             }
             if (methods.isEmpty()) return null;

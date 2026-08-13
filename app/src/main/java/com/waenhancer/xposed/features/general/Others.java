@@ -1130,6 +1130,8 @@ public class Others extends Feature {
                 }
 
                 XposedHelpers.setAdditionalInstanceField(dateTextView, "wae_device_source_message_id", messageId);
+                // Tag the view for fast identification in the global setText hook
+                dateTextView.setTag(com.waenhancer.R.id.wae_device_source_tag, Boolean.TRUE);
 
                 // Offload database lookup to a background thread
                 CompletableFuture.supplyAsync(() -> {
@@ -1174,6 +1176,7 @@ public class Others extends Feature {
 
         String suffix = getDeviceEmojiSuffix(deviceId);
         XposedHelpers.setAdditionalInstanceField(dateTextView, DEVICE_SOURCE_SUFFIX_FIELD, suffix);
+        dateTextView.setTag(com.waenhancer.R.id.wae_device_source_tag, Boolean.TRUE);
         bindMessageDeviceSourceClick(dateTextView, deviceId);
 
         dateTextView.setText(baseText + suffix);
@@ -1207,6 +1210,7 @@ public class Others extends Feature {
             }
 
             XposedHelpers.setAdditionalInstanceField(textView, DEVICE_SOURCE_SUFFIX_FIELD, suffix);
+            textView.setTag(com.waenhancer.R.id.wae_device_source_tag, Boolean.TRUE);
             bindMessageDeviceSourceClick(textView, deviceId);
             if (!current.equals(base + suffix)) {
                 textView.setText(base + suffix);
@@ -1285,6 +1289,10 @@ public class Others extends Feature {
                 }
 
                 if (!(param.thisObject instanceof TextView textView)) {
+                    return;
+                }
+                // Fast tag check - only tagged views can carry a suffix
+                if (textView.getTag(com.waenhancer.R.id.wae_device_source_tag) == null) {
                     return;
                 }
                 Object suffixObj = XposedHelpers.getAdditionalInstanceField(textView, DEVICE_SOURCE_SUFFIX_FIELD);
@@ -1553,12 +1561,22 @@ public class Others extends Feature {
     private void hookProps() throws Exception {
         var methodPropsBoolean = Unobfuscator.loadPropsBooleanMethod(classLoader);
         var dataUsageActivityClass = WppCore.getDataUsageActivityClass(classLoader);
+
+        // Pre-compute the argument index for the Integer prop key once, instead of
+        // reflectively scanning param.args on every call (called hundreds of times/sec).
+        final int boolArgIdx = findIntArgIndex(((Method) methodPropsBoolean).getParameterTypes());
+
         XposedBridge.hookMethod(methodPropsBoolean, new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                var list = ReflectionUtils.findInstancesOfType(param.args, Integer.class);
-                if (list.isEmpty()) return;
-                int i = (int) list.get(0).second;
+                int i;
+                if (boolArgIdx >= 0) {
+                    i = (int) param.args[boolArgIdx];
+                } else {
+                    var list = ReflectionUtils.findInstancesOfType(param.args, Integer.class);
+                    if (list.isEmpty()) return;
+                    i = (int) list.get(0).second;
+                }
 
                 var propValue = propsBoolean.get(i);
                 if (propValue != null) {
@@ -1572,18 +1590,34 @@ public class Others extends Feature {
         });
 
         var methodPropsInteger = Unobfuscator.loadPropsIntegerMethod(classLoader);
+        final int intArgIdx = findIntArgIndex(((Method) methodPropsInteger).getParameterTypes());
 
         XposedBridge.hookMethod(methodPropsInteger, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                var list = ReflectionUtils.findInstancesOfType(param.args, Integer.class);
-                if (list.isEmpty()) return;
-                int i = (int) list.get(0).second;
+                int i;
+                if (intArgIdx >= 0) {
+                    i = (int) param.args[intArgIdx];
+                } else {
+                    var list = ReflectionUtils.findInstancesOfType(param.args, Integer.class);
+                    if (list.isEmpty()) return;
+                    i = (int) list.get(0).second;
+                }
                 var propValue = propsInteger.get(i);
                 if (propValue == null) return;
                 param.setResult(propValue);
             }
         });
+    }
+
+    /** Finds the first Integer/int parameter index in the method signature. */
+    private static int findIntArgIndex(Class<?>[] paramTypes) {
+        for (int idx = 0; idx < paramTypes.length; idx++) {
+            if (paramTypes[idx] == int.class || paramTypes[idx] == Integer.class) {
+                return idx;
+            }
+        }
+        return -1;
     }
 
     private void hookSearchbar(String filterChats) throws Exception {
@@ -1606,7 +1640,7 @@ public class Others extends Feature {
                     }
                 }
 
-                if ((view.getId() == searchBarID || view.findViewById(searchBarID) != null) && !Objects.equals(filterChats, "2")) {
+                if (view != null && (view.getId() == searchBarID || view.findViewById(searchBarID) != null) && !Objects.equals(filterChats, "2")) {
                     param.setResult(null);
                 }
             }
@@ -1622,9 +1656,9 @@ public class Others extends Feature {
 
         try {
             Method addSeachBar = Unobfuscator.loadAddOptionSearchBarMethod(classLoader);
+            Field curPageField = Unobfuscator.loadGetCurrentPageInHomeField(classLoader);
             XposedBridge.hookMethod(addSeachBar, new XC_MethodHook() {
                 private Object homeActivity;
-                private Field pageIdField;
                 private int originPageId;
 
                 @Override
@@ -1636,25 +1670,24 @@ public class Others extends Feature {
                     if (Modifier.isStatic(param.method.getModifiers())) {
                         homeActivity = param.args[0];
                     }
-                    pageIdField = XposedHelpers.findField(homeActivity.getClass(), "A01");
                     originPageId = 0;
-                    if (pageIdField.getType() == int.class) {
-                        originPageId = pageIdField.getInt(homeActivity);
-                        pageIdField.setInt(homeActivity, 1);
+                    if (curPageField.getType() == int.class) {
+                        originPageId = curPageField.getInt(homeActivity);
+                        curPageField.setInt(homeActivity, 1);
                     }
                 }
 
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     if (originPageId != 0) {
-                        pageIdField.setInt(homeActivity, originPageId);
+                        curPageField.setInt(homeActivity, originPageId);
                     }
                 }
             });
         } catch (Throwable ignored) {
         }
 
-        XposedHelpers.findAndHookMethod(WppCore.getHomeActivityClass(classLoader), "onCreateOptionsMenu", Menu.class, new XC_MethodHook() {
+        XposedHelpers.findAndHookMethod(WppCore.getHomeActivityClass(classLoader), "onPrepareOptionsMenu", Menu.class, new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 var menu = (Menu) param.args[0];
