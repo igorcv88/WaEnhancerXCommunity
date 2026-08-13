@@ -209,6 +209,7 @@ public final class PreferenceSchema {
         add(entries, "igstatus", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "imagequality", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "init_prefs_creation", Type.BOOLEAN, Sensitivity.RUNTIME, Store.PRIVATE);
+        add(entries, "inspector_session", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "keybox_verify_status", Type.STRING, Sensitivity.RUNTIME, Store.PRIVATE);
         add(entries, "keybox_verify_time", Type.LONG, Sensitivity.RUNTIME, Store.PRIVATE);
         add(entries, "last_fetch", Type.LONG, Sensitivity.CACHE, Store.PRIVATE);

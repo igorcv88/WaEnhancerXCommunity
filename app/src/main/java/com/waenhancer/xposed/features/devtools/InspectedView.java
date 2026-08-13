@@ -7,8 +7,11 @@ import java.util.List;
 /**
  * Uma view capturada, já reduzida ao que pode ser mostrado.
  *
- * <p>Note o que não está aqui: texto. O ProbeNode nem sequer expõe getText(), e esta classe não
- * tem campo para ele. A ausência é a garantia.</p>
+ * <p>Note o que não está aqui: texto. O ProbeNode nem sequer expõe um acessor de texto, e esta
+ * classe não tem campo para ele. A ausência é a garantia.</p>
+ *
+ * <p>A frase acima evita escrever o nome do acessor proibido de propósito: o Gate da F2 é um
+ * grep literal, e um comentário que o dispara torna o gate inútil.</p>
  */
 public final class InspectedView {
 
