@@ -3294,6 +3294,11 @@ public class Unobfuscator {
                 if (!methodList.isEmpty())
                     return methodList.get(0).getClassInstance(classLoader);
             }
+
+            try {
+                return classLoader.loadClass("com.whatsapp.ui.coreui.ConversationsFilterTextView");
+            } catch (ClassNotFoundException ignored) {}
+
             throw new RuntimeException("FilterItemClass Not Found");
         });
     }
