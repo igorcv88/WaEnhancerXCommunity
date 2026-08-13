@@ -172,6 +172,9 @@ public class InspectorOverlay {
      */
     private boolean onContentTouch(View v, MotionEvent event) {
         if (mode != Mode.PICK) return false;
+        // Deviation from the brief's snippet, deliberate: every event type is still consumed
+        // (returns true below regardless), but only ACTION_DOWN triggers a new hit-test, so a
+        // single drag/tap gesture doesn't re-select on MOVE/UP.
         if (event.getActionMasked() != MotionEvent.ACTION_DOWN) return true;
 
         ProbeNode root = ViewNode.of(activity.getWindow().getDecorView());
@@ -278,10 +281,10 @@ public class InspectorOverlay {
 
         // Copy actions are inlined here for B2's own mechanics; Task B4's InspectorClipboard is
         // free to replace this with a shared helper without touching the window/mode code above.
-        copyId.setOnClickListener(v -> copy("id", currentView().entryName()));
-        copyClass.setOnClickListener(v -> copy("class", currentView().className()));
-        copySelector.setOnClickListener(v -> copy("selector", SelectorBuilder.build(currentView())));
-        addCss.setOnClickListener(v -> copy("CSS rule", SelectorBuilder.ruleBlock(currentView())));
+        copyId.setOnClickListener(v -> copyFromCurrent("id", InspectedView::entryName));
+        copyClass.setOnClickListener(v -> copyFromCurrent("class", InspectedView::className));
+        copySelector.setOnClickListener(v -> copyFromCurrent("selector", SelectorBuilder::build));
+        addCss.setOnClickListener(v -> copyFromCurrent("CSS rule", SelectorBuilder::ruleBlock));
 
         parent.setOnClickListener(v -> {
             if (currentNode == null) return;
@@ -317,8 +320,20 @@ public class InspectorOverlay {
                 .show();
     }
 
+    /** Null when nothing has been picked yet — same guard style as the parent/child actions. */
     private InspectedView currentView() {
+        if (currentNode == null) return null;
         return InspectedView.of(currentNode, activity.getClass().getName());
+    }
+
+    /** Same "no selection yet" guard as the parent/child actions, applied to the four copy actions. */
+    private void copyFromCurrent(String what, java.util.function.Function<InspectedView, String> extractor) {
+        InspectedView view = currentView();
+        if (view == null) {
+            Toast.makeText(activity, "Nothing selected", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        copy(what, extractor.apply(view));
     }
 
     private void copy(String what, String value) {
