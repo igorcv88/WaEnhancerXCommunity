@@ -43,7 +43,7 @@
 
 A classe é **imutável**: `touched()` devolve uma instância nova. É o padrão de imutabilidade das regras do projeto e evita que o overlay e o hook compartilhem estado mutável entre threads.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```java
 package com.waenhancer.xposed.features.devtools;
@@ -117,12 +117,12 @@ public class InspectorSessionTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./gradlew :app:testWhatsappDebugUnitTest --tests "*InspectorSessionTest"`
 Expected: FAIL — compilação falha, `InspectorSession` não existe.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```java
 package com.waenhancer.xposed.features.devtools;
@@ -185,12 +185,12 @@ public final class InspectorSession {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./gradlew :app:testWhatsappDebugUnitTest --tests "*InspectorSessionTest"`
 Expected: PASS, 8 testes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/src/main/java/com/waenhancer/xposed/features/devtools/InspectorSession.java app/src/test/java/com/waenhancer/xposed/features/devtools/InspectorSessionTest.java
@@ -213,7 +213,7 @@ revive it, so a late touch cannot reopen inspection without a new arm."
 - Consumes: nada.
 - Produces: `Redactor.redact(String raw)` → `String`; `Redactor.REDACTED` (`"‹redigido›"`); `Redactor.MAX_PLAIN_LENGTH` (`40`).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```java
 package com.waenhancer.xposed.features.devtools;
@@ -281,12 +281,12 @@ public class RedactorTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./gradlew :app:testWhatsappDebugUnitTest --tests "*RedactorTest"`
 Expected: FAIL — `Redactor` não existe.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```java
 package com.waenhancer.xposed.features.devtools;
@@ -325,12 +325,12 @@ public final class Redactor {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./gradlew :app:testWhatsappDebugUnitTest --tests "*RedactorTest"`
 Expected: PASS, 9 testes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/src/main/java/com/waenhancer/xposed/features/devtools/Redactor.java app/src/test/java/com/waenhancer/xposed/features/devtools/RedactorTest.java
@@ -358,7 +358,7 @@ forbids."
   - `ViewProbe.hit(ProbeNode root, int x, int y)` → `ProbeNode` ou `null`.
 - Nota para a Parte B: `left/top/right/bottom` são as bounds **já recortadas** (o resultado de `getGlobalVisibleRect`), não as bounds nominais. O adaptador é responsável por isso.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```java
 package com.waenhancer.xposed.features.devtools;
@@ -502,12 +502,12 @@ public class ViewProbeTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./gradlew :app:testWhatsappDebugUnitTest --tests "*ViewProbeTest"`
 Expected: FAIL — `ProbeNode` e `ViewProbe` não existem.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `ProbeNode.java`:
 
@@ -601,12 +601,12 @@ public final class ViewProbe {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./gradlew :app:testWhatsappDebugUnitTest --tests "*ViewProbeTest"`
 Expected: PASS, 10 testes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/src/main/java/com/waenhancer/xposed/features/devtools/ProbeNode.java app/src/main/java/com/waenhancer/xposed/features/devtools/ViewProbe.java app/src/test/java/com/waenhancer/xposed/features/devtools/ViewProbeTest.java
@@ -637,7 +637,7 @@ makes a row scrolled out of a list miss the point."
 
 **Referência obrigatória:** o dialeto vem de `CustomView.buildRuleMaps()` (`app/src/main/java/com/waenhancer/xposed/features/customization/CustomView.java`, linhas ~240-330). Reler antes de implementar.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```java
 package com.waenhancer.xposed.features.devtools;
@@ -778,12 +778,12 @@ public class SelectorBuilderTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./gradlew :app:testWhatsappDebugUnitTest --tests "*SelectorBuilderTest"`
 Expected: FAIL — `InspectedView` e `SelectorBuilder` não existem.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `InspectedView.java`:
 
@@ -927,12 +927,12 @@ public final class SelectorBuilder {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `./gradlew :app:testWhatsappDebugUnitTest --tests "*SelectorBuilderTest"`
 Expected: PASS, 11 testes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/src/main/java/com/waenhancer/xposed/features/devtools/InspectedView.java app/src/main/java/com/waenhancer/xposed/features/devtools/SelectorBuilder.java app/src/test/java/com/waenhancer/xposed/features/devtools/SelectorBuilderTest.java
@@ -958,7 +958,7 @@ worse than no selector."
 - Consumes: nada.
 - Produces: a chave `inspector_session` registrada no schema, consumida pela Parte B.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```java
 package com.waenhancer.xposed.features.devtools;
@@ -994,12 +994,12 @@ public class InspectorPrefContractTest {
 > classe expuser um acessor diferente (por exemplo `getEntry` ou campos públicos), adapte o teste
 > — não adapte a classe.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `./gradlew :app:testWhatsappDebugUnitTest --tests "*InspectorPrefContractTest"`
 Expected: FAIL — a chave não está registrada.
 
-- [ ] **Step 3: Register the key**
+- [x] **Step 3: Register the key**
 
 Em `PreferenceSchema.java`, na posição alfabética correta (entre as chaves iniciadas por `i`), na mesma forma das linhas vizinhas:
 
@@ -1007,12 +1007,12 @@ Em `PreferenceSchema.java`, na posição alfabética correta (entre as chaves in
 add(entries, "inspector_session", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
 ```
 
-- [ ] **Step 4: Run the full suite**
+- [x] **Step 4: Run the full suite**
 
 Run: `./gradlew :app:compileWhatsappDebugJavaWithJavac :app:testWhatsappDebugUnitTest`
 Expected: PASS, incluindo todas as suítes pré-existentes.
 
-- [ ] **Step 5: Verify the privacy invariant by grep**
+- [x] **Step 5: Verify the privacy invariant by grep**
 
 ```bash
 grep -rn "getText()" app/src/main/java/com/waenhancer/xposed/features/devtools/
@@ -1020,7 +1020,7 @@ grep -rn "getText()" app/src/main/java/com/waenhancer/xposed/features/devtools/
 
 Expected: **nenhum resultado.** Se houver, a Parte A não está pronta.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/src/main/java/com/waenhancer/config/PreferenceSchema.java app/src/test/java/com/waenhancer/xposed/features/devtools/InspectorPrefContractTest.java
