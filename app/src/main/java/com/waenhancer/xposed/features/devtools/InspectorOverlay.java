@@ -29,11 +29,15 @@ import java.util.List;
  * Activity's window token so no SYSTEM_ALERT_WINDOW permission is required and WhatsApp's own
  * view tree is never touched.
  *
- * <p>Two windows, not one. The content window (border + panel) alternates between touchable and
- * not-touchable as the mode changes, because that is the whole mechanism behind NAVIGATE letting
- * touches fall through to WhatsApp. But a NOT_TOUCHABLE window also blocks its own children, so
- * the floating drag handle — which must always be movable, in either mode — lives in a second,
- * always-touchable window. {@link #attach()} adds both views; {@link #detach()} removes both.</p>
+ * <p>Three windows, not one. The content window (border + full-screen touch catcher) alternates
+ * between touchable and not-touchable as the mode changes, because that is the whole mechanism
+ * behind NAVIGATE letting touches fall through to WhatsApp. But a NOT_TOUCHABLE window also
+ * blocks its own children — and the panel's action buttons must stay reachable in NAVIGATE too,
+ * not just PICK — so the panel lives in its own always-touchable window, sized to its own content
+ * (WRAP_CONTENT height, gravity BOTTOM) so it only intercepts touches inside its own bounds and
+ * lets everything above it fall through. The floating drag handle — which must always be movable,
+ * in either mode — lives in a third, always-touchable window of its own. {@link #attach()} adds
+ * all three views; {@link #detach()} removes all three.</p>
  */
 public class InspectorOverlay {
 
@@ -65,10 +69,15 @@ public class InspectorOverlay {
     /** The node currently shown in the panel, kept so "inspect parent/child" can navigate. */
     private ProbeNode currentNode;
 
-    // Content window: highlight border + bottom panel. Flag alternates with mode.
+    // Content window: highlight border + full-screen touch catcher. Flag alternates with mode.
     private FrameLayout contentRoot;
     private HighlightView highlightView;
+
+    // Panel window: always touchable, never affected by mode, so its buttons stay reachable
+    // in NAVIGATE. Sized to its own content (WRAP_CONTENT height) so it doesn't steal touches
+    // outside the panel's own bounds.
     private View panelView;
+    private WindowManager.LayoutParams panelParams;
 
     // Handle window: always touchable, never affected by mode.
     private View handleRoot;
@@ -97,17 +106,32 @@ public class InspectorOverlay {
         contentRoot.addView(touchCatcher, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        panelView = LayoutInflater.from(activity).inflate(R.layout.inspector_panel, contentRoot, false);
-        panelView.setVisibility(View.GONE);
-        FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        panelParams.gravity = Gravity.BOTTOM;
-        contentRoot.addView(panelView, panelParams);
-        wirePanelActions();
-
         windowManager.addView(contentRoot, params(FLAGS_NAVIGATE));
 
+        attachPanel();
         attachHandle();
+    }
+
+    /**
+     * Adds the panel in its own always-touchable window (see class javadoc). This keeps the
+     * panel's action buttons reachable regardless of NAVIGATE/PICK mode, unlike the content
+     * window whose {@code FLAG_NOT_TOUCHABLE} alternates with mode.
+     */
+    private void attachPanel() {
+        panelView = LayoutInflater.from(activity).inflate(R.layout.inspector_panel, null, false);
+        panelView.setVisibility(View.GONE);
+        wirePanelActions();
+
+        panelParams = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION,
+                HANDLE_FLAGS,
+                PixelFormat.TRANSLUCENT);
+        panelParams.token = activity.getWindow().getDecorView().getWindowToken();
+        panelParams.gravity = Gravity.BOTTOM;
+
+        windowManager.addView(panelView, panelParams);
     }
 
     private void attachHandle() {
@@ -213,6 +237,14 @@ public class InspectorOverlay {
             }
             contentRoot = null;
         }
+        if (panelView != null) {
+            try {
+                windowManager.removeViewImmediate(panelView);
+            } catch (IllegalArgumentException alreadyGone) {
+                // Same as above.
+            }
+            panelView = null;
+        }
         if (handleRoot != null) {
             try {
                 windowManager.removeViewImmediate(handleRoot);
@@ -291,14 +323,14 @@ public class InspectorOverlay {
             if (currentNode == null) return;
             ProbeNode up = currentNode.parent();
             if (up != null) show(up);
-            else Toast.makeText(activity, "No parent", Toast.LENGTH_SHORT).show();
+            else Toast.makeText(activity, R.string.inspector_no_parent, Toast.LENGTH_SHORT).show();
         });
 
         child.setOnClickListener(v -> {
             if (currentNode == null) return;
             List<ProbeNode> children = currentNode.children();
             if (children == null || children.isEmpty()) {
-                Toast.makeText(activity, "No children", Toast.LENGTH_SHORT).show();
+                Toast.makeText(activity, R.string.inspector_no_children, Toast.LENGTH_SHORT).show();
             } else if (children.size() == 1) {
                 show(children.get(0));
             } else {
@@ -316,7 +348,7 @@ public class InspectorOverlay {
             labels[i] = c.entryName() != null ? c.entryName() : c.className();
         }
         new AlertDialog.Builder(activity)
-                .setTitle("Choose a child")
+                .setTitle(R.string.inspector_choose_child)
                 .setItems(labels, (dialog, which) -> show(children.get(which)))
                 .show();
     }
@@ -331,7 +363,7 @@ public class InspectorOverlay {
     private void copyFromCurrent(String what, java.util.function.Function<InspectedView, String> extractor) {
         InspectedView view = currentView();
         if (view == null) {
-            Toast.makeText(activity, "Nothing selected", Toast.LENGTH_SHORT).show();
+            Toast.makeText(activity, R.string.inspector_nothing_selected, Toast.LENGTH_SHORT).show();
             return;
         }
         InspectorClipboard.copy(activity, "inspector-" + what, extractor.apply(view));
