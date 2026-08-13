@@ -125,6 +125,13 @@
     <string name="inspector_action_parent">Inspect parent</string>
     <string name="inspector_action_child">Inspect child</string>
     <string name="inspector_action_exit">Exit inspector</string>
+    <string name="inspector_nothing_to_copy">Nothing to copy</string>
+    <string name="inspector_copied">Copied %1$s</string>
+    <string name="inspector_identify_ui_elements">Identify UI Elements</string>
+    <string name="inspector_armed_message">Element Inspector armed. Open WhatsApp and tap PICK to start selecting elements.</string>
+    <string name="inspector_disarmed_message">Element Inspector disarmed.</string>
+    <string name="inspector_open_whatsapp">Open WhatsApp</string>
+    <string name="inspector_whatsapp_not_found">WhatsApp is not installed</string>
     <string name="edited_history">Edited History</string>
     <string name="message_original">Original Message</string>
     <string name="message_original_time">Original Time</string>

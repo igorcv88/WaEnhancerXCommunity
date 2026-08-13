@@ -2,8 +2,6 @@ package com.waenhancer.xposed.features.devtools;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.ClipData;
-import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -284,8 +282,6 @@ public class InspectorOverlay {
         Chip child = panelView.findViewById(R.id.inspector_action_child);
         Chip exit = panelView.findViewById(R.id.inspector_action_exit);
 
-        // Copy actions are inlined here for B2's own mechanics; Task B4's InspectorClipboard is
-        // free to replace this with a shared helper without touching the window/mode code above.
         copyId.setOnClickListener(v -> copyFromCurrent("id", InspectedView::entryName));
         copyClass.setOnClickListener(v -> copyFromCurrent("class", InspectedView::className));
         copySelector.setOnClickListener(v -> copyFromCurrent("selector", SelectorBuilder::build));
@@ -338,19 +334,7 @@ public class InspectorOverlay {
             Toast.makeText(activity, "Nothing selected", Toast.LENGTH_SHORT).show();
             return;
         }
-        copy(what, extractor.apply(view));
-    }
-
-    private void copy(String what, String value) {
-        if (value == null || value.isEmpty()) {
-            Toast.makeText(activity, "Nothing to copy for " + what, Toast.LENGTH_SHORT).show();
-            return;
-        }
-        ClipboardManager clipboard = (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
-        if (clipboard != null) {
-            clipboard.setPrimaryClip(ClipData.newPlainText("inspector-" + what, value));
-        }
-        Toast.makeText(activity, "Copied " + what, Toast.LENGTH_SHORT).show();
+        InspectorClipboard.copy(activity, "inspector-" + what, extractor.apply(view));
     }
 
     // ---- Highlight border -------------------------------------------------------------------
