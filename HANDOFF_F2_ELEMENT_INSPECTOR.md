@@ -254,3 +254,70 @@ Em aparelho, o que os testes JVM não alcançam:
 - a sessão desarmada não cria janela nem registra listener (verificável no aparelho);
 - nenhuma leitura de `getText()` em lugar nenhum do pacote `devtools`;
 - a feature liga e desliga individualmente, como o Gate F exige.
+
+---
+
+## 14. Estado da F2 — Parte A implementada
+
+**Branch:** `feat/f2-element-inspector` (a partir de `master` @ `ac0b6a23`).
+**Escopo entregue:** Parte A do `PLAN_F2_ELEMENT_INSPECTOR.md`, tarefas A1–A5. Nenhum hook
+instalado, nenhuma janela criada. O app compila e se comporta exatamente como antes.
+
+### Commits
+
+| Commit | Tarefa | Conteúdo |
+|---|---|---|
+| `975366b9` | A1 | `InspectorSession` — token e expiração por inatividade |
+| `e2335054` | A2 | `Redactor` — redação de contentDescription |
+| `775048d2` | A3 | `ProbeNode` + `ViewProbe` — hit-test sem tipos Android |
+| `62599763` | A4 | `InspectedView` + `SelectorBuilder` — o dialeto do `CustomView` |
+| `5637e7a2` | A5 | pref `inspector_session` no `PreferenceSchema` |
+
+### Testes
+
+`./gradlew :app:compileWhatsappDebugJavaWithJavac :app:testWhatsappDebugUnitTest` → **BUILD
+SUCCESSFUL**, 31 suítes, **0 falhas e 0 erros**, sem regressão nas pré-existentes. As quatro
+suítes novas somam 38 testes: `InspectorSessionTest` (8), `RedactorTest` (9), `ViewProbeTest`
+(10), `SelectorBuilderTest` (11), mais `InspectorPrefContractTest` (1).
+
+Grep de privacidade — `getText()` e `getPrimaryClip()` sobre `features/devtools/`: **nenhum
+resultado**. Grep de `^import android` sobre o mesmo diretório: **nenhum resultado**, que é a
+forma mais forte da invariante — as classes da Parte A não conseguem tocar em Android nem por
+acidente.
+
+### Dois desvios do plano, ambos deliberados
+
+1. **A5 usa a API real do `PreferenceSchema`.** O plano escreveu o teste contra
+   `PreferenceSchema.find(key)` com acessores `type()` / `store()` / `sensitivity()`. A classe
+   real expõe `entry(key)` e campos públicos `final`. A nota do próprio plano na Task A5 manda
+   adaptar o teste, não a classe — foi o que foi feito.
+2. **O Javadoc de `InspectedView` não escreve o nome do acessor proibido.** A redação original
+   citava `getText()` em prosa, o que fazia o grep do Gate F2 (§13, e Task B5 Step 2) acusar um
+   resultado para sempre. Um gate que sempre acusa deixa de ser gate. O comentário diz a mesma
+   coisa sem disparar o grep, e explica por quê.
+
+### Invariantes que a Parte B não pode quebrar
+
+1. nenhuma classe de `devtools` lê texto de view (`getText()` e equivalentes) — o Gate é um grep
+   literal, então também não escreva o nome em comentário;
+2. nada é persistido além de `inspector_session`;
+3. `ViewProbe` recebe bounds **recortadas** (`getGlobalVisibleRect`), não nominais — o adaptador
+   `ViewNode` (B1) é o responsável, e é a única razão de uma linha rolada para fora não ser
+   acertada;
+4. `InspectorSession` é imutável; `touched()` devolve instância nova e **não ressuscita** sessão
+   morta;
+5. o seletor de `SelectorBuilder` é a saída final: a Parte B **exibe e copia**, nunca reescreve.
+
+### Riscos que sobram para a Parte B
+
+- **O seletor ainda não foi validado contra o motor de verdade.** `SelectorBuilderTest` prova
+  que a string casa com o dialeto lido em `CustomView.buildRuleMaps()` (linhas 244-334), não que
+  o motor a aplique. A confirmação é a da Task B4 Step 3: colar a regra e ver efeito. Se falhar,
+  o defeito é do `SelectorBuilder`, não do CSS.
+- **`Stability.DYNAMIC` pode ser raro na prática.** Recursos de biblioteca (Material, AndroidX)
+  são mesclados na tabela do app no build, então `getResourcePackageName` tende a devolver
+  `com.whatsapp` mesmo para eles, classificando-os como `STABLE`. A classificação erra para o
+  lado seguro (emite o seletor) e não afeta correção — mas o rótulo mostrado no painel pode ser
+  otimista.
+- **Nada da Parte B é coberto por teste JVM.** Por isso a matriz de aparelho do §12 é
+  obrigatória, não opcional.
