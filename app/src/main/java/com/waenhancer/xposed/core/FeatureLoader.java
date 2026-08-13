@@ -316,12 +316,29 @@ public class FeatureLoader {
                                 supportedVersions.addAll(customVersions);
                             }
                         }
+                        // Initialize Unobfuscator and UnobfuscatorCache early so that
+                        // loadExpirationClass and other DexKit lookups function even if version check fails
+                        try {
+                            Unobfuscator.loadLibrary(mApp);
+                            if (Unobfuscator.initWithPath(sourceDir)) {
+                                UnobfuscatorCache.init(mApp);
+                            }
+                        } catch (Throwable t) {
+                            XposedBridge.log("[WAEX] Early Unobfuscator init error: " + t.getMessage());
+                        }
+
                         mApp.registerActivityLifecycleCallbacks(new WaCallback());
                         registerReceivers();
                         try {
                             boolean isSupported = supportedVersions.stream()
+                                    .filter(Objects::nonNull)
+                                    .map(String::trim)
                                     .anyMatch(s -> {
-                                        String target = s.endsWith(".xx") ? s.replace(".xx", ".") : s + ".";
+                                        if (s.isEmpty()) return false;
+                                        String target = s.endsWith(".xx") ? s.substring(0, s.length() - 3) + "." : s;
+                                        if (!target.endsWith(".")) {
+                                            target = target + ".";
+                                        }
                                         return (packageInfo.versionName + ".").startsWith(target);
                                     });
                             if (Feature.DEBUG) {
@@ -480,30 +497,34 @@ public class FeatureLoader {
     }
 
     public static void disableExpirationVersion(ClassLoader classLoader) throws Exception {
-        var expirationClass = Unobfuscator.loadExpirationClass(classLoader);
-        /* Log removed */
-        for (var method : expirationClass.getDeclaredMethods()) {
-            Class<?> returnType = method.getReturnType();
-            if (returnType.equals(Date.class) || returnType.equals(long.class) || returnType.equals(Long.class)) {
-                /* Log removed */
-                XposedBridge.hookMethod(method, new XC_MethodHook() {
-                    @Override
-                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                        if (returnType.equals(Date.class)) {
-                            var calendar = Calendar.getInstance();
-                            calendar.set(2099, 11, 31);
-                            param.setResult(calendar.getTime());
-                        } else if (returnType.equals(long.class) || returnType.equals(Long.class)) {
-                            param.setResult(4102444800000L); // Year 2100-01-01 in milliseconds
+        try {
+            var expirationClass = Unobfuscator.loadExpirationClass(classLoader);
+            if (expirationClass == null) return;
+            for (var method : expirationClass.getDeclaredMethods()) {
+                Class<?> returnType = method.getReturnType();
+                if (returnType.equals(Date.class) || returnType.equals(long.class) || returnType.equals(Long.class)) {
+                    /* Log removed */
+                    XposedBridge.hookMethod(method, new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            if (returnType.equals(Date.class)) {
+                                var calendar = Calendar.getInstance();
+                                calendar.set(2099, 11, 31);
+                                param.setResult(calendar.getTime());
+                            } else if (returnType.equals(long.class) || returnType.equals(Long.class)) {
+                                param.setResult(4102444800000L); // Year 2100-01-01 in milliseconds
+                            }
                         }
-                    }
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                        Object result = param.getResult();
-                        /* Log removed */
-                    }
-                });
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            Object result = param.getResult();
+                            /* Log removed */
+                        }
+                    });
+                }
             }
+        } catch (Throwable t) {
+            XposedBridge.log("[WAEX] disableExpirationVersion error: " + t.getMessage());
         }
     }
 

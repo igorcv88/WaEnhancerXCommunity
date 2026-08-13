@@ -116,12 +116,18 @@ public class UnobfuscatorCache {
 
     }
 
-    public static void init(Application mApp) {
-        if (mInstance == null)
+    public static synchronized void init(Application mApp) {
+        if (mInstance == null && mApp != null)
             mInstance = new UnobfuscatorCache(mApp);
     }
 
-    public static UnobfuscatorCache getInstance() {
+    public static synchronized UnobfuscatorCache getInstance() {
+        if (mInstance == null) {
+            Application app = Utils.getApplication();
+            if (app != null) {
+                init(app);
+            }
+        }
         return mInstance;
     }
 
