@@ -55,6 +55,7 @@ import com.waenhancer.xposed.features.customization.HideTabs;
 import com.waenhancer.xposed.features.customization.SeparateGroup;
 import com.waenhancer.xposed.features.customization.IGStatus;
 import com.waenhancer.xposed.features.customization.ShowOnline;
+import com.waenhancer.xposed.features.devtools.InspectorFeature;
 import com.waenhancer.xposed.features.general.AntiRevoke;
 import com.waenhancer.xposed.features.general.CallType;
 import com.waenhancer.xposed.features.general.ChatLimit;
@@ -989,6 +990,7 @@ public class FeatureLoader {
                 SeparateGroup.class,
                 FloatingBottomBar.class,
                 ConversationScrollButtonGlass.class,
+                InspectorFeature.class,
                 IGStatus.class,
                 LiteMode.class,
                 MediaQuality.class,
