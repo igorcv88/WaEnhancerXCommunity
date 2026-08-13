@@ -2,12 +2,16 @@ package com.waenhancer.xposed.features.devtools;
 
 import android.app.Activity;
 import android.content.SharedPreferences;
+import android.os.Handler;
+import android.os.Looper;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.WppCore;
+
+import de.robv.android.xposed.XSharedPreferences;
 
 /**
  * Lifecycle manager for the Element Inspector overlay.
@@ -18,18 +22,36 @@ import com.waenhancer.xposed.core.WppCore;
  * stopped, or when the session expires due to inactivity.
  *
  * <p>The overlay manages its own session state via touch-based renewal ({@link
- * InspectorSession#touched(long)}). This feature seeds the overlay's session once on first
- * RESUMED, then checks the overlay's live session for expiry on subsequent lifecycle events —
- * allowing true idle-timeout tracking even if the Activity stays RESUMED without further
- * lifecycle transitions.
+ * InspectorSession#touched(long)}). This feature's job is to carry that live session across the
+ * destroy/recreate of {@link InspectorOverlay} instances that happens on every Activity
+ * transition — see {@link #retainedSession} — so the idle clock is driven only by real
+ * selections, never by navigation.
  *
  * <p><b>Hard invariant (§6 of the spec):</b> with the pref empty at startup, {@code doHook()}
  * returns before registering any listener. This ensures no permanent hook exists when the feature
- * is off.
+ * is off. This is intentional and asymmetric: disarming propagates live (see {@link
+ * #clearSessionPref()} and the expiry path below), but arming a previously-off inspector requires
+ * reopening WhatsApp, because no listener may exist while the pref is empty.
  */
 public class InspectorFeature extends Feature {
 
+    /** How often we re-check the live session for idle expiry while no lifecycle event fires. */
+    private static final long POLL_INTERVAL_MILLIS = 30_000L;
+
     private InspectorOverlay currentOverlay;
+
+    /**
+     * The real, ongoing session — read from {@link InspectorOverlay#getSession()} just before an
+     * overlay instance is torn down on {@code PAUSED}/{@code ENDED}, and used to seed the next
+     * overlay instance on the following {@code RESUMED}. This is what makes the idle clock survive
+     * Activity transitions: without it, every re-attach would re-derive a fresh 10-minute window
+     * from {@link #parseSession}, and the timeout would never advance as long as the user keeps
+     * navigating.
+     */
+    private InspectorSession retainedSession;
+
+    private final Handler pollHandler = new Handler(Looper.getMainLooper());
+    private Runnable pollRunnable;
 
     public InspectorFeature(
             @NonNull ClassLoader classLoader,
@@ -54,14 +76,14 @@ public class InspectorFeature extends Feature {
         // Register a listener that will run for the life of the process.
         // It re-reads the pref on each activity state change to pick up live updates.
         WppCore.addListenerActivity((activity, type) -> {
-            // Check if overlay's own session (which has been renewed via selections) has expired.
-            if (currentOverlay != null) {
-                InspectorSession overlaySession = currentOverlay.getSession();
-                if (!overlaySession.isActive(System.currentTimeMillis())) {
-                    // Session expired due to idle timeout (no selections for 10 minutes)
-                    detach();
-                    return;
-                }
+            // Check if the live session (retained across transitions, renewed via real
+            // selections) has expired. This is the actual idle-timeout gate.
+            InspectorSession liveSession = currentOverlay != null
+                    ? currentOverlay.getSession()
+                    : retainedSession;
+            if (liveSession != null && !liveSession.isActive(System.currentTimeMillis())) {
+                endSession(true);
+                return;
             }
 
             // Check if the pref is still armed (module may have disarmed it).
@@ -69,8 +91,8 @@ public class InspectorFeature extends Feature {
             InspectorSession parsed = parseSession(prefValue);
 
             if (parsed == null) {
-                // Pref is empty, disarm
-                detach();
+                // Pref already empty — module disarmed it. Nothing to write back.
+                endSession(false);
                 return;
             }
 
@@ -78,7 +100,6 @@ public class InspectorFeature extends Feature {
             switch (type) {
                 case RESUMED:
                     if (currentOverlay == null) {
-                        // First attach to this activity — create overlay and seed its session
                         attachTo(activity, parsed);
                     }
                     // If overlay already exists, don't recreate it; let it keep managing
@@ -86,7 +107,7 @@ public class InspectorFeature extends Feature {
                     break;
                 case PAUSED:
                 case ENDED:
-                    detach();
+                    detachTransient();
                     break;
             }
         });
@@ -103,8 +124,10 @@ public class InspectorFeature extends Feature {
      * </ul>
      *
      * <p>Returns {@code null} if the value is empty, null, or malformed. On a well-formed value,
-     * reconstructs a fresh session from the current time with a 10-minute idle timeout via
-     * {@link InspectorSession#armed(String, long)}.
+     * builds a fresh 10-minute session via {@link InspectorSession#armed(String, long)}. This
+     * fresh session is only used to seed the very first attach after arming ({@link #attachTo}
+     * prefers {@link #retainedSession} whenever one is still active) — it does not drive expiry
+     * on its own.
      */
     @Nullable
     private InspectorSession parseSession(@Nullable String value) {
@@ -119,9 +142,7 @@ public class InspectorFeature extends Feature {
             }
             String token = parts[0];
             // The timestamp field (parts[1]) is parsed but not used for expiry computation.
-            // Instead, the overlay's own session (seeded here, renewed via touches) drives
-            // idle-timeout detection. The timestamp can be used in future enhancements
-            // (e.g., detecting module re-arm events).
+            // Idle-timeout tracking is owned by the live session (see retainedSession).
             return InspectorSession.armed(token, System.currentTimeMillis());
         } catch (Exception e) {
             return null;
@@ -129,32 +150,120 @@ public class InspectorFeature extends Feature {
     }
 
     /**
-     * Attaches the overlay to the given activity and seeds its session.
-     *
-     * <p>Called only on first RESUMED after the pref becomes armed. The overlay's session is
-     * seeded with the armed session; subsequent renewals come from the overlay's own touch
-     * handler ({@link InspectorOverlay#onContentTouch}).
+     * Attaches the overlay to the given activity, seeding its session from {@link
+     * #retainedSession} when one is still active (real re-attach after a navigation), or from a
+     * freshly armed session otherwise (first attach after arming, or the retained session had
+     * genuinely expired).
      */
-    private void attachTo(@NonNull Activity activity, @NonNull InspectorSession session) {
+    private void attachTo(@NonNull Activity activity, @NonNull InspectorSession freshlyParsed) {
         // Should not happen, but guard against double-attach.
         if (currentOverlay != null) {
             return;
         }
 
+        long now = System.currentTimeMillis();
+        InspectorSession seed = (retainedSession != null && retainedSession.isActive(now))
+                ? retainedSession
+                : freshlyParsed;
+
         // Create a new overlay anchored to this activity.
         // The onExit runnable will be called if the user clicks the "Exit inspector" button.
-        currentOverlay = new InspectorOverlay(activity, this::detach);
-        currentOverlay.setSession(session);
+        currentOverlay = new InspectorOverlay(activity, () -> endSession(true));
+        currentOverlay.setSession(seed);
         currentOverlay.attach();
+        startPolling();
     }
 
     /**
-     * Detaches the overlay if it is currently attached.
+     * Tears down the overlay for a transient Activity transition (PAUSED/ENDED), retaining its
+     * live session so the next {@link #attachTo} picks up the real idle clock instead of a fresh
+     * one. Does not touch the pref — the session is still logically armed.
      */
-    private void detach() {
+    private void detachTransient() {
+        if (currentOverlay != null) {
+            retainedSession = currentOverlay.getSession();
+            currentOverlay.detach();
+            currentOverlay = null;
+        }
+        stopPolling();
+    }
+
+    /**
+     * Ends the session for real: user tapped "Exit inspector", the session expired from
+     * inactivity, or the module already disarmed the pref externally. Tears down the overlay,
+     * drops the retained session, stops the poll, and — when {@code clearPref} is true — attempts
+     * to write the pref back to {@code ""} so a stale armed pref doesn't resurrect the overlay on
+     * the next RESUMED.
+     */
+    private void endSession(boolean clearPref) {
         if (currentOverlay != null) {
             currentOverlay.detach();
             currentOverlay = null;
+        }
+        retainedSession = null;
+        stopPolling();
+        if (clearPref) {
+            clearSessionPref();
+        }
+    }
+
+    /**
+     * Attempts to write {@code inspector_session} back to {@code ""} from the WhatsApp-process
+     * side.
+     *
+     * <p>Whether this actually reaches the module's own storage depends on which concrete {@link
+     * SharedPreferences} implementation was bridged in at {@code FeatureLoader.load()}:
+     * <ul>
+     *   <li>{@link XSharedPreferences} (the common path, when the prefs file is readable directly
+     *       off disk) is a read-only, direct-file-read bridge. Its {@code edit()} throws {@code
+     *       UnsupportedOperationException}. Writes from this side are structurally impossible
+     *       through this path, so this method is a deliberate no-op when {@link #prefs} is an
+     *       {@code XSharedPreferences}.</li>
+     *   <li>{@code ProviderSharedPreferences} (the fallback used when the direct file read comes
+     *       back empty) does support {@code edit()}/{@code putString()}/{@code apply()}, and its
+     *       {@code Editor} forwards every write to the module's content provider via {@code
+     *       put_preference} — see {@code ProviderSharedPreferences.ProviderEditor.syncToProvider}.
+     *       On that path this write genuinely propagates back to the module's storage.</li>
+     * </ul>
+     *
+     * <p>When the pref cannot be cleared from here, the overlay still detaches and stops reacting
+     * to touches locally, so "Exit inspector" and idle-expiry are correct from the user's
+     * perspective inside WhatsApp. But the module's own pref (and therefore {@code
+     * MainActivity}'s toggle) can be left showing a stale "armed" state until the user manually
+     * disarms it there — {@code MainActivity} does not currently listen for this in-process exit
+     * event. This is a known, documented limitation, not a bug introduced by this fix.
+     */
+    private void clearSessionPref() {
+        if (prefs instanceof XSharedPreferences) {
+            // Read-only bridge: cannot write back from this side. See method javadoc.
+            return;
+        }
+        try {
+            prefs.edit().putString("inspector_session", "").apply();
+        } catch (Throwable ignored) {
+            // Defensive: a write-back failure must never crash the hook.
+        }
+    }
+
+    private void startPolling() {
+        stopPolling();
+        pollRunnable = () -> {
+            InspectorSession liveSession = currentOverlay != null
+                    ? currentOverlay.getSession()
+                    : retainedSession;
+            if (liveSession != null && !liveSession.isActive(System.currentTimeMillis())) {
+                endSession(true);
+                return;
+            }
+            pollHandler.postDelayed(pollRunnable, POLL_INTERVAL_MILLIS);
+        };
+        pollHandler.postDelayed(pollRunnable, POLL_INTERVAL_MILLIS);
+    }
+
+    private void stopPolling() {
+        if (pollRunnable != null) {
+            pollHandler.removeCallbacks(pollRunnable);
+            pollRunnable = null;
         }
     }
 }
