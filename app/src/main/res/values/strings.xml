@@ -117,6 +117,14 @@
     <string name="dnd_mode_title">DND Mode</string>
     <string name="activate">Activate</string>
     <string name="cancel">Cancel</string>
+    <string name="inspector_reveal">Reveal</string>
+    <string name="inspector_action_copy_id">Copy ID</string>
+    <string name="inspector_action_copy_class">Copy class</string>
+    <string name="inspector_action_copy_selector">Copy selector</string>
+    <string name="inspector_action_add_css">Add to Custom CSS</string>
+    <string name="inspector_action_parent">Inspect parent</string>
+    <string name="inspector_action_child">Inspect child</string>
+    <string name="inspector_action_exit">Exit inspector</string>
     <string name="edited_history">Edited History</string>
     <string name="message_original">Original Message</string>
     <string name="message_original_time">Original Time</string>
