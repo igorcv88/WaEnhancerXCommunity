@@ -493,6 +493,9 @@ public class MainActivity extends BaseActivity {
 
     private void scrollInChildFragment(Fragment parentFragment, String preferenceKey) {
         Fragment childFragment = parentFragment.getChildFragmentManager().findFragmentById(R.id.frag_container);
+        if (childFragment == null && parentFragment instanceof GeneralFragment) {
+            childFragment = parentFragment.getChildFragmentManager().findFragmentById(R.id.general_frag_container);
+        }
         if (childFragment instanceof BasePreferenceFragment) {
             ((BasePreferenceFragment) childFragment).scrollToPreference(preferenceKey);
         }

@@ -2689,15 +2689,23 @@ public class Unobfuscator {
 
     public synchronized static Method loadOnInsertReceipt(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
-            var method = dexkit
-                    .findMethod(FindMethod.create()
-                            .matcher(MethodMatcher.create().addUsingString("INSERT_RECEIPT_USER").paramCount(1)))
-                    .singleOrNull();
-            if (method == null)
+            var methods = dexkit.findMethod(FindMethod.create()
+                    .matcher(MethodMatcher.create().addUsingString("INSERT_RECEIPT_USER").paramCount(1)));
+            if (methods == null || methods.size() != 1) {
                 throw new RuntimeException("OnInsertReceipt method not found");
-            return method.getMethodInstance(classLoader);
+            }
+            return methods.get(0).getMethodInstance(classLoader);
         });
+    }
 
+    public synchronized static Method loadSeenReceiptForStatus(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            var method = findFirstMethodUsingStrings(classLoader, StringMatchType.Contains,
+                    "StatusReceiptStore/insertOrUpdateSeenReceiptForStatus");
+            if (method == null)
+                throw new NoSuchMethodException("SeenReceiptForStatus method not found");
+            return method;
+        });
     }
 
     public synchronized static Method loadSendAudioTypeMethod(ClassLoader classLoader) throws Exception {
