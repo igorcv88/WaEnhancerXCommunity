@@ -321,3 +321,79 @@ acidente.
   otimista.
 - **Nada da Parte B é coberto por teste JVM.** Por isso a matriz de aparelho do §12 é
   obrigatória, não opcional.
+
+---
+
+#### Estado da F2 — implementada
+
+**Branch:** `feat/f2-element-inspector`. Parte B (`PLAN_F2_ELEMENT_INSPECTOR.md`, tarefas
+B1–B5) concluída sobre a Parte A (`986691e1`).
+
+### Commits (Parte B)
+
+| Commit | Conteúdo |
+|---|---|
+| `693372f7` | `ViewNode` — adapta `View` para `ProbeNode` (hit-test livre de Android) |
+| `2292c648` | janela do overlay e o modo `PICK` |
+| `5dbb9b91` | documenta a escolha de filtrar por `ACTION_DOWN` e protege as ações de cópia sem seleção |
+| `eca4f6f8` | registra `InspectorFeature` no ciclo de vida (`RESUMED`/`PAUSED`) |
+| `ca59b404` | corrige a sincronização do overlay com a sessão e o idle-timeout real |
+| `3fedac6c` | toggle no `MainActivity` e as ações do painel (`Copy ID/class/selector`, `Add to Custom CSS`) |
+
+### O que foi verificado
+
+- **Build + suíte completa:** `./gradlew :app:compileWhatsappDebugJavaWithJavac
+  :app:testWhatsappDebugUnitTest` → **BUILD SUCCESSFUL**, 31 suítes, **254 testes, 0 falhas, 0
+  erros**. As cinco suítes da Parte A (`InspectorSessionTest`, `RedactorTest`, `ViewProbeTest`,
+  `SelectorBuilderTest`, `InspectorPrefContractTest`) continuam verdes sem alteração. As tarefas
+  B1–B4 não têm suíte JVM própria — são código de camada Android sem Robolectric no projeto, por
+  desenho (§9).
+- **Grep de privacidade:** `getText()` e `getPrimaryClip()` sobre
+  `app/src/main/java/com/waenhancer/xposed/features/devtools/` → **nenhum resultado**.
+  `getPrimaryClip()` entra no gate porque ler o clipboard nunca é necessário aqui — só
+  escrever — e qualquer ocorrência seria bandeira vermelha por si só.
+- **Pendente, não executável neste ambiente:** a matriz de aparelho do §12/Task B5 Step 3 (sem
+  device/emulador disponível). Fica como verificação manual obrigatória antes de considerar a
+  F2 pronta para uso real:
+  1. o seletor emitido casa com `buildRuleMaps()` quando colado como regra;
+  2. nenhuma `WindowLeaked` ao trocar de Activity, girar a tela e entrar em split-screen;
+  3. `NAVIGATE` deixa o WhatsApp utilizável (`FLAG_NOT_TOUCHABLE` de fato passa o toque);
+  4. a sessão expira em 10 min de ociosidade e não deixa listener ativo depois disso.
+
+### Desvios e achados de revisão, registrados porque foram reais
+
+1. **B2 restrito a `ACTION_DOWN`.** O trecho de tratamento de toque do brief cobria o gesto
+   completo; a implementação ficou só no `ACTION_DOWN` para decidir seleção, documentado no
+   próprio código (commit `5dbb9b91`). Não é lacuna funcional — é o suficiente para "toque
+   simples seleciona" do §3 — mas diverge do snippet literal do brief.
+2. **B3 corrigido em revisão: o timeout tem que ser o da sessão do `InspectorOverlay`, não
+   recalculado a cada callback de ciclo de vida.** O desenho original re-derivava o prazo de
+   inatividade a cada `RESUMED`/`PAUSED`, o que reabria a janela de expiração a cada troca de
+   Activity em vez de honrar o relógio real da sessão. A correção prende o timeout à sessão do
+   `InspectorOverlay`, renovada só por `touched()` genuíno na seleção — commit `ca59b404`. Design
+   final confirmado correto na revisão.
+3. **`SelectorBuilder.Stability.DYNAMIC` continua como estava especificado, não alterado.** Como
+   já registrado no handoff da Parte A, quem passou a especificação já apontou que esse veredito
+   pode ser quase inatingível na prática, porque recursos de biblioteca são mesclados na tabela
+   de recursos do próprio app no build. Isso erra para o lado seguro (ainda emite um seletor) e
+   foi deixado como está — não é um defeito desta fase, é uma característica conhecida do
+   ambiente de build do Android.
+
+### Invariantes que esta implementação sustenta (verificadas por grep/leitura)
+
+- nenhuma leitura de `getText()`/`getPrimaryClip()` em `features/devtools/`;
+- nada persiste além da pref `inspector_session`;
+- pref vazia → nenhuma janela criada e nenhum listener registrado (B3);
+- as quatro classes puras da Parte A (`InspectorSession`, `Redactor`, `ViewProbe`,
+  `SelectorBuilder`) permanecem intocadas por qualquer tarefa da Parte B, com a única exceção
+  pré-aprovada: o refactor `InspectorOverlay` → `InspectorClipboard` da B4.
+
+### O que a próxima fase, se houver, não pode quebrar
+
+- a matriz de aparelho acima continua pendente — nenhuma alegação de "F2 pronta" deve ignorá-la;
+- o timeout de 10 min continua sendo dono exclusivo de `InspectorOverlay`/`InspectorSession` —
+  não reintroduzir um recálculo baseado em callbacks de Activity;
+- o grep de privacidade do §13/Step 2 é literal: não escrever `getText()` nem em comentário (já
+  é a lição herdada da Parte A, §14, item 2);
+- qualquer nova ação do painel que toque o clipboard deve seguir a mesma regra do §7: nunca
+  texto de conteúdo, só identificadores e seletores.
