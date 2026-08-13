@@ -366,12 +366,19 @@ B1–B5) concluída sobre a Parte A (`986691e1`).
    completo; a implementação ficou só no `ACTION_DOWN` para decidir seleção, documentado no
    próprio código (commit `5dbb9b91`). Não é lacuna funcional — é o suficiente para "toque
    simples seleciona" do §3 — mas diverge do snippet literal do brief.
-2. **B3 corrigido em revisão: o timeout tem que ser o da sessão do `InspectorOverlay`, não
-   recalculado a cada callback de ciclo de vida.** O desenho original re-derivava o prazo de
-   inatividade a cada `RESUMED`/`PAUSED`, o que reabria a janela de expiração a cada troca de
-   Activity em vez de honrar o relógio real da sessão. A correção prende o timeout à sessão do
-   `InspectorOverlay`, renovada só por `touched()` genuíno na seleção — commit `ca59b404`. Design
-   final confirmado correto na revisão.
+2. **B3 corrigido em revisão (commit `ca59b404`), mas o conserto só deslocou o bug — não o
+   eliminou.** O desenho original re-derivava o prazo de inatividade a cada `RESUMED`/`PAUSED`.
+   A correção de B3 fez o `InspectorFeature` ler `currentOverlay.getSession()` para checar
+   expiração, mas continuou chamando `detach()` (que zera `currentOverlay`) em todo
+   `PAUSED`/`ENDED`, e o próximo `attachTo()` continuava semeando a sessão via
+   `InspectorSession.armed(token, now)` — uma janela nova de 10 minutos, disfarçada. Como
+   navegar entre telas do WhatsApp dispara `PAUSED`/`RESUMED` o tempo todo, o relógio de
+   inatividade nunca avançava de fato enquanto o usuário navegava, mesmo sem nenhuma seleção
+   real — e ficou sem checagem nenhuma se o usuário parasse numa tela sem trocar de Activity
+   (a expiração só era avaliada dentro do callback de ciclo de vida). Isso foi identificado na
+   revisão final de branch (não durante B3) e corrigido nesta onda final: ver "Estado da F2 —
+   onda final de correções" abaixo. Esse relato antigo, que dizia "design final confirmado
+   correto na revisão", estava errado — o commit revisor citado deixou o bug real, só o moveu.
 3. **`SelectorBuilder.Stability.DYNAMIC` continua como estava especificado, não alterado.** Como
    já registrado no handoff da Parte A, quem passou a especificação já apontou que esse veredito
    pode ser quase inatingível na prática, porque recursos de biblioteca são mesclados na tabela
@@ -397,3 +404,60 @@ B1–B5) concluída sobre a Parte A (`986691e1`).
   é a lição herdada da Parte A, §14, item 2);
 - qualquer nova ação do painel que toque o clipboard deve seguir a mesma regra do §7: nunca
   texto de conteúdo, só identificadores e seletores.
+
+---
+
+#### Estado da F2 — onda final de correções (pós-revisão de branch completa)
+
+Uma revisão final de toda a branch `feat/f2-element-inspector` encontrou quatro achados sobre o
+código de B1–B5, corrigidos nesta onda, sem alterar nenhuma classe pura da Parte A
+(`InspectorSession`, `Redactor`, `ProbeNode`, `ViewProbe`, `InspectedView`, `SelectorBuilder`,
+`ViewNode` continuam intocadas):
+
+1. **Timeout de inatividade real (era o item 2 acima).** `InspectorFeature` agora guarda a sessão
+   viva num campo próprio (`retainedSession`), lido de `currentOverlay.getSession()` no instante
+   em que um overlay é destruído por `PAUSED`/`ENDED`, e usado para semear o próximo overlay em
+   vez de `InspectorSession.armed(token, now)`. Isso faz o relógio de ociosidade sobreviver a
+   trocas de Activity, movido só por seleções reais (`touched()`). Além disso, foi adicionado um
+   `Handler.postDelayed` leve (a cada 30s, cancelado em qualquer encerramento de sessão) que
+   reavalia a sessão viva mesmo sem nenhum callback de ciclo de vida — cobrindo o caso do usuário
+   parado numa única tela pelos 10 minutos inteiros. Não há infraestrutura de timer existente
+   neste código-base para essa finalidade; este polling foi julgado o mínimo necessário e
+   documentado como tal em `InspectorFeature`.
+2. **`inspector_session` agora é limpa (quando possível) em "Exit inspector" e em expiração por
+   ociosidade.** Investigação de `ProviderSharedPreferences`: sua implementação de `Editor` de
+   fato propaga escritas de volta ao content provider do módulo
+   (`ProviderEditor.syncToProvider` → `put_preference`), então nesse caminho a limpeza da pref
+   funciona de verdade. Só que o `pref` efetivamente injetado em cada `Feature` no processo do
+   WhatsApp normalmente é `XSharedPreferences` (leitura direta do arquivo, quando o arquivo está
+   legível) — `ProviderSharedPreferences` só entra como fallback quando essa leitura direta volta
+   vazia (`FeatureLoader.load()`, linha ~525). `XSharedPreferences.edit()` lança
+   `UnsupportedOperationException`; escrita a partir do processo do WhatsApp é estruturalmente
+   impossível nesse caminho, que é o mais comum. A correção final (`InspectorFeature.
+   clearSessionPref()`) tenta a escrita apenas quando `prefs` não é `XSharedPreferences`, e é
+   um no-op documentado quando é. Em todos os casos o overlay se desarma e para de reagir a
+   toques localmente — a experiência do usuário dentro do WhatsApp está correta — mas quando a
+   escrita não é possível, a pref do módulo (e o toggle da `MainActivity`) pode continuar
+   mostrando "armado" até o usuário desarmar manualmente lá, porque `MainActivity` não escuta
+   esse evento de saída ocorrido dentro do processo do WhatsApp. Isto é uma limitação conhecida,
+   não um bug desta correção.
+3. **Painel utilizável em NAVIGATE.** O painel (com seus botões) foi movido para sua própria
+   janela sempre-tocável (mesmas flags da janela do handle), dimensionada só ao seu próprio
+   conteúdo (`WRAP_CONTENT` de altura, `gravity BOTTOM`), separada da janela de conteúdo
+   (borda de destaque + capturador de toque em tela cheia) cujas flags continuam alternando com
+   o modo. Isso preserva o desenho de duas janelas revisado e aprovado na B2 para o mecanismo de
+   NAVIGATE — só o painel ganhou uma terceira janela.
+4. **Strings extraídas.** `"No parent"`, `"No children"`, `"Nothing selected"`, `"Choose a
+   child"` viraram `inspector_no_parent`, `inspector_no_children`, `inspector_nothing_selected`,
+   `inspector_choose_child` em `strings.xml`, seguindo a convenção já usada para
+   `inspector_reveal` etc.
+
+**Nota sobre arm/disarm assimétrico (achado separado, com veredito do controlador — não
+alterado):** desarmar propaga ao vivo — uma sessão já armada nota a pref esvaziar no próximo
+lifecycle check ou, com o item 2 acima, imediatamente quando a própria feature consegue escrever
+a pref. Mas armar um inspetor previamente desligado **não** propaga ao vivo: `doHook()` só roda
+uma vez no carregamento da feature e retorna cedo sem registrar nenhum listener quando a pref
+está vazia — esse é o invariante rígido do §11.3 (nenhum listener em memória enquanto a feature
+está desligada) e não deve ser alterado. O usuário precisa reabrir o WhatsApp depois de armar,
+o que já é o que o botão "Open WhatsApp" da `MainActivity` faz — limitação documentada, não uma
+lacuna de UX pendente.

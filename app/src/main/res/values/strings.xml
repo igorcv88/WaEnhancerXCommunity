@@ -127,6 +127,10 @@
     <string name="inspector_action_exit">Exit inspector</string>
     <string name="inspector_nothing_to_copy">Nothing to copy</string>
     <string name="inspector_copied">Copied %1$s</string>
+    <string name="inspector_no_parent">No parent</string>
+    <string name="inspector_no_children">No children</string>
+    <string name="inspector_nothing_selected">Nothing selected</string>
+    <string name="inspector_choose_child">Choose a child</string>
     <string name="inspector_identify_ui_elements">Identify UI Elements</string>
     <string name="inspector_armed_message">Element Inspector armed. Open WhatsApp and tap PICK to start selecting elements.</string>
     <string name="inspector_disarmed_message">Element Inspector disarmed.</string>
