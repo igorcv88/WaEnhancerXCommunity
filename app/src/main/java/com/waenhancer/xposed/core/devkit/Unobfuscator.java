@@ -4100,6 +4100,14 @@ public class Unobfuscator {
         });
     }
 
+    public static @androidx.annotation.NonNull Class<?> loadFMediaStatusClass(@androidx.annotation.NonNull ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getClass(classLoader, () -> {
+            Class<?> clazz = findFirstClassUsingStrings(classLoader, StringMatchType.Contains, "FStatusMedia/mediaDataV2");
+            if (clazz != null) return clazz;
+            throw new ClassNotFoundException("FMediaStatus class not found");
+        });
+    }
+
     public static Method loadAntiRevokeFStatusMethod(@androidx.annotation.NonNull ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
             var fStatusKeyClass = loadFStatusKeyClass(classLoader);
