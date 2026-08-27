@@ -205,8 +205,8 @@ dependencies {
     implementation(libs.betterypermissionhelper)
     implementation(libs.bcpkix.jdk18on)
     implementation(libs.arscblamer)
-    implementation("com.google.auto.value:auto-value-annotations:1.11.0")
-    implementation("com.github.bumptech.glide:glide:4.16.0")
+    implementation("com.google.auto.value:auto-value-annotations:1.11.1")
+    implementation("com.github.bumptech.glide:glide:5.0.9")
 
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)
@@ -214,7 +214,7 @@ dependencies {
     implementation(libs.markwon.html)
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.json:json:20250517")
+    testImplementation("org.json:json:20260814")
 }
 
 configurations.all {
