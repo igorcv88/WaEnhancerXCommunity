@@ -78,7 +78,7 @@ public class FMessageWpp {
             }
         } catch (Throwable t) {
             XposedBridge.log("[WAEX] Required FMessage initialization failed: " + t);
-            return;
+            throw new IllegalStateException("Required FMessage contracts are unavailable", t);
         }
 
         // Optional capabilities must be independent. A missing media resolver, for example, must
@@ -207,10 +207,16 @@ public class FMessageWpp {
     }
 
     public boolean isBroadcast() {
+        // Broadcast detection is optional across WhatsApp builds. Do not attempt reflective
+        // access when its resolver did not find a field: this method runs while list rows are
+        // rendered, so logging the same NullPointerException on every row can flood LSPosed and
+        // make WhatsApp unresponsive.
+        Field field = broadcastField;
+        if (field == null) return false;
         try {
-            return broadcastField.getBoolean(fmessage);
-        } catch (Exception e) {
-            XposedBridge.log(e);
+            return field.getBoolean(fmessage);
+        } catch (IllegalAccessException | IllegalArgumentException e) {
+            XposedBridge.log("[WAEX] Unable to read the optional broadcast flag: " + e);
         }
         return false;
     }
