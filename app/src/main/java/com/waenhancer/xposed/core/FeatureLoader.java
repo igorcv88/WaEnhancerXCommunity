@@ -344,22 +344,30 @@ public class FeatureLoader {
                             if (Feature.DEBUG) {
                                 ;
                             }
+                            boolean runtimeProbeEligible = isRuntimeProbeEligible(packageInfo.versionName);
+                            boolean bypassVersionCheck = pref.getBoolean("bypass_version_check", false);
+
+                            if (!isSupported && !runtimeProbeEligible && !bypassVersionCheck) {
+                                disableExpirationVersion(mApp.getClassLoader());
+                                String sb = "Unsupported version: " +
+                                        packageInfo.versionName +
+                                        "\n" +
+                                        "Only the function of ignoring the expiration of the WhatsApp version has been applied!";
+                                throw new Exception(sb);
+                            }
+
+                            // Version allowlists are validated-build metadata, not compatibility proof.
+                            // For known builds, newer WhatsApp 2.x hosts, or an explicit version-check
+                            // bypass, prove the required semantic contracts against the installed APK
+                            // before initComponents() can install any core hooks.
+                            HostCompatibility.requireCoreCompatibility(loader);
+
                             if (!isSupported) {
                                 disableExpirationVersion(mApp.getClassLoader());
-                                if (pref.getBoolean("bypass_version_check", false)) {
-                                    // User opted in: load all features despite unsupported version
-                                    load(loader, pref, packageInfo, sourceDir);
-                                } else {
-                                    String sb = "Unsupported version: " +
-                                            packageInfo.versionName +
-                                            "\n" +
-                                            "Only the function of ignoring the expiration of the WhatsApp version has been applied!";
-                                    throw new Exception(sb);
-                                }
-                            } else {
-                                // Version is supported — load normally
-                                load(loader, pref, packageInfo, sourceDir);
+                                XposedBridge.log("[WAEX] Version " + packageInfo.versionName
+                                        + " is not in the validated-version list; proceeding after runtime compatibility probe");
                             }
+                            load(loader, pref, packageInfo, sourceDir);
                         } catch (Throwable e) {
                             XposedBridge.log(e);
                             var error = new ErrorItem();
@@ -494,6 +502,15 @@ public class FeatureLoader {
                         }
                     }
                 });
+    }
+
+    /**
+     * Select hosts that may be evaluated by the semantic compatibility probe.
+     * This is deliberately separate from supported_versions_*: those arrays remain
+     * the companion UI's list of builds that have actually been regression-tested.
+     */
+    private static boolean isRuntimeProbeEligible(String versionName) {
+        return versionName != null && versionName.startsWith("2.");
     }
 
     public static void disableExpirationVersion(ClassLoader classLoader) throws Exception {

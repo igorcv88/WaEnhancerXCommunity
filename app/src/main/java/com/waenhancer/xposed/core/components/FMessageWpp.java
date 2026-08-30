@@ -54,41 +54,76 @@ public class FMessageWpp {
     }
 
     public static void initialize(ClassLoader classLoader) {
+        // Required FMessage contracts are initialized together. HostCompatibility has already
+        // resolved the core anchors before FeatureLoader reaches initComponents(), so failure
+        // here is a concrete initialization error rather than a version-string decision.
         try {
             TYPE = Unobfuscator.loadFMessageClass(classLoader);
             UserJid.TYPE_USERJID = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "jid.UserJid");
             UserJid.TYPE_JID = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "jid.Jid");
             UserJid.TYPE_PHONEUSERJID = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "jid.PhoneUserJid");
             UserJid.TYPE_DEVICEJID = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "jid.DeviceJid");
-            var userJidClass = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "jid.UserJid");
-            userJidMethod = ReflectionUtils.findMethodUsingFilter(TYPE, method -> method.getParameterCount() == 0 && method.getReturnType() == userJidClass);
+            var userJidClass = UserJid.TYPE_USERJID;
+            userJidMethod = ReflectionUtils.findMethodUsingFilter(TYPE,
+                    method -> method.getParameterCount() == 0 && method.getReturnType() == userJidClass);
             keyMessage = Unobfuscator.loadMessageKeyField(classLoader);
             Key.TYPE = keyMessage.getType();
             messageMethod = Unobfuscator.loadNewMessageMethod(classLoader);
-            messageWithMediaMethod = Unobfuscator.loadNewMessageWithMediaMethod(classLoader);
-            var deviceJidClass = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "jid.DeviceJid");
-            deviceJidField = ReflectionUtils.findFieldUsingFilter(TYPE, field -> field.getType() == deviceJidClass);
-            mediaTypeField = Unobfuscator.loadMediaTypeField(classLoader);
-            getOriginalMessageKey = Unobfuscator.loadOriginalMessageKey(classLoader);
-            abstractMediaMessageClass = Unobfuscator.loadAbstractMediaMessageClass(classLoader);
-            broadcastField = Unobfuscator.loadBroadcastTagField(classLoader);
-            getFieldIdMessage = Unobfuscator.loadSetEditMessageField(classLoader);
-            try {
-                timestampField = Unobfuscator.loadFmessageTimestampField(classLoader);
-            } catch (Exception e) {
-                XposedBridge.log("[WAEX] Could not load timestampField: " + e.getMessage());
-            }
+            deviceJidField = ReflectionUtils.findFieldUsingFilter(TYPE, field -> field.getType() == UserJid.TYPE_DEVICEJID);
 
-            // Initialize Key fields dynamically
             if (Key.TYPE != null) {
                 keyIdField = ReflectionUtils.getFieldByType(Key.TYPE, String.class);
                 keyFromMeField = ReflectionUtils.getFieldByType(Key.TYPE, boolean.class);
                 keyRemoteJidField = ReflectionUtils.getFieldByExtendType(Key.TYPE, UserJid.TYPE_JID);
-                ;
             }
-        } catch (Exception e) {
-            XposedBridge.log(e);
+        } catch (Throwable t) {
+            XposedBridge.log("[WAEX] Required FMessage initialization failed: " + t);
+            return;
         }
+
+        // Optional capabilities must be independent. A missing media resolver, for example, must
+        // not prevent broadcast/edit/status-related fields from being initialized later in this
+        // method. Each dependent feature can then fail/report on its own resolver instead of
+        // inheriting unrelated null state from an earlier optional miss.
+        try {
+            messageWithMediaMethod = Unobfuscator.loadNewMessageWithMediaMethod(classLoader);
+        } catch (Throwable t) {
+            logOptionalResolverFailure("messageWithMediaMethod", t);
+        }
+        try {
+            mediaTypeField = Unobfuscator.loadMediaTypeField(classLoader);
+        } catch (Throwable t) {
+            logOptionalResolverFailure("mediaTypeField", t);
+        }
+        try {
+            getOriginalMessageKey = Unobfuscator.loadOriginalMessageKey(classLoader);
+        } catch (Throwable t) {
+            logOptionalResolverFailure("getOriginalMessageKey", t);
+        }
+        try {
+            abstractMediaMessageClass = Unobfuscator.loadAbstractMediaMessageClass(classLoader);
+        } catch (Throwable t) {
+            logOptionalResolverFailure("abstractMediaMessageClass", t);
+        }
+        try {
+            broadcastField = Unobfuscator.loadBroadcastTagField(classLoader);
+        } catch (Throwable t) {
+            logOptionalResolverFailure("broadcastField", t);
+        }
+        try {
+            getFieldIdMessage = Unobfuscator.loadSetEditMessageField(classLoader);
+        } catch (Throwable t) {
+            logOptionalResolverFailure("getFieldIdMessage", t);
+        }
+        try {
+            timestampField = Unobfuscator.loadFmessageTimestampField(classLoader);
+        } catch (Throwable t) {
+            logOptionalResolverFailure("timestampField", t);
+        }
+    }
+
+    private static void logOptionalResolverFailure(String resolver, Throwable throwable) {
+        XposedBridge.log("[WAEX] Optional FMessage resolver unavailable: " + resolver + ": " + throwable);
     }
 
     public static boolean checkUnsafeIsFMessage(ClassLoader classLoader, Class<?> clazz) throws Exception {

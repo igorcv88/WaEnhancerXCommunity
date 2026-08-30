@@ -7,13 +7,13 @@ import androidx.annotation.NonNull;
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.components.WaContactWpp;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
+import com.waenhancer.xposed.core.devkit.ViewHolderCompat;
 import com.waenhancer.xposed.utils.ReflectionUtils;
 
 import java.util.HashSet;
 
 import de.robv.android.xposed.XC_MethodHook;
 import android.content.SharedPreferences;
-import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 
 public class ContactItemListener extends Feature {
@@ -29,22 +29,27 @@ public class ContactItemListener extends Feature {
     @Override
     public void doHook() throws Throwable {
         var onChangeStatus = Unobfuscator.loadOnChangeStatus(classLoader);
-        /* Log removed */
-        var field1 = Unobfuscator.loadViewHolderField1(classLoader);
-        /* Log removed */
+        var field1 = ViewHolderCompat.loadContainerField(classLoader);
         var absViewHolderClass = Unobfuscator.loadAbsViewHolder(classLoader);
         cachedViewField = ReflectionUtils.findFieldUsingFilter(absViewHolderClass, field -> field.getType() == View.class);
+        if (cachedViewField == null) {
+            throw new NoSuchFieldException("View field not found in " + absViewHolderClass.getName());
+        }
         cachedViewField.setAccessible(true);
 
         XposedBridge.hookMethod(onChangeStatus, new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 var viewHolder = field1.get(param.thisObject);
+                if (viewHolder == null) return;
+
                 var object = param.args[0];
                 var waContact = new WaContactWpp(object);
                 var view = (View) cachedViewField.get(viewHolder);
+                if (view == null) return;
+
                 var userJid = waContact.getUserJid();
-                if (userJid.isNull()) return;
+                if (userJid == null || userJid.isNull()) return;
 
                 for (OnContactItemListener listener : contactListeners) {
                     listener.onBind(waContact, view);
