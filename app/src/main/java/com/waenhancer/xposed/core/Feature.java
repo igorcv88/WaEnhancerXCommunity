@@ -23,10 +23,6 @@ public abstract class Feature {
     }
 
     public Feature(@NonNull ClassLoader classLoader, @NonNull SharedPreferences preferences) {
-        // Version strings are not a compatibility test. Before any feature is allowed to install
-        // hooks, verify that the semantic DexKit anchors required by the module core still resolve
-        // against the APK that is actually running. The result is cached process-wide.
-        HostCompatibility.requireCoreCompatibility(classLoader);
         this.classLoader = classLoader;
         this.prefs = preferences;
     }
