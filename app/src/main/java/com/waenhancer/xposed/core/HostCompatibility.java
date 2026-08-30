@@ -1,6 +1,7 @@
 package com.waenhancer.xposed.core;
 
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
+import com.waenhancer.xposed.core.devkit.ViewHolderCompat;
 
 import org.luckypray.dexkit.query.enums.StringMatchType;
 
@@ -76,6 +77,8 @@ public final class HostCompatibility {
 
             // These are important but feature-scoped. A miss must not disable unrelated hooks;
             // FeatureLoader will report the concrete feature that fails to install.
+            optional(optional, "ConversationViewHolder", () -> ViewHolderCompat.loadViewHolder(loader));
+            optional(optional, "ConversationViewHolderField", () -> ViewHolderCompat.loadContainerField(loader));
             optional(optional, "NewMessageWithMedia", () ->
                     Unobfuscator.loadNewMessageWithMediaMethod(loader));
             optional(optional, "MediaType", () -> Unobfuscator.loadMediaTypeField(loader));
