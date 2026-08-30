@@ -1,36 +1,26 @@
-name: Manual signed release.
+name: Publish signed release
 
 on:
   workflow_dispatch:
     inputs:
-      version_name:
-        description: "Optional; must match VERSION_NAME in gradle.properties"
-        required: false
-        type: string
-      version_code:
-        description: "Optional; must match VERSION_CODE in gradle.properties"
-        required: false
-        type: string
-      tag_name:
-        description: "Release tag; defaults to v<VERSION_NAME>"
-        required: false
-        type: string
-      release_title:
-        description: "Release title; defaults to WaEnhancer Community <VERSION_NAME>"
-        required: false
-        type: string
-      prerelease:
-        description: "Mark the GitHub Release as a prerelease"
+      channel:
+        description: "Release channel"
         required: true
-        default: false
-        type: boolean
-      release_notes:
-        description: "Optional release notes; SHA-256 is appended automatically"
-        required: false
-        type: string
+        default: beta
+        type: choice
+        options:
+          - beta
+          - stable
+
+concurrency:
+  group: waenhancer-release
+  cancel-in-progress: false
 
 permissions:
   contents: read
+
+env:
+  RELEASE_SERIES: "0.0"
 
 jobs:
   release:
@@ -45,6 +35,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Ensure release comes from master
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
+            echo "::error::Run the release workflow from the master branch."
+            exit 1
+          fi
+
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
@@ -55,48 +54,76 @@ jobs:
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v4
 
-      - name: Resolve and validate release metadata
+      - name: Resolve next version automatically
         id: metadata
         shell: bash
         env:
-          INPUT_VERSION_NAME: ${{ inputs.version_name }}
-          INPUT_VERSION_CODE: ${{ inputs.version_code }}
-          INPUT_TAG_NAME: ${{ inputs.tag_name }}
-          INPUT_RELEASE_TITLE: ${{ inputs.release_title }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
 
-          FILE_VERSION_NAME="$(sed -n 's/^VERSION_NAME=//p' gradle.properties | tr -d '\r' | tail -n 1)"
-          FILE_VERSION_CODE="$(sed -n 's/^VERSION_CODE=//p' gradle.properties | tr -d '\r' | tail -n 1)"
+          git fetch --force --tags origin
 
-          test -n "$FILE_VERSION_NAME" || { echo "VERSION_NAME is missing" >&2; exit 1; }
-          test -n "$FILE_VERSION_CODE" || { echo "VERSION_CODE is missing" >&2; exit 1; }
-          [[ "$FILE_VERSION_CODE" =~ ^[0-9]+$ ]] || { echo "VERSION_CODE must be numeric" >&2; exit 1; }
-
-          if [[ -n "$INPUT_VERSION_NAME" && "$INPUT_VERSION_NAME" != "$FILE_VERSION_NAME" ]]; then
-            echo "Input version_name ($INPUT_VERSION_NAME) does not match gradle.properties ($FILE_VERSION_NAME)" >&2
+          BASE_VERSION_CODE="$(sed -n 's/^VERSION_CODE=//p' gradle.properties | tr -d '\r' | tail -n 1)"
+          [[ "$BASE_VERSION_CODE" =~ ^[0-9]+$ ]] || {
+            echo "VERSION_CODE in gradle.properties must be numeric" >&2
             exit 1
+          }
+
+          LATEST_TAG="$(
+            git tag --list "v${RELEASE_SERIES}.*" --sort=-v:refname \
+              | grep -E "^v${RELEASE_SERIES//./\.}\.[0-9]+$" \
+              | head -n 1 \
+              || true
+          )"
+
+          if [[ -z "$LATEST_TAG" ]]; then
+            PATCH=1
+          else
+            PATCH="${LATEST_TAG##*.}"
+            PATCH=$((10#$PATCH + 1))
           fi
 
-          if [[ -n "$INPUT_VERSION_CODE" && "$INPUT_VERSION_CODE" != "$FILE_VERSION_CODE" ]]; then
-            echo "Input version_code ($INPUT_VERSION_CODE) does not match gradle.properties ($FILE_VERSION_CODE)" >&2
-            exit 1
-          fi
+          VERSION_NAME="${RELEASE_SERIES}.${PATCH}"
+          VERSION_CODE=$((10#$BASE_VERSION_CODE + PATCH))
+          TAG_NAME="v${VERSION_NAME}"
 
-          TAG_NAME="${INPUT_TAG_NAME:-v${FILE_VERSION_NAME}}"
-          RELEASE_TITLE="${INPUT_RELEASE_TITLE:-WaEnhancer Community ${FILE_VERSION_NAME}}"
+          case "$CHANNEL" in
+            beta)
+              RELEASE_TITLE="WaEnhancer Community ${VERSION_NAME} Beta"
+              PRERELEASE=true
+              ;;
+            stable)
+              RELEASE_TITLE="WaEnhancer Community ${VERSION_NAME}"
+              PRERELEASE=false
+              ;;
+            *)
+              echo "Unsupported release channel: $CHANNEL" >&2
+              exit 1
+              ;;
+          esac
 
-          if git ls-remote --exit-code --tags origin "refs/tags/${TAG_NAME}" >/dev/null 2>&1; then
-            echo "Tag ${TAG_NAME} already exists" >&2
+          if git rev-parse -q --verify "refs/tags/${TAG_NAME}" >/dev/null; then
+            echo "Generated tag already exists: ${TAG_NAME}" >&2
             exit 1
           fi
 
           {
-            echo "version_name=$FILE_VERSION_NAME"
-            echo "version_code=$FILE_VERSION_CODE"
+            echo "version_name=$VERSION_NAME"
+            echo "version_code=$VERSION_CODE"
             echo "tag_name=$TAG_NAME"
             echo "release_title=$RELEASE_TITLE"
+            echo "channel=$CHANNEL"
+            echo "prerelease=$PRERELEASE"
           } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Release metadata"
+            echo "- Version: \`${VERSION_NAME}\`"
+            echo "- Android versionCode: \`${VERSION_CODE}\`"
+            echo "- Channel: \`${CHANNEL}\`"
+            echo "- Tag: \`${TAG_NAME}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Decode and inspect signing key
         id: signing
@@ -133,7 +160,10 @@ jobs:
             | tr -d ':' \
             | tr '[:upper:]' '[:lower:]')"
 
-          test -n "$EXPECTED_CERT_SHA256" || { echo "Could not read signing certificate SHA-256" >&2; exit 1; }
+          test -n "$EXPECTED_CERT_SHA256" || {
+            echo "Could not read signing certificate SHA-256" >&2
+            exit 1
+          }
 
           echo "keystore_path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
           echo "expected_cert_sha256=$EXPECTED_CERT_SHA256" >> "$GITHUB_OUTPUT"
@@ -141,6 +171,8 @@ jobs:
       - name: Build signed release APK
         shell: bash
         env:
+          VERSION_NAME: ${{ steps.metadata.outputs.version_name }}
+          VERSION_CODE: ${{ steps.metadata.outputs.version_code }}
           KEYSTORE_PATH: ${{ steps.signing.outputs.keystore_path }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -149,7 +181,8 @@ jobs:
           set -euo pipefail
           chmod +x gradlew
           ./gradlew clean :app:assembleWhatsappRelease \
-            -Pminify=true \
+            -PVERSION_NAME="$VERSION_NAME" \
+            -PVERSION_CODE="$VERSION_CODE" \
             -PandroidStoreFile="$KEYSTORE_PATH" \
             -PandroidStorePassword="$KEYSTORE_PASSWORD" \
             -PandroidKeyAlias="$KEY_ALIAS" \
@@ -162,8 +195,12 @@ jobs:
           VERSION_NAME: ${{ steps.metadata.outputs.version_name }}
         run: |
           set -euo pipefail
+
           SOURCE_APK="$(find app/build/outputs/apk/whatsapp/release -maxdepth 1 -type f -name '*.apk' -print -quit)"
-          test -n "$SOURCE_APK" || { echo "Release APK was not produced" >&2; exit 1; }
+          test -n "$SOURCE_APK" || {
+            echo "Release APK was not produced" >&2
+            exit 1
+          }
 
           mkdir -p release
           APK_PATH="release/WaEnhancerCommunity-v${VERSION_NAME}.apk"
@@ -225,33 +262,42 @@ jobs:
           }
 
           SHA256="$(sha256sum "$APK_PATH" | awk '{print $1}')"
-          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          CHECKSUM_PATH="${APK_PATH}.sha256"
+          printf '%s  %s\n' "$SHA256" "$(basename "$APK_PATH")" > "$CHECKSUM_PATH"
 
-      - name: Create GitHub Release and attach APK directly
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "checksum_path=$CHECKSUM_PATH" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Verification"
+            echo "- APK SHA-256: \`${SHA256}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ steps.metadata.outputs.tag_name }}
           RELEASE_TITLE: ${{ steps.metadata.outputs.release_title }}
-          RELEASE_NOTES: ${{ inputs.release_notes }}
           APK_PATH: ${{ steps.apk.outputs.path }}
-          SHA256: ${{ steps.verify.outputs.sha256 }}
-          PRERELEASE: ${{ inputs.prerelease }}
+          CHECKSUM_PATH: ${{ steps.verify.outputs.checksum_path }}
+          PRERELEASE: ${{ steps.metadata.outputs.prerelease }}
         run: |
           set -euo pipefail
 
-          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
-          if [[ -n "$RELEASE_NOTES" ]]; then
-            printf '%s\n\n' "$RELEASE_NOTES" > "$NOTES_FILE"
-          else
-            printf 'Manual signed release from commit `%s`.\n\n' "$GITHUB_SHA" > "$NOTES_FILE"
-          fi
-          printf 'SHA-256: `%s`\n' "$SHA256" >> "$NOTES_FILE"
+          ARGS=(
+            release create "$TAG_NAME"
+            "$APK_PATH"
+            "$CHECKSUM_PATH"
+            --target "$GITHUB_SHA"
+            --title "$RELEASE_TITLE"
+            --generate-notes
+          )
 
-          ARGS=(release create "$TAG_NAME" "$APK_PATH" --target "$GITHUB_SHA" --title "$RELEASE_TITLE" --notes-file "$NOTES_FILE")
           if [[ "$PRERELEASE" == "true" ]]; then
             ARGS+=(--prerelease)
           fi
+
           gh "${ARGS[@]}"
 
       - name: Remove temporary signing material
