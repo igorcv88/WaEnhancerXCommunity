@@ -19,9 +19,9 @@ import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.components.WaContactWpp;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.core.devkit.UnobfuscatorCache;
+import com.waenhancer.xposed.core.devkit.ViewHolderCompat;
 import com.waenhancer.xposed.features.listeners.ContactItemListener;
 import com.waenhancer.xposed.utils.ReflectionUtils;
-import com.waenhancer.R;
 import com.waenhancer.xposed.utils.Utils;
 
 import java.lang.reflect.Method;
@@ -29,7 +29,6 @@ import java.util.Locale;
 
 import de.robv.android.xposed.XC_MethodHook;
 import android.content.SharedPreferences;
-import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 
@@ -76,23 +75,32 @@ public class ShowOnline extends Feature {
         var showOnlineIcon = prefs.getBoolean("dotonline", false);
         if (!showOnlineText && !showOnlineIcon) return;
 
-        var classViewHolder = Unobfuscator.loadViewHolder(classLoader);
+        var classViewHolder = ViewHolderCompat.loadViewHolder(classLoader);
         XposedBridge.hookAllConstructors(classViewHolder, new XC_MethodHook() {
             @SuppressLint("ResourceType")
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                // Some WhatsApp builds expose more than one constructor on this class.
+                // Only the conversation-row constructor has Context + View as its first arguments.
+                if (param.args == null || param.args.length < 2
+                        || !(param.args[0] instanceof Context)
+                        || !(param.args[1] instanceof View)) {
+                    return;
+                }
+
                 var view = (View) param.args[1];
                 var context = (Context) param.args[0];
                 LinearLayout content = view.findViewById(Utils.getID("conversations_row_content", "id"));
                 if (content == null) {
                     content = view.findViewById(Utils.getID("row_content", "id"));
                 }
+                if (content == null) return;
+
                 if (showOnlineText) {
                     var linearLayout = new LinearLayout(context);
                     linearLayout.setGravity(Gravity.END | Gravity.TOP);
                     content.addView(linearLayout);
 
-                    // Add TextView to show last seen time
                     TextView lastSeenText = new TextView(context);
                     lastSeenText.setId(0x7FFF0002);
                     lastSeenText.setTextSize(12f);
@@ -104,6 +112,7 @@ public class ShowOnline extends Feature {
                 }
                 if (showOnlineIcon) {
                     var contactView = (FrameLayout) view.findViewById(Utils.getID("contact_selector", "id"));
+                    if (contactView == null || contactView.getChildCount() == 0) return;
                     var firstChild = contactView.getChildAt(0);
                     var isLeftToRight = TextUtilsCompat.getLayoutDirectionFromLocale(Locale.getDefault()) == View.LAYOUT_DIRECTION_LTR;
                     if (firstChild instanceof ImageView) {
@@ -137,8 +146,8 @@ public class ShowOnline extends Feature {
 
                         android.graphics.drawable.GradientDrawable dotDrawable = new android.graphics.drawable.GradientDrawable();
                         dotDrawable.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-                        dotDrawable.setColor(0xFF25D366); // WhatsApp Green
-                        boolean isDark = (context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) 
+                        dotDrawable.setColor(0xFF25D366);
+                        boolean isDark = (context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
                                 == android.content.res.Configuration.UI_MODE_NIGHT_YES;
                         int strokeColor = isDark ? 0xFF121212 : Color.WHITE;
                         dotDrawable.setStroke(Utils.dipToPixels(1.5f), strokeColor);
@@ -148,6 +157,7 @@ public class ShowOnline extends Feature {
                         relativeLayout.addView(imageView);
                     } else if (firstChild instanceof RelativeLayout) {
                         RelativeLayout relativeLayout = (RelativeLayout) firstChild;
+                        if (relativeLayout.getChildCount() == 0 || !(relativeLayout.getChildAt(0) instanceof ImageView)) return;
                         var photoView = (ImageView) relativeLayout.getChildAt(0);
 
                         if (photoView.getId() == View.NO_ID) {
@@ -173,8 +183,8 @@ public class ShowOnline extends Feature {
 
                         android.graphics.drawable.GradientDrawable dotDrawable = new android.graphics.drawable.GradientDrawable();
                         dotDrawable.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-                        dotDrawable.setColor(0xFF25D366); // WhatsApp Green
-                        boolean isDark = (context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) 
+                        dotDrawable.setColor(0xFF25D366);
+                        boolean isDark = (context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
                                 == android.content.res.Configuration.UI_MODE_NIGHT_YES;
                         int strokeColor = isDark ? 0xFF121212 : Color.WHITE;
                         dotDrawable.setStroke(Utils.dipToPixels(1.5f), strokeColor);
@@ -188,9 +198,7 @@ public class ShowOnline extends Feature {
         });
 
         getStatusUser = Unobfuscator.loadStatusUserMethod(classLoader);
-        /* Log removed */
         sendPresenceMethod = Unobfuscator.loadSendPresenceMethod(classLoader);
-        /* Log removed */
         tcTokenMethod = Unobfuscator.loadTcTokenMethod(classLoader);
 
         XposedBridge.hookAllConstructors(getStatusUser.getDeclaringClass(), new XC_MethodHook() {
@@ -207,18 +215,20 @@ public class ShowOnline extends Feature {
             }
         });
 
-        // load methods
         tokenClass = sendPresenceMethod.getParameterTypes()[2];
         fieldTokenDBInstance = ReflectionUtils.getFieldByExtendType(sendPresenceMethod.getDeclaringClass(), tcTokenMethod.getDeclaringClass());
+        if (fieldTokenDBInstance == null) {
+            throw new NoSuchFieldException("Presence token DB field not found");
+        }
+        fieldTokenDBInstance.setAccessible(true);
 
-        // Register listener
         ContactItemListener.contactListeners.add(new ContactItemListener.OnContactItemListener() {
             @Override
             @SuppressLint("ResourceType")
             public void onBind(WaContactWpp waContact, View view) {
                 try {
                     var userJid = waContact.getUserJid();
-                    if (userJid.isGroup()) return;
+                    if (userJid == null || userJid.isGroup()) return;
 
                     ImageView csDot = showOnlineIcon ? view.findViewById(0x7FFF0001) : null;
                     if (showOnlineIcon && csDot != null) {
@@ -226,6 +236,7 @@ public class ShowOnline extends Feature {
                     }
                     TextView lastSeenText = showOnlineText ? view.findViewById(0x7FFF0002) : null;
 
+                    if (mInstancePresence == null || mStatusUser == null) return;
                     var tokenDBInstance = fieldTokenDBInstance.get(mInstancePresence);
                     var tokenData = ReflectionUtils.callMethod(tcTokenMethod, tokenDBInstance, userJid.userJid);
                     var tokenObj = tokenClass.getConstructors()[0].newInstance(tokenData == null ? null : XposedHelpers.getObjectField(tokenData, "A01"));
