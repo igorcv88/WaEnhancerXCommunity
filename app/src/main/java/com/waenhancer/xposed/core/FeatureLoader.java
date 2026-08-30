@@ -613,11 +613,10 @@ public class FeatureLoader {
     }
 
     private static void initComponents(ClassLoader loader, android.content.SharedPreferences pref) throws Exception {
-        try {
-            FMessageWpp.initialize(loader);
-        } catch (Throwable t) {
-            XposedBridge.log("[WAEX] Failed to initialize FMessageWpp: " + t.getMessage());
-        }
+        // FMessageWpp itself is a core contract. Optional accessors are isolated inside its
+        // initializer, while a genuinely required failure must abort loading instead of leaving
+        // every subsequent feature running against partially initialized static state.
+        FMessageWpp.initialize(loader);
         try {
             com.waenhancer.xposed.core.components.ProtocolTreeNodeWpp.initialize(loader);
         } catch (Throwable t) {
