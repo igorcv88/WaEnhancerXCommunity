@@ -170,9 +170,21 @@ public class WppCore {
             var rawString = (String) XposedHelpers.callMethod(lid, "getRawString");
             if (rawString == null || !rawString.contains("@lid"))
                 return lid;
+            // This resolver has changed shape in recent WhatsApp builds. ReflectionUtils pads
+            // missing arguments for generic callers, but doing that here can pass null into a
+            // newly-added boxed parameter and repeatedly fail inside LSPosed's CompatHooker.
+            // Until that contract is understood, retaining the LID is safer than invoking a
+            // semantically incompatible method from every rendered conversation row.
+            Method converter = convertLidToJid;
+            Object repository = mWaJidMapRepository;
+            if (converter == null || converter.getParameterCount() != 1
+                    || (!Modifier.isStatic(converter.getModifiers()) && repository == null)) {
+                return lid;
+            }
             rawString = rawString.replaceFirst("\\.[\\d:]+@", "@");
             var newUser = WppCore.createUserJid(rawString);
-            var result = ReflectionUtils.callMethod(convertLidToJid, mWaJidMapRepository, newUser);
+            if (newUser == null || !converter.getParameterTypes()[0].isInstance(newUser)) return lid;
+            var result = ReflectionUtils.callMethod(converter, repository, newUser);
             return result == null ? lid : result;
         } catch (Exception e) {
             XposedBridge.log(e);
