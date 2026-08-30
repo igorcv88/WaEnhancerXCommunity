@@ -1,112 +1,90 @@
-# WaEnhancer Community
+<p align="center">
+  <img src=".github/assets/waenhancer-community-banner.svg" alt="WaEnhancer Community" width="100%" />
+</p>
 
-WaEnhancer Community is an independent GPLv3 fork of WaEnhancer for Android. It is an Xposed/LSPosed module that modifies supported WhatsApp builds with privacy, interface, media, and automation options.
+<p align="center">
+  <img alt="Status: Beta" src="https://img.shields.io/badge/status-beta-22c55e?style=for-the-badge" />
+  <img alt="Android 9+" src="https://img.shields.io/badge/Android-9%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white" />
+  <img alt="LSPosed module" src="https://img.shields.io/badge/LSPosed-Xposed%20module-171717?style=for-the-badge" />
+  <a href="https://github.com/igorcv88/WaEnhancerXCommunity/actions/workflows/ci.yml">
+    <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/igorcv88/WaEnhancerXCommunity/ci.yml?branch=master&style=for-the-badge&label=build" />
+  </a>
+  <a href="LICENSE">
+    <img alt="GPLv3" src="https://img.shields.io/badge/license-GPLv3-blue?style=for-the-badge" />
+  </a>
+</p>
 
-This project is not affiliated with, endorsed by, or supported by WhatsApp, Meta, or the upstream maintainer. Modified clients and runtime hooks can break after WhatsApp updates and may create account, privacy, or stability risks.
+<p align="center">
+  <strong>Privacy, customization, media tools and automation for WhatsApp — fully open source.</strong>
+</p>
 
-## Development status
+WaEnhancer Community is an independent **LSPosed/Xposed module for Android** that extends WhatsApp and WhatsApp Business without replacing the original apps. It adds privacy controls, interface customization, media and messaging tools, automation, and quality-of-life features directly to the installed WhatsApp client.
 
-The Community fork is being rebuilt from the upstream `1.7.0` release commit `433a1c630bc1286f2db3c657a63f477aa0aa426d`. The later beta branch is used only as a selective reference.
+> [!IMPORTANT]
+> WaEnhancer Community is not affiliated with, endorsed by, or supported by WhatsApp or Meta. WhatsApp updates can change internal APIs without notice, and using runtime modifications may carry stability or account risks.
 
-The current work branch is not yet a Community release. The first publishable alpha requires, at minimum:
+## Project status
 
-- an independent application ID and signing certificate;
-- complete removal of the closed-source Helper and Pro licensing system;
-- complete removal of Firebase Analytics and Crashlytics;
-- a manually triggered, signed GitHub Release workflow;
-- safe allowlisted configuration export and transactional import;
-- a stable floating bottom bar customizer;
-- repaired CSS parsing, settings icons, and accent-color presets;
-- local diagnostics and documented migration boundaries.
+The project is currently in **beta-stage development**. The core Community architecture and the main feature set are in place; current work is focused on compatibility, regression testing, and polishing the public release experience.
 
-Do not install an APK labeled as WaEnhancer Community unless it is attached to this repository's GitHub Releases and its checksum and signing identity have been verified.
+Feature availability can vary by WhatsApp build. WaEnhancer performs runtime compatibility checks before installing core hooks, and incompatible features are isolated when possible instead of assuming that every nearby WhatsApp version is safe.
 
-## Planned first-alpha features
+## Features
 
-The first alpha is based on the stable `1.7.0` behavior and selectively ports auditable improvements:
+| | |
+| --- | --- |
+| **Privacy & control** | Anti-revoke for messages and statuses, stealth read/status viewing, hide typing or recording indicators, freeze last seen, call and per-contact privacy controls. |
+| **Customization** | Floating bottom bar, Liquid Glass surfaces, colors and themes, wallpapers, home-screen and tab controls, toolbar, bubble, timestamp, and status presentation options. |
+| **Media & messaging** | View-once controls and downloads, status/media downloads, media quality options, edited/deleted message history, video-note tools, and call recording. |
+| **Automation & tools** | Tasker integration, Quick Settings toggles, settings backup/restore, local diagnostics, update checks, and convenience actions. |
 
-- privacy and message hooks already present in the stable base;
-- floating bottom bar controls with safe slider normalization;
-- FAB modes: `Default`, `Minimal`, and `Hidden`;
-- configurable selected-tab indicator;
-- `Stable Glass`, `Compact`, and `Accessibility` presets;
-- semantic accent-color presets for Green, Blue, Cyan, Purple, Orange, Red, and Pink;
-- CSS parser fixes, basic rollback, and safe mode;
-- repaired settings icons and a distinct WaEnhancer entry icon;
-- versioned configuration backup with an explicit allowlist.
+The app exposes many individual toggles inside each category. This README intentionally describes the major capabilities rather than duplicating the changelog.
 
-`Deleted for Me`, preserved deleted media, encrypted full backup, the Element Inspector, Advanced/Liquid Glass, and the future `You` tab are later blocks with separate migration and review gates.
+## Requirements
 
-## Security and privacy model
+- **Android 9 (API 28) or newer**
+- A rooted device with **LSPosed** or another compatible Xposed environment
+- **WhatsApp** (`com.whatsapp`) or **WhatsApp Business** (`com.whatsapp.w4b`)
+- A WhatsApp build that passes the module's compatibility checks
 
-The target Community architecture has these rules:
-
-- all executed code is built from this repository;
-- no external Helper APK, injected DEX, or external native library;
-- no analytics or remote crash reporting;
-- no token embedded in the APK;
-- local diagnostics with sensitive-data redaction;
-- explicit provider operations and caller validation;
-- reversible preference and database migrations;
-- no destructive migration fallback;
-- configuration export by allowlist, never by dumping all preferences.
-
-See [SECURITY.md](SECURITY.md), [PRIVACY.md](PRIVACY.md), [MIGRATIONS.md](MIGRATIONS.md), and [ARCHITECTURE.md](ARCHITECTURE.md).
-
-## Build and release
-
-The release workflow is intentionally manual. It must:
-
-1. be started with `workflow_dispatch`;
-2. use JDK 17 and validate the Gradle wrapper;
-3. decode the signing keystore only in the runner's temporary directory;
-4. build the release variant;
-5. verify the APK signature, certificate, application ID, version, and SHA-256;
-6. create a GitHub Release and attach the APK directly;
-7. remove temporary signing material;
-8. avoid GitHub Actions artifacts.
-
-Required repository secrets:
-
-```text
-KEYSTORE_BASE64
-KEYSTORE_PASSWORD
-KEY_ALIAS
-KEY_PASSWORD
-```
-
-The current key alias is expected to be `batteryremapper-oneui` while the existing keystore retains that alias.
+Because WaEnhancer hooks WhatsApp internals, compatibility is tied to the installed WhatsApp version rather than Android alone.
 
 ## Installation
 
-Published releases require:
+1. Install and configure LSPosed on the rooted device.
+2. Download the WaEnhancer Community APK from this repository's [GitHub Releases](https://github.com/igorcv88/WaEnhancerXCommunity/releases).
+3. Install the APK and enable **WaEnhancer Community** in LSPosed.
+4. Accept the recommended scope and make sure the WhatsApp package you use is enabled.
+5. Force-stop and reopen WhatsApp, then open WaEnhancer Community to configure the features you want.
 
-- a supported Android device;
-- root and a working Xposed/LSPosed environment;
-- WhatsApp or WhatsApp Business explicitly selected in the module scope;
-- a supported WhatsApp version.
-
-After installing a verified release, enable the module in LSPosed, select only the intended WhatsApp packages, force-stop WhatsApp, and reopen it.
+Official public binaries are distributed only through this repository. **If the Releases page is empty, there is no signed public release for that revision yet.** Avoid APK mirrors or repackaged builds.
 
 ## Compatibility
 
-The initial device baseline is:
+WhatsApp changes its internal classes, methods, and layouts frequently. A feature that works on one build may need to be disabled or updated on the next one.
 
-- Galaxy S25 Ultra;
-- Android 16;
-- One UI 8.5 or equivalent environment;
-- WhatsApp `2.26.27.85` as the first compatibility baseline.
+The companion app shows validated WhatsApp versions, while the hooked process can evaluate newer WhatsApp 2.x builds at runtime before enabling the core feature loader. A successful compatibility check means the required contracts were found; it does not guarantee that every UI behavior has been regression-tested on that exact build.
 
-Compatibility with a nearby WhatsApp version is not assumed. Hook failures should disable the affected feature rather than crash the entire app when possible.
+When reporting a compatibility problem, include the Android version, WhatsApp version, LSPosed version, and the relevant WaEnhancer diagnostics. Do not include message contents, phone numbers, tokens, or other personal data.
 
-## Responsible use
+## Privacy and security
 
-Use the module only on devices and accounts you control and in accordance with applicable law, workplace rules, and platform terms. Features that alter delivery state, privacy indicators, forwarding limits, media handling, call behavior, or automated messaging can affect other people and can trigger account restrictions.
+The Community fork is designed to keep diagnostics local and auditable. It does not use Firebase Analytics or Crashlytics, and the executable module code is built from this repository.
 
-Do not use this project for harassment, spam, unauthorized surveillance, credential theft, impersonation, bypassing lawful access controls, or collecting data without consent.
+For the project policies and technical model, see:
+
+- [Privacy policy](PRIVACY.md)
+- [Security policy](SECURITY.md)
+- [Architecture](ARCHITECTURE.md)
+
+## Contributing
+
+Bug reports, compatibility findings, documentation improvements, and pull requests are welcome. Use the repository's [Issues](https://github.com/igorcv88/WaEnhancerXCommunity/issues) for reproducible bugs or feature proposals.
+
+Changes that touch WhatsApp hooks should fail safely when a resolver is unavailable and should avoid turning a single incompatible feature into a process-wide failure.
 
 ## License and attribution
 
-The project remains licensed under the GNU General Public License version 3. Copyright and attribution from the upstream project must be preserved. Distributed APKs must have corresponding source code available, and modifications must be identified clearly.
+WaEnhancer Community is licensed under the **GNU General Public License v3.0**. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-WaEnhancer Community is a modified, independent project and must not be presented as an official WhatsApp product or as an official release from the upstream maintainer.
+This is an independent community fork based on WaEnhancer. Upstream attribution is preserved, and the project must not be presented as an official WhatsApp, Meta, or upstream-maintainer release.
