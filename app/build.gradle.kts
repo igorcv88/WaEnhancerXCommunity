@@ -201,7 +201,6 @@ dependencies {
     implementation(libs.rikkax.widget.borderview)
     implementation(libs.jstyleparser)
     implementation(libs.okhttp)
-    implementation(libs.filepicker)
     implementation(libs.betterypermissionhelper)
     implementation(libs.bcpkix.jdk18on)
     implementation(libs.arscblamer)
