@@ -30,7 +30,7 @@ libxposed-legacy = { group = "de.robv.android.xposed", name = "api", version.ref
 
 androidx-activity = { module = "androidx.activity:activity", version = "1.12.0" }
 androidx-constraintlayout = { module = "androidx.constraintlayout:constraintlayout", version = "2.2.2" }
-androidx-fragment = { module = "androidx.fragment:fragment", version = "1.8.9" }
+androidx-fragment = { module = "androidx.fragment:fragment", version = "1.9.0" }
 androidx-navigation-fragment = { group = "androidx.navigation", name = "navigation-fragment", version.ref = "nav" }
 androidx-navigation-ui = { group = "androidx.navigation", name = "navigation-ui", version.ref = "nav" }
 
