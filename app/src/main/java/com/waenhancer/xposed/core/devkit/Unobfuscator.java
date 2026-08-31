@@ -713,7 +713,7 @@ public class Unobfuscator {
         });
     }
     // TODO: Classes and methods to TimeToSeconds
-
+ 
     public synchronized static Method loadTimeToSecondsMethod(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
             Method setTimeInMillis = Calendar.class.getDeclaredMethod("setTimeInMillis", long.class);
@@ -933,7 +933,7 @@ public class Unobfuscator {
                     } catch (Throwable ignored) {}
                 }
             }
-
+            
             // Search class hierarchy starting from ContactPickerFragment
             Class<?> targetClass = null;
             try {
@@ -971,7 +971,7 @@ public class Unobfuscator {
             // If there are multiple Map fields, select the one referenced in the most methods
             Field bestField = null;
             int maxCount = -1;
-
+            
             java.util.Set<String> classNamesToScan = new java.util.HashSet<>();
             current = targetClass;
             while (current != null && current.getName().startsWith("com.whatsapp")) {
@@ -1048,7 +1048,7 @@ public class Unobfuscator {
             var methods = dexkit.findMethod(new FindMethod().matcher(new MethodMatcher().addUsingNumber(id)));
             if (methods.isEmpty())
                 throw new Exception("MenuStatus method not found");
-
+            
             // Filter out click handlers (which take a MenuItem parameter)
             for (var methodData : methods) {
                 var method = methodData.getMethodInstance(loader);
@@ -1111,30 +1111,6 @@ public class Unobfuscator {
     public synchronized static Method loadViewOnceDownloadMenuMethod(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
             var clazz = XposedHelpers.findClass("com.whatsapp.mediaview.MediaViewFragment", classLoader);
-
-            // Beta-10 Strategy: resolve via ic_viewonce resource usage + MenuItem.setShowAsAction(int)
-            try {
-                int icViewOnceId = Utils.getID("ic_viewonce", "drawable");
-                if (icViewOnceId > 0) {
-                    var methods = dexkit.findMethod(
-                            FindMethod.create().matcher(
-                                    MethodMatcher.create()
-                                            .addUsingNumber(icViewOnceId)
-                                            .addUsingString("setShowAsAction")
-                            )
-                    );
-                    for (var md : methods) {
-                        Method m = convertRealMethod(md, classLoader);
-                        if (m != null) {
-                            for (Class<?> pt : m.getParameterTypes()) {
-                                if (Menu.class.equals(pt)) {
-                                    return m;
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (Exception ignored) {}
 
             // Strategy 1: Original — look for (Menu, MenuInflater) declared directly on the class
             var method = Arrays.stream(clazz.getDeclaredMethods()).filter(m -> m.getParameterCount() == 2 &&
@@ -1424,7 +1400,7 @@ public class Unobfuscator {
 
             if (methods.isEmpty())
                 throw new Exception("No AntiRevoke methods found");
-
+            
             return methods.toArray(new Method[0]);
         });
     }
@@ -1739,18 +1715,18 @@ public class Unobfuscator {
             var conversationClass = XposedHelpers.findClass("com.whatsapp.Conversation", loader);
             if (conversationClass == null)
                 throw new RuntimeException("BlueOnReplayCreateMenuConversation class not found");
-
+            
             Class<?> current = conversationClass;
             Method selectedMethod = null;
-
+            
             while (current != null && current != Object.class) {
                 String clsName = current.getName();
                 if (clsName.startsWith("android.") || clsName.startsWith("androidx.")) {
                     break;
                 }
-
+                
                 /* Log removed */
-
+                
                 // Debug log all methods taking Menu
                 for (Method m : current.getDeclaredMethods()) {
                     for (Class<?> pType : m.getParameterTypes()) {
@@ -1797,10 +1773,10 @@ public class Unobfuscator {
                     /* Log removed */
                     return selectedMethod;
                 }
-
+                
                 current = current.getSuperclass();
             }
-
+            
             // If still not found, try to locate onCreateOptionsMenu on the parent Activity/FragmentActivity level
             try {
                 selectedMethod = XposedHelpers.findMethodExact(conversationClass, "onCreateOptionsMenu", Menu.class);
@@ -1809,7 +1785,7 @@ public class Unobfuscator {
                     return selectedMethod;
                 }
             } catch (Throwable ignored) {}
-
+            
             try {
                 selectedMethod = XposedHelpers.findMethodExact(conversationClass, "onCreatePanelMenu", int.class, Menu.class);
                 if (selectedMethod != null) {
@@ -2344,7 +2320,7 @@ public class Unobfuscator {
                     Class<?> targetClass = null;
                     for (var mData : globalResults) {
                         if (mData.getName().equals("<init>") || mData.getName().equals("<clinit>")) continue;
-
+                        
                         Class<?> cls;
                         try {
                             cls = mData.getDeclaredClass().getInstance(loader);
@@ -2391,7 +2367,7 @@ public class Unobfuscator {
                                         .paramTypes(targetClass.getName(), null)
                                         .returnType("void")));
                             }
-
+                            
                             // Priority 3: member setFMessage(Message)
                             if (bindMethods.isEmpty()) {
                                 bindMethods = classData.findMethod(FindMethod.create().matcher(MethodMatcher.create()
@@ -2399,7 +2375,7 @@ public class Unobfuscator {
                                         .paramTypes(fMessageClass.getName())
                                         .returnType("void")));
                             }
-
+                            
                             if (!bindMethods.isEmpty()) {
                                 method = bindMethods.get(0).getMethodInstance(loader);
                                 ;
@@ -3583,7 +3559,7 @@ public class Unobfuscator {
             var resultMethod = callers.stream().filter(i -> i.isMethod() && i.getDeclaredClassName().contains("IdentityVerificationActivity")).findFirst().orElse(null);
             if (resultMethod == null)
                 throw new RuntimeException("VerifyKey IdentityVerificationActivity caller not found");
-
+            
             for (int x = 0; x <= 250; x++) {
                 if (x == 2966) continue;
                 var matcher = MethodMatcher.create()
@@ -3852,7 +3828,7 @@ public class Unobfuscator {
             // Strategy 3: Dynamic reflection fallback on WaContact class (supporting String & CharSequence, and any access modifier)
             try {
                 for (var m : waContactClass.getDeclaredMethods()) {
-                    if (m.getParameterCount() == 0
+                    if (m.getParameterCount() == 0 
                             && (m.getReturnType() == String.class || m.getReturnType() == CharSequence.class)
                             && !java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
                         return m;
@@ -4021,9 +3997,9 @@ public class Unobfuscator {
     public synchronized static Class loadSettingsActivityClass(ClassLoader loader) throws Exception {
         return UnobfuscatorCache.getInstance().getClass(loader, "SettingsActivity", () -> {
             String[] settingsIdentifiers = {
-                "help_center_url",
-                "setting_help",
-                "settings_privacy",
+                "help_center_url", 
+                "setting_help", 
+                "settings_privacy", 
                 "settings_account",
                 "privacy_checkup",
                 "lists_settings",
@@ -4031,7 +4007,7 @@ public class Unobfuscator {
                 "settings_notifications",
                 "settings_data_usage"
             };
-
+            
             for (String identifier : settingsIdentifiers) {
                 try {
                     Class<?> clazz = findFirstClassUsingStrings(loader, StringMatchType.Contains, identifier);
@@ -4040,7 +4016,7 @@ public class Unobfuscator {
                     }
                 } catch (Exception ignored) {}
             }
-
+            
             // Explicit common names
             String[] names = {
                 "com.whatsapp.settings.Settings",
@@ -4049,12 +4025,12 @@ public class Unobfuscator {
                 "com.whatsapp.home.ui.SettingsActivity",
                 "com.whatsapp.Settings"
             };
-
+            
             for (String name : names) {
                 Class<?> clazz = XposedHelpers.findClassIfExists(name, loader);
                 if (clazz != null) return clazz;
             }
-
+            
             throw new ClassNotFoundException("SettingsActivity class not found after exhaustive search");
         });
     }
@@ -4073,15 +4049,15 @@ public class Unobfuscator {
             }
 
             String[] settingsIdentifiers = {
-                "help_center_url",
-                "setting_help",
-                "settings_privacy",
+                "help_center_url", 
+                "setting_help", 
+                "settings_privacy", 
                 "settings_account",
                 "privacy_checkup",
                 "lists_settings",
                 "group_privacy_settings"
             };
-
+            
             for (String identifier : settingsIdentifiers) {
                 try {
                     Class<?> clazz = findFirstClassUsingStrings(loader, StringMatchType.Contains, identifier);
@@ -4215,8 +4191,8 @@ public class Unobfuscator {
             Class<?> fragmentClass = XposedHelpers.findClass("com.whatsapp.status.playback.fragment.StatusPlaybackContactFragment", loader);
             Class<?> pageControllerBaseClass = loadPausePlaybackMethod(loader).getDeclaringClass();
             for (Method method : fragmentClass.getDeclaredMethods()) {
-                if (java.lang.reflect.Modifier.isStatic(method.getModifiers())
-                        && method.getParameterCount() == 1
+                if (java.lang.reflect.Modifier.isStatic(method.getModifiers()) 
+                        && method.getParameterCount() == 1 
                         && method.getParameterTypes()[0] == fragmentClass
                         && method.getReturnType().isAssignableFrom(pageControllerBaseClass)
                         && method.getReturnType() != Object.class) {
@@ -4321,44 +4297,6 @@ public class Unobfuscator {
             }
             if (methods.isEmpty()) return null;
             return methods.toArray(new Method[0]);
-        });
-    }
-
-    public synchronized static Method[] loadOnDispatchMessage(ClassLoader classLoader) throws Exception {
-        return UnobfuscatorCache.getInstance().getMethods(classLoader, () -> {
-            Set<Method> resultSet = new LinkedHashSet<>();
-            try {
-                MethodDataList result419 = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create().addUsingNumber(419)));
-                for (MethodData md : result419) {
-                    Method m = convertRealMethod(md, classLoader);
-                    if (m != null) {
-                        for (Class<?> pt : m.getParameterTypes()) {
-                            if ("Message".equals(pt.getSimpleName()) || "android.os.Message".equals(pt.getName())) {
-                                resultSet.add(m);
-                                break;
-                            }
-                        }
-                    }
-                }
-            } catch (Exception ignored) {}
-            try {
-                MethodDataList resultString = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create().addUsingString("ConnectionWriter/sendReadReceipts")));
-                for (MethodData md : resultString) {
-                    Method m = convertRealMethod(md, classLoader);
-                    if (m != null) {
-                        for (Class<?> pt : m.getParameterTypes()) {
-                            if ("Message".equals(pt.getSimpleName()) || "android.os.Message".equals(pt.getName())) {
-                                resultSet.add(m);
-                                break;
-                            }
-                        }
-                    }
-                }
-            } catch (Exception ignored) {}
-            if (resultSet.isEmpty()) {
-                throw new Exception("onDispatchMessage methods not found");
-            }
-            return resultSet.toArray(new Method[0]);
         });
     }
 
@@ -4531,7 +4469,7 @@ public class Unobfuscator {
             Class<?> clazz = loadPhoneNumberUtilClass(classLoader);
             Method parseMethod = loadPhoneNumberUtilParse(classLoader);
             Class<?> phoneNumberClass = parseMethod.getReturnType();
-
+            
             List<Method> boolMethods = new ArrayList<>();
             for (Method m : clazz.getDeclaredMethods()) {
                 if (m.getParameterCount() == 1
@@ -4540,7 +4478,7 @@ public class Unobfuscator {
                     boolMethods.add(m);
                 }
             }
-
+            
             for (Method m : boolMethods) {
                 if (m.getName().equals("A0R") || m.getName().toLowerCase().contains("isvalid")) {
                     return m;
