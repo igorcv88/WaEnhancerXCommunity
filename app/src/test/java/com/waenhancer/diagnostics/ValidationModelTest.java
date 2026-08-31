@@ -1,6 +1,8 @@
 package com.waenhancer.diagnostics;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.util.List;
 
@@ -51,5 +53,12 @@ public class ValidationModelTest {
         feature.required = true; feature.enabled = false;
         assertEquals(ValidationModel.Compatibility.VALIDATED,
                 ValidationModel.aggregate(true, false, false, true, List.of(feature)));
+    }
+
+    @Test public void preSessionEventsCannotCountAsSessionEvidence() {
+        assertFalse(ValidationModel.occurredDuringSession(999L, 1_000L));
+        assertFalse(ValidationModel.occurredDuringSession(0L, 1_000L));
+        assertTrue(ValidationModel.occurredDuringSession(1_000L, 1_000L));
+        assertTrue(ValidationModel.occurredDuringSession(1_001L, 1_000L));
     }
 }

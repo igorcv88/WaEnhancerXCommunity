@@ -9,6 +9,10 @@ public final class ValidationModel {
     public enum Compatibility { INCOMPATIBLE, RUNTIME_COMPATIBLE, DEGRADED, VALIDATED }
     public enum FeatureState { DISABLED, NOT_LOADED, RESOLVER_FAILED, INSTALLED, TRIGGERED, ERROR, NOT_EXERCISED }
 
+    public static boolean occurredDuringSession(long eventAt, long sessionStartedAt) {
+        return eventAt > 0L && eventAt >= sessionStartedAt;
+    }
+
     public static final class FeatureEvidence {
         public boolean enabled = true;
         public boolean loaded;

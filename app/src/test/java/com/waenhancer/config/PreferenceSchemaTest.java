@@ -131,6 +131,18 @@ public class PreferenceSchemaTest {
         }
     }
 
+    @Test
+    public void diagnosticSnapshotsAreKnownPrivateRuntimeKeys() {
+        for (String key : java.util.Arrays.asList(
+                "validation_runtime_snapshot_wpp", "validation_runtime_snapshot_business")) {
+            PreferenceSchema.Entry entry = PreferenceSchema.entry(key);
+            assertTrue(key + " must be registered", entry != null);
+            assertEquals(PreferenceSchema.Sensitivity.RUNTIME, entry.sensitivity);
+            assertEquals(PreferenceSchema.Store.PRIVATE, entry.store);
+            assertFalse(PreferenceSchema.isExportable(key));
+        }
+    }
+
     /** Every legacy alias must resolve onto a key the schema actually defines. */
     @Test
     public void legacyAliasesResolveToRealKeys() throws Exception {
