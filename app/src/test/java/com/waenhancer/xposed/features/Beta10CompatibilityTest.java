@@ -3,8 +3,7 @@ package com.waenhancer.xposed.features;
 import android.os.Message;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Mockito;
-import org.robolectric.RobolectricTestRunner;
+import org.junit.runners.JUnit4;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,7 +12,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 
-@RunWith(RobolectricTestRunner.class)
+@RunWith(JUnit4.class)
 public class Beta10CompatibilityTest {
 
     public static class MockMessageInfo {
