@@ -137,7 +137,7 @@ public class ReleaseDetailsActivity extends BaseActivity {
                     .build();
 
             // Fetch from the Community repository
-            String url = "https://api.github.com/repos/igorcv88/WaEnhancerX/releases/tags/" + tagName;
+            String url = "https://api.github.com/repos/igorcv88/WaEnhancerXCommunity/releases/tags/" + tagName;
 
             var requestBuilder = new Request.Builder()
                     .url(url)
@@ -194,15 +194,15 @@ public class ReleaseDetailsActivity extends BaseActivity {
                     android.view.View headerRow = inflater.inflate(R.layout.item_changelog_row, changelogItemsContainer, false);
                     com.google.android.material.textview.MaterialTextView tvCatBadge = headerRow.findViewById(R.id.tv_item_badge);
                     com.google.android.material.textview.MaterialTextView tvCatText = headerRow.findViewById(R.id.tv_item_text);
-                    
+
                     tvCatText.setVisibility(View.GONE);
                     tvCatBadge.setText(category.name.toUpperCase(java.util.Locale.US));
-                    
+
                     // Style the category badge based on category name
                     android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
                     gd.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
                     gd.setCornerRadius(dpToPx(this, 6));
-                    
+
                     int bgColor;
                     if ("added".equalsIgnoreCase(category.name)) {
                         bgColor = 0xFF10B981; // Emerald Green
@@ -216,22 +216,22 @@ public class ReleaseDetailsActivity extends BaseActivity {
                     gd.setColor(bgColor);
                     tvCatBadge.setBackground(gd);
                     tvCatBadge.setTextColor(0xFFFFFFFF);
-                    
+
                     changelogItemsContainer.addView(headerRow);
-                    
+
                     // 2. Inflate Category Bullet Point Rows
                     for (String itemText : category.items) {
                         android.view.View itemRow = inflater.inflate(R.layout.item_changelog_row, changelogItemsContainer, false);
                         com.google.android.material.textview.MaterialTextView tvItemBadge = itemRow.findViewById(R.id.tv_item_badge);
                         com.google.android.material.textview.MaterialTextView tvItemText = itemRow.findViewById(R.id.tv_item_text);
-                        
+
                         tvItemBadge.setVisibility(View.GONE);
                         markwon.setMarkdown(tvItemText, "•  " + itemText);
-                        
+
                         android.widget.LinearLayout.LayoutParams lp = (android.widget.LinearLayout.LayoutParams) tvItemText.getLayoutParams();
                         lp.leftMargin = dpToPx(this, 16);
                         tvItemText.setLayoutParams(lp);
-                        
+
                         changelogItemsContainer.addView(itemRow);
                     }
                 }
