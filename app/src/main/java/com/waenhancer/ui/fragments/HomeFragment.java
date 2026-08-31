@@ -65,8 +65,8 @@ public class HomeFragment extends BaseFragment {
      */
     private static final long MAX_FULL_BACKUP_BYTES = 160L * 1024L * 1024L;
 
-    private static final String RELEASES_URL = "https://github.com/igorcv88/WaEnhancerX/releases";
-    private static final String LATEST_STABLE_URL = "https://github.com/igorcv88/WaEnhancerX/releases/latest";
+    private static final String RELEASES_URL = "https://github.com/igorcv88/WaEnhancerXCommunity/releases";
+    private static final String LATEST_STABLE_URL = "https://github.com/igorcv88/WaEnhancerXCommunity/releases/latest";
 
     /**
      * In-memory flag — reset to false every time the app process starts.
@@ -314,7 +314,7 @@ public class HomeFragment extends BaseFragment {
                                     + "\n---\n"
                                     + description + "\n";
 
-                            String url = "https://github.com/igorcv88/WaEnhancerX/issues/new?title="
+                            String url = "https://github.com/igorcv88/WaEnhancerXCommunity/issues/new?title="
                                     + java.net.URLEncoder.encode(title, "UTF-8") + "&body="
                                     + java.net.URLEncoder.encode(body, "UTF-8");
                             openUrl(requireContext(), url);
@@ -331,14 +331,13 @@ public class HomeFragment extends BaseFragment {
             }
         });
 
-        binding.telegramBtn.setOnClickListener(view -> {
-            animateClick(view);
-            openTelegramChannel(requireContext());
-        });
+        // The Community fork has no Telegram channel. Keep the legacy view hidden so old
+        // layouts remain source-compatible while the only community destination is GitHub.
+        binding.telegramBtn.setVisibility(View.GONE);
 
         binding.githubBtn.setOnClickListener(view -> {
             animateClick(view);
-            openUrl(requireContext(), "https://github.com/igorcv88/WaEnhancerX/issues");
+            openUrl(requireContext(), "https://github.com/igorcv88/WaEnhancerXCommunity/issues");
         });
 
         binding.clearCacheBtn.setOnClickListener(view -> {
@@ -379,7 +378,6 @@ public class HomeFragment extends BaseFragment {
                 intent.setPackage(installedPackage);
                 context.startActivity(intent);
             } catch (Exception e) {
-                // Fallback to implicit intent if explicit one fails
                 context.startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(channelUrl)));
             }
         } else {
@@ -483,7 +481,6 @@ public class HomeFragment extends BaseFragment {
         var sheetView = LayoutInflater.from(context).inflate(R.layout.bottom_sheet_reset, null);
         bottomSheetDialog.setContentView(sheetView);
 
-        // Make background transparent so our custom shape shows
         var bottomSheet = bottomSheetDialog.findViewById(com.google.android.material.R.id.design_bottom_sheet);
         if (bottomSheet != null) {
             bottomSheet.setBackgroundResource(android.R.color.transparent);
@@ -557,9 +554,6 @@ public class HomeFragment extends BaseFragment {
                                 Toast.LENGTH_LONG).show();
                         return;
                     }
-                    // Media is a real choice, not a confirmation. FullBackupManager builds the
-                    // manifest in memory and refuses past 96 MB of media, so a large vault can
-                    // only be exported at all without it.
                     com.waenhancer.ui.helpers.BottomSheetHelper.showSingleChoice(
                             requireActivity(),
                             getString(R.string.backup_full_media_title),
@@ -594,7 +588,6 @@ public class HomeFragment extends BaseFragment {
                     runOnUiThread(() -> Toast.makeText(context, exception.getMessage(),
                             Toast.LENGTH_LONG).show());
                 } finally {
-                    // The password reached the cipher; do not leave it in this buffer.
                     java.util.Arrays.fill(secret, '\0');
                 }
             });
@@ -631,8 +624,6 @@ public class HomeFragment extends BaseFragment {
                                                 report.messages, report.media, report.secrets));
                             });
                         } catch (Exception exception) {
-                            // restore() is transactional and reports its own failure text; a wrong
-                            // password is indistinguishable from a damaged file by design.
                             Log.e("restoreFullBackup", "Unable to restore full backup", exception);
                             runOnUiThread(() -> Toast.makeText(context, exception.getMessage(),
                                     Toast.LENGTH_LONG).show());
@@ -662,8 +653,6 @@ public class HomeFragment extends BaseFragment {
                     output.write(backup.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                     preferences.edit().putBoolean("backup_privacy_notice_seen", true).apply();
 
-                    // Say what the file does not carry. Dropping secrets silently left users
-                    // believing a backup was complete when their API keys were not in it.
                     BackupCodec.ExcludedSummary excluded = BackupCodec.excludedFrom(preferences);
                     if (excluded.hasSecrets()) {
                         com.waenhancer.ui.helpers.BottomSheetHelper.showInfo(
@@ -685,8 +674,6 @@ public class HomeFragment extends BaseFragment {
 
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
 
-        // Shown before every export, not only the first one. This file can be shared, so the
-        // user should be reminded what it carries each time rather than once ever.
         StringBuilder notice = new StringBuilder(
                 "The export contains only allowlisted module settings. It excludes keys, tokens, "
                         + "certificates, internal paths, diagnostics, messages and media. "
@@ -717,8 +704,6 @@ public class HomeFragment extends BaseFragment {
             try (var input = context.getContentResolver().openInputStream(uri)) {
                 if (input == null) throw new IllegalStateException("Unable to open backup.");
 
-                // Which format this is decides the size cap, so read the magic first. A settings
-                // JSON stays on the 2 MB limit; a full backup carries media and cannot.
                 byte[] prefix = new byte[FullBackupCrypto.MAGIC_LENGTH];
                 int prefixRead = 0;
                 while (prefixRead < prefix.length) {
@@ -770,8 +755,6 @@ public class HomeFragment extends BaseFragment {
                 Toast.makeText(context, exception.getMessage(), Toast.LENGTH_LONG).show();
             }
         });
-        // A full backup is not JSON and has no registered type, so the picker cannot filter on
-        // one MIME any more; the magic check above is what actually decides the format.
         FilePicker.fileCapture.launch(new String[]{"*/*"});
     }
 
@@ -798,8 +781,6 @@ public class HomeFragment extends BaseFragment {
             binding.status3.setVisibility(View.GONE);
         }
 
-        // We still send the check broadcast to keep the heartbeat alive for when WhatsApp IS running,
-        // but we no longer wait for its response to determine the basic "Enabled" status.
         checkWpp(activity);
 
         binding.deviceName.setText(Build.MANUFACTURER);
@@ -821,7 +802,6 @@ public class HomeFragment extends BaseFragment {
                     binding.wppVersionStatus, binding.wppStatusIcon, binding.wppUnsupportedBtn,
                     R.array.supported_versions_wpp);
         } else {
-            // Hide WhatsApp section if not the original package flavor
             View parent = (View) binding.wppInstalledVersion.getParent().getParent().getParent();
             if (parent != null) {
                 parent.setVisibility(View.GONE);
@@ -839,24 +819,20 @@ public class HomeFragment extends BaseFragment {
     }
 
     private void updateModuleStatusUi(boolean frameworkPresent, boolean hookEnabled, boolean heartbeatEnabled) {
-        // Show version name in the badge
         binding.statusSummary.setText(String.format("v%s", BuildConfig.VERSION_NAME));
         binding.statusSummary.setVisibility(View.VISIBLE);
 
         if (hookEnabled || heartbeatEnabled) {
-            // Module is active (either directly hooked or validated via WhatsApp process heartbeat)
             binding.statusIcon.setImageResource(R.drawable.ic_round_check_circle_24);
             binding.statusIcon.setColorFilter(null);
             binding.statusTitle.setText(R.string.module_enabled);
             binding.status.getChildAt(0).setBackgroundResource(R.drawable.hero_glow_enabled);
         } else if (frameworkPresent) {
-            // IDLE STATE: Framework detected but nothing is happening
             binding.statusIcon.setImageResource(R.drawable.ic_round_warning_24);
             binding.statusIcon.setColorFilter(ContextCompat.getColor(requireContext(), android.R.color.holo_orange_light));
             binding.statusTitle.setText(R.string.module_disabled);
             binding.status.getChildAt(0).setBackgroundResource(R.drawable.hero_glow_disabled);
         } else {
-            // ERROR STATE: No framework at all
             binding.statusIcon.setImageResource(R.drawable.ic_round_error_outline_24);
             binding.statusIcon.setColorFilter(ContextCompat.getColor(requireContext(), android.R.color.holo_red_light));
             binding.statusTitle.setText(R.string.framework_not_detected);
@@ -882,7 +858,7 @@ public class HomeFragment extends BaseFragment {
 
         int colorError = androidx.core.content.ContextCompat.getColor(activity, android.R.color.holo_red_light);
         int colorOutline = androidx.core.content.ContextCompat.getColor(activity, android.R.color.darker_gray);
-        int colorSuccess = 0xFF2E7D32; // Premium green color!
+        int colorSuccess = 0xFF2E7D32;
 
         try {
             var packageInfo = App.getInstance().getPackageManager().getPackageInfo(packageName, 0);
@@ -972,7 +948,6 @@ public class HomeFragment extends BaseFragment {
     private static void checkWpp(FragmentActivity activity) {
         ;
         Intent checkWpp = new Intent(BuildConfig.APPLICATION_ID + ".CHECK_WPP");
-        // Ensure broadcast reaches WhatsApp even if it is in background/stopped state (Android 14+)
         checkWpp.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
         activity.sendBroadcast(checkWpp);
     }
@@ -984,20 +959,24 @@ public class HomeFragment extends BaseFragment {
                 return;
             }
             String selectedChannel = checkedId == R.id.release_channel_beta_btn ? "beta" : "stable";
-            String installedChannel = getInstalledReleaseChannel();
-            if (!selectedChannel.equals(installedChannel)) {
-                updateReleaseChannelUi(installedChannel);
-                showReleaseInstallPrompt(selectedChannel);
-                return;
-            }
             setReleaseChannel(selectedChannel);
+            binding.updateNotificationCard.setVisibility(View.GONE);
+            checkForUpdates();
         });
     }
 
+    /**
+     * Keep the legacy method name to avoid touching callers, but synchronize from the user's
+     * persisted update channel instead of forcing it to match the currently installed build.
+     */
     private void syncReleaseChannelToInstalled() {
-        String installedChannel = getInstalledReleaseChannel();
-        setReleaseChannel(installedChannel);
-        updateReleaseChannelUi(installedChannel);
+        var prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
+        String selectedChannel = prefs.getString("release_channel", "stable");
+        if (!"beta".equals(selectedChannel)) {
+            selectedChannel = "stable";
+        }
+        setReleaseChannel(selectedChannel);
+        updateReleaseChannelUi(selectedChannel);
     }
 
     private String getInstalledReleaseChannel() {
@@ -1006,7 +985,10 @@ public class HomeFragment extends BaseFragment {
 
     private void setReleaseChannel(String channel) {
         var prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
-        prefs.edit().putString("release_channel", channel).apply();
+        prefs.edit()
+                .putString("release_channel", channel)
+                .remove("update_alert_pref")
+                .apply();
         WppCore.setPrivString("release_channel", channel);
     }
 
@@ -1036,7 +1018,6 @@ public class HomeFragment extends BaseFragment {
                 .show();
     }
 
-    // setModuleActiveState is replaced by updateModuleStatusUi
     private void markModuleActive() {
         sLastHeartbeatTime = System.currentTimeMillis();
     }
@@ -1066,7 +1047,6 @@ public class HomeFragment extends BaseFragment {
                     UnobfuscatorCache.init(App.getInstance());
                     UnobfuscatorCache.getInstance().clearCache();
 
-                    // Send broadcast to WhatsApp/Business processes to clear their internal cache
                     Intent clearIntent = new Intent(BuildConfig.APPLICATION_ID + ".CLEAR_OBFUSCATE_CACHE");
                     requireContext().sendBroadcast(clearIntent);
 
@@ -1080,7 +1060,6 @@ public class HomeFragment extends BaseFragment {
         binding.dismissUpdateBtn.setOnClickListener(v -> {
             animateClick(v);
             binding.updateNotificationCard.setVisibility(View.GONE);
-            // Optionally store ignored version in prefs
         });
 
         binding.viewChangelogBtn.setOnClickListener(v -> {
@@ -1112,7 +1091,6 @@ public class HomeFragment extends BaseFragment {
             binding.updateNotificationChangelog.setText(changelog);
             binding.updateNotificationCard.setVisibility(View.VISIBLE);
 
-            // Animation for the banner
             var anim = AnimationUtils.loadAnimation(getContext(), R.anim.slide_up);
             binding.updateNotificationCard.startAnimation(anim);
         });
@@ -1175,7 +1153,6 @@ public class HomeFragment extends BaseFragment {
             return "LSPosed|Not Detected";
         }
 
-        // Determine framework name (LSPosed, EdXposed, or Xposed)
         String frameworkName = "LSPosed";
         android.content.pm.PackageManager pm = context.getPackageManager();
         String[] managerPackages = {
