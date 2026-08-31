@@ -5,14 +5,14 @@ betterypermissionhelper = "1.0.3"
 documentfile = "1.1.0"
 filepicker = "9.2.5"
 jstyleparser = "4.0.1"
-lombok = "1.18.42"
-okhttp = "5.3.2"
+lombok = "1.18.46"
+okhttp = "5.5.0"
 xposed-legacy = "82"
 agp = "8.13.2"
 colorpicker = "1.1.0"
 dexkit = "2.2.0"
 nav = "2.10.0"
-kotlin = "2.2.21"
+kotlin = "2.4.10"
 markwon = "4.6.2"
 blurview = "version-2.0.6"
 
@@ -29,7 +29,7 @@ jstyleparser = { module = "net.sf.cssbox:jstyleparser", version.ref = "jstylepar
 libxposed-legacy = { group = "de.robv.android.xposed", name = "api", version.ref = "xposed-legacy" }
 
 androidx-activity = { module = "androidx.activity:activity", version = "1.12.0" }
-androidx-constraintlayout = { module = "androidx.constraintlayout:constraintlayout", version = "2.2.1" }
+androidx-constraintlayout = { module = "androidx.constraintlayout:constraintlayout", version = "2.2.2" }
 androidx-fragment = { module = "androidx.fragment:fragment", version = "1.8.9" }
 androidx-navigation-fragment = { group = "androidx.navigation", name = "navigation-fragment", version.ref = "nav" }
 androidx-navigation-ui = { group = "androidx.navigation", name = "navigation-ui", version.ref = "nav" }
@@ -41,7 +41,7 @@ rikkax-core = { module = "dev.rikka.rikkax.core:core", version = "1.4.1" }
 rikkax-material = { module = "dev.rikka.rikkax.material:material", version = "2.7.2" }
 rikkax-material-preference = { module = "dev.rikka.rikkax.material:material-preference", version = "2.0.0" }
 rikkax-widget-borderview = { module = "dev.rikka.rikkax.widget:borderview", version = "1.1.0" }
-material = { module = "com.google.android.material:material", version = "1.14.0-beta01" }
+material = { module = "com.google.android.material:material", version = "1.14.0" }
 markwon-core = { module = "io.noties.markwon:core", version.ref = "markwon" }
 markwon-html = { module = "io.noties.markwon:html", version.ref = "markwon" }
 
