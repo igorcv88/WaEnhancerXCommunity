@@ -640,8 +640,8 @@ public class BottomSheetHelper {
 
         android.content.SharedPreferences prefs = context.getSharedPreferences("github_user_cache",
                 Context.MODE_PRIVATE);
-        long lastFetch = prefs.getLong("repo_stats_time", 0);
-        String cachedJson = prefs.getString("repo_stats_json", null);
+        long lastFetch = prefs.getLong("community_repo_stats_time", 0);
+        String cachedJson = prefs.getString("community_repo_stats_json", null);
 
         if (cachedJson != null && (System.currentTimeMillis() - lastFetch < 3600000)) {
             parseAndPopulateContributions(context, view, bottomSheet, cachedJson, login);
@@ -649,7 +649,7 @@ public class BottomSheetHelper {
         }
 
         okhttp3.Request request = new okhttp3.Request.Builder()
-                .url("https://api.github.com/repos/igorcv88/WaEnhancerX/stats/contributors")
+                .url("https://api.github.com/repos/igorcv88/WaEnhancerXCommunity/stats/contributors")
                 .header("User-Agent", "WaEnhancerX-App")
                 .header("Accept", "application/vnd.github.v3+json")
                 .build();
@@ -691,8 +691,8 @@ public class BottomSheetHelper {
                 try {
                     String json = response.body().string();
                     prefs.edit()
-                            .putLong("repo_stats_time", System.currentTimeMillis())
-                            .putString("repo_stats_json", json)
+                            .putLong("community_repo_stats_time", System.currentTimeMillis())
+                            .putString("community_repo_stats_json", json)
                             .apply();
 
                     new android.os.Handler(android.os.Looper.getMainLooper())
