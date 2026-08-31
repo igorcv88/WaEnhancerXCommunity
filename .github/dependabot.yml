@@ -12,8 +12,9 @@ updates:
   - package-ecosystem: gradle
     directory: /
     schedule:
-      interval: daily
-    groups:
-      maven:
-        patterns:
-          - "*"
+      interval: weekly
+    open-pull-requests-limit: 10
+    # Keep Gradle/Maven updates isolated. Toolchain majors (AGP, Gradle, Kotlin)
+    # and Android runtime libraries have different compatibility constraints, and
+    # grouping everything into one PR makes one incompatible upgrade block every
+    # unrelated patch update.
