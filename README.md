@@ -9,7 +9,7 @@
   <a href="https://github.com/igorcv88/WaEnhancerXCommunity/actions/workflows/ci.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/igorcv88/WaEnhancerXCommunity/ci.yml?branch=master&amp;label=build" /></a>
   <a href="https://github.com/igorcv88/WaEnhancerXCommunity/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/igorcv88/WaEnhancerXCommunity?label=release" /></a>
   <a href="https://github.com/igorcv88/WaEnhancerXCommunity/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/igorcv88/WaEnhancerXCommunity/total" /></a>
-  <a href="https://github.com/igorcv88/WaEnhancerXCommunity/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/igorcv88/WaEnhancerXCommunity?label=stars&amp;labelColor=555&amp;color=2f81f7" /></a>
+  <a href="https://github.com/igorcv88/WaEnhancerXCommunity/stargazers"><img alt="Stars" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Frepos%2Figorcv88%2FWaEnhancerXCommunity&amp;query=%24.stargazers_count&amp;label=stars&amp;logo=github&amp;labelColor=555&amp;color=2f81f7&amp;style=flat" /></a>
   <a href="LICENSE"><img alt="GPLv3" src="https://img.shields.io/badge/license-GPLv3-blue" /></a>
 </p>
 
@@ -17,7 +17,7 @@
   <strong>Privacy, customization, media tools and automation for WhatsApp — fully open source.</strong>
 </p>
 
-WaEnhancer Community is an independent **LSPosed/Xposed module for Android** that extends WhatsApp and WhatsApp Business without replacing the original apps. It adds privacy controls, interface customization, media and messaging tools, automation, and quality-of-life features directly to the installed WhatsApp client.
+WaEnhancer Community is an independent **LSPosed/Xposed module for Android** that extends WhatsApp and WhatsApp Business without replacing the original apps. It adds privacy controls, interface customization, media and messaging tools, automation, and quality-of-life features, including settings that can be opened directly inside WhatsApp.
 
 > [!IMPORTANT]
 > WaEnhancer Community is not affiliated with, endorsed by, or supported by WhatsApp or Meta. WhatsApp updates can change internal APIs without notice, and using runtime modifications may carry stability or account risks.
@@ -32,10 +32,10 @@ Feature availability can vary by WhatsApp build. WaEnhancer performs runtime com
 
 | | |
 | --- | --- |
-| **Privacy & control** | Anti-revoke for messages and statuses, stealth read/status viewing, hide typing or recording indicators, freeze last seen, call and per-contact privacy controls. |
-| **Customization** | Floating bottom bar, Liquid Glass surfaces, colors and themes, wallpapers, home-screen and tab controls, toolbar, bubble, timestamp, and status presentation options. |
-| **Media & messaging** | View-once controls and downloads, status/media downloads, media quality options, edited/deleted message history, video-note tools, and call recording. |
-| **Automation & tools** | Tasker integration, Quick Settings toggles, settings backup/restore, local diagnostics, update checks, and convenience actions. |
+| **Privacy & control** | Anti-revoke, view-once controls, stealth read/status viewing, hide typing or recording indicators, freeze last seen, locked-chat enhancements, call and per-contact privacy controls. |
+| **Customization** | Embedded settings inside WhatsApp, floating bottom bar, Liquid Glass surfaces, colors and themes, wallpapers, home-screen and tab controls, toolbar, bubble, timestamp, and status presentation options. |
+| **Media & messaging** | View-once, status and profile-picture downloads, media quality options, edited/deleted message history, video-note tools, auto status forwarding, and call recording. |
+| **Automation & tools** | Tasker integration, audio transcription, chat filters, pinned/share-limit controls, Quick Settings toggles, settings backup/restore, local diagnostics, and update checks. |
 
 The app exposes many individual toggles inside each category. This README intentionally describes the major capabilities rather than duplicating the changelog.
 
@@ -86,4 +86,4 @@ Changes that touch WhatsApp hooks should fail safely when a resolver is unavaila
 
 WaEnhancer Community is licensed under the **GNU General Public License v3.0**. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-This is an independent community fork based on WaEnhancer. Upstream attribution is preserved, and the project must not be presented as an official WhatsApp, Meta, or upstream-maintainer release.
+This is an independent community fork based on **WaEnhancer X**. The original source URL is preserved in [SOURCE_URL](SOURCE_URL); this project is not an official WhatsApp, Meta, or upstream-maintainer release.
