@@ -1,6 +1,6 @@
 [versions]
 arscblamer = "1.0"
-bcpkix-jdk18on = "1.83"
+bcpkix-jdk18on = "1.84"
 betterypermissionhelper = "1.0.3"
 documentfile = "1.1.0"
 jstyleparser = "4.0.1"
