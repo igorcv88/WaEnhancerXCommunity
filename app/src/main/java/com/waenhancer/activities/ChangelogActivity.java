@@ -24,7 +24,6 @@ import com.waenhancer.UpdateDownloader;
 import com.waenhancer.activities.base.BaseActivity;
 import com.waenhancer.UpdateChecker;
 import com.google.android.material.tabs.TabLayout;
-// import com.facebook.shimmer.ShimmerFrameLayout;
 import com.google.android.material.loadingindicator.LoadingIndicator;
 
 import org.json.JSONArray;
@@ -48,14 +47,13 @@ public class ChangelogActivity extends BaseActivity {
     public static final String EXTRA_TARGET_CHANNEL = "target_channel";
 
     private RecyclerView recyclerView;
-    // private ShimmerFrameLayout shimmerFrameLayout;
     private LoadingIndicator progressIndicator;
     private TabLayout tabLayout;
     private ChangelogAdapter adapter;
     private final List<JSONObject> stableReleases = new ArrayList<>();
     private final List<JSONObject> betaReleases = new ArrayList<>();
     private boolean downgradesEnabled = false;
-    private static final String RELEASES_API = "https://api.github.com/repos/igorcv88/WaEnhancerX/releases";
+    private static final String RELEASES_API = "https://api.github.com/repos/igorcv88/WaEnhancerXCommunity/releases";
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -70,7 +68,6 @@ public class ChangelogActivity extends BaseActivity {
         toolbar.setNavigationOnClickListener(v -> onBackPressed());
 
         recyclerView = findViewById(R.id.changelog_recycler);
-        // shimmerFrameLayout = findViewById(R.id.shimmer_view_container);
         progressIndicator = findViewById(R.id.expressive_loading_progress);
         tabLayout = findViewById(R.id.tabs);
 
@@ -94,7 +91,6 @@ public class ChangelogActivity extends BaseActivity {
 
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         adapter = new ChangelogAdapter(getCurrentVersion());
-        // Load initial state
         downgradesEnabled = PreferenceManager.getDefaultSharedPreferences(this).getBoolean("downgrades_enabled", false);
         adapter.setDowngradesEnabled(downgradesEnabled);
 
@@ -106,7 +102,6 @@ public class ChangelogActivity extends BaseActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Refresh settings in case they were changed in UpdateSettingsActivity
         boolean newDowngradeState = PreferenceManager.getDefaultSharedPreferences(this).getBoolean("downgrades_enabled", false);
         if (newDowngradeState != downgradesEnabled) {
             downgradesEnabled = newDowngradeState;
@@ -114,10 +109,6 @@ public class ChangelogActivity extends BaseActivity {
         }
     }
 
-    // @Override
-    // public void onBackPressed() {
-    //     navigateToHome();
-    // }
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.menu_changelog, menu);
@@ -127,7 +118,6 @@ public class ChangelogActivity extends BaseActivity {
     @Override
     public boolean onOptionsItemSelected(@NonNull android.view.MenuItem item) {
         if (item.getItemId() == android.R.id.home) {
-            // navigateToHome();
             onBackPressed();
             return true;
         }
@@ -154,8 +144,6 @@ public class ChangelogActivity extends BaseActivity {
     }
 
     private void fetchChangelog() {
-        // shimmerFrameLayout.setVisibility(View.VISIBLE);
-        // shimmerFrameLayout.startShimmer();
         if (progressIndicator != null) {
             progressIndicator.setVisibility(View.VISIBLE);
         }
@@ -182,8 +170,6 @@ public class ChangelogActivity extends BaseActivity {
                     categorizeReleases(releases);
 
                     runOnUiThread(() -> {
-                        // shimmerFrameLayout.stopShimmer();
-                        // shimmerFrameLayout.setVisibility(View.GONE);
                         if (progressIndicator != null) {
                             progressIndicator.setVisibility(View.GONE);
                         }
@@ -209,8 +195,6 @@ public class ChangelogActivity extends BaseActivity {
                 }
             } catch (Exception e) {
                 runOnUiThread(() -> {
-                    // shimmerFrameLayout.stopShimmer();
-                    // shimmerFrameLayout.setVisibility(View.GONE);
                     if (progressIndicator != null) {
                         progressIndicator.setVisibility(View.GONE);
                     }
@@ -339,7 +323,6 @@ public class ChangelogActivity extends BaseActivity {
                     continue;
                 }
 
-                // Check if the line is a category header, e.g., [Added], [Fixes], [Improvements]
                 if (line.startsWith("[") && line.endsWith("]")) {
                     String catName = line.substring(1, line.length() - 1).trim();
                     currentCategory = findOrCreateCategory(categories, catName);
@@ -416,7 +399,7 @@ public class ChangelogActivity extends BaseActivity {
 
             tvVersion.setText(tagName);
             tvDate.setText(formatDate(publishedAt));
-            tvBadge.setVisibility(View.GONE); // No need of mentioning Stable/Beta chip on each item
+            tvBadge.setVisibility(View.GONE);
 
             if (isInstalled) {
                 tvInstalledBadge.setVisibility(View.VISIBLE);
@@ -429,7 +412,6 @@ public class ChangelogActivity extends BaseActivity {
                 tvInstalledBadge.setVisibility(View.GONE);
             }
 
-            // Handle Expand/Collapse State
             boolean isExpanded = expandedTags.contains(tagName);
             layoutCollapsible.setVisibility(isExpanded ? View.VISIBLE : View.GONE);
             ivExpandArrow.setRotation(isExpanded ? 270 : 90);
@@ -447,7 +429,6 @@ public class ChangelogActivity extends BaseActivity {
                 }
             });
 
-            // Populate Changelog Items
             changelogItemsContainer.removeAllViews();
             List<ParsedCategory> parsedCategories = parseBody(body);
             if (parsedCategories.isEmpty()) {
@@ -457,7 +438,6 @@ public class ChangelogActivity extends BaseActivity {
                 tvBody.setVisibility(View.GONE);
                 android.view.LayoutInflater inflater = android.view.LayoutInflater.from(itemView.getContext());
                 for (ParsedCategory category : parsedCategories) {
-                    // 1. Inflate Category Header Row
                     android.view.View headerRow = inflater.inflate(R.layout.item_changelog_row, changelogItemsContainer, false);
                     com.google.android.material.textview.MaterialTextView tvCatBadge = headerRow.findViewById(R.id.tv_item_badge);
                     com.google.android.material.textview.MaterialTextView tvCatText = headerRow.findViewById(R.id.tv_item_text);
@@ -465,20 +445,19 @@ public class ChangelogActivity extends BaseActivity {
                     tvCatText.setVisibility(View.GONE);
                     tvCatBadge.setText(category.name.toUpperCase(java.util.Locale.US));
 
-                    // Style the category badge based on category name
                     android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
                     gd.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
                     gd.setCornerRadius(dpToPx(itemView.getContext(), 6));
 
                     int bgColor;
                     if ("added".equalsIgnoreCase(category.name)) {
-                        bgColor = 0xFF10B981; // Emerald Green
+                        bgColor = 0xFF10B981;
                     } else if ("improvements".equalsIgnoreCase(category.name)) {
-                        bgColor = 0xFF3B82F6; // Vibrant Blue
+                        bgColor = 0xFF3B82F6;
                     } else if ("fixes".equalsIgnoreCase(category.name)) {
-                        bgColor = 0xFFEF4444; // Coral Red
+                        bgColor = 0xFFEF4444;
                     } else {
-                        bgColor = 0xFF64748B; // Slate Gray
+                        bgColor = 0xFF64748B;
                     }
                     gd.setColor(bgColor);
                     tvCatBadge.setBackground(gd);
@@ -486,7 +465,6 @@ public class ChangelogActivity extends BaseActivity {
 
                     changelogItemsContainer.addView(headerRow);
 
-                    // 2. Inflate Category Bullet Point Rows
                     for (String itemText : category.items) {
                         android.view.View itemRow = inflater.inflate(R.layout.item_changelog_row, changelogItemsContainer, false);
                         com.google.android.material.textview.MaterialTextView tvItemBadge = itemRow.findViewById(R.id.tv_item_badge);
@@ -569,9 +547,6 @@ public class ChangelogActivity extends BaseActivity {
             final JSONObject finalSwitchAsset = switchAsset;
             final JSONObject finalReleaseAsset = releaseAsset;
             final JSONObject finalDebugAsset = debugAsset;
-            // The release workflow appends "SHA-256: `<hex>`" to every set of release notes it
-            // publishes; that line is how the expected digest reaches the verifier. Notes without
-            // one yield null, and the verifier refuses rather than installing unchecked.
             final String publishedSha256 = com.waenhancer.security.UpdateVerifier
                     .extractSha256(release.optString("body", ""));
 
@@ -587,7 +562,7 @@ public class ChangelogActivity extends BaseActivity {
                     try {
                         android.content.Context context = v.getContext();
                         android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW,
-                                android.net.Uri.parse("https://github.com/igorcv88/WaEnhancerX/releases"));
+                                android.net.Uri.parse("https://github.com/igorcv88/WaEnhancerXCommunity/releases"));
                         context.startActivity(intent);
                     } catch (Exception ignored) {
                     }
@@ -633,7 +608,7 @@ public class ChangelogActivity extends BaseActivity {
                 }
             });
 
-            String htmlUrl = release.optString("html_url", "https://github.com/igorcv88/WaEnhancerX/releases");
+            String htmlUrl = release.optString("html_url", "https://github.com/igorcv88/WaEnhancerXCommunity/releases");
             btnGithub.setOnClickListener(v -> {
                 try {
                     android.content.Context context = v.getContext();

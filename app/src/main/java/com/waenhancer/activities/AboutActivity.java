@@ -1,40 +1,27 @@
 package com.waenhancer.activities;
 
 import android.content.Intent;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.util.LruCache;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.waenhancer.R;
 import com.waenhancer.activities.base.BaseActivity;
 import com.waenhancer.databinding.ActivityAboutBinding;
-import com.waenhancer.xposed.utils.Utils;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -48,7 +35,7 @@ public class AboutActivity extends BaseActivity {
     private ContributorAdapter adapter;
     private List<Contributor> contributorList = new ArrayList<>();
 
-    private static final String API_URL = "https://api.github.com/repos/igorcv88/WaEnhancerX/contributors";
+    private static final String API_URL = "https://api.github.com/repos/igorcv88/WaEnhancerXCommunity/contributors";
     private static final OkHttpClient client = new OkHttpClient();
 
     @Override
@@ -57,8 +44,9 @@ public class AboutActivity extends BaseActivity {
         binding = ActivityAboutBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
-        binding.btnTelegram.setOnClickListener(v -> openTelegramChannel());
-        binding.btnGithub.setOnClickListener(view -> openUrl("https://github.com/igorcv88/WaEnhancerX/issues"));
+        // The Community fork has no Telegram destination.
+        binding.btnTelegram.setVisibility(View.GONE);
+        binding.btnGithub.setOnClickListener(view -> openUrl("https://github.com/igorcv88/WaEnhancerXCommunity/issues"));
 
         adapter = new ContributorAdapter();
         binding.rvContributors.setAdapter(adapter);
@@ -66,36 +54,16 @@ public class AboutActivity extends BaseActivity {
         fetchContributors();
     }
 
-    private void openTelegramChannel() {
-        String channelUrl = "https://t.me/WaEnhancerX";
-        String installedPackage = Utils.getInstalledTelegramPackage(this);
-
-        if (installedPackage != null) {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(channelUrl));
-            try {
-                intent.setPackage(installedPackage);
-                startActivity(intent);
-            } catch (Exception e) {
-                // Fallback to implicit intent if explicit one fails
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(channelUrl)));
-            }
-        } else {
-            Toast.makeText(this, "Telegram app is not installed", Toast.LENGTH_SHORT).show();
-        }
-    }
-
     private void fetchContributors() {
         android.content.SharedPreferences prefs = getSharedPreferences("github_api_cache", MODE_PRIVATE);
         long lastFetch = prefs.getLong("last_fetch", 0);
         String cachedJson = prefs.getString("contributors_json", null);
 
-        // 1-hour cache
         if (cachedJson != null && (System.currentTimeMillis() - lastFetch < 3600000)) {
             parseContributorsAndRefresh(cachedJson);
             return;
         }
 
-        // Show loading state
         if (binding.expressiveLoadingProgress != null) {
             binding.expressiveLoadingProgress.setVisibility(View.VISIBLE);
         }
@@ -111,7 +79,6 @@ public class AboutActivity extends BaseActivity {
             @Override
             public void onFailure(@NonNull Call call, @NonNull java.io.IOException e) {
                 runOnUiThread(() -> {
-                    // Fallback to cache if failed
                     if (cachedJson != null) {
                         parseContributorsAndRefresh(cachedJson);
                     } else {
@@ -214,7 +181,7 @@ public class AboutActivity extends BaseActivity {
         public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
             Contributor c = contributorList.get(position);
 
-            holder.ivAvatar.clearColorFilter(); // Remove default tint when loading real image
+            holder.ivAvatar.clearColorFilter();
             com.bumptech.glide.Glide.with(holder.itemView.getContext())
                     .load(new com.bumptech.glide.load.model.GlideUrl(c.avatarUrl,
                             new com.bumptech.glide.load.model.LazyHeaders.Builder()
@@ -242,5 +209,4 @@ public class AboutActivity extends BaseActivity {
             }
         }
     }
-
 }

@@ -1,6 +1,7 @@
 package com.waenhancer.activities;
 
 import android.os.Bundle;
+import android.view.View;
 import android.widget.RadioGroup;
 import android.widget.Toast;
 
@@ -12,11 +13,13 @@ import com.google.android.material.materialswitch.MaterialSwitch;
 import com.waenhancer.R;
 import com.waenhancer.activities.base.BaseActivity;
 import com.waenhancer.utils.RootUtils;
+import com.waenhancer.xposed.core.WppCore;
 
 public class UpdateSettingsActivity extends BaseActivity {
 
     private static final String PREF_DOWNGRADES = "downgrades_enabled";
-    private static final String PREF_UPDATE_ALERTS = "update_alert_pref";
+    private static final String PREF_RELEASE_CHANNEL = "release_channel";
+    private static final String LEGACY_PREF_UPDATE_ALERTS = "update_alert_pref";
     private static final String PREF_UPDATE_FREQ = "update_alert_frequency";
 
     @Override
@@ -54,37 +57,41 @@ public class UpdateSettingsActivity extends BaseActivity {
         });
 
         RadioGroup radioGroup = findViewById(R.id.radio_group_update_alerts);
-        String currentAlertPref = prefs.getString(PREF_UPDATE_ALERTS, "both");
-        
-        switch (currentAlertPref) {
-            case "stable":
-                radioGroup.check(R.id.radio_stable);
-                break;
-            case "beta":
-                radioGroup.check(R.id.radio_beta);
-                break;
-            case "both":
-            default:
-                radioGroup.check(R.id.radio_both);
-                break;
+        View legacyBoth = findViewById(R.id.radio_both);
+        if (legacyBoth != null) {
+            legacyBoth.setVisibility(View.GONE);
         }
 
-        radioGroup.setOnCheckedChangeListener((group, checkedId) -> {
-            String val = "both";
-            if (checkedId == R.id.radio_stable) val = "stable";
-            else if (checkedId == R.id.radio_beta) val = "beta";
-            
+        String currentChannel = prefs.getString(PREF_RELEASE_CHANNEL, null);
+        if (currentChannel == null) {
+            String legacy = prefs.getString(LEGACY_PREF_UPDATE_ALERTS, "stable");
+            currentChannel = "beta".equals(legacy) ? "beta" : "stable";
             prefs.edit()
-                .putString(PREF_UPDATE_ALERTS, val)
-                .putBoolean("need_restart", true)
-                .apply();
+                    .putString(PREF_RELEASE_CHANNEL, currentChannel)
+                    .remove(LEGACY_PREF_UPDATE_ALERTS)
+                    .apply();
+        }
+
+        if ("beta".equals(currentChannel)) {
+            radioGroup.check(R.id.radio_beta);
+        } else {
+            radioGroup.check(R.id.radio_stable);
+        }
+        WppCore.setPrivString(PREF_RELEASE_CHANNEL, currentChannel);
+
+        radioGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            String channel = checkedId == R.id.radio_beta ? "beta" : "stable";
+            prefs.edit()
+                    .putString(PREF_RELEASE_CHANNEL, channel)
+                    .remove(LEGACY_PREF_UPDATE_ALERTS)
+                    .apply();
+            WppCore.setPrivString(PREF_RELEASE_CHANNEL, channel);
         });
 
-        // Update Alert Frequency Dropdown
         android.widget.AutoCompleteTextView freqDropdown = findViewById(R.id.auto_complete_update_frequency);
         String[] freqEntries = getResources().getStringArray(R.array.update_frequency_entries);
         String[] freqValues = getResources().getStringArray(R.array.update_frequency_values);
-        
+
         android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(this, android.R.layout.simple_dropdown_item_1line, freqEntries);
         freqDropdown.setAdapter(adapter);
 
@@ -100,10 +107,8 @@ public class UpdateSettingsActivity extends BaseActivity {
 
         freqDropdown.setOnItemClickListener((parent, view, position, id) -> {
             String selectedValue = freqValues[position];
-            prefs.edit()
-                .putString(PREF_UPDATE_FREQ, selectedValue)
-                .putBoolean("need_restart", true)
-                .apply();
+            prefs.edit().putString(PREF_UPDATE_FREQ, selectedValue).apply();
+            WppCore.setPrivString(PREF_UPDATE_FREQ, selectedValue);
         });
     }
 }

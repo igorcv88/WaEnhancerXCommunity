@@ -108,7 +108,7 @@ jobs:
               VERSION_NAME="${RELEASE_SERIES}.${PATCH}-beta-${BETA_SEQUENCE}"
               TAG_NAME="v${VERSION_NAME}"
               RELEASE_TITLE="WaEnhancer Community ${VERSION_NAME} Beta"
-              PRERELEASE=true
+              PRERELEASE=false
               ;;
             stable)
               if (( BETA_PATCH > STABLE_PATCH )); then
