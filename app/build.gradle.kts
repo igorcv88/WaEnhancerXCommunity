@@ -10,7 +10,10 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(17)
+    // RikkaX Material 2.7.2 is published as Java 21 bytecode. Use a JDK 21
+    // compiler so javac can read that dependency while the app itself still
+    // emits Java 17 bytecode via compileOptions below.
+    jvmToolchain(21)
 }
 
 android {
