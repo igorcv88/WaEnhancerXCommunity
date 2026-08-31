@@ -3,15 +3,14 @@
 </p>
 
 <p align="center">
-  <img alt="Status: Beta" src="https://img.shields.io/badge/status-beta-22c55e?style=for-the-badge" />
-  <img alt="Android 9+" src="https://img.shields.io/badge/Android-9%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white" />
-  <img alt="LSPosed module" src="https://img.shields.io/badge/LSPosed-Xposed%20module-171717?style=for-the-badge" />
-  <a href="https://github.com/igorcv88/WaEnhancerXCommunity/actions/workflows/ci.yml">
-    <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/igorcv88/WaEnhancerXCommunity/ci.yml?branch=master&style=for-the-badge&label=build" />
-  </a>
-  <a href="LICENSE">
-    <img alt="GPLv3" src="https://img.shields.io/badge/license-GPLv3-blue?style=for-the-badge" />
-  </a>
+  <img alt="Status: Beta" src="https://img.shields.io/badge/status-beta-22c55e" />
+  <img alt="Android 9+" src="https://img.shields.io/badge/Android-9%2B-3DDC84?logo=android&logoColor=white" />
+  <img alt="LSPosed module" src="https://img.shields.io/badge/LSPosed-Xposed%20module-171717" />
+  <a href="https://github.com/igorcv88/WaEnhancerXCommunity/actions/workflows/ci.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/igorcv88/WaEnhancerXCommunity/ci.yml?branch=master&label=build" /></a>
+  <a href="https://github.com/igorcv88/WaEnhancerXCommunity/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/igorcv88/WaEnhancerXCommunity?label=release" /></a>
+  <a href="https://github.com/igorcv88/WaEnhancerXCommunity/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/igorcv88/WaEnhancerXCommunity/total" /></a>
+  <a href="https://github.com/igorcv88/WaEnhancerXCommunity/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/igorcv88/WaEnhancerXCommunity" /></a>
+  <a href="LICENSE"><img alt="GPLv3" src="https://img.shields.io/badge/license-GPLv3-blue" /></a>
 </p>
 
 <p align="center">
