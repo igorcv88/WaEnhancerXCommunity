@@ -196,12 +196,12 @@ public class FeatureLoader {
     public static String getModuleString(Context context, int resId, String fallback) {
         try {
             Context moduleContext = context.createPackageContext(BuildConfig.APPLICATION_ID, 0);
-
-            // Explicitly apply the host's configuration (which contains the active locale)
+            
+            // Explicitly apply the host's configuration (which contains the active locale) 
             // to the module context so it doesn't default to the system language.
             android.content.res.Configuration hostConfig = context.getResources().getConfiguration();
             Context localizedContext = moduleContext.createConfigurationContext(hostConfig);
-
+            
             String result = localizedContext.getResources().getString(resId);
             return (result != null && !result.isEmpty()) ? result : fallback;
         } catch (Throwable t) {
@@ -221,7 +221,7 @@ public class FeatureLoader {
                     @SuppressWarnings("deprecation")
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                         mApp = (Application) param.args[0];
-
+                        
                         // Show initial feedback immediately (if enabled)
                         if (pref.getBoolean("show_hook_toast", true)) {
                             new Handler(Looper.getMainLooper()).post(() -> {
@@ -511,7 +511,7 @@ public class FeatureLoader {
     private static void load(ClassLoader loader, SharedPreferences providerPrefs, PackageInfo packageInfo, String sourceDir) {
         try {
             var timemillis = System.currentTimeMillis();
-
+            
             Unobfuscator.loadLibrary(mApp);
             if (!Unobfuscator.initWithPath(sourceDir)) {
                 ;
@@ -529,7 +529,7 @@ public class FeatureLoader {
                 if (all == null || all.isEmpty()) {
                     var localPrefs = mApp.getSharedPreferences("wae_embedded_prefs", Context.MODE_PRIVATE);
                     providerPrefs = new com.waenhancer.xposed.bridge.client.ProviderSharedPreferences(mApp, localPrefs, providerPrefs);
-
+                    
                     // Update global references
                     Utils.xprefs = providerPrefs;
                     Feature.DEBUG = false;
@@ -555,13 +555,13 @@ public class FeatureLoader {
             setupLazyFeatureTriggers(loader, providerPrefs);
 
             sendEnabledBroadcast(mApp);
-
+            
             var timemillis2 = System.currentTimeMillis() - timemillis;
             loadedTimeStr = String.format(java.util.Locale.US, "%.2fs", timemillis2 / 1000.0);
             if (Feature.DEBUG) {
                 ;
             }
-
+            
             new Handler(Looper.getMainLooper()).post(() -> {
                 if (hookingToast != null) {
                     hookingToast.cancel();
@@ -619,7 +619,7 @@ public class FeatureLoader {
         } catch (Throwable t) {
             XposedBridge.log("[WAEX] Failed to pre-initialize MessageHistory: " + t.getMessage());
         }
-
+        
         // Track update check per session
         final boolean[] hasCheckedThisSession = {false};
 
@@ -807,13 +807,13 @@ public class FeatureLoader {
 
     public static void triggerLoadedFeedback() {
         if (!needsSnackbar || loadedTimeStr == null || WppCore.mCurrentActivity == null) return;
-
+        
         // Only show feedback if the user has enabled hook toasts
         if (Utils.xprefs != null && !Utils.xprefs.getBoolean("show_hook_toast", true)) {
             needsSnackbar = false;
             return;
         }
-
+        
         // If still loading in background, we might want to wait or show a dialog
         // But for now, we only trigger if needsSnackbar is true (which is set after background load)
         needsSnackbar = false;
@@ -833,10 +833,10 @@ public class FeatureLoader {
 
     public static void checkLoading(Activity activity) {
         if (isLoaded || activity == null) return;
-
+        
         // Respect user preference
         if (Utils.xprefs != null && !Utils.xprefs.getBoolean("show_hook_toast", true)) return;
-
+        
         Handler handler = new Handler(Looper.getMainLooper());
         // Schedule dialog after a short delay (e.g., 300ms)
         loadingDialogRunnable = () -> {
@@ -1104,7 +1104,7 @@ public class FeatureLoader {
                 PackageManager pm = activity.getPackageManager();
                 PackageInfo pi = pm.getPackageInfo(currentPackage, 0);
                 String installedVersion = pi.versionName;
-
+                
                 if (ApkMirrorFeedHelper.isBetaVersion(activity, currentPackage, installedVersion)) {
                     showBetaWarningDialogInHost(activity, currentPackage);
                 }
@@ -1117,15 +1117,15 @@ public class FeatureLoader {
     private static void showBetaWarningDialogInHost(Activity activity, String packageName) {
         String appName = PACKAGE_WPP.equals(packageName) ? "WhatsApp" : "WhatsApp Business";
         String prefKey = "last_beta_warning_dismissed_" + (PACKAGE_WPP.equals(packageName) ? "wpp" : "business");
-
+        
         SharedPreferences prefs = activity.getSharedPreferences("ApkMirrorCache", Context.MODE_PRIVATE);
         long lastDismissed = prefs.getLong(prefKey, 0L);
         long now = System.currentTimeMillis();
-
+        
         if (now - lastDismissed < java.util.concurrent.TimeUnit.DAYS.toMillis(1)) {
             return;
         }
-
+        
         activity.runOnUiThread(() -> {
             try {
                 new AlertDialogWpp(activity)

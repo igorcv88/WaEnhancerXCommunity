@@ -503,7 +503,7 @@ public class ReflectionUtils {
         List<String> path = new ArrayList<>();
         Object result = findFMessageInObject(object, fMessageClass, keyClass, classLoader,
                 Collections.newSetFromMap(new IdentityHashMap<>()), 0, path);
-
+        
         if (result != null && !path.isEmpty()) {
             F_MESSAGE_PATH_CACHE.put(cacheKey, new ArrayList<>(path));
         }
@@ -529,19 +529,19 @@ public class ReflectionUtils {
                 try {
                     Object nestedObj = field.get(object);
                     if (nestedObj == null) continue;
-
+                    
                     path.add(field.getName());
                     if (fMessageClass != null && fMessageClass.isInstance(nestedObj)) {
                         return nestedObj;
                     }
-
+                    
                     if (keyClass != null && keyClass.isInstance(nestedObj)) {
                         try {
                             Object fmsg = com.waenhancer.xposed.core.WppCore.getFMessageFromKey(nestedObj);
                             if (fmsg != null) return fmsg;
                         } catch (Exception ignored) {}
                     }
-
+                    
                     Object recursiveMatch = findFMessageInObject(nestedObj, fMessageClass, keyClass, classLoader, visited, depth + 1, path);
                     if (recursiveMatch != null) {
                         return recursiveMatch;

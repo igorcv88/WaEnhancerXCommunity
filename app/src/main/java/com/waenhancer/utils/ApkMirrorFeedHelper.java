@@ -16,17 +16,17 @@ import java.util.regex.Pattern;
 
 public class ApkMirrorFeedHelper {
     private static final String TAG = "WAEX_ApkMirrorFeedHelper";
-
+    
     private static final String FEED_WPP = "https://www.apkmirror.com/apk/whatsapp-inc/whatsapp-messenger/feed/";
     private static final String FEED_BUSINESS = "https://www.apkmirror.com/apk/whatsapp-inc/whatsapp-messenger-business/feed/";
-
+    
     private static final String PREF_LAST_FETCH = "apkmirror_last_fetch_time";
     private static final String PREF_BETA_WPP = "apkmirror_beta_versions_wpp";
     private static final String PREF_BETA_BUSINESS = "apkmirror_beta_versions_business";
-
+    
     private static final Pattern TITLE_TAG_PATTERN = Pattern.compile("<title>(.*?)</title>", Pattern.DOTALL);
     private static final Pattern VERSION_PATTERN = Pattern.compile(
-            "WhatsApp\\s+(Messenger|Business)\\s+([0-9.]+)(?:\\s+(beta))?\\s+by\\s+WhatsApp\\s+LLC",
+            "WhatsApp\\s+(Messenger|Business)\\s+([0-9.]+)(?:\\s+(beta))?\\s+by\\s+WhatsApp\\s+LLC", 
             Pattern.CASE_INSENSITIVE
     );
 
@@ -40,10 +40,10 @@ public class ApkMirrorFeedHelper {
                 SharedPreferences prefs = context.getSharedPreferences("ApkMirrorCache", Context.MODE_PRIVATE);
                 long lastFetch = prefs.getLong(PREF_LAST_FETCH, 0L);
                 long now = System.currentTimeMillis();
-
+                
                 boolean hasCachedWpp = prefs.getStringSet(PREF_BETA_WPP, null) != null && !prefs.getStringSet(PREF_BETA_WPP, new HashSet<>()).isEmpty();
                 boolean hasCachedBusiness = prefs.getStringSet(PREF_BETA_BUSINESS, null) != null && !prefs.getStringSet(PREF_BETA_BUSINESS, new HashSet<>()).isEmpty();
-
+                
                 if (now - lastFetch < TimeUnit.HOURS.toMillis(24) && hasCachedWpp && hasCachedBusiness) {
                     if (onComplete != null) {
                         onComplete.run();
@@ -107,9 +107,9 @@ public class ApkMirrorFeedHelper {
                 SharedPreferences prefs = context.getSharedPreferences("ApkMirrorCache", Context.MODE_PRIVATE);
                 long lastFetch = prefs.getLong(prefLastFetchKey, 0L);
                 long now = System.currentTimeMillis();
-
+                
                 boolean hasCached = prefs.getStringSet(prefBetaKey, null) != null && !prefs.getStringSet(prefBetaKey, new HashSet<>()).isEmpty();
-
+                
                 if (now - lastFetch < TimeUnit.HOURS.toMillis(24) && hasCached) {
                     if (onComplete != null) {
                         onComplete.run();
@@ -151,15 +151,15 @@ public class ApkMirrorFeedHelper {
                 settings.setJavaScriptEnabled(true);
                 settings.setDomStorageEnabled(true);
                 settings.setUserAgentString("APKUpdater-v3.0.3");
-
+                
                 webView.setWebViewClient(new android.webkit.WebViewClient() {
                     private boolean finished = false;
-
+ 
                     @Override
                     public void onPageFinished(android.webkit.WebView view, String url) {
                         if (finished) return;
                         finished = true;
-
+                        
                         new Handler(Looper.getMainLooper()).postDelayed(() -> {
                             view.evaluateJavascript(
                                 "(function() { return document.documentElement.outerHTML; })();",
@@ -179,14 +179,14 @@ public class ApkMirrorFeedHelper {
                             );
                         }, 2500);
                     }
-
+ 
                     @Override
                     public void onReceivedError(android.webkit.WebView view, int errorCode, String description, String failingUrl) {
                         view.destroy();
                         onDone.run();
                     }
                 });
-
+                
                 webView.loadUrl(url);
             } catch (Exception e) {
                 Log.e(TAG, "WebView execution failed: " + e.getMessage(), e);
@@ -202,7 +202,7 @@ public class ApkMirrorFeedHelper {
         if (jsonStr.startsWith("\"") && jsonStr.endsWith("\"")) {
             jsonStr = jsonStr.substring(1, jsonStr.length() - 1);
         }
-
+        
         StringBuilder sb = new StringBuilder();
         int i = 0;
         while (i < jsonStr.length()) {

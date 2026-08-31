@@ -786,7 +786,7 @@ public class HomeFragment extends BaseFragment {
         binding.deviceName.setText(Build.MANUFACTURER);
         binding.sdk.setText(String.valueOf(Build.VERSION.SDK_INT));
         binding.modelName.setText(Build.DEVICE);
-
+        
         String xposedVer = getXposedFrameworkVersion();
         String[] xposedParts = xposedVer.split("\\|");
         if (xposedParts.length == 2) {
@@ -1106,7 +1106,7 @@ public class HomeFragment extends BaseFragment {
     private String getXposedFrameworkVersion() {
         Context context = getContext();
         if (context == null) return "Unknown";
-
+        
         String apiVal = "";
         try {
             Class<?> bridge = Class.forName("de.robv.android.xposed.XposedBridge");
@@ -1116,7 +1116,7 @@ public class HomeFragment extends BaseFragment {
                 apiVal = String.valueOf(ver);
             }
         } catch (Throwable ignored) {}
-
+        
         if (apiVal.isEmpty()) {
             try {
                 android.content.SharedPreferences localPrefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context);
@@ -1126,7 +1126,7 @@ public class HomeFragment extends BaseFragment {
                 }
             } catch (Throwable ignored) {}
         }
-
+        
         if (apiVal.isEmpty()) {
             try {
                 Class<?> sp = Class.forName("android.os.SystemProperties");
@@ -1134,7 +1134,7 @@ public class HomeFragment extends BaseFragment {
                 apiVal = (String) get.invoke(null, "debug.waenhancer.lsposed.api", "");
             } catch (Throwable ignored) {}
         }
-
+        
         boolean isActive = false;
         try {
             Class<?> sp = Class.forName("android.os.SystemProperties");
@@ -1144,7 +1144,7 @@ public class HomeFragment extends BaseFragment {
                 isActive = true;
             }
         } catch (Throwable ignored) {}
-
+        
         if (!isActive) {
             isActive = com.waenhancer.utils.ModuleStatus.isModuleActive();
         }
@@ -1156,9 +1156,9 @@ public class HomeFragment extends BaseFragment {
         String frameworkName = "LSPosed";
         android.content.pm.PackageManager pm = context.getPackageManager();
         String[] managerPackages = {
-                "org.lsposed.manager",
+                "org.lsposed.manager", 
                 "io.github.lsposed.manager",
-                "org.meowcat.edxposed.manager",
+                "org.meowcat.edxposed.manager", 
                 "com.solohsu.android.edxp.manager",
                 "de.robv.android.xposed.installer"
         };

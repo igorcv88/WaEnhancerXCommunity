@@ -165,7 +165,7 @@ public class SeenTick extends Feature {
                     var list = (List<?>) XposedHelpers.getObjectField(param.args[0], fieldList.getName());
                     var rawObject = list.get(position);
                     com.waenhancer.xposed.features.media.StatusDownload.activeStatusObj = rawObject;
-
+                    
                     var ticktype = Integer.parseInt(prefs.getString("seentick", "0"));
                     if (ticktype == 0) return;
 

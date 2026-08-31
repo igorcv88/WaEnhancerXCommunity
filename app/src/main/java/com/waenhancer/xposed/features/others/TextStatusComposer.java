@@ -34,8 +34,8 @@ public class TextStatusComposer extends Feature {
         textComposerClass = WppCore.getTextStatusComposerFragmentClass(classLoader);
 
         try {
-            var methodOnCreate = ReflectionUtils.findMethodUsingFilter(textComposerClass, method ->
-                method.getParameterCount() == 2 &&
+            var methodOnCreate = ReflectionUtils.findMethodUsingFilter(textComposerClass, method -> 
+                method.getParameterCount() == 2 && 
                 ((method.getParameterTypes()[0] == Bundle.class && method.getParameterTypes()[1] == View.class) ||
                  (method.getParameterTypes()[0] == View.class && method.getParameterTypes()[1] == Bundle.class))
             );
@@ -43,14 +43,14 @@ public class TextStatusComposer extends Feature {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     var activity = WppCore.getCurrentActivity();
-
+                    
                     View tempViewRoot = null;
                     if (param.args[0] instanceof View) {
                         tempViewRoot = (View) param.args[0];
                     } else if (param.args[1] instanceof View) {
                         tempViewRoot = (View) param.args[1];
                     }
-
+                    
                     if (tempViewRoot == null) {
                         /* Log removed */
                         return;

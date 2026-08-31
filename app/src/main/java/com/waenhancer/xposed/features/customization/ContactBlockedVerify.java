@@ -181,15 +181,15 @@ public class ContactBlockedVerify extends Feature {
             var methods = ReflectionUtils.findAllMethodsUsingFilter(dialerProfilePictureLoader, method -> method.getName().length() == 3 && method.getParameterCount() > 1);
             var onSuccessOpt = Arrays.stream(methods).filter(method -> !List.of(method.getParameterTypes()).contains(String.class)).findFirst();
             var onErrorOpt = Arrays.stream(methods).filter(method -> List.of(method.getParameterTypes()).contains(String.class)).findFirst();
-
+            
             if (onSuccessOpt.isEmpty() || onErrorOpt.isEmpty()) {
                 /* Log removed */
                 return;
             }
-
+            
             var onSuccess = onSuccessOpt.get();
             var onError = onErrorOpt.get();
-
+            
             XposedBridge.hookMethod(onSuccess, new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {

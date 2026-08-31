@@ -159,7 +159,7 @@ public class SimpleColorPickerDialog {
         android.widget.LinearLayout root = new android.widget.LinearLayout(context);
         root.setOrientation(android.widget.LinearLayout.VERTICAL);
         root.setPadding(dpToPx(20), dpToPx(24), dpToPx(20), dpToPx(24));
-
+        
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(isDark ? 0xFF1E1E1E : 0xFFFFFFFF);
         bg.setCornerRadius(dpToPx(28));
@@ -227,13 +227,13 @@ public class SimpleColorPickerDialog {
         hexInput.setHintTextColor(textSecondary);
         hexInput.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(7)});
         hexInput.setInputType(android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
-
+        
         GradientDrawable editBg = new GradientDrawable();
         editBg.setColor(cardBg);
         editBg.setCornerRadius(dpToPx(8));
         hexInput.setBackground(editBg);
         hexInput.setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8));
-
+        
         android.widget.LinearLayout.LayoutParams inputParams = new android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
         previewRow.addView(hexInput, inputParams);
 
@@ -322,8 +322,8 @@ public class SimpleColorPickerDialog {
     }
 
     private boolean isDarkTheme(Context context) {
-        return (context.getResources().getConfiguration().uiMode &
-                android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+        return (context.getResources().getConfiguration().uiMode & 
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK) == 
                 android.content.res.Configuration.UI_MODE_NIGHT_YES;
     }
 

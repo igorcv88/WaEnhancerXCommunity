@@ -97,7 +97,7 @@ public class UpdateDownloader {
                         callback.onProgress(progress, currentBytes, totalBytes);
                     }
                     fos.flush();
-
+                    
                     if (tmpFile.renameTo(apkFile)) {
                         callback.onSuccess(apkFile);
                     } else {
@@ -145,7 +145,7 @@ public class UpdateDownloader {
         new Thread(() -> {
             String apkPath = apkFile.getAbsolutePath();
             String tmpPath = "/data/local/tmp/wa_update.apk";
-
+            
             // Clean up old file first
             com.waenhancer.utils.RootUtils.runRootCommand("rm -f " + tmpPath);
 
@@ -176,10 +176,10 @@ public class UpdateDownloader {
             } else {
                 resultVal = "Failed to copy APK file to /data/local/tmp. Check root permissions.";
             }
-
+            
             // Cleanup
             com.waenhancer.utils.RootUtils.runRootCommand("rm -f " + tmpPath);
-
+            
             final boolean finalSuccess = successVal;
             final String finalResult = resultVal;
             activity.runOnUiThread(() -> {
@@ -222,7 +222,7 @@ public class UpdateDownloader {
         // For Xposed: Need to get resources from WaEnhancerX package if running in e.g. WhatsApp
         Context modContext = activity;
         boolean isXposed = !BuildConfig.APPLICATION_ID.equals(activity.getPackageName());
-
+        
         if (isXposed) {
             try {
                 modContext = activity.createPackageContext(BuildConfig.APPLICATION_ID, Context.CONTEXT_IGNORE_SECURITY);
@@ -268,7 +268,7 @@ public class UpdateDownloader {
             public void onProgress(int progress, long currentBytes, long totalBytes) {
                 activity.runOnUiThread(() -> {
                     if (progressBar != null) progressBar.setProgress(progress);
-                    String sizeInfo = String.format(java.util.Locale.US, "%.1f MB / %.1f MB",
+                    String sizeInfo = String.format(java.util.Locale.US, "%.1f MB / %.1f MB", 
                         currentBytes / (1024.0 * 1024.0), totalBytes / (1024.0 * 1024.0));
                     if (statusText != null) statusText.setText(sizeInfo + " (" + progress + "%)");
                 });

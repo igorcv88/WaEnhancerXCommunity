@@ -205,7 +205,7 @@ public class MenuStatusListener extends Feature {
                             return true;
                         });
                     }
-
+                    
                     if (waeSubMenu != null && !waeSubMenu.hasVisibleItems()) {
                         menu.removeItem(0x7EAD0012);
                     }

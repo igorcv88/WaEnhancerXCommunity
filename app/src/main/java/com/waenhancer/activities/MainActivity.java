@@ -80,8 +80,8 @@ public class MainActivity extends BaseActivity {
         binding.navViewContainer.animate()
                 .translationY(translationY)
                 .setDuration(400)
-                .setInterpolator(hide
-                        ? new AccelerateInterpolator(1.5f)
+                .setInterpolator(hide 
+                        ? new AccelerateInterpolator(1.5f) 
                         : new OvershootInterpolator(1.1f))
                 .start();
     }
@@ -472,7 +472,7 @@ public class MainActivity extends BaseActivity {
             int currentItem = binding.viewPager.getCurrentItem();
             // In ViewPager2 with FragmentStateAdapter, fragments are tagged as "f" + position
             Fragment fragment = getSupportFragmentManager().findFragmentByTag("f" + currentItem);
-
+            
             if (fragment == null) {
                 // Try to find by ID if tag fails (depends on adapter implementation)
                 fragment = getSupportFragmentManager().findFragmentById(binding.viewPager.getId());
@@ -515,7 +515,7 @@ public class MainActivity extends BaseActivity {
         // Check if the target subfragment is already displayed
         Fragment currentChild = parentFragment.getChildFragmentManager().findFragmentById(R.id.frag_container);
         boolean isAlreadyDisplayed = false;
-
+        
         if (currentChild != null) {
             if ("general_home".equals(parentKey) && currentChild instanceof GeneralFragment.GeneralPreferenceFragment) {
                 isAlreadyDisplayed = true;

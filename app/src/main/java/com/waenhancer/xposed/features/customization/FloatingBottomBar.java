@@ -171,7 +171,7 @@ public class FloatingBottomBar extends Feature {
                         if (menuView != null && menuView.getChildCount() > 0) {
                             View child = menuView.getChildAt(0);
                             Class<?> itemViewClass = child.getClass();
-
+                            
                             // Wrap existing listeners immediately
                             for (int i = 0; i < menuView.getChildCount(); i++) {
                                 wrapOnClickListener(view, menuView.getChildAt(i));
@@ -217,7 +217,7 @@ public class FloatingBottomBar extends Feature {
                                 bgColor = customBg;
                             }
                         }
-
+                        
                         shape.setColor(bgColor);
                         // Subtle premium stroke matching host app's design
                         shape.setStroke(Math.max(1, (int) (0.6f * density)), isNight ? 0x18FFFFFF : 0x22000000);
@@ -308,7 +308,7 @@ public class FloatingBottomBar extends Feature {
         // Hook RecyclerView's onAttachedToWindow to dynamically hook scroll events/padding on pages
         try {
             Class<?> recyclerViewClass = XposedHelpers.findClass("androidx.recyclerview.widget.RecyclerView", classLoader);
-
+            
             XposedBridge.hookAllMethods(recyclerViewClass, "onAttachedToWindow", new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
@@ -458,7 +458,7 @@ public class FloatingBottomBar extends Feature {
             java.lang.reflect.Method targetSetListenerMethod = null;
             for (java.lang.reflect.Method m : loadTabFrameClass.getMethods()) {
                 String name = m.getName();
-                if ((name.equals("setOnItemSelectedListener") || name.equals("setOnNavigationItemSelectedListener"))
+                if ((name.equals("setOnItemSelectedListener") || name.equals("setOnNavigationItemSelectedListener")) 
                     && m.getParameterCount() == 1) {
                     targetSetListenerMethod = m;
                     break;
@@ -467,7 +467,7 @@ public class FloatingBottomBar extends Feature {
 
             if (targetSetListenerMethod != null) {
                 final Class<?> listenerInterface = targetSetListenerMethod.getParameterTypes()[0];
-
+                
                 XposedBridge.hookMethod(targetSetListenerMethod, new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
@@ -475,9 +475,9 @@ public class FloatingBottomBar extends Feature {
                             final Object originalListener = param.args[0];
                             if (originalListener == null) return;
                             if (java.lang.reflect.Proxy.isProxyClass(originalListener.getClass())) return;
-
+                            
                             final View bottomNav = (View) param.thisObject;
-
+                            
                             Object listenerProxy = java.lang.reflect.Proxy.newProxyInstance(
                                 listenerInterface.getClassLoader(),
                                 new Class<?>[]{listenerInterface},
@@ -494,18 +494,18 @@ public class FloatingBottomBar extends Feature {
                                         if ("toString".equals(methodName)) {
                                             return "NavigationBarOnItemSelectedListenerProxy@" + Integer.toHexString(System.identityHashCode(proxy));
                                         }
-
+                                        
                                         if (args != null && args.length == 1 && args[0] instanceof android.view.MenuItem) {
                                             android.view.MenuItem item = (android.view.MenuItem) args[0];
                                             int tabId = item.getItemId();
                                             handleTabSelectionChanged(bottomNav, tabId);
                                         }
-
+                                        
                                         return method.invoke(originalListener, args);
                                     }
                                 }
                             );
-
+                            
                             param.args[0] = listenerProxy;
                         } catch (Throwable t) {
                             XposedBridge.log("[WAEX-FBB] Error wrapping tab selection listener: " + t);
@@ -638,7 +638,7 @@ public class FloatingBottomBar extends Feature {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                     child.setBackgroundTintList(null);
                 }
-
+                
                 // Clear background drawables recursively for intermediate layouts/wrappers
                 String className = child.getClass().getName();
                 if (child instanceof ViewGroup && (className.contains("Frame") || className.contains("Linear") || className.contains("Relative") || className.contains("Menu"))) {
@@ -819,7 +819,7 @@ public class FloatingBottomBar extends Feature {
                 try {
                     int paddingBottom = dp(density, SCROLL_BOTTOM_PADDING_DP);
                     setBottomPaddingAndScrollListeners(viewPager, paddingBottom, bottomNav);
-
+                    
                     int currentItem = (int) XposedHelpers.callMethod(viewPager, "getCurrentItem");
                     int tabId = getTabIdForIndex(bottomNav, currentItem);
                     if (tabId == 1000 || tabId == 1100) {
@@ -943,12 +943,12 @@ public class FloatingBottomBar extends Feature {
     private static void onViewScrolled(View bottomNav, int dy) {
         if (bottomNav == null) return;
         if (isMetaAiTabActive(bottomNav)) return;
-
+        
         View barTarget = getBarAnimationTarget(bottomNav);
         if (!barTarget.isShown()) return; // Do not animate if bottom bar is hidden on screen
-
+        
         float density = bottomNav.getContext().getResources().getDisplayMetrics().density;
-
+        
         // Use cached preference to prevent disk I/O in hot scroll path
         if (!scrollHideEnabled) {
             Float lastTarget = targetTranslations.get(barTarget);
@@ -997,7 +997,7 @@ public class FloatingBottomBar extends Feature {
         try {
             ViewGroup root = getRootLayout(bottomNav);
             if (root == null) return;
-
+            
             java.util.List<View> fabs = findFabs(root);
             for (View fab : fabs) {
                 // A FAB created after the initial sweep reaches us here first; decorate it now so
@@ -1120,12 +1120,12 @@ public class FloatingBottomBar extends Feature {
                     }
                 }
             }
-
+            
             // Hide dividers inside the original parent layout
             if (originalParent != null) {
                 originalParent.setBackground(null);
                 originalParent.setBackgroundColor(0);
-
+                
                 for (int i = 0; i < originalParent.getChildCount(); i++) {
                     View child = originalParent.getChildAt(i);
                     if (child != bottomNav) {
@@ -1135,7 +1135,7 @@ public class FloatingBottomBar extends Feature {
                         }
                     }
                 }
-
+                
                 // Hide dividers inside the original grandparent layout
                 ViewParent grandparent = originalParent.getParent();
                 if (grandparent instanceof ViewGroup) {
@@ -1179,8 +1179,8 @@ public class FloatingBottomBar extends Feature {
             if (current instanceof ViewGroup) {
                 ViewGroup vg = (ViewGroup) current;
                 String name = vg.getClass().getName();
-                if (name.contains("CoordinatorLayout") ||
-                    name.contains("ConstraintLayout") ||
+                if (name.contains("CoordinatorLayout") || 
+                    name.contains("ConstraintLayout") || 
                     name.contains("RelativeLayout") ||
                     vg.getId() == android.R.id.content ||
                     name.endsWith("DecorView")) {
@@ -1232,9 +1232,9 @@ public class FloatingBottomBar extends Feature {
     private static boolean isScrollableClass(Class<?> clazz) {
         while (clazz != null && clazz != Object.class) {
             String name = clazz.getName();
-            if (name.equals("androidx.recyclerview.widget.RecyclerView") ||
+            if (name.equals("androidx.recyclerview.widget.RecyclerView") || 
                 name.equals("android.widget.ScrollView") ||
-                name.contains("RecyclerView") ||
+                name.contains("RecyclerView") || 
                 name.contains("ScrollView") ||
                 name.equals("android.widget.AbsListView") ||
                 name.contains("ListView")) {
@@ -1276,7 +1276,7 @@ public class FloatingBottomBar extends Feature {
 
         boolean isDescendant = isDescendantOfTabsPager(view);
         boolean isLarge = isLargeVerticalScrollable(view);
-
+        
         // If it's a descendant of TabsPager and it is large vertical scrollable, it is a main tab list!
         if (isDescendant && isLarge) {
             return true;
@@ -1313,9 +1313,9 @@ public class FloatingBottomBar extends Feature {
         // If not measured yet (e.g. during onAttachedToWindow), check layout parameters
         ViewGroup.LayoutParams lp = view.getLayoutParams();
         if (lp != null) {
-            boolean heightOk = (lp.height == ViewGroup.LayoutParams.MATCH_PARENT ||
+            boolean heightOk = (lp.height == ViewGroup.LayoutParams.MATCH_PARENT || 
                                lp.height >= dp(density, 280));
-            boolean widthOk = (lp.width == ViewGroup.LayoutParams.MATCH_PARENT ||
+            boolean widthOk = (lp.width == ViewGroup.LayoutParams.MATCH_PARENT || 
                               lp.width >= dp(density, 240));
             return heightOk && widthOk;
         }

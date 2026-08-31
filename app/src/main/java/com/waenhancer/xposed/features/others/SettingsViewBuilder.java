@@ -57,7 +57,7 @@ public final class SettingsViewBuilder {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
         header.setPadding(dp(context, 20), dp(context, 12), dp(context, 20), dp(context, 20));
-
+        
         // Toolbar with Back Button
         LinearLayout toolbar = new LinearLayout(context);
         toolbar.setOrientation(LinearLayout.HORIZONTAL);
@@ -71,7 +71,7 @@ public final class SettingsViewBuilder {
         backButton.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         backButton.setPadding(dp(context, 8), dp(context, 8), dp(context, 8), dp(context, 8));
         backButton.setImageDrawable(resolveBackDrawable(context, textColor));
-
+        
         TypedValue rippleValue = new TypedValue();
         context.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, rippleValue, true);
         try {
@@ -80,7 +80,7 @@ public final class SettingsViewBuilder {
 
         // Spacer to push things right if needed, but here we want back button on left
         toolbar.addView(backButton);
-
+        
         // Add "Manager" badge style text if we want, or just the logo
         header.addView(toolbar);
 
@@ -120,12 +120,12 @@ public final class SettingsViewBuilder {
                 0,
                 1f);
         container.setLayoutParams(containerParams);
-
+        
         // Add a subtle top radius to the settings container if in dark mode for "sheet" look
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
             container.setElevation(dp(context, 2));
         }
-
+        
         root.addView(container);
 
         return new Host(root, container, backButton, titleView);

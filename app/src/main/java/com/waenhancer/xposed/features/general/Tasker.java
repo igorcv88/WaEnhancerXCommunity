@@ -116,7 +116,7 @@ public class Tasker extends Feature {
                     if (userJidObject == null) return;
 
                     // 2. Safely find the String types in arguments (positions of message id, receipt type)
-                    java.util.List<android.util.Pair<Integer, Class<? extends String>>> strings =
+                    java.util.List<android.util.Pair<Integer, Class<? extends String>>> strings = 
                             ReflectionUtils.findClassesOfType(((java.lang.reflect.Method) param.method).getParameterTypes(), String.class);
                     if (strings.isEmpty()) return;
 
@@ -189,7 +189,7 @@ public class Tasker extends Feature {
         public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
             ;
-
+            
             if (intent.getExtras() != null) {
                 for (String key : intent.getExtras().keySet()) {
                     Object val = intent.getExtras().get(key);
@@ -300,12 +300,12 @@ public class Tasker extends Feature {
                     if (intent != null && intent.hasExtra("wae_auto_send_message")) {
                         final String msgToSend = intent.getStringExtra("wae_auto_send_message");
                         ;
-
+                        
                         // Make the activity invisible
                         activity.overridePendingTransition(0, 0);
                         activity.getWindow().setFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
                         activity.getWindow().setDimAmount(0f);
-
+                        
                         // Proceed with auto-type-and-send
                         autoSendTextAndFinish(activity, msgToSend, 15);
                     }
@@ -341,11 +341,11 @@ public class Tasker extends Feature {
                 try {
                     if (activity.isFinishing()) return;
                     android.view.View decorView = activity.getWindow().getDecorView();
-
+                    
                     // 1. Check for blocking dialogs (common for new numbers)
                     // If there's an "OK" or "Block" or "Add" button, try to bypass it if possible
                     // For now, we'll just log it and try to find the input anyway
-
+                    
                     // 2. Find message entry EditText
                     final android.widget.EditText inputField = findMessageInput(decorView);
                     if (inputField == null) {
@@ -368,7 +368,7 @@ public class Tasker extends Feature {
                                 if (sendBtn != null && sendBtn.isEnabled() && sendBtn.getVisibility() == android.view.View.VISIBLE) {
                                     sendBtn.performClick();
                                     ;
-
+                                    
                                     new Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
                                         @Override
                                         public void run() {
@@ -446,7 +446,7 @@ public class Tasker extends Feature {
                 if (idName != null && idName.toLowerCase().contains("send")) return root;
             }
         } catch (Exception ignored) {}
-
+        
         if (root instanceof android.view.ViewGroup) {
             android.view.ViewGroup group = (android.view.ViewGroup) root;
             for (int i = 0; i < group.getChildCount(); i++) {

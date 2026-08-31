@@ -149,7 +149,7 @@ public class AntiRevoke extends Feature {
             protected void beforeHookedMethod(MethodHookParam param) throws Exception {
                 diagnosticTriggered();
                 if (param.args == null || param.args.length == 0) return;
-
+                
                 Object fMessageObj = ReflectionUtils.getArg(param.args, FMessageWpp.TYPE, 0);
                 if (fMessageObj == null) {
                     /* Log removed */
@@ -234,17 +234,17 @@ public class AntiRevoke extends Feature {
 
     /**
      * SQL-level anti-revoke protection.
-     *
+     * 
      * WhatsApp's revocation flow (v2.26.19.2):
      *   1. DELETE FROM message WHERE _id=? args=[N]
      *   2. INSERT INTO message VALUES ... message_type=15 ... _id=N
-     *
+     * 
      * Strategy: Block the INSERT of message_type=15 records (the "deleted" placeholder).
      * This preserves the original message because:
      *   - If we block the DELETE too, WhatsApp may retry or crash
      *   - If we only block the INSERT, the original row is gone but no "deleted" placeholder appears
      *   - Better: block the DELETE when followed by a type=15 INSERT
-     *
+     * 
      * Refined strategy: Track recent DELETEs. When a type=15 INSERT arrives for the same _id,
      * block both the INSERT AND retroactively we know the DELETE was a revocation.
      * Since we can't undo the DELETE, we block the DELETE preemptively by checking if
@@ -269,20 +269,20 @@ public class AntiRevoke extends Feature {
                     try {
                         String table = (String) param.args[0];
                         if (!"message".equals(table)) return;
-
+                        
                         String where = (String) param.args[1];
                         String[] whereArgs = param.args.length > 2 ? (String[]) param.args[2] : null;
-
+                        
                         // Only intercept _id based deletes (revocation pattern)
                         if (where != null && where.contains("_id=?") && whereArgs != null && whereArgs.length > 0) {
                             String msgId = whereArgs[0];
-
+                            
                             // Check if this message is from_me=0 (not our own message)
                             // by querying the DB before the delete happens
                             try {
                                 android.database.sqlite.SQLiteDatabase db = (android.database.sqlite.SQLiteDatabase) param.thisObject;
                                 android.database.Cursor cursor = db.rawQuery(
-                                    "SELECT from_me, message_type, key_id, chat_row_id FROM message WHERE _id=?",
+                                    "SELECT from_me, message_type, key_id, chat_row_id FROM message WHERE _id=?", 
                                     new String[]{msgId});
                                 if (cursor != null && cursor.moveToFirst()) {
                                     int fromMe = cursor.getInt(0);
@@ -290,13 +290,13 @@ public class AntiRevoke extends Feature {
                                     String keyId = cursor.getString(2);
                                     long chatRowId = cursor.getLong(3);
                                     cursor.close();
-
-                                    // Block delete only for incoming messages (from_me=0)
+                                    
+                                    // Block delete only for incoming messages (from_me=0) 
                                     // that are normal messages (not already type 15)
                                     if (fromMe == 0 && msgType != 15) {
                                         ;
                                         recentDeletedIds.add(msgId);
-
+                                        
                                         // Record the revocation for UI display (red icon + timestamp)
                                         try {
                                             // Resolve phone number from chat_row_id
@@ -322,23 +322,23 @@ public class AntiRevoke extends Feature {
                                             } else if (jidCursor != null) {
                                                 jidCursor.close();
                                             }
-
+                                            
                                             if (keyId != null) {
                                                 long now = System.currentTimeMillis();
-
+                                                
                                                 // Store in global key-based map (always works regardless of JID format)
                                                 revokedKeyIds.put(keyId, now);
-
+                                                
                                                 // Also try phone-number-based storage for backward compatibility
                                                 if (phoneNumber != null) {
                                                     DelMessageStore.getInstance(Utils.getApplication())
                                                         .insertMessage(phoneNumber, keyId, now);
-                                                    messageRevokedMap.computeIfAbsent(phoneNumber, k ->
+                                                    messageRevokedMap.computeIfAbsent(phoneNumber, k -> 
                                                         Collections.synchronizedSet(new java.util.HashSet<>())).add(keyId);
                                                 }
-
+                                                
                                                 ;
-
+                                                
                                                 // Refresh the conversation UI if it's currently open
                                                 try {
                                                     var mConversation = WppCore.getCurrentConversation();
@@ -355,7 +355,7 @@ public class AntiRevoke extends Feature {
                                         } catch (Exception e) {
                                             XposedBridge.log("[WAEX] Error recording revocation: " + e.getMessage());
                                         }
-
+                                        
                                         param.setResult(0); // Block the delete
                                         return;
                                     }
@@ -378,13 +378,13 @@ public class AntiRevoke extends Feature {
                     try {
                         String table = (String) param.args[0];
                         if (!"message".equals(table)) return;
-
+                        
                         android.content.ContentValues cv = (android.content.ContentValues) param.args[2];
                         if (cv == null) return;
-
+                        
                         Integer msgType = cv.getAsInteger("message_type");
                         Integer fromMe = cv.getAsInteger("from_me");
-
+                        
                         // Block insertion of revocation placeholders (type=15) for incoming messages
                         if (msgType != null && msgType == 15 && fromMe != null && fromMe == 0) {
                             String keyId = cv.getAsString("key_id");
@@ -407,7 +407,7 @@ public class AntiRevoke extends Feature {
 
     private void bindRevokedMessageUI(FMessageWpp fMessage, TextView dateTextView, TextView messageTextView, String antirevokeType) {
         if (dateTextView == null) return;
-
+        
         int antirevokeValue = 0;
         try {
             antirevokeValue = Integer.parseInt(prefs.getString(antirevokeType, "0"));
@@ -525,9 +525,9 @@ public class AntiRevoke extends Feature {
             revokeboolean = "status".equals(stripJID) ? Integer.parseInt(prefs.getString("antirevokestatus", "0"))
                     : Integer.parseInt(prefs.getString("antirevoke", "0"));
         } catch (Exception ignored) {}
-
+        
         if (revokeboolean == 0) return revokeboolean;
-
+        
         var messageRevokedList = getRevokedMessagesForJid(fMessage);
         if (!messageRevokedList.contains(messageId)) {
             try {

@@ -50,7 +50,7 @@ public class DownloadProfile extends Feature {
 
                 var item = menu.add(0, MENU_ID_DOWNLOAD, 0, com.waenhancer.xposed.core.FeatureLoader.getModuleString(com.waenhancer.xposed.utils.Utils.getApplication(), com.waenhancer.R.string.download, "Download"));
                 item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
-
+                
                 // Use DesignUtils.getDrawable to ensure drawable is loaded from module resources
                 Drawable icon = DesignUtils.getDrawable(R.drawable.download);
                 if (icon != null) {
@@ -61,11 +61,11 @@ public class DownloadProfile extends Feature {
                     try {
                         ;
                         Object fieldObj = null;
-
+                        
                         // Strategy 1: Look for WaContactWpp.TYPE in fields of the activity and its superclasses
                         Class<?> current = param.thisObject.getClass();
                         while (current != null && current != Object.class && fieldObj == null) {
-                            var field = com.waenhancer.xposed.utils.ReflectionUtils.findFieldUsingFilterIfExists(current, f ->
+                            var field = com.waenhancer.xposed.utils.ReflectionUtils.findFieldUsingFilterIfExists(current, f -> 
                                 f.getType() == WaContactWpp.TYPE || f.getType().getName().endsWith(".ContactInfo")
                             );
                             if (field != null) {
@@ -84,9 +84,9 @@ public class DownloadProfile extends Feature {
                         var waContact = new WaContactWpp(fieldObj);
                         var userJid = waContact.getUserJid();
                         ;
-
+                        
                         var file = waContact.getProfilePhoto();
-
+                        
                         if (file == null || !file.exists()) {
                             ;
                             file = WppCore.getContactPhotoFile(userJid.getPhoneRawString());
@@ -97,7 +97,7 @@ public class DownloadProfile extends Feature {
                             Utils.showToast("Error: Profile photo not found or not loaded yet", 1);
                             return true;
                         }
-
+                        
                         ;
 
                         String destPath;

@@ -68,7 +68,7 @@ public class FilterItemsAdapter extends RecyclerView.Adapter<FilterItemsAdapter.
 
         void bind(FilterItem item, int position, OnFilterActionListener listener) {
             filterText.setText(item.id);
-
+            
             // Customize icon and subtitle depending on behavior
             String subtitle = "";
             int accentColor = DesignUtils.resolveColorAttr(filterIcon.getContext(), android.R.attr.colorAccent);

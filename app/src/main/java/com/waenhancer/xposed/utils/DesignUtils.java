@@ -245,7 +245,7 @@ public class DesignUtils {
                 // ;
                 return waTheme <= 0 ? systemNight : waTheme == 2;
             }
-
+            
             // Check context configuration first (most accurate for the current activity)
             int uiMode = context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
             if (uiMode == android.content.res.Configuration.UI_MODE_NIGHT_YES) {
@@ -259,7 +259,7 @@ public class DesignUtils {
             int waTheme = Utils.getDefaultTheme();
             if (waTheme == 2) return true;
             if (waTheme == 1) return false;
-
+            
             // Final fallback: system
             return isNightModeBySystem();
         } catch (Throwable t) {
