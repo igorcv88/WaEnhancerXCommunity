@@ -224,6 +224,7 @@ public class HideSeen extends Feature {
                     if (messageIds == null || messageIds.length == 0 || userJid == null || userJid.isNull()) return;
 
                     boolean anySuppressed = false;
+                    boolean insertedHiddenMessage = false;
                     for (String messageId : messageIds) {
                         FMessageWpp.Key fmessageKey = new FMessageWpp.Key(messageId, userJid, false);
                         FMessageWpp fMessage = fmessageKey.getFMessage();
@@ -238,14 +239,25 @@ public class HideSeen extends Feature {
                         if (hideSeenItem != null) {
                             if (!hideSeenItem.viewed) {
                                 anySuppressed = true;
-                                break;
                             }
-                        } else if (checkPrivacyAndHideSeen(fmessageKey) || checkPrivacyAndHideReceipt(fmessageKey)) {
+                            continue;
+                        }
+
+                        if (checkPrivacyAndHideSeen(fmessageKey) || checkPrivacyAndHideReceipt(fmessageKey)) {
+                            MessageHistory.getInstance().insertHideSeenMessage(
+                                    fmessageKey.remoteJid.getPhoneRawString(),
+                                    fmessageKey.messageID,
+                                    dbType,
+                                    false
+                            );
+                            insertedHiddenMessage = true;
                             anySuppressed = true;
-                            break;
                         }
                     }
 
+                    if (insertedHiddenMessage) {
+                        HideSeenView.updateAllBubbleViews();
+                    }
                     if (anySuppressed) {
                         message.arg1 = -1;
                     }
