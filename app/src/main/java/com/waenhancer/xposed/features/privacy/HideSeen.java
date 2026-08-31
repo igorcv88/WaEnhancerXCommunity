@@ -12,6 +12,7 @@ import com.waenhancer.xposed.core.WppCore;
 import com.waenhancer.xposed.core.components.FMessageWpp;
 import com.waenhancer.xposed.core.components.ProtocolTreeNodeWpp;
 import com.waenhancer.xposed.core.db.MessageHistory;
+import com.waenhancer.xposed.core.devkit.Beta10Resolvers;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.features.customization.HideSeenView;
 import com.waenhancer.xposed.features.general.Others;
@@ -22,13 +23,10 @@ import org.luckypray.dexkit.query.enums.StringMatchType;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 
 import de.robv.android.xposed.XC_MethodHook;
-import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 
@@ -82,7 +80,6 @@ public class HideSeen extends Feature {
     private void hookSendReadReceiptJob() throws Exception {
         Method sendReadReceiptJobMethod = Unobfuscator.loadHideViewSendReadJob(classLoader);
         Class<?> sendJobClass = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "SendReadReceiptJob");
-        /* Log removed */
 
         XposedBridge.hookMethod(sendReadReceiptJobMethod, new XC_MethodHook() {
             @Override
@@ -174,7 +171,7 @@ public class HideSeen extends Feature {
         Method[] modernDispatchMethods = null;
         Class<?> modernMessageInfoClass = null;
         try {
-            modernDispatchMethods = Unobfuscator.loadOnDispatchMessage(classLoader);
+            modernDispatchMethods = Beta10Resolvers.loadOnDispatchMessage(classLoader);
             modernMessageInfoClass = Unobfuscator.loadReceiptMessageInfoClass(classLoader);
         } catch (Throwable t) {
             XposedBridge.log("WaEnhancer: HideSeen modern dispatch lookup failed: " + t.getMessage());
