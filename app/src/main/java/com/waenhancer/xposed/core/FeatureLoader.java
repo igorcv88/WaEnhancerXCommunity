@@ -277,6 +277,16 @@ public class FeatureLoader {
                         }
 
                         PackageManager packageManager = mApp.getPackageManager();
+                        try {
+                            PackageInfo diagnosticPackage = packageManager.getPackageInfo(mApp.getPackageName(), 0);
+                            int api = de.robv.android.xposed.XposedBridge.getXposedVersion();
+                            com.waenhancer.diagnostics.RuntimeDiagnostics.initialize(mApp,
+                                    mApp.getPackageName(), diagnosticPackage.versionName, api);
+                            HostCompatibility.ProbeResult diagnosticProbe = HostCompatibility.probe(loader);
+                            com.waenhancer.diagnostics.RuntimeDiagnostics.probe(mApp,
+                                    diagnosticProbe.coreCompatible(), diagnosticProbe.requiredFailures,
+                                    diagnosticProbe.optionalFailures);
+                        } catch (Throwable ignored) { }
 
                         // XSharedPreferences reads the prefs file directly from disk.
                         // The file is world-readable because we hook getDefaultSharedPreferencesMode()
@@ -668,6 +678,9 @@ public class FeatureLoader {
 
             if (state == WppCore.ActivityChangeState.ChangeType.RESUMED) {
                 if (isHomeActivity(activity)) {
+                    com.waenhancer.diagnostics.RuntimeDiagnostics.opportunity(mApp, "Home / chat list");
+                }
+                if (isHomeActivity(activity)) {
                     triggerBetaCheckInHost(activity);
                 }
                 activity.getWindow().getDecorView().post(() -> {
@@ -966,6 +979,7 @@ public class FeatureLoader {
                 );
 
                 if (activityName.contains("Status")) {
+                    com.waenhancer.diagnostics.RuntimeDiagnostics.opportunity(mApp, "Status");
                     FeatureRegistry.activateFeature(
                             FeatureRegistry.TriggerType.STATUS_VIEW,
                             activityName,
@@ -975,6 +989,7 @@ public class FeatureLoader {
                 }
 
                 if (activityName.contains("Call")) {
+                    com.waenhancer.diagnostics.RuntimeDiagnostics.opportunity(mApp, "Calls");
                     FeatureRegistry.activateFeature(
                             FeatureRegistry.TriggerType.CALL_STARTED,
                             activityName,
@@ -984,6 +999,7 @@ public class FeatureLoader {
                 }
 
                 if (activityName.contains("Conversation") || activityName.contains("Chat")) {
+                    com.waenhancer.diagnostics.RuntimeDiagnostics.opportunity(mApp, "Conversations");
                     FeatureRegistry.activateFeature(
                             FeatureRegistry.TriggerType.CONVERSATION_OPENED,
                             activityName,
@@ -1097,7 +1113,13 @@ public class FeatureLoader {
                             XposedBridge.log("Failed to invoke doHook on feature: " + classe.getSimpleName() + " - " + ex.getMessage());
                         }
                     }
+                    com.waenhancer.diagnostics.RuntimeDiagnostics.feature(mApp,
+                            classe.getSimpleName(), "resolverPassed", null);
+                    com.waenhancer.diagnostics.RuntimeDiagnostics.feature(mApp,
+                            classe.getSimpleName(), "installed", null);
                 } catch (Throwable e) {
+                    com.waenhancer.diagnostics.RuntimeDiagnostics.feature(mApp,
+                            classe.getSimpleName(), "error", e);
                     XposedBridge.log(e);
                     var error = new ErrorItem();
                     error.setPluginName(classe.getSimpleName());
@@ -1120,6 +1142,7 @@ public class FeatureLoader {
         } catch (InterruptedException e) {
             XposedBridge.log(e);
         }
+        com.waenhancer.diagnostics.RuntimeDiagnostics.flush(mApp);
     }
 
     private static void triggerBetaCheckInHost(Activity activity) {

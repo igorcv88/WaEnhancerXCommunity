@@ -1,12 +1,16 @@
 package com.waenhancer.activities;
 
 import android.content.Intent;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.CheckBox;
 
 import androidx.annotation.Nullable;
 import androidx.preference.PreferenceManager;
@@ -15,7 +19,8 @@ import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.waenhancer.R;
 import com.waenhancer.activities.base.BaseActivity;
-import com.waenhancer.diagnostics.LocalDiagnostics;
+import com.waenhancer.diagnostics.FeatureCatalog;
+import com.waenhancer.diagnostics.ValidationSession;
 
 /** Preview-first local diagnostic exporter. */
 public class DiagnosticsActivity extends BaseActivity {
@@ -47,6 +52,27 @@ public class DiagnosticsActivity extends BaseActivity {
         notice.setPadding(dp(20), dp(12), dp(20), dp(12));
         root.addView(notice);
 
+        LinearLayout checklist = new LinearLayout(this);
+        checklist.setOrientation(LinearLayout.VERTICAL);
+        checklist.setPadding(dp(20), dp(4), dp(20), dp(8));
+        TextView checklistTitle = new TextView(this);
+        checklistTitle.setText("Required behavioral confirmations (human-observed)");
+        checklistTitle.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        checklist.addView(checklistTitle);
+        for (java.util.Map.Entry<String, FeatureCatalog.Entry> item : FeatureCatalog.entries().entrySet()) {
+            if (!item.getValue().manual || !item.getValue().required) continue;
+            CheckBox check = new CheckBox(this);
+            check.setText(item.getValue().surface + " · " + item.getKey());
+            check.setChecked(ValidationSession.manual(
+                    PreferenceManager.getDefaultSharedPreferences(this), item.getKey()));
+            check.setOnCheckedChangeListener((button, checked) -> {
+                ValidationSession.setManual(PreferenceManager.getDefaultSharedPreferences(this), item.getKey(), checked);
+                refresh();
+            });
+            checklist.addView(check);
+        }
+        root.addView(checklist);
+
         ScrollView scroll = new ScrollView(this);
         reportView = new TextView(this);
         reportView.setTextIsSelectable(true);
@@ -63,16 +89,14 @@ public class DiagnosticsActivity extends BaseActivity {
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setPadding(dp(12), dp(8), dp(12), dp(12));
 
-        MaterialButton refresh = button(getString(R.string.diagnostics_refresh));
-        refresh.setOnClickListener(v -> refresh());
-        actions.addView(refresh, weighted());
+        MaterialButton session = button(ValidationSession.active(
+                PreferenceManager.getDefaultSharedPreferences(this)) ? "Reset session" : "Start session");
+        session.setOnClickListener(v -> session());
+        actions.addView(session, weighted());
 
-        MaterialButton clear = button(getString(R.string.diagnostics_clear));
-        clear.setOnClickListener(v -> {
-            LocalDiagnostics.clear(this);
-            refresh();
-        });
-        actions.addView(clear, weighted());
+        MaterialButton copy = button("Copy report");
+        copy.setOnClickListener(v -> copy());
+        actions.addView(copy, weighted());
 
         MaterialButton share = button(getString(R.string.diagnostics_share));
         share.setOnClickListener(v -> share());
@@ -96,8 +120,31 @@ public class DiagnosticsActivity extends BaseActivity {
     }
 
     private void refresh() {
-        reportView.setText(LocalDiagnostics.buildReport(
+        reportView.setText(ValidationSession.buildReport(
                 this, PreferenceManager.getDefaultSharedPreferences(this)));
+    }
+
+    private void session() {
+        android.content.SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        if (ValidationSession.active(prefs)) {
+            ValidationSession.reset(prefs);
+            recreate();
+            return;
+        }
+        String[] labels = {"WhatsApp", "WhatsApp Business"};
+        String[] packages = {"com.whatsapp", "com.whatsapp.w4b"};
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Select validation target")
+                .setItems(labels, (dialog, which) -> {
+                    ValidationSession.start(this, prefs, packages[which]);
+                    recreate();
+                }).show();
+    }
+
+    private void copy() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText("WaEnhancer diagnostics", reportView.getText()));
+        android.widget.Toast.makeText(this, "Diagnostic report copied", android.widget.Toast.LENGTH_SHORT).show();
     }
 
     private void share() {

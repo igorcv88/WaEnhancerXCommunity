@@ -25,6 +25,14 @@ public abstract class Feature {
     public Feature(@NonNull ClassLoader classLoader, @NonNull SharedPreferences preferences) {
         this.classLoader = classLoader;
         this.prefs = preferences;
+        com.waenhancer.diagnostics.RuntimeDiagnostics.feature(
+                FeatureLoader.mApp, getClass().getSimpleName(), "loaded", null);
+    }
+
+    /** Call from a hook callback, never from installation, so Installed is not confused with Working. */
+    protected final void diagnosticTriggered() {
+        com.waenhancer.diagnostics.RuntimeDiagnostics.feature(
+                FeatureLoader.mApp, getClass().getSimpleName(), "triggered", null);
     }
 
     public abstract void doHook() throws Throwable;

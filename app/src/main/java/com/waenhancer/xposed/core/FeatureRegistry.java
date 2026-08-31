@@ -3,6 +3,8 @@ package com.waenhancer.xposed.core;
 import android.app.Activity;
 import android.content.SharedPreferences;
 
+import com.waenhancer.diagnostics.RuntimeDiagnostics;
+
 import java.lang.reflect.Constructor;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -168,8 +170,13 @@ public class FeatureRegistry {
                 Feature feature = constructor.newInstance(loader, pref);
                 feature.doHook();
 
+                RuntimeDiagnostics.feature(FeatureLoader.mApp, key, "resolverPassed", null);
+                RuntimeDiagnostics.feature(FeatureLoader.mApp, key, "installed", null);
+                RuntimeDiagnostics.flush(FeatureLoader.mApp);
+
                 loadedFeatures.add(key);
             } catch (Throwable e) {
+                RuntimeDiagnostics.feature(FeatureLoader.mApp, key, "error", e);
                 XposedBridge.log("[FeatureRegistry] Failed to lazy load " + reg.featureName + ": " + e.getMessage());
             }
         }
