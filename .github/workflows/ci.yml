@@ -20,6 +20,8 @@ jobs:
           java-version: "17"
           cache: gradle
       - uses: gradle/actions/wrapper-validation@v6
+      - name: Validate release-note generator
+        run: python3 -m py_compile .github/scripts/build_release_notes.py
       - name: Unit tests and debug build
         run: |
           chmod +x gradlew
