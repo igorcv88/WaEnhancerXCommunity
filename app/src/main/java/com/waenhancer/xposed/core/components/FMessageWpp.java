@@ -246,6 +246,7 @@ public class FMessageWpp {
             XposedBridge.log("[WAEX] Unable to read optional message text: " + e);
             return null;
         }
+        return null;
     }
 
     /**

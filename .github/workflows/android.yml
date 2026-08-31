@@ -59,6 +59,7 @@ jobs:
         shell: bash
         env:
           CHANNEL: ${{ inputs.channel }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
 
