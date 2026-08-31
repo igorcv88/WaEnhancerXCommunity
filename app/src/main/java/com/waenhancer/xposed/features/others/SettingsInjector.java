@@ -463,7 +463,7 @@ public class SettingsInjector extends Feature {
             android.widget.TextView summaryText = new android.widget.TextView(activity);
             summaryText.setText(com.waenhancer.xposed.core.FeatureLoader.getModuleString(
                 activity,
-                R.string.waenhancer_settings_desc,
+                R.string.waenhancer_settings_desc, 
                 "Configure WaEnhancer Community features, appearance, and privacy settings."
             ));
 
@@ -534,7 +534,7 @@ public class SettingsInjector extends Feature {
                 View contentView;
                 String title = com.waenhancer.xposed.core.FeatureLoader.getModuleString(
                         activity, R.string.waenhancer_settings, "WaEnhancer Community");
-
+                
                 SharedPreferences localPrefs = activity.getSharedPreferences(com.waenhancer.BuildConfig.APPLICATION_ID + "_preferences", android.content.Context.MODE_PRIVATE);
                 SharedPreferences readWritePrefs = new com.waenhancer.xposed.bridge.client.ProviderSharedPreferences(activity, localPrefs, prefs);
 
@@ -850,7 +850,7 @@ public class SettingsInjector extends Feature {
 
             boolean filterIndexed = !needFilterIndex;
             boolean separateIndexed = !needSeparateIndex;
-
+            
             android.database.sqlite.SQLiteDatabase db = android.database.sqlite.SQLiteDatabase.openDatabase(
                     dbFile.getAbsolutePath(), null,
                     android.database.sqlite.SQLiteDatabase.OPEN_READONLY | android.database.sqlite.SQLiteDatabase.NO_LOCALIZED_COLLATORS);

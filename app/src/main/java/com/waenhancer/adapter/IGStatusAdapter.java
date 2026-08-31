@@ -171,7 +171,7 @@ public class IGStatusAdapter extends ArrayAdapter {
             if (obj == null || depth < 0) return null;
             Class<?> clazz = obj.getClass();
             String name = clazz.getName();
-
+            
             if (name.endsWith(".Jid") || name.endsWith(".UserJid") || name.endsWith(".PhoneUserJid") || name.endsWith(".DeviceJid")) {
                 return obj;
             }
@@ -184,18 +184,18 @@ public class IGStatusAdapter extends ArrayAdapter {
             if (com.waenhancer.xposed.core.components.FMessageWpp.UserJid.TYPE_PHONEUSERJID != null && com.waenhancer.xposed.core.components.FMessageWpp.UserJid.TYPE_PHONEUSERJID.isInstance(obj)) {
                 return obj;
             }
-
+            
             if (name.startsWith("java.") || name.startsWith("android.") || name.startsWith("androidx.") || name.startsWith("kotlin.")) {
                 return null;
             }
-
+            
             if (obj instanceof String) {
                 String str = (String) obj;
                 if (str.contains("@s.whatsapp.net") || str.contains("@broadcast") || str.contains("@g.us") || str.contains("@newsletter") || str.contains("@status")) {
                     return str;
                 }
             }
-
+            
             for (java.lang.reflect.Field f : clazz.getDeclaredFields()) {
                 try {
                     f.setAccessible(true);
@@ -266,7 +266,7 @@ public class IGStatusAdapter extends ArrayAdapter {
                 } else {
                     this.userJid = new FMessageWpp.UserJid(jidObj);
                 }
-
+                
                 Object statusInfo = null;
                 for (java.lang.reflect.Field f : item.getClass().getDeclaredFields()) {
                     try {
@@ -281,7 +281,7 @@ public class IGStatusAdapter extends ArrayAdapter {
                 if (statusInfo == null) {
                     statusInfo = item;
                 }
-
+                
                 var waContact = WaContactWpp.getWaContactFromJid(this.userJid);
                 String contactName = null;
                 if (waContact != null) {
@@ -294,7 +294,7 @@ public class IGStatusAdapter extends ArrayAdapter {
                     contactName = "WhatsApp Contact";
                 }
                 igStatusContactName.setText(contactName);
-
+                
                 Drawable profile = null;
                 if (waContact != null && waContact.getProfilePhoto() != null) {
                     try {
@@ -308,7 +308,7 @@ public class IGStatusAdapter extends ArrayAdapter {
                     profile = Utils.getApplication().getDrawable(R.drawable.user_foreground);
                 }
                 igStatusContactPhoto.setImageDrawable(profile);
-
+                
                 int total = 1;
                 int countUnseen = (position <= com.waenhancer.xposed.features.customization.IGStatus.unseenCount) ? 1 : 0;
                 setCountStatus(countUnseen, total);
@@ -470,28 +470,28 @@ public class IGStatusAdapter extends ArrayAdapter {
         int size = Utils.dipToPixels(56);
         android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888);
         android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
-
+        
         android.graphics.Paint circlePaint = new android.graphics.Paint();
         circlePaint.setAntiAlias(true);
         circlePaint.setColor(0xFF4A1525);
         canvas.drawCircle(size / 2.0f, size / 2.0f, size / 2.0f, circlePaint);
-
+        
         android.graphics.Paint textPaint = new android.graphics.Paint();
         textPaint.setAntiAlias(true);
         textPaint.setColor(android.graphics.Color.WHITE);
         textPaint.setTextSize(Utils.dipToPixels(24));
         textPaint.setTypeface(android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD));
         textPaint.setTextAlign(android.graphics.Paint.Align.CENTER);
-
+        
         String firstLetter = "O";
         if (name != null && !name.trim().isEmpty()) {
             firstLetter = name.trim().substring(0, 1).toUpperCase();
         }
-
+        
         float x = size / 2.0f;
         float y = (size / 2.0f) - ((textPaint.descent() + textPaint.ascent()) / 2.0f);
         canvas.drawText(firstLetter, x, y, textPaint);
-
+        
         return new android.graphics.drawable.BitmapDrawable(Utils.getApplication().getResources(), bitmap);
     }
 
@@ -499,23 +499,23 @@ public class IGStatusAdapter extends ArrayAdapter {
         int size = Utils.dipToPixels(20);
         android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888);
         android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
-
+        
         android.graphics.Paint circlePaint = new android.graphics.Paint();
         circlePaint.setAntiAlias(true);
         circlePaint.setColor(0xFF00E676);
         canvas.drawCircle(size / 2.0f, size / 2.0f, size / 2.0f, circlePaint);
-
+        
         android.graphics.Paint plusPaint = new android.graphics.Paint();
         plusPaint.setAntiAlias(true);
         plusPaint.setColor(android.graphics.Color.WHITE);
         plusPaint.setStrokeWidth(Utils.dipToPixels(2.0f));
         plusPaint.setStyle(android.graphics.Paint.Style.STROKE);
         plusPaint.setStrokeCap(android.graphics.Paint.Cap.ROUND);
-
+        
         float padding = Utils.dipToPixels(5);
         canvas.drawLine(padding, size / 2.0f, size - padding, size / 2.0f, plusPaint);
         canvas.drawLine(size / 2.0f, padding, size / 2.0f, size - padding, plusPaint);
-
+        
         return new android.graphics.drawable.BitmapDrawable(Utils.getApplication().getResources(), bitmap);
     }
 

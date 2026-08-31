@@ -127,7 +127,7 @@ public class ShowEditMessage extends Feature {
                         if (nativeLabel != null || hasHistory) {
                             ;
                             dumpTextViews(viewGroup);
-
+                            
                             // Hide any previous custom injected Edited views first to handle fresh layouts
                             if (dateView != null) {
                                 ViewGroup parent = (ViewGroup) dateView.getParent();
@@ -154,7 +154,7 @@ public class ShowEditMessage extends Feature {
                                     if (injectedView != null) {
                                         bindHistoryClick(injectedView, key.messageID, strEmoji, false);
                                     }
-
+                                    
                                     // Separate Clicks: Since we injected a separate view, dateView should have no edit click listener
                                     Utils.setViewClickListener(dateView, "show_edit_message", null);
                                 }
@@ -327,7 +327,7 @@ public class ShowEditMessage extends Feature {
             listView.setAdapter(adapter);
 
             var density = ctx.getResources().getDisplayMetrics().density;
-
+            
             // Header Layout (RelativeLayout)
             var headerLayout = new android.widget.RelativeLayout(ctx);
             var headerLp = new LinearLayout.LayoutParams(
@@ -380,11 +380,11 @@ public class ShowEditMessage extends Feature {
             try {
                 android.content.Context modContext = ctx.createPackageContext(BuildConfig.APPLICATION_ID, android.content.Context.CONTEXT_IGNORE_SECURITY);
                 boolean isDarkMode = DesignUtils.isNightMode();
-                int themeResId = isDarkMode ?
-                        com.google.android.material.R.style.Theme_Material3_Dark :
+                int themeResId = isDarkMode ? 
+                        com.google.android.material.R.style.Theme_Material3_Dark : 
                         com.google.android.material.R.style.Theme_Material3_Light;
                 android.view.ContextThemeWrapper themedContext = new android.view.ContextThemeWrapper(modContext, themeResId);
-
+                
                 Class<?> switchClass;
                 try {
                     switchClass = classLoader.loadClass("com.google.android.material.materialswitch.MaterialSwitch");

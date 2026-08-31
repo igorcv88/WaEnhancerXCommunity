@@ -100,7 +100,7 @@ public class AutoStatusForward extends Feature {
                                 // Hide the UI to make it silent
                                 activity.getWindow().setFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
                                 activity.getWindow().setDimAmount(0f);
-
+                                
                                 autoClickAndFinish(activity, "send", 15); // Try 15 times (approx 3 seconds)
                             }
                         }
@@ -122,7 +122,7 @@ public class AutoStatusForward extends Feature {
             try {
                 int sendId = activity.getResources().getIdentifier(buttonIdStr, "id", activity.getPackageName());
                 android.view.View sendBtn = sendId != 0 ? activity.findViewById(sendId) : null;
-
+                
                 if (sendBtn == null) {
                     sendBtn = findSendButtonByIconOrClass(activity.getWindow().getDecorView());
                 }
@@ -130,7 +130,7 @@ public class AutoStatusForward extends Feature {
                 if (sendBtn != null && sendBtn.isEnabled() && sendBtn.getVisibility() == android.view.View.VISIBLE) {
                     sendBtn.performClick();
                     /* Log removed */
-
+                    
                     // Finish silently after a brief delay to ensure the click is processed
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
                         if (!activity.isFinishing()) {

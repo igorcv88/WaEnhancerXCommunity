@@ -14,7 +14,35 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
-    # Keep Gradle/Maven updates isolated. Toolchain majors (AGP, Gradle, Kotlin)
-    # and Android runtime libraries have different compatibility constraints, and
-    # grouping everything into one PR makes one incompatible upgrade block every
-    # unrelated patch update.
+    # Keep Gradle/Maven updates isolated. Toolchain majors and Android runtime
+    # libraries have different compatibility constraints, and one incompatible
+    # upgrade must not block unrelated fixes.
+    ignore:
+      # AGP 9 currently breaks dev.rikka.tools.materialthemebuilder 1.5.1.
+      - dependency-name: "com.android.application"
+        versions:
+          - "[9.0.0,)"
+      - dependency-name: "com.android.library"
+        versions:
+          - "[9.0.0,)"
+
+      # Keep the wrapper on Gradle 8.x while AGP remains 8.13.x.
+      - dependency-name: "gradle-wrapper"
+        versions:
+          - "[9.0,)"
+
+      # OkHttp 5.5.0+ publishes okhttp-android with compileSdk 37 metadata.
+      - dependency-name: "com.squareup.okhttp3:okhttp"
+        versions:
+          - "[5.5.0,)"
+
+      # Glide 5.x is built with compileSdk 37; the app intentionally remains on 36.
+      - dependency-name: "com.github.bumptech.glide:glide"
+        versions:
+          - "[5.0.0,)"
+
+      # Bouncy Castle 1.85 uses Android-unavailable BigInteger exact-conversion APIs
+      # on older platform versions. Reconsider when a fixed release is available.
+      - dependency-name: "org.bouncycastle:bcpkix-jdk18on"
+        versions:
+          - "1.85"

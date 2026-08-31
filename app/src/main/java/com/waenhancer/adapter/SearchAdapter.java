@@ -25,50 +25,50 @@ import java.util.Map;
  * Adapter for displaying search results in a RecyclerView with section headers.
  */
 public class SearchAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
-
+    
     private static final int VIEW_TYPE_HEADER = 0;
     private static final int VIEW_TYPE_ITEM = 1;
-
+    
     private final List<Object> items; // Can be SearchableFeature or String (section header)
     private String searchQuery = "";
     private final OnFeatureClickListener listener;
-
+    
     public interface OnFeatureClickListener {
         void onFeatureClick(SearchableFeature feature);
     }
-
+    
     public SearchAdapter(OnFeatureClickListener listener) {
         this.items = new ArrayList<>();
         this.listener = listener;
     }
-
+    
     public void setFeatures(List<SearchableFeature> newFeatures) {
         items.clear();
-
+        
         // Group features by category
         Map<SearchableFeature.Category, List<SearchableFeature>> groupedFeatures = new LinkedHashMap<>();
         for (SearchableFeature feature : newFeatures) {
             groupedFeatures.computeIfAbsent(feature.getCategory(), k -> new ArrayList<>()).add(feature);
         }
-
+        
         // Add items with section headers
         for (Map.Entry<SearchableFeature.Category, List<SearchableFeature>> entry : groupedFeatures.entrySet()) {
             items.add(entry.getKey().getDisplayName()); // Add section header
             items.addAll(entry.getValue()); // Add features in that section
         }
-
+        
         notifyDataSetChanged();
     }
-
+    
     public void setSearchQuery(String query) {
         this.searchQuery = query != null ? query : "";
     }
-
+    
     @Override
     public int getItemViewType(int position) {
         return items.get(position) instanceof String ? VIEW_TYPE_HEADER : VIEW_TYPE_ITEM;
     }
-
+    
     @NonNull
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
@@ -82,7 +82,7 @@ public class SearchAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
             return new SearchResultViewHolder(view);
         }
     }
-
+    
     @Override
     public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
         if (holder instanceof SectionHeaderViewHolder) {
@@ -91,41 +91,41 @@ public class SearchAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
             ((SearchResultViewHolder) holder).bind((SearchableFeature) items.get(position), searchQuery, listener);
         }
     }
-
+    
     @Override
     public int getItemCount() {
         return items.size();
     }
-
+    
     static class SectionHeaderViewHolder extends RecyclerView.ViewHolder {
         private final TextView sectionTitle;
-
+        
         public SectionHeaderViewHolder(@NonNull View itemView) {
             super(itemView);
             sectionTitle = itemView.findViewById(R.id.sectionTitle);
         }
-
+        
         public void bind(String title) {
             sectionTitle.setText(title);
         }
     }
-
+    
     static class SearchResultViewHolder extends RecyclerView.ViewHolder {
         private final TextView titleTextView;
         private final TextView summaryTextView;
         private final TextView categoryBadge;
-
+        
         public SearchResultViewHolder(@NonNull View itemView) {
             super(itemView);
             titleTextView = itemView.findViewById(R.id.featureTitle);
             summaryTextView = itemView.findViewById(R.id.featureSummary);
             categoryBadge = itemView.findViewById(R.id.categoryBadge);
         }
-
+        
         public void bind(SearchableFeature feature, String query, OnFeatureClickListener listener) {
             // Set title with highlighting
             titleTextView.setText(highlightText(feature.getTitle(), query));
-
+            
             // Set summary with highlighting
             if (feature.getSummary() != null && !feature.getSummary().isEmpty()) {
                 summaryTextView.setText(highlightText(feature.getSummary(), query));
@@ -133,11 +133,11 @@ public class SearchAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
             } else {
                 summaryTextView.setVisibility(View.GONE);
             }
-
+            
             // Set category badge
             categoryBadge.setText(feature.getCategory().getDisplayName().toUpperCase(Locale.ROOT));
             categoryBadge.setBackgroundColor(getCategoryColor(feature.getCategory()));
-
+            
             // Set click listener
             itemView.setOnClickListener(v -> {
                 if (listener != null) {
@@ -145,16 +145,16 @@ public class SearchAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
                 }
             });
         }
-
+        
         private CharSequence highlightText(String text, String query) {
             if (text == null || query == null || query.isEmpty()) {
                 return text;
             }
-
+            
             SpannableString spannable = new SpannableString(text);
             String lowerText = text.toLowerCase();
             String lowerQuery = query.toLowerCase();
-
+            
             int start = lowerText.indexOf(lowerQuery);
             if (start >= 0) {
                 int end = start + query.length();
@@ -165,10 +165,10 @@ public class SearchAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                 );
             }
-
+            
             return spannable;
         }
-
+        
         private int getCategoryColor(SearchableFeature.Category category) {
             switch (category) {
                 case GENERAL:

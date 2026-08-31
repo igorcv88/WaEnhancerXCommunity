@@ -158,7 +158,7 @@ public class NewChat extends Feature {
 
     public static void triggerNewChat(final Activity activity) {
         float density = activity.getResources().getDisplayMetrics().density;
-
+        
         // 1. Detect default country from SIM/Device
         String defaultIso = "US";
         String defaultCc = "1";
@@ -197,21 +197,21 @@ public class NewChat extends Feature {
         tvCountry.setTextSize(16);
         tvCountry.setTextColor(0xffffffff);
         tvCountry.setGravity(Gravity.CENTER_VERTICAL);
-
+        
         android.graphics.drawable.GradientDrawable selectorBg = new android.graphics.drawable.GradientDrawable();
         selectorBg.setCornerRadius(8 * density);
         selectorBg.setColor(android.graphics.Color.parseColor("#1f8696a0"));
         tvCountry.setBackground(selectorBg);
         int padPx = (int) (14 * density);
         tvCountry.setPadding(padPx, padPx, padPx, padPx);
-
+        
         LinearLayout.LayoutParams countryLp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         );
         countryLp.bottomMargin = (int) (16 * density);
         tvCountry.setLayoutParams(countryLp);
-
+        
         tvCountry.setOnClickListener(v -> {
             try {
                 Intent intent = new Intent();

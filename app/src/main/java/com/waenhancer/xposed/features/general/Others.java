@@ -1495,8 +1495,8 @@ public class Others extends Feature {
                         /* Log removed */
                         continue;
                     }
-                    var methods = ReflectionUtils.findAllMethodsUsingFilter(spanClass, method ->
-                        method.getName().equals("draw") &&
+                    var methods = ReflectionUtils.findAllMethodsUsingFilter(spanClass, method -> 
+                        method.getName().equals("draw") && 
                         method.getParameterCount() == 9 &&
                         !java.lang.reflect.Modifier.isAbstract(method.getModifiers())
                     );
