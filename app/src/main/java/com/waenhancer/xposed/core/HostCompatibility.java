@@ -82,6 +82,8 @@ public final class HostCompatibility {
             // extra_payment_note anchor; even with the replacement resolver, a future accessor
             // change must not prevent unrelated hooks from being installed.
             optional(optional, "NewMessage", () -> Unobfuscator.loadNewMessageMethod(loader));
+            optional(optional, "NewMessageWithMedia", () ->
+                    Unobfuscator.loadNewMessageWithMediaMethod(loader));
             optional(optional, "MediaType", () -> Unobfuscator.loadMediaTypeField(loader));
             optional(optional, "OriginalMessageKey", () ->
                     Unobfuscator.loadOriginalMessageKey(loader));

@@ -1930,11 +1930,33 @@ public class Unobfuscator {
 
     public synchronized static Method loadNewMessageMethod(ClassLoader loader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(loader, () -> {
+            var clazzMessageName = loadFMessageClass(loader).getName();
+            var methodList = dexkit.findMethod(FindMethod.create().searchPackages("com.whatsapp")
+                    .matcher(MethodMatcher.create().addUsingString(
+                            "extra_payment_note", StringMatchType.Equals)));
+            if (methodList.isEmpty())
+                throw new Exception("NewMessage method not found");
+
+            var invokes = methodList.get(0).getInvokes();
+            var method = invokes.stream()
+                    .filter(invoke -> invoke.getDeclaredClass() != null
+                            && clazzMessageName.equals(invoke.getDeclaredClass().getName())
+                            && invoke.getReturnType() != null
+                            && String.class.getName().equals(invoke.getReturnType().getName()))
+                    .findFirst().orElse(null);
+            if (method == null)
+                throw new RuntimeException("NewMessage method not found");
+            return method.getMethodInstance(loader);
+        });
+    }
+
+    public synchronized static Method loadNewMessageWithMediaMethod(ClassLoader loader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(loader, () -> {
             var methodList = dexkit.findMethod(FindMethod.create().matcher(
                     MethodMatcher.create().addUsingString(
                             "INSERT_TABLE_MESSAGE_QUOTED", StringMatchType.Equals)));
             if (methodList.isEmpty())
-                throw new Exception("NewMessage method not found");
+                throw new Exception("NewMessageWithMedia method not found");
 
             var invokes = methodList.get(0).getInvokes();
             var clazzMessageName = loadFMessageClass(loader).getName();
@@ -1945,7 +1967,7 @@ public class Unobfuscator {
                             && String.class.getName().equals(invoke.getReturnType().getName()))
                     .findFirst().orElse(null);
             if (method == null)
-                throw new RuntimeException("NewMessage method not found");
+                throw new RuntimeException("NewMessageWithMedia method not found");
             return method.getMethodInstance(loader);
         });
     }
