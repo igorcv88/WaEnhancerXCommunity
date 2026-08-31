@@ -46,7 +46,11 @@ public final class ValidationModel {
             if (!feature.enabled) continue;
             errors |= feature.error || (feature.required && feature.loaded && !feature.resolverPassed);
             if (feature.required) {
-                complete &= feature.loaded && feature.installed && feature.opportunity && feature.triggered;
+                // A real callback trigger already proves that an opportunity occurred. Requiring a
+                // separate coarse surface marker here made a session impossible to validate when the
+                // feature was correctly instrumented but the generic activity observer did not know
+                // about that WhatsApp surface.
+                complete &= feature.loaded && feature.installed && feature.triggered;
                 if (feature.manualRequired) complete &= feature.manualConfirmed;
             }
         }

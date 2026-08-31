@@ -5,6 +5,8 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.method.ScrollingMovementMethod;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
@@ -25,12 +27,35 @@ import com.waenhancer.config.PreferenceStores;
 public class DiagnosticsActivity extends BaseActivity {
 
     private TextView reportView;
+    private final Handler refreshHandler = new Handler(Looper.getMainLooper());
+    private final Runnable refreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (reportView == null || isFinishing() || isDestroyed()) return;
+            refresh();
+            refreshHandler.postDelayed(this, 1000L);
+        }
+    };
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(buildContent());
         refresh();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshHandler.removeCallbacks(refreshRunnable);
+        refresh();
+        refreshHandler.postDelayed(refreshRunnable, 1000L);
+    }
+
+    @Override
+    protected void onPause() {
+        refreshHandler.removeCallbacks(refreshRunnable);
+        super.onPause();
     }
 
     private android.view.View buildContent() {
@@ -119,6 +144,7 @@ public class DiagnosticsActivity extends BaseActivity {
     }
 
     private void refresh() {
+        if (reportView == null) return;
         reportView.setText(ValidationSession.buildReport(
                 this, PreferenceStores.privateStore(this)));
     }
