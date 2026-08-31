@@ -67,7 +67,6 @@ public final class HostCompatibility {
                     loader, StringMatchType.EndsWith, "jid.DeviceJid"));
             require(required, "FMessage", () -> Unobfuscator.loadFMessageClass(loader));
             require(required, "MessageKey", () -> Unobfuscator.loadMessageKeyField(loader));
-            require(required, "NewMessage", () -> Unobfuscator.loadNewMessageMethod(loader));
             require(required, "DialogView", () -> Unobfuscator.loadDialogViewClass(loader));
             require(required, "StartPrefsConfig", () -> Unobfuscator.loadStartPrefsConfig(loader));
             require(required, "CachedMessageStore", () -> Unobfuscator.loadCachedMessageStoreKey(loader));
@@ -79,6 +78,10 @@ public final class HostCompatibility {
             // FeatureLoader will report the concrete feature that fails to install.
             optional(optional, "ConversationViewHolder", () -> ViewHolderCompat.loadViewHolder(loader));
             optional(optional, "ConversationViewHolderField", () -> ViewHolderCompat.loadContainerField(loader));
+            // Message text extraction is feature-scoped. WhatsApp 2.26.33 removed the
+            // extra_payment_note anchor used by this resolver, but the absence of that accessor
+            // does not invalidate the contracts needed to install unrelated hooks.
+            optional(optional, "NewMessage", () -> Unobfuscator.loadNewMessageMethod(loader));
             optional(optional, "NewMessageWithMedia", () ->
                     Unobfuscator.loadNewMessageWithMediaMethod(loader));
             optional(optional, "MediaType", () -> Unobfuscator.loadMediaTypeField(loader));
