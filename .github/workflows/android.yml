@@ -321,6 +321,7 @@ jobs:
           APK_PATH: ${{ steps.apk.outputs.path }}
           CHECKSUM_PATH: ${{ steps.verify.outputs.checksum_path }}
           SHA256: ${{ steps.verify.outputs.sha256 }}
+          CHANNEL: ${{ steps.metadata.outputs.channel }}
           PRERELEASE: ${{ steps.metadata.outputs.prerelease }}
         run: |
           set -euo pipefail
@@ -337,6 +338,9 @@ jobs:
 
           if [[ "$PRERELEASE" == "true" ]]; then
             ARGS+=(--prerelease)
+          fi
+          if [[ "$CHANNEL" == "beta" ]]; then
+            ARGS+=(--latest=false)
           fi
 
           gh "${ARGS[@]}"
