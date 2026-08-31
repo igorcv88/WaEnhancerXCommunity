@@ -42,7 +42,7 @@ public class ChatLimit extends Feature {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 if (antiDisappearing) {
-                    MessageStore.getInstance().executeSQL("UPDATE message_ephemeral SET expire_timestamp = 2553512370000");
+                    MessageStore.getInstance().executeWritableSQL("UPDATE message_ephemeral SET expire_timestamp = 2553512370000");
                 }
             }
         });

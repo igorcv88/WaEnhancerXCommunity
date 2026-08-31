@@ -202,17 +202,57 @@ public class MessageStore {
         }
     }
 
-    public void storeMessageRead(String messageId) {
-        if (sqLiteDatabase == null) return;
-        try {
-            if (sqLiteDatabase.isReadOnly()) {
-                ;
-                return;
+    public void executeWritableSQL(String sql, int maxRetries, long retryDelayMs) {
+        Utils.databaseExecutor.execute(() -> {
+            File dbFile = new File(Utils.getApplication().getFilesDir().getParentFile(), "/databases/msgstore.db");
+            if (!dbFile.exists()) return;
+
+            int retries = 0;
+            while (retries < maxRetries) {
+                SQLiteDatabase writeDb = null;
+                try {
+                    writeDb = SQLiteDatabase.openDatabase(
+                            dbFile.getAbsolutePath(),
+                            null,
+                            SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS
+                    );
+                    try {
+                        writeDb.execSQL("PRAGMA busy_timeout = 3000;");
+                    } catch (Exception ignored) {}
+
+                    writeDb.execSQL(sql);
+                    return;
+                } catch (Exception e) {
+                    if (e instanceof android.database.sqlite.SQLiteDatabaseLockedException ||
+                        e instanceof android.database.sqlite.SQLiteTableLockedException) {
+                        retries++;
+                        if (retries >= maxRetries) {
+                            XposedBridge.log(e);
+                        } else {
+                            try {
+                                Thread.sleep(retryDelayMs * retries);
+                            } catch (InterruptedException ignored) {}
+                        }
+                    } else {
+                        XposedBridge.log(e);
+                        return;
+                    }
+                } finally {
+                    if (writeDb != null) {
+                        try { writeDb.close(); } catch (Exception ignored) {}
+                    }
+                }
             }
-            sqLiteDatabase.execSQL("UPDATE message SET status = 1 WHERE key_id = \"" + messageId + "\"");
-        } catch (Exception e) {
-            XposedBridge.log("Failed to storeMessageRead: " + e.getMessage());
-        }
+        });
+    }
+
+    public void executeWritableSQL(String sql) {
+        executeWritableSQL(sql, 3, 500L);
+    }
+
+    public void storeMessageRead(String messageId) {
+        XposedBridge.log("storeMessageRead: " + messageId);
+        executeWritableSQL("UPDATE message SET status = 1 WHERE key_id = \"" + messageId + "\"");
     }
 
     public boolean isReadMessageStatus(String messageId) {
