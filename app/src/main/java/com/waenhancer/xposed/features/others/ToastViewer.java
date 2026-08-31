@@ -34,12 +34,17 @@ import de.robv.android.xposed.XposedBridge;
 public class ToastViewer extends Feature {
 
     private static final long MIN_INTERVAL = 1000;
-    private static final Map<String, Long> lastEventTimeMap = new HashMap<>();
-    private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    private static final long CLEANUP_INTERVAL = 30;
+    private static final java.util.concurrent.atomic.AtomicBoolean cleanupStarted = new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static final Map<String, Long> lastEventTimeMap = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "WaEnhancer-ToastViewerCleanup");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     public ToastViewer(@NonNull ClassLoader classLoader, @NonNull SharedPreferences preferences) {
         super(classLoader, preferences);
-        startCleanupTask();
     }
 
     @Override
@@ -47,6 +52,10 @@ public class ToastViewer extends Feature {
 
         var toastViewedStatus = prefs.getBoolean("toast_viewed_status", false);
         var toastViewedMessage = prefs.getBoolean("toast_viewed_message", false);
+        
+        if (!toastViewedStatus && !toastViewedMessage) return;
+        
+        startCleanupTask();
 
         try {
             var onInsertReceipt = Unobfuscator.loadOnInsertReceipt(classLoader);
@@ -266,11 +275,10 @@ public class ToastViewer extends Feature {
     }
 
     private void startCleanupTask() {
+        if (!cleanupStarted.compareAndSet(false, true)) return;
         scheduler.scheduleWithFixedDelay(() -> {
             long currentTime = System.currentTimeMillis();
-            synchronized (lastEventTimeMap) {
-                lastEventTimeMap.entrySet().removeIf(entry -> (currentTime - entry.getValue()) >= MIN_INTERVAL);
-            }
-        }, MIN_INTERVAL, MIN_INTERVAL, TimeUnit.MILLISECONDS);
+            lastEventTimeMap.entrySet().removeIf(entry -> (currentTime - entry.getValue()) >= MIN_INTERVAL);
+        }, CLEANUP_INTERVAL, CLEANUP_INTERVAL, TimeUnit.SECONDS);
     }
 }
