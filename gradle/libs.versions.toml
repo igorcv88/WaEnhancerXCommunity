@@ -3,7 +3,6 @@ arscblamer = "1.0"
 bcpkix-jdk18on = "1.83"
 betterypermissionhelper = "1.0.3"
 documentfile = "1.1.0"
-filepicker = "9.2.5"
 jstyleparser = "4.0.1"
 lombok = "1.18.46"
 okhttp = "5.4.0"
@@ -24,7 +23,6 @@ bcpkix-jdk18on = { module = "org.bouncycastle:bcpkix-jdk18on", version.ref = "bc
 betterypermissionhelper = { module = "com.waseemsabir:betterypermissionhelper", version.ref = "betterypermissionhelper" }
 colorpicker = { module = "com.jaredrummler:colorpicker", version.ref = "colorpicker" }
 dexkit = { module = "org.luckypray:dexkit", version.ref = "dexkit" }
-filepicker = { module = "io.github.tutorialsandroid:filepicker", version.ref = "filepicker" }
 jstyleparser = { module = "net.sf.cssbox:jstyleparser", version.ref = "jstyleparser" }
 libxposed-legacy = { group = "de.robv.android.xposed", name = "api", version.ref = "xposed-legacy" }
 
