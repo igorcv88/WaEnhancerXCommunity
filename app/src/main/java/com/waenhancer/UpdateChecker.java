@@ -14,8 +14,6 @@ import com.waenhancer.xposed.utils.Utils;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.File;
-import java.io.FileWriter;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -29,9 +27,8 @@ import okhttp3.OkHttpClient;
 public class UpdateChecker implements Runnable {
 
     private static final String TAG = "WAE_UpdateChecker";
-    private static final String RELEASES_API = "https://api.github.com/repos/igorcv88/WaEnhancerX/releases";
+    private static final String RELEASES_API = "https://api.github.com/repos/igorcv88/WaEnhancerXCommunity/releases";
     private static final String RELEASE_TAG_PREFIX = "debug-";
-    private static final String TELEGRAM_UPDATE_URL = "https://github.com/igorcv88/WaEnhancerX/releases";
     private static final Pattern BETA_TAG_PATTERN = Pattern.compile("^\\d+\\.\\d+\\.\\d+-beta-\\d+$");
     private static final Pattern VERSION_PATTERN = Pattern.compile("^\\d+\\.\\d+\\.\\d+(-beta-\\d+)?$");
 
@@ -105,13 +102,8 @@ public class UpdateChecker implements Runnable {
                 }
 
                 if (frequency.equals("restart")) {
-                    // If 'restart' is selected, and we already ignored it in a previous check, 
-                    // we keep it ignored for this session. 
-                    // The logic here assumes UpdateChecker is instantiated per session or logic is simple.
-                    // Actually, if it's 'restart', we should show it if ignoredTimestamp is from a PREVIOUS session.
-                    // But we don't track sessions easily. Let's stick to simple logic:
-                    // 'restart' means show once per WhatsApp launch. 
-                    // Since WAE hooks usually run once per launch, we can use a static flag.
+                    // If 'restart' is selected, and we already ignored it in a previous check,
+                    // we keep it ignored for this session.
                 } else {
                     long currentTime = System.currentTimeMillis();
                     long diffMillis = currentTime - ignoredTimestamp;
@@ -136,11 +128,7 @@ public class UpdateChecker implements Runnable {
                 }
             }
 
-            boolean installedIsBeta = isInstalledVersionBeta(installedVersion);
-            String updateAlertPref = getUpdateAlertPreference();
-
-            // Use the user's selected preference for filtering
-            String effectiveChannel = updateAlertPref;
+            String effectiveChannel = getUpdateAlertPreference();
 
             String selectedVersion = null;
             String selectedTagName = null;
@@ -200,7 +188,6 @@ public class UpdateChecker implements Runnable {
                         selectedChangelog = release.optString("body", "No changelog available.").trim();
                         selectedPublishedAt = release.optString("published_at", "");
 
-                        // Extract APK download URL
                         JSONArray assets = release.optJSONArray("assets");
                         if (assets != null) {
                             for (int j = 0; j < assets.length(); j++) {
@@ -239,7 +226,6 @@ public class UpdateChecker implements Runnable {
             }
         } catch (Exception e) {
             String errMsg = "[UpdateChecker] Exception: " + e.getMessage();
-            // XposedBridge.log("[" + TAG + "] " + errMsg);
             writeDebugLog(errMsg);
         }
     }
@@ -249,18 +235,19 @@ public class UpdateChecker implements Runnable {
             boolean isXposed = !BuildConfig.APPLICATION_ID.equals(mActivity.getPackageName());
             String title = mActivity.getString(R.string.error_detected);
             String message = mActivity.getString(R.string.already_have_latest);
-            String contactText = mActivity.getString(R.string.contact_developer);
+            String contactText = mActivity.getString(R.string.go_to_github);
+            String issuesUrl = "https://github.com/igorcv88/WaEnhancerXCommunity/issues";
 
             if (!isXposed) {
                 BottomSheetHelper.showConfirmation(mActivity, title, message, contactText, false, () -> {
-                    Utils.openLink(mActivity, "https://t.me/WaEnhancerX");
+                    Utils.openLink(mActivity, issuesUrl);
                 });
             } else {
                 var dialog = new AlertDialogWpp(mActivity);
                 dialog.setTitle(title);
                 dialog.setMessage(message);
                 dialog.setPositiveButton(contactText, (dialog1, which) -> {
-                    Utils.openLink(mActivity, "https://t.me/WaEnhancerX");
+                    Utils.openLink(mActivity, issuesUrl);
                     dialog1.dismiss();
                 });
                 dialog.setNegativeButton(mActivity.getString(R.string.cancel), (dialog1, which) -> dialog1.dismiss());
@@ -329,7 +316,6 @@ public class UpdateChecker implements Runnable {
                     dialog1.dismiss();
                 });
                 dialog.setPositiveButton("Update Now", (dialog1, which) -> {
-                    // Clear ignored state if updating
                     getLocalPrefs(mActivity).edit().putString("ignored_version", "").apply();
 
                     android.content.Intent intent = new android.content.Intent();
@@ -423,56 +409,36 @@ public class UpdateChecker implements Runnable {
         return baseCode * 1_000L + safeBeta;
     }
 
-    private boolean isInstalledVersionBeta(String versionName) {
-        return versionName != null && versionName.contains("-beta-");
-    }
-
     private String getUpdateAlertPreference() {
-        // First try to get it from WaEnhancer's XSharedPreferences (available in Xposed context)
-        if (com.waenhancer.xposed.core.WppCore.waePrefs != null) {
-            if (com.waenhancer.xposed.core.WppCore.waePrefs instanceof de.robv.android.xposed.XSharedPreferences) {
-                ((de.robv.android.xposed.XSharedPreferences) com.waenhancer.xposed.core.WppCore.waePrefs).reload();
+        // release_channel is the single source of truth for Stable/Beta.
+        if (WppCore.waePrefs != null) {
+            if (WppCore.waePrefs instanceof de.robv.android.xposed.XSharedPreferences) {
+                ((de.robv.android.xposed.XSharedPreferences) WppCore.waePrefs).reload();
             }
-            String pref = com.waenhancer.xposed.core.WppCore.waePrefs.getString("update_alert_pref", null);
-            if (pref == null) {
-                // Fallback to legacy channel key if new one isn't set
-                String legacy = com.waenhancer.xposed.core.WppCore.waePrefs.getString("release_channel", "stable");
-                pref = "beta".equals(legacy) ? "both" : "stable";
-            }
-            writeDebugLog("[UpdateChecker] Alert pref from waePrefs: " + pref);
-            return pref;
+            String channel = WppCore.waePrefs.getString("release_channel", "stable");
+            return "beta".equals(channel) ? "beta" : "stable";
         }
 
-        // Fallback to WppCore's WaGlobal prefs (legacy/other contexts)
-        String pref = com.waenhancer.xposed.core.WppCore.getPrivString("update_alert_pref", null);
-        if (pref != null) {
-            writeDebugLog("[UpdateChecker] Alert pref from getPrivString: " + pref);
-            return pref;
+        String channel = WppCore.getPrivString("release_channel", null);
+        if (channel != null) {
+            return "beta".equals(channel) ? "beta" : "stable";
         }
 
-        // Fallback to default prefs (running in Enhancer App context)
         android.content.SharedPreferences prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(mActivity);
-        String defaultPref = prefs.getString("update_alert_pref", "both");
-        writeDebugLog("[UpdateChecker] Alert pref from default prefs: " + defaultPref);
-        return defaultPref;
+        channel = prefs.getString("release_channel", "stable");
+        return "beta".equals(channel) ? "beta" : "stable";
     }
 
     private boolean isExactBetaTagFormat(String tagName) {
         return tagName != null && BETA_TAG_PATTERN.matcher(tagName).matches();
     }
 
-    private boolean shouldShowReleaseType(String releaseTagName, String updateAlertPref) {
+    private boolean shouldShowReleaseType(String releaseTagName, String updateChannel) {
         boolean isBetaRelease = releaseTagName != null && releaseTagName.contains("-beta-");
-
-        switch (updateAlertPref) {
-            case "stable":
-                return !isBetaRelease;
-            case "beta":
-                return isBetaRelease;
-            case "both":
-            default:
-                return true;
+        if ("beta".equals(updateChannel)) {
+            return isBetaRelease;
         }
+        return !isBetaRelease;
     }
 
     private String getReleaseTypeBadge(String releaseTagName) {
@@ -489,7 +455,6 @@ public class UpdateChecker implements Runnable {
                 android.content.Context moduleContext = mActivity.createPackageContext(BuildConfig.APPLICATION_ID, android.content.Context.CONTEXT_IGNORE_SECURITY);
                 return moduleContext.getString(resId);
             } catch (Exception e) {
-                // Fallback to hardcoded English if everything fails to prevent crash
                 if (resId == R.string.update_freq_restart) {
                     return "will be shown after WhatsApp Restart";
                 }
