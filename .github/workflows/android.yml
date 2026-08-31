@@ -69,31 +69,54 @@ jobs:
             echo "VERSION_CODE in gradle.properties must be numeric" >&2
             exit 1
           }
-
-          LATEST_TAG="$(
-            git tag --list "v${RELEASE_SERIES}.*" --sort=-v:refname \
-              | grep -E "^v${RELEASE_SERIES//./\.}\.[0-9]+$" \
-              | head -n 1 \
-              || true
-          )"
-
-          if [[ -z "$LATEST_TAG" ]]; then
-            PATCH=1
-          else
-            PATCH="${LATEST_TAG##*.}"
-            PATCH=$((10#$PATCH + 1))
-          fi
-
-          VERSION_NAME="${RELEASE_SERIES}.${PATCH}"
-          VERSION_CODE=$((10#$BASE_VERSION_CODE + PATCH))
-          TAG_NAME="v${VERSION_NAME}"
+          SERIES_PATTERN="${RELEASE_SERIES//./\.}"
+          STABLE_PATCH=0
+          BETA_PATCH=0
+          BETA_SEQUENCE=0
+          while IFS= read -r tag; do
+            if [[ "$tag" =~ ^v${SERIES_PATTERN}\.([0-9]+)$ ]]; then
+              patch=$((10#${BASH_REMATCH[1]}))
+              if (( patch > STABLE_PATCH )); then
+                STABLE_PATCH=$patch
+              fi
+            elif [[ "$tag" =~ ^v${SERIES_PATTERN}\.([0-9]+)-beta-([0-9]+)$ ]]; then
+              patch=$((10#${BASH_REMATCH[1]}))
+              sequence=$((10#${BASH_REMATCH[2]}))
+              if (( patch > BETA_PATCH )); then
+                BETA_PATCH=$patch
+                BETA_SEQUENCE=$sequence
+              elif (( patch == BETA_PATCH && sequence > BETA_SEQUENCE )); then
+                BETA_SEQUENCE=$sequence
+              fi
+            fi
+          done < <(git tag --list "v${RELEASE_SERIES}.*")
 
           case "$CHANNEL" in
             beta)
+              if (( BETA_PATCH > STABLE_PATCH )); then
+                PATCH=$BETA_PATCH
+                BETA_SEQUENCE=$((BETA_SEQUENCE + 1))
+              else
+                PATCH=$((STABLE_PATCH + 1))
+                BETA_SEQUENCE=1
+              fi
+              if (( BETA_SEQUENCE > 998 )); then
+                echo "Beta sequence exhausted for ${RELEASE_SERIES}.${PATCH}; publish stable before starting another patch" >&2
+                exit 1
+              fi
+              VERSION_NAME="${RELEASE_SERIES}.${PATCH}-beta-${BETA_SEQUENCE}"
+              TAG_NAME="v${VERSION_NAME}"
               RELEASE_TITLE="WaEnhancer Community ${VERSION_NAME} Beta"
               PRERELEASE=true
               ;;
             stable)
+              if (( BETA_PATCH > STABLE_PATCH )); then
+                PATCH=$BETA_PATCH
+              else
+                PATCH=$((STABLE_PATCH + 1))
+              fi
+              VERSION_NAME="${RELEASE_SERIES}.${PATCH}"
+              TAG_NAME="v${VERSION_NAME}"
               RELEASE_TITLE="WaEnhancer Community ${VERSION_NAME}"
               PRERELEASE=false
               ;;
@@ -102,6 +125,21 @@ jobs:
               exit 1
               ;;
           esac
+
+          # Derive the Android identity solely from durable release tags. GitHub preserves the
+          # original run_number when an old failed run is retried, so run_number can move
+          # backwards relative to already-published APKs. Reserve 1..998 for betas and 999 for
+          # stable: promotion and the next patch therefore always increase versionCode.
+          if [[ "$CHANNEL" == "beta" ]]; then
+            CHANNEL_CODE=$BETA_SEQUENCE
+          else
+            CHANNEL_CODE=999
+          fi
+          VERSION_CODE=$((10#$BASE_VERSION_CODE + PATCH * 1000 + CHANNEL_CODE))
+          if (( VERSION_CODE > 2100000000 )); then
+            echo "Generated VERSION_CODE exceeds Android's supported range: ${VERSION_CODE}" >&2
+            exit 1
+          fi
 
           if git rev-parse -q --verify "refs/tags/${TAG_NAME}" >/dev/null; then
             echo "Generated tag already exists: ${TAG_NAME}" >&2
@@ -281,6 +319,7 @@ jobs:
           RELEASE_TITLE: ${{ steps.metadata.outputs.release_title }}
           APK_PATH: ${{ steps.apk.outputs.path }}
           CHECKSUM_PATH: ${{ steps.verify.outputs.checksum_path }}
+          SHA256: ${{ steps.verify.outputs.sha256 }}
           PRERELEASE: ${{ steps.metadata.outputs.prerelease }}
         run: |
           set -euo pipefail
@@ -292,6 +331,7 @@ jobs:
             --target "$GITHUB_SHA"
             --title "$RELEASE_TITLE"
             --generate-notes
+            --notes "SHA-256: \`${SHA256}\`"
           )
 
           if [[ "$PRERELEASE" == "true" ]]; then

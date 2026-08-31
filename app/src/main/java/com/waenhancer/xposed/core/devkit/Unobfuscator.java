@@ -1930,16 +1930,19 @@ public class Unobfuscator {
 
     public synchronized static Method loadNewMessageMethod(ClassLoader loader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(loader, () -> {
-            var clazzMessageName = loadFMessageClass(loader).getName();
-            var listMethods = dexkit.findMethod(FindMethod.create().searchPackages("com.whatsapp")
-                    .matcher(MethodMatcher.create().addUsingString("extra_payment_note", StringMatchType.Equals)));
-            if (listMethods.isEmpty())
+            var methodList = dexkit.findMethod(FindMethod.create().matcher(
+                    MethodMatcher.create().addUsingString(
+                            "INSERT_TABLE_MESSAGE_QUOTED", StringMatchType.Equals)));
+            if (methodList.isEmpty())
                 throw new Exception("NewMessage method not found");
-            var invokes = listMethods.get(0).getInvokes();
-            var method = invokes.parallelStream()
-                    .filter(invoke -> clazzMessageName.equals(invoke.getDeclaredClass().getName())
+
+            var invokes = methodList.get(0).getInvokes();
+            var clazzMessageName = loadFMessageClass(loader).getName();
+            var method = invokes.stream()
+                    .filter(invoke -> invoke.getDeclaredClass() != null
+                            && clazzMessageName.equals(invoke.getDeclaredClass().getName())
                             && invoke.getReturnType() != null
-                            && invoke.getReturnType().getName().equals("java.lang.String"))
+                            && String.class.getName().equals(invoke.getReturnType().getName()))
                     .findFirst().orElse(null);
             if (method == null)
                 throw new RuntimeException("NewMessage method not found");
@@ -1954,26 +1957,6 @@ public class Unobfuscator {
             if (method == null)
                 throw new RuntimeException("MessageEdit method not found");
             return method;
-        });
-    }
-
-    public synchronized static Method loadNewMessageWithMediaMethod(ClassLoader loader) throws Exception {
-        return UnobfuscatorCache.getInstance().getMethod(loader, () -> {
-            var methodList = dexkit.findMethod(FindMethod.create().matcher(
-                    MethodMatcher.create().addUsingString("INSERT_TABLE_MESSAGE_QUOTED", StringMatchType.Equals)));
-            if (methodList.isEmpty())
-                throw new Exception("NewMessageWithMedia method not found");
-            var methodData = methodList.get(0);
-            var invokes = methodData.getInvokes();
-            var clazzMessageName = loadFMessageClass(loader).getName();
-            var method = invokes.parallelStream()
-                    .filter(invoke -> clazzMessageName.equals(invoke.getDeclaredClass().getName())
-                            && invoke.getReturnType() != null
-                            && invoke.getReturnType().getName().equals("java.lang.String"))
-                    .findFirst().orElse(null);
-            if (method == null)
-                throw new RuntimeException("NewMessageWithMedia method not found");
-            return method.getMethodInstance(loader);
         });
     }
 
@@ -4486,4 +4469,3 @@ public class Unobfuscator {
         });
     }
 }
-

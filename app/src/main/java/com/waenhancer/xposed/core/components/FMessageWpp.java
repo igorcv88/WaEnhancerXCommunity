@@ -31,7 +31,6 @@ public class FMessageWpp {
     private static Field getFieldIdMessage;
     private static Field deviceJidField;
     private static Method messageMethod;
-    private static Method messageWithMediaMethod;
     private static Field mediaTypeField;
     private static Method getOriginalMessageKey;
     private static Class abstractMediaMessageClass;
@@ -68,7 +67,6 @@ public class FMessageWpp {
                     method -> method.getParameterCount() == 0 && method.getReturnType() == userJidClass);
             keyMessage = Unobfuscator.loadMessageKeyField(classLoader);
             Key.TYPE = keyMessage.getType();
-            messageMethod = Unobfuscator.loadNewMessageMethod(classLoader);
             deviceJidField = ReflectionUtils.findFieldUsingFilter(TYPE, field -> field.getType() == UserJid.TYPE_DEVICEJID);
 
             if (Key.TYPE != null) {
@@ -78,7 +76,7 @@ public class FMessageWpp {
             }
         } catch (Throwable t) {
             XposedBridge.log("[WAEX] Required FMessage initialization failed: " + t);
-            return;
+            throw new IllegalStateException("Required FMessage contracts are unavailable", t);
         }
 
         // Optional capabilities must be independent. A missing media resolver, for example, must
@@ -86,9 +84,9 @@ public class FMessageWpp {
         // method. Each dependent feature can then fail/report on its own resolver instead of
         // inheriting unrelated null state from an earlier optional miss.
         try {
-            messageWithMediaMethod = Unobfuscator.loadNewMessageWithMediaMethod(classLoader);
+            messageMethod = Unobfuscator.loadNewMessageMethod(classLoader);
         } catch (Throwable t) {
-            logOptionalResolverFailure("messageWithMediaMethod", t);
+            logOptionalResolverFailure("messageMethod", t);
         }
         try {
             mediaTypeField = Unobfuscator.loadMediaTypeField(classLoader);
@@ -207,10 +205,16 @@ public class FMessageWpp {
     }
 
     public boolean isBroadcast() {
+        // Broadcast detection is optional across WhatsApp builds. Do not attempt reflective
+        // access when its resolver did not find a field: this method runs while list rows are
+        // rendered, so logging the same NullPointerException on every row can flood LSPosed and
+        // make WhatsApp unresponsive.
+        Field field = broadcastField;
+        if (field == null) return false;
         try {
-            return broadcastField.getBoolean(fmessage);
-        } catch (Exception e) {
-            XposedBridge.log(e);
+            return field.getBoolean(fmessage);
+        } catch (IllegalAccessException | IllegalArgumentException e) {
+            XposedBridge.log("[WAEX] Unable to read the optional broadcast flag: " + e);
         }
         return false;
     }
@@ -233,12 +237,13 @@ public class FMessageWpp {
     }
 
     public String getMessageStr() {
+        Method method = messageMethod;
+        if (method == null) return null;
+
         try {
-            var message = (String) messageMethod.invoke(fmessage);
-            if (message != null) return message;
-            return (String) messageWithMediaMethod.invoke(fmessage);
-        } catch (Exception e) {
-            XposedBridge.log(e);
+            return (String) method.invoke(fmessage);
+        } catch (Throwable e) {
+            XposedBridge.log("[WAEX] Unable to read optional message text: " + e);
             return null;
         }
     }
