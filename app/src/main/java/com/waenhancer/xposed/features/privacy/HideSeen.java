@@ -87,6 +87,7 @@ public class HideSeen extends Feature {
         XposedBridge.hookMethod(sendReadReceiptJobMethod, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                diagnosticTriggered();
                 if (!sendJobClass.isInstance(param.thisObject)) return;
 
                 Object sendReadReceiptJob = sendJobClass.cast(param.thisObject);
@@ -190,6 +191,7 @@ public class HideSeen extends Feature {
             XC_MethodHook hookCallerMethod = new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    diagnosticTriggered();
                     if (param.args == null || param.args.length == 0 || !(param.args[0] instanceof Message)) return;
                     Message firstArg = (Message) param.args[0];
                     if (firstArg.arg1 != 419 && firstArg.arg1 != 89) return;
@@ -220,6 +222,7 @@ public class HideSeen extends Feature {
         XposedBridge.hookMethod(receiptMethod, new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                diagnosticTriggered();
                 if (param.getResult() == null) return;
                 ProtocolTreeNodeWpp protocolTreeNodeWpp = new ProtocolTreeNodeWpp(param.getResult());
 

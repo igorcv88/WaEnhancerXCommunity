@@ -131,6 +131,7 @@ public class AntiRevoke extends Feature {
         XposedBridge.hookMethod(antiRevokeFStatusMethod, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                diagnosticTriggered();
                 if (param.args == null || param.args.length < 2 || param.args[1] == null) return;
                 var fStatusKey = new FStatusWpp.FStatusKey(param.args[1]);
                 var fStatus = fStatusKey.fStatus;
@@ -146,6 +147,7 @@ public class AntiRevoke extends Feature {
         XposedBridge.hookMethod(antiRevokeMessageMethod, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Exception {
+                diagnosticTriggered();
                 if (param.args == null || param.args.length == 0) return;
                 
                 Object fMessageObj = ReflectionUtils.getArg(param.args, FMessageWpp.TYPE, 0);

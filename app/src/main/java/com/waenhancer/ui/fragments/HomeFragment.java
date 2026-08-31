@@ -889,89 +889,26 @@ public class HomeFragment extends BaseFragment {
             var installedVersion = packageInfo.versionName;
             versionView.setText(installedVersion);
 
-            var supportedList = Arrays.asList(activity.getResources().getStringArray(supportedArrayResId));
-            boolean isSupported = false;
-            if (installedVersion != null) {
-                isSupported = supportedList.stream().anyMatch(s -> installedVersion.startsWith(s.replace(".xx", "")));
-            }
-
-            unsupportedBtnView.setVisibility(isSupported ? View.GONE : View.VISIBLE);
-            if (!isSupported) {
-                unsupportedBtnView.setOnClickListener(v -> {
-                    com.waenhancer.ui.helpers.BottomSheetHelper.showInfo(
-                            activity,
-                            "Unsupported Version",
-                            "The installed WaEnhancer Community has no support for your installed version of WhatsApp. It may not work as expected. Please either update WaEnhancer Community, install a supported version of WhatsApp, or open an issue on GitHub.");
-                });
-            }
+            android.content.SharedPreferences diagnosticPrefs =
+                    androidx.preference.PreferenceManager.getDefaultSharedPreferences(activity);
+            com.waenhancer.diagnostics.ValidationModel.Compatibility compatibility =
+                    com.waenhancer.diagnostics.ValidationSession.compatibility(
+                            activity, diagnosticPrefs, packageName, installedVersion);
+            boolean isSupported = compatibility != com.waenhancer.diagnostics.ValidationModel.Compatibility.INCOMPATIBLE;
+            unsupportedBtnView.setVisibility(View.GONE);
 
             if (isSupported) {
-                boolean isBetaModule = BuildConfig.VERSION_NAME.toLowerCase().contains("beta");
-                if (!isBetaModule) {
-
-                    if (ApkMirrorFeedHelper.isBetaVersion(activity, packageName, installedVersion)) {
-                        statusView.setText("Beta Unsupported");
-                        statusView.setTextColor(colorError);
-                        iconView.setImageResource(R.drawable.ic_round_error_outline_24);
-                        iconView.setColorFilter(colorError);
-
-                        String appName = FeatureLoader.PACKAGE_WPP.equals(packageName) ? "WhatsApp" : "WhatsApp Business";
-                        rowView.setOnClickListener(v -> {
-                            try {
-                                com.google.android.material.bottomsheet.BottomSheetDialog dialog =
-                                        com.waenhancer.ui.helpers.BottomSheetHelper
-                                                .createStyledDialog(activity);
-                                View view = LayoutInflater.from(activity).inflate(R.layout.bottom_sheet_action, null);
-                                dialog.setContentView(view);
-
-                                ((com.google.android.material.textview.MaterialTextView) view.findViewById(R.id.bs_title)).setText("WhatsApp Beta Detected");
-                                ((com.google.android.material.textview.MaterialTextView) view.findViewById(R.id.bs_message)).setText(
-                                        "You are using a beta version of " + appName + " while WaEnhancer Community is currently set to the Stable update channel.\n\nTo ensure full compatibility and stay up-to-date with every new WhatsApp beta update, we highly recommend switching WaEnhancer Community to the Beta update channel.");
-
-                                com.google.android.material.button.MaterialButton okBtn = view.findViewById(R.id.bs_confirm_btn);
-                                okBtn.setText("Leave WhatsApp Beta");
-                                okBtn.setOnClickListener(v2 -> {
-                                    try {
-                                        String url = FeatureLoader.PACKAGE_WPP.equals(packageName)
-                                                ? "https://play.google.com/apps/testing/com.whatsapp"
-                                                : "https://play.google.com/apps/testing/com.whatsapp.w4b";
-                                        Intent intent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url));
-                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                        activity.startActivity(intent);
-                                    } catch (Exception e) {
-                                        Log.e("WAE_BETA", "Failed to open beta URL: " + e.getMessage());
-                                    }
-                                    dialog.dismiss();
-                                });
-
-                                com.google.android.material.button.MaterialButton cancelBtn = view.findViewById(R.id.bs_cancel_btn);
-                                cancelBtn.setText("Switch to WAEX Beta");
-                                cancelBtn.setOnClickListener(v2 -> {
-                                    try {
-                                        Intent intent = new Intent(activity, ChangelogActivity.class);
-                                        activity.startActivity(intent);
-                                    } catch (Exception e) {
-                                        Log.e("WAE_BETA", "Failed to open ChangelogActivity: " + e.getMessage());
-                                    }
-                                    dialog.dismiss();
-                                });
-
-                                dialog.show();
-                            } catch (Exception e) {
-                                Log.e("WAE_BETA", "Error showing bottom sheet: " + e.getMessage());
-                            }
-                        });
-                    }
-                } else {
-                    statusView.setText("Supported");
-                    statusView.setTextColor(colorSuccess);
-                    iconView.setImageResource(R.drawable.ic_round_check_circle_24);
-                    iconView.setColorFilter(colorSuccess);
-                    rowView.setOnClickListener(null);
-                    rowView.setClickable(false);
-                }
+                int compatibilityColor = compatibility == com.waenhancer.diagnostics.ValidationModel.Compatibility.VALIDATED
+                        ? colorSuccess : 0xFFF9A825;
+                statusView.setText(com.waenhancer.diagnostics.ValidationSession.label(compatibility));
+                statusView.setTextColor(compatibilityColor);
+                iconView.setImageResource(compatibility == com.waenhancer.diagnostics.ValidationModel.Compatibility.VALIDATED
+                        ? R.drawable.ic_round_check_circle_24 : R.drawable.ic_round_warning_24);
+                iconView.setColorFilter(compatibilityColor);
+                rowView.setOnClickListener(v -> startActivity(new Intent(activity,
+                        com.waenhancer.activities.DiagnosticsActivity.class)));
             } else {
-                statusView.setText("Not Supported");
+                statusView.setText("Incompatible");
                 statusView.setTextColor(colorError);
                 iconView.setImageResource(R.drawable.ic_round_error_outline_24);
                 iconView.setColorFilter(colorError);
