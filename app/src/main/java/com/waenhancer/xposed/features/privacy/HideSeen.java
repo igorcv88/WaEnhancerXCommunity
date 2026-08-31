@@ -331,6 +331,7 @@ public class HideSeen extends Feature {
         XposedBridge.hookMethod(loadSenderPlayed, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                diagnosticTriggered();
                 FMessageWpp fMessage = new FMessageWpp(param.args[0]);
                 processSenderPlayed(param, fMessage);
             }
@@ -343,6 +344,7 @@ public class HideSeen extends Feature {
         XposedBridge.hookMethod(loadSenderPlayedBusiness, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                diagnosticTriggered();
                 Set<?> set = (Set<?>) param.args[0];
                 if (set == null || set.isEmpty()) return;
 

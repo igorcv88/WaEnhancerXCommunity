@@ -46,17 +46,20 @@ public final class HostCompatibility {
     }
 
     public static ProbeResult probe(ClassLoader loader) {
-        // Several resolvers below require DexKit. A diagnostics probe may run before FeatureLoader
-        // initializes it, so only a post-initialization result is allowed to populate the cache.
-        boolean cacheResult = Unobfuscator.getDexKit() != null;
-        ProbeResult existing = cacheResult ? cachedResult : null;
+        // Never touch semantic resolvers before DexKit exists. UnobfuscatorCache keeps an in-memory
+        // failed-key set; probing too early poisons that set for the entire WhatsApp process and a
+        // later, otherwise valid post-init probe will only report "lookup failed previously".
+        if (Unobfuscator.getDexKit() == null) {
+            throw new IllegalStateException(
+                    "DexKit is not initialized; compatibility probe must run after Unobfuscator.initWithPath()");
+        }
+
+        ProbeResult existing = cachedResult;
         if (existing != null) return existing;
 
         synchronized (LOCK) {
-            if (cacheResult) {
-                existing = cachedResult;
-                if (existing != null) return existing;
-            }
+            existing = cachedResult;
+            if (existing != null) return existing;
 
             List<String> required = new ArrayList<>();
             List<String> optional = new ArrayList<>();
@@ -103,12 +106,10 @@ public final class HostCompatibility {
             optional(optional, "StatusByKey", () -> Unobfuscator.loadGetStatusByKey(loader));
 
             ProbeResult result = new ProbeResult(required, optional);
-            if (cacheResult) {
-                cachedResult = result;
-                RuntimeDiagnostics.probe(result.coreCompatible(),
-                        result.requiredFailures, result.optionalFailures);
-                XposedBridge.log("[WAEX] Host compatibility probe: " + result.summary());
-            }
+            cachedResult = result;
+            RuntimeDiagnostics.probe(result.coreCompatible(),
+                    result.requiredFailures, result.optionalFailures);
+            XposedBridge.log("[WAEX] Host compatibility probe: " + result.summary());
             return result;
         }
     }

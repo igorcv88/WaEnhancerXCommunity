@@ -43,7 +43,16 @@ public class ValidationModelTest {
         ValidationModel.FeatureEvidence feature = new ValidationModel.FeatureEvidence();
         feature.required = true; feature.manualRequired = true; feature.manualConfirmed = true;
         feature.loaded = true; feature.resolverPassed = true; feature.installed = true;
-        feature.opportunity = true; feature.triggered = true;
+        feature.triggered = true;
+        assertEquals(ValidationModel.Compatibility.VALIDATED,
+                ValidationModel.aggregate(true, false, false, true, List.of(feature)));
+    }
+
+    @Test public void triggeredRequiredFeatureDoesNotNeedSeparateOpportunityMarker() {
+        ValidationModel.FeatureEvidence feature = new ValidationModel.FeatureEvidence();
+        feature.required = true;
+        feature.loaded = true; feature.resolverPassed = true; feature.installed = true;
+        feature.triggered = true; feature.opportunity = false;
         assertEquals(ValidationModel.Compatibility.VALIDATED,
                 ValidationModel.aggregate(true, false, false, true, List.of(feature)));
     }
