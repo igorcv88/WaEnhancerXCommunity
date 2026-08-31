@@ -31,6 +31,7 @@ public class FMessageWpp {
     private static Field getFieldIdMessage;
     private static Field deviceJidField;
     private static Method messageMethod;
+    private static Method messageWithMediaMethod;
     private static Field mediaTypeField;
     private static Method getOriginalMessageKey;
     private static Class abstractMediaMessageClass;
@@ -87,6 +88,11 @@ public class FMessageWpp {
             messageMethod = Unobfuscator.loadNewMessageMethod(classLoader);
         } catch (Throwable t) {
             logOptionalResolverFailure("messageMethod", t);
+        }
+        try {
+            messageWithMediaMethod = Unobfuscator.loadNewMessageWithMediaMethod(classLoader);
+        } catch (Throwable t) {
+            logOptionalResolverFailure("messageWithMediaMethod", t);
         }
         try {
             mediaTypeField = Unobfuscator.loadMediaTypeField(classLoader);
@@ -237,16 +243,20 @@ public class FMessageWpp {
     }
 
     public String getMessageStr() {
-        Method method = messageMethod;
-        if (method == null) return null;
+        String message = invokeMessageAccessor(messageMethod, "plain-text");
+        if (message != null) return message;
+        return invokeMessageAccessor(messageWithMediaMethod, "media");
+    }
 
+    private String invokeMessageAccessor(Method method, String accessorName) {
+        if (method == null) return null;
         try {
             return (String) method.invoke(fmessage);
         } catch (Throwable e) {
-            XposedBridge.log("[WAEX] Unable to read optional message text: " + e);
+            XposedBridge.log("[WAEX] Unable to read optional " + accessorName
+                    + " message text: " + e);
             return null;
         }
-        return null;
     }
 
     /**
