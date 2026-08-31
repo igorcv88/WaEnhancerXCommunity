@@ -15,7 +15,7 @@ dexkit = "2.2.0"
 nav = "2.9.6"
 kotlin = "2.2.21"
 markwon = "4.6.2"
-compose-bom = "2025.02.00"
+compose-bom = "2026.08.00"
 blurview = "version-2.0.6"
 
 [libraries]
