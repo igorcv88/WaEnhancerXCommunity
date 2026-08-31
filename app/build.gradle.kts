@@ -10,7 +10,12 @@ plugins {
 }
 
 kotlin {
+    // RikkaX Material 2.7.2 is published as Java 21 bytecode. Use a JDK 21
+    // compiler so javac can read that dependency, but keep app bytecode at 17.
     jvmToolchain(21)
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
 }
 
 android {
@@ -201,11 +206,10 @@ dependencies {
     implementation(libs.rikkax.widget.borderview)
     implementation(libs.jstyleparser)
     implementation(libs.okhttp)
-    implementation(libs.filepicker)
     implementation(libs.betterypermissionhelper)
     implementation(libs.bcpkix.jdk18on)
     implementation(libs.arscblamer)
-    implementation("com.google.auto.value:auto-value-annotations:1.11.0")
+    implementation("com.google.auto.value:auto-value-annotations:1.11.1")
     implementation("com.github.bumptech.glide:glide:4.16.0")
 
     compileOnly(libs.lombok)
