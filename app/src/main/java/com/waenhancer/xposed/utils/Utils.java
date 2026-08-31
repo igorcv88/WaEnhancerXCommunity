@@ -482,20 +482,20 @@ public class Utils {
         if (view == null) return;
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < depth; i++) sb.append("  ");
-        
+
         String idName = "no_id";
         try {
             if (view.getId() != android.view.View.NO_ID) {
                 idName = view.getResources().getResourceEntryName(view.getId());
             }
         } catch (Exception ignored) {}
-        
+
         sb.append("[").append(depth).append("] ")
           .append(view.getClass().getName())
           .append(" (id: ").append(idName).append(")");
-          
+
 //        XposedBridge.log("[WaEnhancerX] UI Dump: " + sb.toString());
-        
+
         if (view instanceof android.view.ViewGroup) {
             android.view.ViewGroup group = (android.view.ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) {
@@ -524,33 +524,33 @@ public class Utils {
     @SuppressWarnings("unchecked")
     public static void setViewClickListener(android.view.View view, String key, android.view.View.OnClickListener listener) {
         if (view == null) return;
-        
+
         synchronized (view) {
-            java.util.HashMap<String, android.view.View.OnClickListener> listeners = (java.util.HashMap<String, android.view.View.OnClickListener>) 
+            java.util.HashMap<String, android.view.View.OnClickListener> listeners = (java.util.HashMap<String, android.view.View.OnClickListener>)
                     de.robv.android.xposed.XposedHelpers.getAdditionalInstanceField(view, "wae_click_listeners");
-            
+
             if (listeners == null) {
                 listeners = new java.util.HashMap<>();
                 de.robv.android.xposed.XposedHelpers.setAdditionalInstanceField(view, "wae_click_listeners", listeners);
-                
+
                 android.view.View.OnClickListener original = getCurrentClickListener(view);
                 if (original != null && !isWaeClickListener(original)) {
                     listeners.put("original", original);
                 }
             }
-            
+
             if (listener != null) {
                 listeners.put(key, listener);
             } else {
                 listeners.remove(key);
             }
-            
+
             if (listeners.isEmpty()) {
                 view.setOnClickListener(null);
                 de.robv.android.xposed.XposedHelpers.removeAdditionalInstanceField(view, "wae_click_listeners");
             } else {
                 android.view.View.OnClickListener composite = v -> {
-                    java.util.HashMap<String, android.view.View.OnClickListener> map = (java.util.HashMap<String, android.view.View.OnClickListener>) 
+                    java.util.HashMap<String, android.view.View.OnClickListener> map = (java.util.HashMap<String, android.view.View.OnClickListener>)
                             de.robv.android.xposed.XposedHelpers.getAdditionalInstanceField(v, "wae_click_listeners");
                     if (map != null) {
                         for (android.view.View.OnClickListener clickListener : new java.util.ArrayList<>(map.values())) {
@@ -590,7 +590,7 @@ public class Utils {
         try {
             android.content.Context context = getApplication();
             if (context == null) return 0;
-            
+
             var startup_prefs = context.getSharedPreferences("startup_prefs", android.content.Context.MODE_PRIVATE);
             int mode = startup_prefs.getInt("night_mode", 0);
             if (mode != 0) {

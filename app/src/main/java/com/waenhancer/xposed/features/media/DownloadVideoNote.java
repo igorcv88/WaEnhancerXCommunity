@@ -33,7 +33,7 @@ public class DownloadVideoNote extends Feature {
             if (context instanceof android.app.Activity) {
                 android.app.Activity activity = (android.app.Activity) context;
                 android.view.View decorView = activity.getWindow().getDecorView();
-                
+
                 int barId = activity.getResources().getIdentifier("action_mode_bar", "id", "android");
                 if (barId != 0) {
                     android.view.View bar = decorView.findViewById(barId);
@@ -41,7 +41,7 @@ public class DownloadVideoNote extends Feature {
                         return true;
                     }
                 }
-                
+
                 int appCompatBarId = activity.getResources().getIdentifier("action_context_bar", "id", activity.getPackageName());
                 if (appCompatBarId != 0) {
                     android.view.View bar = decorView.findViewById(appCompatBarId);

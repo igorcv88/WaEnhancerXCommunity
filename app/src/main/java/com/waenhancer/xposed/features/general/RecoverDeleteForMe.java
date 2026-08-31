@@ -89,7 +89,7 @@ public class RecoverDeleteForMe extends Feature {
     private void saveOne(Context context, Object msg) throws Exception {
         if (msg == null)
             return;
-        
+
         FMessageWpp fMessage = new FMessageWpp(msg);
         Class<?> msgClass = msg.getClass();
         var key = fMessage.getKey();

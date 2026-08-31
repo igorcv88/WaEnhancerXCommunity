@@ -239,7 +239,7 @@ public class MessageHistory extends SQLiteOpenHelper {
     public void onCreate(SQLiteDatabase sqLiteDatabase) {
         sqLiteDatabase.execSQL("create table MessageHistory(_id INTEGER PRIMARY KEY AUTOINCREMENT, message_key TEXT NOT NULL, text_data TEXT NOT NULL, editTimestamp BIGINT DEFAULT 0 );");
         sqLiteDatabase.execSQL("create table hide_seen_messages(_id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL, message_id TEXT NOT NULL,type INT NOT NULL, viewed INT DEFAULT 0);");
-        
+
         // Proper indexing
         sqLiteDatabase.execSQL("CREATE INDEX idx_message_history_key ON MessageHistory(message_key);");
         sqLiteDatabase.execSQL("CREATE UNIQUE INDEX idx_hide_seen_unique ON hide_seen_messages(jid, message_id, type);");

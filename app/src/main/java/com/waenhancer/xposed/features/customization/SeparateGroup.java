@@ -80,7 +80,7 @@ public class SeparateGroup extends Feature {
         // Setting tab count
         hookTabCount();
     }
-    
+
     @NonNull
     @Override
     public String getPluginName() {
@@ -131,7 +131,7 @@ public class SeparateGroup extends Feature {
                     param.setResult(null);
 
                     Object originalBadge = param.args[1];
-                    // XposedBridge.log("[WAEX-SG] Original badge: " + originalBadge 
+                    // XposedBridge.log("[WAEX-SG] Original badge: " + originalBadge
                             // + " class=" + (originalBadge != null ? originalBadge.getClass().getName() : "null"));
                     if (originalBadge != null) {
                         for (Field f : originalBadge.getClass().getDeclaredFields()) {

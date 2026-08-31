@@ -81,7 +81,7 @@ public class FilePicker {
             mOnFilePickedListener = null;
         }
     }
-    
+
     public static void setOnFilePickedListener(OnFilePickedListener onFilePickedListener) {
         mOnFilePickedListener = onFilePickedListener;
         mOnUriPickedListener = null;

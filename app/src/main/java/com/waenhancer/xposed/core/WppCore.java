@@ -282,7 +282,7 @@ public class WppCore {
 
     /**
      * Sends a message headlessly via WhatsApp notification RemoteInput reply.
-     * 
+     *
      * @param contactName The display name of the contact as shown in WA
      *                    notification title.
      * @param message     The text to send.
@@ -733,7 +733,7 @@ public class WppCore {
             ensureConversationJidResolvers(conversation.getClassLoader());
 
             Object jidObject = null;
-            
+
             // Try using the captured delegate (Upstream optimization)
             if (mConversationDelegate != null && conversationJidField != null) {
                 try {
@@ -974,15 +974,15 @@ public class WppCore {
         if (jid == null) return null;
         String datafolder = Utils.getApplication().getFilesDir().getParent() + "/";
         String bareJid = stripJID(jid);
-        
+
         // Try Profile Pictures cache (uses bare JID)
         File file = new File(datafolder + "cache/Profile Pictures/" + bareJid + ".jpg");
         if (file.exists()) return file;
-        
+
         // Try Avatars folder (uses FULL JID)
         file = new File(datafolder + "files/Avatars/" + jid + ".j");
         if (file.exists()) return file;
-        
+
         // Try me photo if it's our own JID
         if (jid.equals(Utils.getMyNumber())) {
             file = new File(datafolder + "files/me");

@@ -63,7 +63,7 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
                 ;
             }
             XposedHelpers.findAndHookMethod("com.waenhancer.utils.ModuleStatus", lpparam.classLoader, "isModuleActive", XC_MethodReplacement.returnConstant(true));
-            
+
             // Hook Application.onCreate in manager app to save active Xposed version locally
             try {
                 XposedHelpers.findAndHookMethod(
@@ -87,7 +87,7 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
             } catch (Throwable t) {
                 XposedBridge.log("[WAEX] Failed to hook Application.onCreate in manager: " + t.toString());
             }
-            
+
             // Bypass the Android 7.0+ SecurityException when using MODE_WORLD_READABLE in the module settings app process
             try {
                 XposedHelpers.findAndHookMethod(
@@ -149,7 +149,7 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
 
             // Initialize module resources early
             XResManager.moduleResources = XModuleResources.createInstance(MODULE_PATH, null);
-            
+
             // Populate valid IDs immediately for hooks to work
             populateValidIds();
 
@@ -216,7 +216,7 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
                             int originalId = field.getInt(null);
                             if (originalId >= 0x70000000 && originalId <= 0x7FFFFFFF) {
                                 int hostId = XResManager.getHostId(originalId);
-                                
+
                                 // Update the R class field directly to the mapped ID
                                 field.set(null, hostId);
                                 count++;

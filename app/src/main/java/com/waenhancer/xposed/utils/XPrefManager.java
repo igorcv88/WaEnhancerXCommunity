@@ -26,13 +26,13 @@ public class XPrefManager {
             Class<?> xPrefsClass = Class.forName("de.robv.android.xposed.XSharedPreferences");
             pref = (SharedPreferences) xPrefsClass.getConstructor(String.class, String.class)
                     .newInstance(BuildConfig.APPLICATION_ID, BuildConfig.APPLICATION_ID + "_preferences");
-            
+
             // Call makeWorldReadable and reload via reflection
             try {
                 xPrefsClass.getMethod("makeWorldReadable").invoke(pref);
                 xPrefsClass.getMethod("reload").invoke(pref);
             } catch (Throwable ignored) {}
-            
+
             return pref;
         } catch (Throwable t) {
             if (!(t instanceof ClassNotFoundException) && !(t.getCause() != null && t.getCause() instanceof ClassNotFoundException)) {
@@ -73,7 +73,7 @@ public class XPrefManager {
     public static SharedPreferences getPref(Context context) {
         SharedPreferences xposedPref = getPref();
         if (xposedPref != null) return xposedPref;
-        
+
         // Fallback to provider-based or local prefs
         return context.getSharedPreferences(BuildConfig.APPLICATION_ID + "_preferences", Context.MODE_PRIVATE);
     }

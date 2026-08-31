@@ -209,7 +209,7 @@ public class ProviderSharedPreferences implements SharedPreferences {
                 return;
             }
             Map<?, ?> rawMap = (Map<?, ?>) serializable;
-            
+
             ;
             var editor = localPrefs.edit().clear();
             for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
@@ -218,7 +218,7 @@ public class ProviderSharedPreferences implements SharedPreferences {
                 }
                 String key = (String) entry.getKey();
                 Object value = entry.getValue();
-                
+
                 // Specific migrations during hydration
                 if ("open_waex".equals(key) && value instanceof Boolean) {
                     editor.putString(key, ((Boolean) value) ? "1" : "0");

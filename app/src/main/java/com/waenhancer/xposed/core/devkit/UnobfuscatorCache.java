@@ -66,9 +66,9 @@ public class UnobfuscatorCache {
                     version = Long.parseLong(v);
                 } catch (Exception ignored) {}
             }
-            
+
             long currentVersion = mApplication.getPackageManager().getPackageInfo(mApplication.getPackageName(), 0).getLongVersionCode();
-            
+
             long savedUpdateTime = 0;
             try {
                 savedUpdateTime = sPrefsCacheHooks.getLong("updateTime", 0);
@@ -542,7 +542,7 @@ public class UnobfuscatorCache {
     private String getKeyName() {
         AtomicReference<String> keyName = new AtomicReference<>("");
         StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-        
+
         // Try finding Unobfuscator method first (ignoring synthetic/obfuscated/lambda methods)
         Arrays.stream(stackTrace)
                 .filter(stackTraceElement -> stackTraceElement.getClassName().equals(Unobfuscator.class.getName())
@@ -550,7 +550,7 @@ public class UnobfuscatorCache {
                         && !stackTraceElement.getMethodName().contains("$"))
                 .findFirst()
                 .ifPresent(stackTraceElement -> keyName.set(stackTraceElement.getMethodName()));
-        
+
         // Fallback if not found (e.g. inlined or called from somewhere else)
         if (keyName.get().isEmpty()) {
             for (StackTraceElement ste : stackTrace) {

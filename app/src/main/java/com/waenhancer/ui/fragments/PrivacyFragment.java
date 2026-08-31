@@ -84,7 +84,7 @@ public class PrivacyFragment extends BasePreferenceFragment {
                     // Check module-level prefs first (no root needed)
                     boolean ghostmode_t = mPrefs.getBoolean("ghostmode_t", false);
                     boolean ghostmode_r = mPrefs.getBoolean("ghostmode_r", false);
-                    
+
                     if (ghostmode_t || ghostmode_r) {
                         new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
                             .setTitle("Feature Conflict")
@@ -93,7 +93,7 @@ public class PrivacyFragment extends BasePreferenceFragment {
                             .show();
                         return false; // Block enabling
                     }
-                    
+
                     if (contactPicker != null && contactPicker.isVisible()) {
                         new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
                             contactPicker.onPreferenceClick(contactPicker);
@@ -126,19 +126,19 @@ public class PrivacyFragment extends BasePreferenceFragment {
         // Add listeners to ghostmode_t and ghostmode_r to turn off always typing if they are enabled
         var ghostmodeTPref = findPreference("ghostmode_t");
         var ghostmodeRPref = findPreference("ghostmode_r");
-        
+
         androidx.preference.Preference.OnPreferenceChangeListener hideTypingChangeListener = (preference, newValue) -> {
             if (newValue instanceof Boolean && (Boolean) newValue) {
                 if (alwaysTypingGlobal != null && alwaysTypingGlobal.isChecked()) {
                     alwaysTypingGlobal.setChecked(false);
-                    android.widget.Toast.makeText(requireContext(), 
-                        "Smart Always Typing disabled due to Hide Typing / Ghost Mode activation.", 
+                    android.widget.Toast.makeText(requireContext(),
+                        "Smart Always Typing disabled due to Hide Typing / Ghost Mode activation.",
                         android.widget.Toast.LENGTH_LONG).show();
                 }
             }
             return true;
         };
-        
+
         if (ghostmodeTPref != null) ghostmodeTPref.setOnPreferenceChangeListener(hideTypingChangeListener);
         if (ghostmodeRPref != null) ghostmodeRPref.setOnPreferenceChangeListener(hideTypingChangeListener);
 
@@ -260,7 +260,7 @@ public class PrivacyFragment extends BasePreferenceFragment {
                     try {
                         JSONObject json = new JSONObject(jsonStr);
                         boolean hasConflict = json.optBoolean("HideTyping", false) || json.optBoolean("HideRecording", false);
-                        
+
                         ContactPrivacyInfo info = new ContactPrivacyInfo();
                         info.number = number;
                         info.hasConflict = hasConflict;
@@ -271,7 +271,7 @@ public class PrivacyFragment extends BasePreferenceFragment {
                 }
             }
         }
-        
+
         // Resolve names for all resolved numbers in one query
         Set<String> cleanNumbers = new HashSet<>();
         for (ContactPrivacyInfo info : list) {
@@ -282,14 +282,14 @@ public class PrivacyFragment extends BasePreferenceFragment {
             String cleanNum = info.number.replaceAll("\\D", "");
             info.name = namesMap.getOrDefault(cleanNum, info.number);
         }
-        
+
         return list;
     }
 
     private Map<String, String> resolveContactNames(Context context, Set<String> cleanNumbers) {
         Map<String, String> resolved = new HashMap<>();
         if (cleanNumbers.isEmpty()) return resolved;
-        
+
         String[] projection = {
                 android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
                 android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER
@@ -322,18 +322,18 @@ public class PrivacyFragment extends BasePreferenceFragment {
 
     private List<ContactPrivacyInfo> getConflictingContacts() {
         List<ContactPrivacyInfo> conflicts = new ArrayList<>();
-        
+
         var globalPref = (androidx.preference.TwoStatePreference) findPreference("always_typing_global");
         if (globalPref == null || !globalPref.isChecked()) {
             return conflicts;
         }
-        
+
         // Only call root-based scan AFTER confirming the feature is enabled
         List<ContactPrivacyInfo> allCustom = getCustomPrivacyContacts();
-        
+
         var targetPref = (androidx.preference.ListPreference) findPreference("always_typing_global_target");
         String target = targetPref != null ? targetPref.getValue() : "1";
-        
+
         if ("0".equals(target)) {
             // All Contacts -> any contact with custom privacy
             conflicts.addAll(allCustom);
@@ -384,7 +384,7 @@ public class PrivacyFragment extends BasePreferenceFragment {
 
         com.google.android.material.bottomsheet.BottomSheetDialog dialog =
                 com.waenhancer.ui.helpers.BottomSheetHelper.createStyledDialog(requireContext());
-        
+
         LinearLayout layout = new LinearLayout(requireContext());
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(
@@ -410,7 +410,7 @@ public class PrivacyFragment extends BasePreferenceFragment {
         listView.setLayoutParams(listParams);
         layout.addView(listView);
 
-        com.google.android.material.button.MaterialButton closeBtn = 
+        com.google.android.material.button.MaterialButton closeBtn =
                 new com.google.android.material.button.MaterialButton(requireContext());
         closeBtn.setText("Dismiss");
         LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
@@ -423,7 +423,7 @@ public class PrivacyFragment extends BasePreferenceFragment {
         layout.addView(closeBtn);
 
         dialog.setContentView(layout);
-        
+
         class ConflictAdapter extends android.widget.BaseAdapter {
             private final List<ContactPrivacyInfo> mList;
             ConflictAdapter(List<ContactPrivacyInfo> list) {

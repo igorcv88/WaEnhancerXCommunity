@@ -102,7 +102,7 @@ public class AlertDialogWpp {
             } catch (NoSuchMethodException e) {
                 // Fallback to signature search
                 setMessageMethod = ReflectionUtils.findMethodUsingFilterIfExists(alertDialogClass,
-                    method -> method.getParameterCount() == 1 && 
+                    method -> method.getParameterCount() == 1 &&
                     method.getParameterTypes()[0].equals(CharSequence.class));
             }
             if (setMessageMethod != null) ;
@@ -117,12 +117,12 @@ public class AlertDialogWpp {
                     method -> method.getParameterCount() == 3 &&
                     ((method.getParameterTypes()[0].equals(DialogInterface.OnMultiChoiceClickListener.class) && CharSequence[].class.isAssignableFrom(method.getParameterTypes()[1])) ||
                      (CharSequence[].class.isAssignableFrom(method.getParameterTypes()[0]) && method.getParameterTypes()[1].equals(boolean[].class) && method.getParameterTypes()[2].equals(DialogInterface.OnMultiChoiceClickListener.class))));
-            
+
             // Robust button discovery
             java.lang.reflect.Method[] buttons = new java.lang.reflect.Method[0];
             try {
-                buttons = ReflectionUtils.findAllMethodsUsingFilter(alertDialogClass, method -> 
-                    method.getParameterCount() == 2 && 
+                buttons = ReflectionUtils.findAllMethodsUsingFilter(alertDialogClass, method ->
+                    method.getParameterCount() == 2 &&
                     ((method.getParameterTypes()[0].equals(DialogInterface.OnClickListener.class) && CharSequence.class.isAssignableFrom(method.getParameterTypes()[1])) ||
                      (CharSequence.class.isAssignableFrom(method.getParameterTypes()[0]) && method.getParameterTypes()[1].equals(DialogInterface.OnClickListener.class))));
                 ;
@@ -142,17 +142,17 @@ public class AlertDialogWpp {
                 // Heuristic for MaterialAlertDialogBuilder button order
                 // Often it's Positive, Negative, Neutral OR Negative, Neutral, Positive
                 // We'll try to find them by name if possible, else fallback to indices
-                setPositiveButtonMethod = buttons[0]; 
+                setPositiveButtonMethod = buttons[0];
                 if (buttons.length > 1) setNegativeButtonMethod = buttons[1];
                 if (buttons.length > 2) setNeutralButtonMethod = buttons[2];
-                
+
                 // If there are 3+ buttons, sometimes Positive is the last one in some obfuscations
                 if (buttons.length >= 3) {
                     setPositiveButtonMethod = buttons[2];
                     setNegativeButtonMethod = buttons[0];
                     setNeutralButtonMethod = buttons[1];
                 }
-                
+
                 ;
             }
 
@@ -229,7 +229,7 @@ public class AlertDialogWpp {
                 // Heuristic search for setTitle
                 java.lang.reflect.Method setTitleMethod = ReflectionUtils.findMethodUsingFilterIfExists(mAlertDialogWpp.getClass(),
                     m -> m.getName().toLowerCase().contains("title") && m.getParameterCount() == 1 && m.getParameterTypes()[0].equals(CharSequence.class));
-                
+
                 if (setTitleMethod != null) {
                     setTitleMethod.invoke(mAlertDialogWpp, title);
                 } else {
@@ -332,7 +332,7 @@ public class AlertDialogWpp {
         if (shouldUseSystem()) {
             return;
         }
-        
+
         boolean success = false;
         if (cachedMethod != null) {
             try {
@@ -344,7 +344,7 @@ public class AlertDialogWpp {
                 success = true;
             } catch (Throwable ignored) {}
         }
-        
+
         if (!success) {
             try {
                 XposedHelpers.callMethod(mAlertDialogWpp, methodName, text, listener);
@@ -447,7 +447,7 @@ public class AlertDialogWpp {
         if (window != null) {
             window.setGravity(Gravity.BOTTOM);
             window.getAttributes().windowAnimations = android.R.style.Animation_InputMethod;
-            
+
             int backgroundColor = 0xFFFFFFFF;
             try {
                 TypedValue typedValue = new TypedValue();
@@ -455,13 +455,13 @@ public class AlertDialogWpp {
                     backgroundColor = typedValue.data;
                 }
             } catch (Exception ignored) {}
-            
+
             GradientDrawable drawable = new GradientDrawable();
             drawable.setColor(backgroundColor);
             float radius = 16 * mContext.getResources().getDisplayMetrics().density;
             drawable.setCornerRadii(new float[]{radius, radius, radius, radius, 0, 0, 0, 0});
             window.setBackgroundDrawable(drawable);
-            
+
             window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         }
     }
@@ -494,19 +494,19 @@ public class AlertDialogWpp {
         if (mIsBottomSheet) {
             try {
                 android.app.Dialog dialog = new android.app.Dialog(mContext, android.R.style.Theme_Translucent_NoTitleBar);
-                
+
                 float density = mContext.getResources().getDisplayMetrics().density;
                 int dp8 = (int) (8 * density);
                 int dp12 = (int) (12 * density);
                 int dp16 = (int) (16 * density);
                 int dp20 = (int) (20 * density);
-                
+
                 boolean isDarkMode = false;
                 try {
                     int nightModeFlags = mContext.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
                     isDarkMode = nightModeFlags == Configuration.UI_MODE_NIGHT_YES;
                 } catch (Exception ignored) {}
-                
+
                 // Exact WhatsApp dark-mode surface colors extracted from native bottom sheet
                 int backgroundColor = isDarkMode ? 0xFF12181c : 0xFFFFFFFF;
                 int primaryTextColor = isDarkMode ? 0xFFe9edef : 0xFF111B21;
@@ -524,25 +524,25 @@ public class AlertDialogWpp {
                         accentColor = typedValue.data;
                     }
                 } catch (Exception ignored) {}
-                
+
                 final int screenHeight = mContext.getResources().getDisplayMetrics().heightPixels;
                 final int halfScreenHeight = screenHeight / 2;
                 final float capHeight = screenHeight * 0.95f;
-                
+
                 final RelativeLayout container = new RelativeLayout(mContext);
                 container.setLayoutParams(new ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                 container.setBackgroundColor(Color.TRANSPARENT);
-                
+
                 final LinearLayout mainLayout = new LinearLayout(mContext);
                 mainLayout.setOrientation(LinearLayout.VERTICAL);
                 mainLayout.setPadding(dp20, dp16, dp20, (int) (32 * density));
-                
+
                 RelativeLayout.LayoutParams mainParams = new RelativeLayout.LayoutParams(
                         RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
                 mainParams.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
                 mainLayout.setLayoutParams(mainParams);
-                
+
                 // Rounded background for the sheet with perfect outline clipping
                 GradientDrawable bgDrawable = new GradientDrawable();
                 bgDrawable.setColor(backgroundColor);
@@ -552,26 +552,26 @@ public class AlertDialogWpp {
                 mainLayout.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
                 mainLayout.setClipToOutline(true);
                 mainLayout.setElevation(8 * density);
-                
+
                 // Drag Handle
                 android.view.View dragHandle = new android.view.View(mContext);
                 LinearLayout.LayoutParams handleParams = new LinearLayout.LayoutParams((int) (40 * density), (int) (4 * density));
                 handleParams.gravity = Gravity.CENTER_HORIZONTAL;
                 handleParams.bottomMargin = dp16;
                 dragHandle.setLayoutParams(handleParams);
-                
+
                 GradientDrawable handleDrawable = new GradientDrawable();
                 handleDrawable.setColor(secondaryTextColor & 0x33FFFFFF | 0x33000000);
                 handleDrawable.setCornerRadius(2 * density);
                 dragHandle.setBackground(handleDrawable);
                 mainLayout.addView(dragHandle);
-                
+
                 // Implement touch-to-drag downward gesture using GPU-accelerated translation
                 android.view.View.OnTouchListener dragListener = new android.view.View.OnTouchListener() {
                     private float initialY;
                     private float initialTranslationY;
                     private boolean isDragging = false;
-                    
+
                     @Override
                     public boolean onTouch(android.view.View v, MotionEvent event) {
                         switch (event.getAction()) {
@@ -615,7 +615,7 @@ public class AlertDialogWpp {
                 };
                 mainLayout.setOnTouchListener(dragListener);
                 dragHandle.setOnTouchListener(dragListener);
-                
+
                 // Title — WDSTextView
                 if (mTitleText != null) {
                     TextView titleView = createWdsTextView(mContext);
@@ -626,19 +626,19 @@ public class AlertDialogWpp {
                     titleView.setPadding(0, 0, 0, dp12);
                     mainLayout.addView(titleView);
                 }
-                
+
                 // Scrollable content
                 androidx.core.widget.NestedScrollView scrollView = new androidx.core.widget.NestedScrollView(mContext);
                 LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f);
                 scrollView.setLayoutParams(scrollParams);
-                
+
                 LinearLayout scrollContentLayout = new LinearLayout(mContext);
                 scrollContentLayout.setOrientation(LinearLayout.VERTICAL);
                 scrollContentLayout.setLayoutParams(new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
                 scrollView.addView(scrollContentLayout);
-                
+
                 if (mMessageText != null) {
                     TextView messageView = createWdsTextView(mContext);
                     messageView.setText(mMessageText);
@@ -652,7 +652,7 @@ public class AlertDialogWpp {
                     messageView.setTextColor(secondaryTextColor);
                     scrollContentLayout.addView(messageView);
                 }
-                
+
                 if (mCustomView != null) {
                     try {
                         android.view.ViewParent parent = mCustomView.getParent();
@@ -667,7 +667,7 @@ public class AlertDialogWpp {
                     mCustomView.setLayoutParams(customParams);
                     scrollContentLayout.addView(mCustomView);
                 }
-                
+
                 if (mItems != null) {
                     LinearLayout itemsLayout = new LinearLayout(mContext);
                     itemsLayout.setOrientation(LinearLayout.VERTICAL);
@@ -676,7 +676,7 @@ public class AlertDialogWpp {
                     itemsParams.topMargin = dp8;
                     itemsParams.bottomMargin = dp8;
                     itemsLayout.setLayoutParams(itemsParams);
-                    
+
                     for (int i = 0; i < mItems.length; i++) {
                         final int index = i;
                         LinearLayout itemRow = new LinearLayout(mContext);
@@ -737,7 +737,7 @@ public class AlertDialogWpp {
                     }
                     scrollContentLayout.addView(itemsLayout);
                 }
-                
+
                 if (mMultiChoiceItems != null) {
                     LinearLayout itemsLayout = new LinearLayout(mContext);
                     itemsLayout.setOrientation(LinearLayout.VERTICAL);
@@ -746,7 +746,7 @@ public class AlertDialogWpp {
                     itemsParams.topMargin = dp8;
                     itemsParams.bottomMargin = dp8;
                     itemsLayout.setLayoutParams(itemsParams);
-                    
+
                     for (int i = 0; i < mMultiChoiceItems.length; i++) {
                         final int index = i;
                         LinearLayout itemRow = new LinearLayout(mContext);
@@ -756,7 +756,7 @@ public class AlertDialogWpp {
                                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
                         itemRow.setLayoutParams(rowLp);
                         itemRow.setPadding((int) (16 * density), (int) (12 * density), (int) (16 * density), (int) (12 * density));
-                        
+
                         // Label — WDSTextView
                         TextView labelView = createWdsTextView(mContext);
                         LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(
@@ -786,15 +786,15 @@ public class AlertDialogWpp {
                         finalSwitchView.setLayoutParams(checkLp);
                         finalSwitchView.setChecked(mCheckedItems != null && index < mCheckedItems.length && mCheckedItems[index]);
                         finalSwitchView.setClickable(false);
-                        
+
                         itemRow.addView(labelView);
                         itemRow.addView(finalSwitchView);
-                        
+
                         ColorDrawable normalBg = new ColorDrawable(Color.TRANSPARENT);
                         ColorStateList itemRippleColor = ColorStateList.valueOf(secondaryTextColor & 0x15FFFFFF | 0x15000000);
                         RippleDrawable itemRipple = new RippleDrawable(itemRippleColor, normalBg, null);
                         itemRow.setBackground(itemRipple);
-                        
+
                         itemRow.setOnClickListener(v -> {
                             boolean isChecked = !finalSwitchView.isChecked();
                             finalSwitchView.setChecked(isChecked);
@@ -805,14 +805,14 @@ public class AlertDialogWpp {
                                 mMultiChoiceListener.onClick(dialog, index, isChecked);
                             }
                         });
-                        
+
                         itemsLayout.addView(itemRow);
                     }
                     scrollContentLayout.addView(itemsLayout);
                 }
-                
+
                 mainLayout.addView(scrollView);
-                
+
                 // Bottom Buttons Layout (Stacked Vertically for Spacious Premium Look)
                 LinearLayout buttonsLayout = new LinearLayout(mContext);
                 buttonsLayout.setOrientation(LinearLayout.VERTICAL);
@@ -820,7 +820,7 @@ public class AlertDialogWpp {
                         LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
                 buttonsParams.topMargin = dp16;
                 buttonsLayout.setLayoutParams(buttonsParams);
-                
+
                 // Positive Button — WDSButton FILLED
                 if (mPositiveButtonText != null) {
                     View wdsPosBtn = createWdsButton(mContext, mPositiveButtonText, "FILLED");
@@ -896,7 +896,7 @@ public class AlertDialogWpp {
                         buttonsLayout.addView(negButton);
                     }
                 }
-                 
+
                  mainLayout.addView(buttonsLayout);
                  container.addView(mainLayout);
 
@@ -925,7 +925,7 @@ public class AlertDialogWpp {
                         }
                     }
                 });
-                
+
                 // Clicking outside mainLayout dismisses the dialog
                 container.setOnClickListener(v -> {
                     mainLayout.animate()
@@ -935,24 +935,24 @@ public class AlertDialogWpp {
                             .start();
                 });
                 mainLayout.setOnClickListener(v -> {});
-                
+
                 dialog.setContentView(container);
-                
+
                 // Configure Window properties for true Bottom Sheet presentation
                 Window window = dialog.getWindow();
                 if (window != null) {
                     window.setGravity(Gravity.BOTTOM);
                     window.getDecorView().setPadding(0, 0, 0, 0);
                     window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-                    
+
                     // Add standard bottom sheet background dimming scrim
                     window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
                     window.setDimAmount(0.5f);
-                    
+
                     window.getAttributes().windowAnimations = android.R.style.Animation_InputMethod;
                     window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
                 }
-                
+
                 mCreate = dialog;
                 return mCreate;
             } catch (Throwable t) {
@@ -1006,26 +1006,26 @@ public class AlertDialogWpp {
                             initialHeight = currentHeight;
                         }
                         float deltaY = event.getRawY() - initialY;
-                        
+
                         // Dragging UP (deltaY < 0): Expand the sheet if it's not yet at maxHeight
                         if (deltaY < 0 && currentHeight < maxHeight) {
                             isExpanding = true;
                             int newHeight = (int) (initialHeight - deltaY);
                             if (newHeight > maxHeight) newHeight = maxHeight;
-                            
+
                             ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
                             lp.height = newHeight;
                             mainLayout.setLayoutParams(lp);
                             return true; // Consume event to prevent internal scrolling
                         }
-                        
+
                         // Dragging DOWN (deltaY > 0): Shrink the sheet if it's above defaultHeight and scrollView is at the top
                         if (deltaY > 0 && !scrollView.canScrollVertically(-1)) {
                             if (currentHeight > defaultHeight) {
                                 isExpanding = true;
                                 int newHeight = (int) (initialHeight - deltaY);
                                 if (newHeight < defaultHeight) newHeight = defaultHeight;
-                                
+
                                 ViewGroup.LayoutParams lp = mainLayout.getLayoutParams();
                                 lp.height = newHeight;
                                 mainLayout.setLayoutParams(lp);
@@ -1037,7 +1037,7 @@ public class AlertDialogWpp {
                                 return true;
                             }
                         }
-                        
+
                         // If we are not expanding/shrinking, forward the touch event to the ScrollView
                         if (v == scrollView) {
                             scrollView.onTouchEvent(event);

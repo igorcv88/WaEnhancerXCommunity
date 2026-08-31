@@ -32,17 +32,17 @@ public class ChatScrollButtons extends Feature {
     public void doHook() throws Throwable {
         // Check if feature is enabled
         if (!prefs.getBoolean("go_to_first_message", true)) return;
-        
+
         try {
             Class<?> conversationClass = XposedHelpers.findClass("com.whatsapp.Conversation", this.classLoader);
-            
+
             // Hook onCreateOptionsMenu to add menu item
             XposedBridge.hookAllMethods(conversationClass, "onCreateOptionsMenu", new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     Menu menu = (Menu) param.args[0];
                     Activity activity = (Activity) param.thisObject;
-                    
+
                     // Add "Go to First Message" menu item
                     MenuItem goToFirstItem = menu.add(0, 1001, 0, "Go to First Message");
                     goToFirstItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);

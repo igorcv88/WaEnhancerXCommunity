@@ -382,8 +382,8 @@ public final class HookBL {
     public static void hook(ClassLoader loader, SharedPreferences prefs) {
 
         boolean useCustomSpoofer = prefs.getBoolean("bootloader_spoofer_custom", false);
-        String xmlContent = useCustomSpoofer 
-                ? SecretBridge.get(Utils.getApplication(), prefs, "bootloader_spoofer_xml", "") 
+        String xmlContent = useCustomSpoofer
+                ? SecretBridge.get(Utils.getApplication(), prefs, "bootloader_spoofer_xml", "")
                 : prefs.getString("bootloader_spoofer_default_xml", "");
         if (xmlContent != null && !xmlContent.isEmpty()) {
             try {

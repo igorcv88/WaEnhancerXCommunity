@@ -30,7 +30,7 @@ public class HideTabs extends Feature {
      * bottom-nav menu. The index here == ViewPager child position.
      */
     private final ArrayList<Integer> originalTabs = new ArrayList<>();
-    
+
     /**
      * The actual active tab IDs in the adapter after filtering out hidden ones.
      */

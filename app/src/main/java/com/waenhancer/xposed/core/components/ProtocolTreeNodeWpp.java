@@ -279,9 +279,9 @@ public class ProtocolTreeNodeWpp {
 
                 for (Field f : TYPE.getDeclaredFields()) {
                     Class<?> type = f.getType();
-                    if (type == FMessageWpp.UserJid.TYPE_JID || 
-                        type == FMessageWpp.UserJid.TYPE_USERJID || 
-                        type == FMessageWpp.UserJid.TYPE_DEVICEJID || 
+                    if (type == FMessageWpp.UserJid.TYPE_JID ||
+                        type == FMessageWpp.UserJid.TYPE_USERJID ||
+                        type == FMessageWpp.UserJid.TYPE_DEVICEJID ||
                         type == FMessageWpp.UserJid.TYPE_PHONEUSERJID ||
                         (FMessageWpp.UserJid.TYPE_JID != null && FMessageWpp.UserJid.TYPE_JID.isAssignableFrom(type))) {
                         fieldJid = f;

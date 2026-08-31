@@ -61,7 +61,7 @@ public class StatusDownload extends Feature {
                 if (currentItem == null) return null;
                 if (currentItem.isFromMe()) return null;
                 if (!currentItem.isMediaFile()) return null;
-                
+
                 MenuItem item = menu.add(0, R.string.download, 0, com.waenhancer.xposed.core.FeatureLoader.getModuleString(com.waenhancer.xposed.utils.Utils.getApplication(), R.string.download, "Download"));
                 return item;
             }
@@ -94,7 +94,7 @@ public class StatusDownload extends Feature {
                 if (menu.findItem(R.string.share_as_status) != null) return null;
                 if (currentItem == null) return null;
                 if (currentItem.isFromMe()) return null;
-                
+
                 MenuItem item = menu.add(0, R.string.share_as_status, 0, com.waenhancer.xposed.core.FeatureLoader.getModuleString(com.waenhancer.xposed.utils.Utils.getApplication(), R.string.share_as_status, "Share as status"));
                 return item;
             }
@@ -303,7 +303,7 @@ public class StatusDownload extends Feature {
                 }
             }
         } catch (Exception ignored) {}
-        
+
         if (root instanceof android.view.ViewGroup) {
             android.view.ViewGroup group = (android.view.ViewGroup) root;
             for (int i = 0; i < group.getChildCount(); i++) {
@@ -328,7 +328,7 @@ public class StatusDownload extends Feature {
                     floatField = f;
                 }
             }
-            
+
             int fileMethodsCount = 0;
             java.lang.reflect.Method fileMethod = null;
             for (java.lang.reflect.Method m : clazz.getDeclaredMethods()) {
@@ -337,7 +337,7 @@ public class StatusDownload extends Feature {
                     fileMethod = m;
                 }
             }
-            
+
             if (floatFieldsCount == 1 && fileMethodsCount == 1) {
                 return obj;
             }
@@ -403,18 +403,18 @@ public class StatusDownload extends Feature {
                 if (activity.isFinishing() || activity.isDestroyed()) {
                     return;
                 }
-                
+
                 try {
                     android.view.View decorView = activity.getWindow().getDecorView();
                     android.view.View menuButton = findMenuButton(decorView);
                     if (menuButton != null && menuButton.getParent() instanceof android.view.ViewGroup) {
                         android.view.ViewGroup parent = (android.view.ViewGroup) menuButton.getParent();
-                        
+
                         android.view.View progressBarView = parent.findViewById(0x7EAD0099);
                         if (progressBarView == null) {
                             CircularProgressView circularProgress = new CircularProgressView(activity);
                             circularProgress.setId(0x7EAD0099);
-                            
+
                             android.widget.LinearLayout.LayoutParams params = new android.widget.LinearLayout.LayoutParams(
                                 com.waenhancer.xposed.utils.Utils.dipToPixels(24.0f),
                                 com.waenhancer.xposed.utils.Utils.dipToPixels(24.0f)
@@ -423,23 +423,23 @@ public class StatusDownload extends Feature {
                             params.rightMargin = com.waenhancer.xposed.utils.Utils.dipToPixels(12.0f);
                             params.leftMargin = com.waenhancer.xposed.utils.Utils.dipToPixels(12.0f);
                             circularProgress.setLayoutParams(params);
-                            
+
                             circularProgress.setOnClickListener(new android.view.View.OnClickListener() {
                                 @Override
                                 public void onClick(android.view.View v) {
                                     com.waenhancer.xposed.utils.Utils.showToast("Status is loading in WhatsApp. Please wait...", android.widget.Toast.LENGTH_SHORT);
                                 }
                             });
-                            
+
                             int idx = parent.indexOfChild(menuButton);
                             parent.addView(circularProgress, idx);
                             progressBarView = circularProgress;
                         }
-                        
+
                         CircularProgressView progressBar = (CircularProgressView) progressBarView;
                         Object status = activeStatusObj;
                         StatusItemWaex statusItem = status != null ? StatusItemWaex.from(status) : null;
-                        
+
                         boolean hideLoader = false;
                         if (statusItem != null) {
                             if (statusItem.isFromMe() || !statusItem.isMediaFile()) {
@@ -456,7 +456,7 @@ public class StatusDownload extends Feature {
                                 hideLoader = true;
                             }
                         }
-                        
+
                         if (hideLoader) {
                             progressBar.setVisibility(android.view.View.GONE);
                         } else {
@@ -476,7 +476,7 @@ public class StatusDownload extends Feature {
                 } catch (Throwable t) {
                     // ignore
                 }
-                
+
                 handler.postDelayed(this, 100);
             }
         };
@@ -515,7 +515,7 @@ public class StatusDownload extends Feature {
             float size = Math.min(getWidth(), getHeight());
             float strokeWidth = com.waenhancer.xposed.utils.Utils.dipToPixels(3.5f); // Premium bold weight!
             paint.setStrokeWidth(strokeWidth);
-            
+
             float padding = strokeWidth / 2.0f;
             rectF.set(padding, padding, size - padding, size - padding);
 

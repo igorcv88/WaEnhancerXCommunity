@@ -52,7 +52,7 @@ public class MenuHome extends Feature {
 
     private static Drawable cachedRestartIcon = null;
     private static Drawable cachedWaeIcon = null;
-    
+
     private static Drawable cachedGhostOnIcon = null;
     private static Drawable cachedGhostOffIcon = null;
     private static Drawable cachedDndOnIcon = null;
@@ -61,7 +61,7 @@ public class MenuHome extends Feature {
     private static Drawable cachedFreezeOffIcon = null;
     private static Drawable cachedDeliveredOnIcon = null;
     private static Drawable cachedDeliveredOffIcon = null;
-    
+
     private static Drawable cachedNewChatIcon = null;
     private static Drawable cachedRecordingsIcon = null;
 
@@ -72,7 +72,7 @@ public class MenuHome extends Feature {
         // Pre-cache strings and drawables to avoid lookups during menu preparation
         try {
             cachedRestartIcon = DesignUtils.getDrawable(R.drawable.refresh);
-            
+
             // Must not be WhatsApp's own "ic_settings" gear: the injected entry has to be
             // distinguishable from the native Settings row.
             cachedWaeIcon = DesignUtils.getDrawableByName("ic_waenhancer_entry");
@@ -86,7 +86,7 @@ public class MenuHome extends Feature {
             cachedFreezeOffIcon = DesignUtils.getDrawable(R.drawable.eye_disabled);
             cachedDeliveredOnIcon = DesignUtils.getDrawable(R.drawable.eye_enabled);
             cachedDeliveredOffIcon = DesignUtils.getDrawable(R.drawable.eye_disabled);
-            
+
             int iconTint = 0xff8696a0;
             if (cachedGhostOnIcon != null) cachedGhostOnIcon.setTint(iconTint);
             if (cachedGhostOffIcon != null) cachedGhostOffIcon.setTint(iconTint);
@@ -96,11 +96,11 @@ public class MenuHome extends Feature {
             if (cachedFreezeOffIcon != null) cachedFreezeOffIcon.setTint(iconTint);
             if (cachedDeliveredOnIcon != null) cachedDeliveredOnIcon.setTint(iconTint);
             if (cachedDeliveredOffIcon != null) cachedDeliveredOffIcon.setTint(iconTint);
-            
+
             cachedNewChatIcon = DesignUtils.getDrawableByName("vec_ic_chat_add");
             if (cachedNewChatIcon == null) cachedNewChatIcon = DesignUtils.getDrawable(R.drawable.ic_contacts);
             if (cachedNewChatIcon != null) cachedNewChatIcon.setTint(iconTint);
-            
+
             // Prefer WhatsApp's own microphone glyph so the row matches the rest of the menu;
             // ic_menu_recordings is the module's 24dp twin. This used to point at ic_privacy — a
             // padlock, and declared at 56dp, so it rendered at more than twice the size of every
@@ -338,7 +338,7 @@ public class MenuHome extends Feature {
     private void showToggleDialog(Activity activity, String title, String key, boolean current) {
         new AlertDialogWpp(activity)
             .setTitle(title)
-            .setMessage(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.restart_wpp, 
+            .setMessage(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.restart_wpp,
                 "It is necessary to restart WhatsApp for the changes in WaEnhancer X to take effect.\n\nDo you want to restart?"))
             .setPositiveButton(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, android.R.string.ok, "OK"), (dialog, which) -> {
                 if ("ghostmode_actual".equals(key) || "dndmode_actual".equals(key) || "freeze_last_seen_actual".equals(key) || "hidereceipt".equals(key)) {
@@ -375,7 +375,7 @@ public class MenuHome extends Feature {
 
         String restartLabel = com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.restart_whatsapp, "Restart WhatsApp");
         var itemMenu = menu.add(0, MENU_ID_RESTART, 4, restartLabel);
-        
+
         boolean inSubMenu = menu instanceof SubMenu;
         if (InjectedMenuPresentation.shouldSetIcon(inSubMenu) && cachedRestartIcon != null) {
             cachedRestartIcon.setTint(newSettings ? DesignUtils.getPrimaryTextColor() : 0xff8696a0);
@@ -384,7 +384,7 @@ public class MenuHome extends Feature {
         if (InjectedMenuPresentation.shouldShowAsAction(newSettings, inSubMenu)) {
             itemMenu.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
         }
-        
+
         itemMenu.setOnMenuItemClickListener(item -> {
             Utils.doRestart(activity);
             return true;
@@ -401,7 +401,7 @@ public class MenuHome extends Feature {
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 var menu = (Menu) param.args[0];
                 var activity = (Activity) param.thisObject;
-                
+
                 // Only inject if it's HomeActivity to avoid pollution of other menus
                 if (!activity.getClass().getSimpleName().equals("HomeActivity")) return;
 
@@ -422,7 +422,7 @@ public class MenuHome extends Feature {
                     if (cachedWaeIcon != null) {
                         item.setIcon(cachedWaeIcon);
                     }
-                    
+
                     // If homeMenuMode is "1" (Show as icon), show the WaEnhancerX submenu icon on the toolbar
                     if ("1".equals(homeMenuMode)) {
                         item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
@@ -431,7 +431,7 @@ public class MenuHome extends Feature {
                     subMenu = subMenuItem.getSubMenu();
                 }
 
-                // Inject all items into the submenu. 
+                // Inject all items into the submenu.
                 // We pass 'false' for buttonAction inside the submenu to keep it clean (no nested icons on toolbar).
                 for (var menuItem : MenuHome.menuItems) {
                     menuItem.addMenu(subMenu, activity);

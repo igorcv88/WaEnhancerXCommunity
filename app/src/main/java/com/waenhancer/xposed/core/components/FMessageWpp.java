@@ -472,7 +472,7 @@ public class FMessageWpp {
                     if (mediaObject == null) continue;
                     fileField.setAccessible(true);
                     fileField.set(mediaObject, null);
-                    
+
                     // Reset boolean fields in the mediaObject (like transferred, etc.)
                     for (Field f : mediaObject.getClass().getDeclaredFields()) {
                         if (f.getType() == boolean.class) {

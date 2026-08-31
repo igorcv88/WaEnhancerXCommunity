@@ -335,7 +335,7 @@ public class ActivityController extends Feature {
         try {
             activity.getWindow().setStatusBarColor(android.graphics.Color.parseColor(bgColor));
             activity.getWindow().setNavigationBarColor(android.graphics.Color.parseColor(bgColor));
-            
+
             // Set light status/navigation bar icons for light mode
             if (!isDarkTheme) {
                 var decorView = activity.getWindow().getDecorView();
@@ -569,7 +569,7 @@ public class ActivityController extends Feature {
         swLp1.setMarginStart(dpToPx(activity, 16));
         finalSwitch1.setLayoutParams(swLp1);
         item1.addView(finalSwitch1);
-        
+
         item1.setOnClickListener(v -> {
             if (finalSwitch1 instanceof android.widget.CompoundButton) {
                 ((android.widget.CompoundButton) finalSwitch1).toggle();
@@ -673,7 +673,7 @@ public class ActivityController extends Feature {
             Class<?> wdsButtonClass = activity.getClassLoader().loadClass("com.whatsapp.ui.wds.components.button.WDSButton");
             continueBtn = (android.view.View) wdsButtonClass.getConstructor(android.content.Context.class, android.util.AttributeSet.class)
                     .newInstance(activity, null);
-            
+
             // Set variant to FILLED to style it as a primary green button
             try {
                 Class<?> variantEnum = activity.getClassLoader().loadClass("X.0xb");

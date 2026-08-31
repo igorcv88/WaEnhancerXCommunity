@@ -186,14 +186,14 @@ public class WdsSettingsTileRenderer {
 
         try {
             JSONArray subScreens = category.getJSONArray("sub_screens");
-            
+
             // Add Category tiles for the remaining sub-screens at the TOP
             for (int i = 1; i < subScreens.length(); i++) {
                 JSONObject sub = subScreens.getJSONObject(i);
                 String subId = sub.getString("id");
                 String subTitle = sub.getString("title");
                 String subSummary = sub.optString("summary", "Customize " + subTitle + " settings");
-                
+
                 android.graphics.drawable.Drawable icon = null;
                 String iconName = "";
                 if ("home_screen_main".equals(subId)) {
@@ -201,7 +201,7 @@ public class WdsSettingsTileRenderer {
                 } else if ("conversation_main".equals(subId)) {
                     iconName = "ic_home_tab_chats_unfilled";
                 }
-                
+
                 if (!iconName.isEmpty()) {
                     icon = com.waenhancer.xposed.utils.DesignUtils.getDrawableByName(iconName);
                 }
@@ -210,7 +210,7 @@ public class WdsSettingsTileRenderer {
                     // which does not resolve in the WhatsApp process and draws blank.
                     icon = com.waenhancer.xposed.utils.DesignUtils.getDrawableByName("ic_chevron_right_solid");
                 }
-                
+
                 View catTile = createWdsRow(activity, subTitle, subSummary, icon, iconName, v -> {
                     android.content.Intent intent = new android.content.Intent(activity, activity.getClass());
                     intent.putExtra("waex_screen_id", subId);
@@ -218,7 +218,7 @@ public class WdsSettingsTileRenderer {
                 });
                 container.addView(catTile);
             }
-            
+
             if (subScreens.length() > 1) {
                 View divider = new View(activity);
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (int) (1 * density));
@@ -227,7 +227,7 @@ public class WdsSettingsTileRenderer {
                 divider.setBackgroundColor(0xFF222d34);
                 container.addView(divider);
             }
-            
+
             // Render the first main sub-screen (general_main)
             if (subScreens.length() > 0) {
                 JSONObject mainSub = subScreens.getJSONObject(0);
@@ -540,7 +540,7 @@ public class WdsSettingsTileRenderer {
             final String rawSummary = summary;
             final int finalInitialSelectedIndex = initialSelectedIndex;
             final View[] rowHolder = new View[1];
-            
+
             rowHolder[0] = createWdsRow(context, title, displaySummary, null, v -> {
                 int selectedIndex = 0;
                 if ("int".equals(valueType)) {

@@ -167,7 +167,7 @@ public class CustomToolbar extends Feature {
     }
 
     private static class ToolbarMethodHook extends XC_MethodHook {
-        
+
         private final boolean showName;
         private final boolean showBio;
         private final String typeArchive;
@@ -256,7 +256,7 @@ public class CustomToolbar extends Feature {
         private void createTitleView(Activity homeActivity, LinearLayout parent) {
             var name = WppCore.getMyName();
             var titleText = showName ? name : "WhatsApp";
-            
+
             var mTitle = new TextView(homeActivity);
             mTitle.setText(titleText);
             mTitle.setLayoutParams(new LinearLayout.LayoutParams(
@@ -296,7 +296,7 @@ public class CustomToolbar extends Feature {
         private void hideOriginalLogo(Activity homeActivity, View logo) {
             var parent = (ViewGroup) logo.getParent();
             var window = (ViewGroup) homeActivity.getWindow().getDecorView();
-            
+
             parent.removeView(logo);
 
             RelativeLayout hideLayout = new RelativeLayout(homeActivity);
