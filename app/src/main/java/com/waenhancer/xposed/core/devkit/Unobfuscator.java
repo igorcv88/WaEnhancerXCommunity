@@ -294,6 +294,14 @@ public class Unobfuscator {
 
     // TODO: Classes and Methods for Receipt
 
+    public synchronized static Method loadStartOutgoingCallMethod(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            Method method = findFirstMethodUsingStrings(classLoader, StringMatchType.Contains, "outgoing-launch/cm-null-contact");
+            if (method == null) throw new NoSuchMethodException("StartOutgoingCall method not found");
+            return method;
+        });
+    }
+
     public synchronized static Method loadReceiptMethod(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
             var classDeviceJid = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith,

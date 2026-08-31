@@ -55,62 +55,130 @@ public class CallType extends Feature {
         });
 
 
-        var callConfirmationFragment = XposedHelpers.findClass("com.whatsapp.calling.fragment.CallConfirmationFragment", classLoader);
-        var method = ReflectionUtils.findMethodUsingFilter(callConfirmationFragment, m -> m.getParameterCount() == 1 && m.getParameterTypes()[0].equals(android.os.Bundle.class));
-        XposedBridge.hookMethod(method, new XC_MethodHook() {
-            private boolean isVideoCall;
-            private String jid;
-            private Dialog newDialog;
-            private Unhook hookBundleString;
+        java.lang.reflect.Method startCallMethod = null;
+        try {
+            startCallMethod = com.waenhancer.xposed.core.devkit.Unobfuscator.loadStartOutgoingCallMethod(classLoader);
+        } catch (Throwable ignored) {}
 
-            @Override
-            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                hookBundleString = XposedHelpers.findAndHookMethod(BaseBundle.class, "getString", String.class, new XC_MethodHook() {
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                        if (param.args[0] == "jid") {
-                            jid = (String) param.getResult();
-                        }
+        if (startCallMethod != null) {
+            XposedBridge.hookMethod(startCallMethod, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    android.content.Context context = null;
+                    if (param.args[0] instanceof android.content.Context) {
+                        context = (android.content.Context) param.args[0];
                     }
-                });
-                hookBundleBoolean = XposedHelpers.findAndHookMethod(BaseBundle.class, "getBoolean", String.class, new XC_MethodHook() {
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                        if (param.args[0] == "is_video_call") {
-                            isVideoCall = (boolean) param.getResult();
-                        }
-                    }
-                });
-            }
+                    if (context == null) return;
+                    
+                    Object contactObj = param.args[1];
+                    if (contactObj == null) return;
 
-            @Override
-            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                hookBundleString.unhook();
-                hookBundleBoolean.unhook();
-                if (jid == null || isVideoCall) return;
-                var origDialog = (Dialog) param.getResult();
-                var context = origDialog.getContext();
-                var mAlertDialog = new AlertDialogWpp(origDialog.getContext());
-                mAlertDialog.setTitle(UnobfuscatorCache.getInstance().getString("selectcalltype"));
-                mAlertDialog.setItems(new String[]{com.waenhancer.xposed.core.FeatureLoader.getModuleString(com.waenhancer.xposed.utils.Utils.getApplication(), R.string.phone_call), com.waenhancer.xposed.core.FeatureLoader.getModuleString(com.waenhancer.xposed.utils.Utils.getApplication(), R.string.whatsapp_call)}, (dialog, which) -> {
-                    newDialog.dismiss();
-                    switch (which) {
-                        case 0:
-                            var intent = new Intent();
-                            intent.setAction(Intent.ACTION_DIAL);
-                            var userJid = new FMessageWpp.UserJid(jid);
-                            intent.setData(Uri.parse("tel:+" + userJid.getPhoneNumber()));
-                            context.startActivity(intent);
-                            break;
-                        case 1:
-                            origDialog.show();
-                            break;
+                    boolean isVideo = false;
+                    if (param.args.length > 3 && param.args[3] instanceof Boolean) {
+                        isVideo = (Boolean) param.args[3];
                     }
-                });
-                newDialog = mAlertDialog.create();
-                param.setResult(newDialog);
-            }
-        });
+                    if (isVideo) return;
+
+                    var waContact = new com.waenhancer.xposed.core.components.WaContactWpp(contactObj);
+                    var userJid = waContact.getUserJid();
+                    if (userJid == null) return;
+                    String phoneNumber = userJid.getPhoneNumber();
+                    if (phoneNumber == null || phoneNumber.isEmpty()) return;
+
+                    Object[] originalArgs = param.args.clone();
+                    param.setResult(null); 
+
+                    var mAlertDialog = new AlertDialogWpp(context);
+                    mAlertDialog.setTitle(UnobfuscatorCache.getInstance().getString("selectcalltype"));
+                    mAlertDialog.setItems(new String[]{
+                            com.waenhancer.xposed.core.FeatureLoader.getModuleString(com.waenhancer.xposed.utils.Utils.getApplication(), R.string.phone_call),
+                            com.waenhancer.xposed.core.FeatureLoader.getModuleString(com.waenhancer.xposed.utils.Utils.getApplication(), R.string.whatsapp_call)
+                    }, (dialog, which) -> {
+                        dialog.dismiss();
+                        switch (which) {
+                            case 0:
+                                var intent = new Intent();
+                                intent.setAction(Intent.ACTION_DIAL);
+                                intent.setData(Uri.parse("tel:+" + phoneNumber));
+                                context.startActivity(intent);
+                                break;
+                            case 1:
+                                try {
+                                    XposedBridge.invokeOriginalMethod(param.method, param.thisObject, originalArgs);
+                                } catch (Throwable e) {
+                                    XposedBridge.log(e);
+                                }
+                                break;
+                        }
+                    });
+                    mAlertDialog.show();
+                }
+            });
+        } else {
+            var callConfirmationFragment = XposedHelpers.findClass("com.whatsapp.calling.fragment.CallConfirmationFragment", classLoader);
+            var method = ReflectionUtils.findMethodUsingFilter(callConfirmationFragment, m -> m.getParameterCount() == 1 && m.getParameterTypes()[0].equals(android.os.Bundle.class));
+            XposedBridge.hookMethod(method, new XC_MethodHook() {
+                private boolean isVideoCall;
+                private String jid;
+                private Dialog newDialog;
+                private Unhook hookBundleString;
+                private Unhook hookBundleBoolean;
+
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    hookBundleString = XposedHelpers.findAndHookMethod(BaseBundle.class, "getString", String.class, new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            if ("jid".equals(param.args[0])) {
+                                jid = (String) param.getResult();
+                            }
+                        }
+                    });
+                    hookBundleBoolean = XposedHelpers.findAndHookMethod(BaseBundle.class, "getBoolean", String.class, new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            if ("is_video_call".equals(param.args[0])) {
+                                isVideoCall = (boolean) param.getResult();
+                            }
+                        }
+                    });
+                }
+
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                    if (hookBundleString != null) {
+                        try { hookBundleString.unhook(); } catch (Throwable ignored) {}
+                        hookBundleString = null;
+                    }
+                    if (hookBundleBoolean != null) {
+                        try { hookBundleBoolean.unhook(); } catch (Throwable ignored) {}
+                        hookBundleBoolean = null;
+                    }
+                    if (jid == null || isVideoCall) return;
+                    var origDialog = (Dialog) param.getResult();
+                    var context = origDialog.getContext();
+                    var mAlertDialog = new AlertDialogWpp(origDialog.getContext());
+                    mAlertDialog.setTitle(UnobfuscatorCache.getInstance().getString("selectcalltype"));
+                    mAlertDialog.setItems(new String[]{com.waenhancer.xposed.core.FeatureLoader.getModuleString(com.waenhancer.xposed.utils.Utils.getApplication(), R.string.phone_call), com.waenhancer.xposed.core.FeatureLoader.getModuleString(com.waenhancer.xposed.utils.Utils.getApplication(), R.string.whatsapp_call)}, (dialog, which) -> {
+                        newDialog.dismiss();
+                        switch (which) {
+                            case 0:
+                                var intent = new Intent();
+                                intent.setAction(Intent.ACTION_DIAL);
+                                var userJid = new FMessageWpp.UserJid(jid);
+                                intent.setData(Uri.parse("tel:+" + userJid.getPhoneNumber()));
+                                context.startActivity(intent);
+                                break;
+                            case 1:
+                                origDialog.show();
+                                break;
+                        }
+                    });
+                    newDialog = mAlertDialog.create();
+                    param.setResult(newDialog);
+                }
+            });
+        }
     }
 
     @NonNull
