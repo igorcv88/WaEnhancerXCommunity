@@ -46,7 +46,7 @@ android {
 
         val noticesUrl = (project.findProperty("NOTICES_URL")?.toString()
             ?: env.getProperty("NOTICES_URL")
-            ?: "https://api.github.com/repos/igorcv88/WaEnhancerX/releases/latest").trim()
+            ?: "https://api.github.com/repos/igorcv88/WaEnhancerXCommunity/releases/latest").trim()
         buildConfigField("String", "NOTICES_URL", "\"$noticesUrl\"")
         multiDexEnabled = true
         resourceConfigurations += listOf("en", "ar", "de", "es", "fr", "id", "in", "it", "iw", "pt", "ru", "tr", "zh")
