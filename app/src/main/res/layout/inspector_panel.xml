@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/inspector_panel_card"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_gravity="bottom"
+    app:cardCornerRadius="16dp"
+    app:cardElevation="8dp"
+    app:contentPadding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- Identity block -->
+        <TextView
+            android:id="@+id/inspector_id"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            tools:text="conversations_row_contact_name" />
+
+        <TextView
+            android:id="@+id/inspector_class"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textSize="12sp"
+            tools:text="com.whatsapp.TextEmojiLabel" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="8dp"
+            android:background="?attr/colorOutline" />
+
+        <!-- Geometry block -->
+        <TextView
+            android:id="@+id/inspector_geometry"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            tools:text="stability=STABLE  targetsAncestor=false" />
+
+        <TextView
+            android:id="@+id/inspector_selector"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:fontFamily="monospace"
+            android:textIsSelectable="true"
+            android:textSize="12sp"
+            tools:text=".ConversationActivity #conversations_row_contact_name" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="8dp"
+            android:background="?attr/colorOutline" />
+
+        <!-- Context block -->
+        <TextView
+            android:id="@+id/inspector_context_description"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            tools:text="contentDescription: ‹redigido›" />
+
+        <TextView
+            android:id="@+id/inspector_reveal_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="@string/inspector_reveal"
+            android:textColor="?attr/colorPrimary"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/inspector_parent_chain"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textSize="11sp"
+            tools:text="parents: conversation_row &gt; conversations_view &gt; content" />
+
+        <!-- Actions -->
+        <com.google.android.material.chip.ChipGroup
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/inspector_action_copy_id"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/inspector_action_copy_id" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/inspector_action_copy_class"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/inspector_action_copy_class" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/inspector_action_copy_selector"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/inspector_action_copy_selector" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/inspector_action_add_css"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/inspector_action_add_css" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/inspector_action_parent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/inspector_action_parent" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/inspector_action_child"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/inspector_action_child" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/inspector_action_exit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/inspector_action_exit" />
+
+        </com.google.android.material.chip.ChipGroup>
+
+    </LinearLayout>
+
+</androidx.cardview.widget.CardView>

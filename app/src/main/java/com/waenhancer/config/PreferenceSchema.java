@@ -74,11 +74,6 @@ public final class PreferenceSchema {
     static {
         Map<String, Entry> entries = new LinkedHashMap<>();
         add(entries, "active_xposed_api_version", Type.INT, Sensitivity.RUNTIME, Store.PUBLIC);
-        add(entries, "validation_runtime_snapshot_wpp", Type.STRING, Sensitivity.RUNTIME, Store.PRIVATE);
-        add(entries, "validation_runtime_snapshot_business", Type.STRING, Sensitivity.RUNTIME, Store.PRIVATE);
-        add(entries, "validation_session_active", Type.BOOLEAN, Sensitivity.RUNTIME, Store.PRIVATE);
-        add(entries, "validation_session_target", Type.STRING, Sensitivity.RUNTIME, Store.PRIVATE);
-        add(entries, "validation_session_started", Type.LONG, Sensitivity.RUNTIME, Store.PRIVATE);
         add(entries, "admin_emoji", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "admin_grp", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "alertsticker", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
@@ -214,6 +209,7 @@ public final class PreferenceSchema {
         add(entries, "igstatus", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "imagequality", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "init_prefs_creation", Type.BOOLEAN, Sensitivity.RUNTIME, Store.PRIVATE);
+        add(entries, "inspector_session", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "keybox_verify_status", Type.STRING, Sensitivity.RUNTIME, Store.PRIVATE);
         add(entries, "keybox_verify_time", Type.LONG, Sensitivity.RUNTIME, Store.PRIVATE);
         add(entries, "last_fetch", Type.LONG, Sensitivity.CACHE, Store.PRIVATE);

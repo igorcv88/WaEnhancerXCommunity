@@ -55,6 +55,7 @@ import com.waenhancer.xposed.features.customization.HideTabs;
 import com.waenhancer.xposed.features.customization.SeparateGroup;
 import com.waenhancer.xposed.features.customization.IGStatus;
 import com.waenhancer.xposed.features.customization.ShowOnline;
+import com.waenhancer.xposed.features.devtools.InspectorFeature;
 import com.waenhancer.xposed.features.general.AntiRevoke;
 import com.waenhancer.xposed.features.general.CallType;
 import com.waenhancer.xposed.features.general.ChatLimit;
@@ -277,16 +278,6 @@ public class FeatureLoader {
                         }
 
                         PackageManager packageManager = mApp.getPackageManager();
-                        try {
-                            PackageInfo diagnosticPackage = packageManager.getPackageInfo(mApp.getPackageName(), 0);
-                            int api = de.robv.android.xposed.XposedBridge.getXposedVersion();
-                            com.waenhancer.diagnostics.RuntimeDiagnostics.initialize(mApp,
-                                    mApp.getPackageName(), diagnosticPackage.versionName, api);
-                            HostCompatibility.ProbeResult diagnosticProbe = HostCompatibility.probe(loader);
-                            com.waenhancer.diagnostics.RuntimeDiagnostics.probe(mApp,
-                                    diagnosticProbe.coreCompatible(), diagnosticProbe.requiredFailures,
-                                    diagnosticProbe.optionalFailures);
-                        } catch (Throwable ignored) { }
 
                         // XSharedPreferences reads the prefs file directly from disk.
                         // The file is world-readable because we hook getDefaultSharedPreferencesMode()
@@ -326,58 +317,33 @@ public class FeatureLoader {
                                 supportedVersions.addAll(customVersions);
                             }
                         }
-                        // Initialize Unobfuscator and UnobfuscatorCache early so that
-                        // loadExpirationClass and other DexKit lookups function even if version check fails
-                        try {
-                            Unobfuscator.loadLibrary(mApp);
-                            if (Unobfuscator.initWithPath(sourceDir)) {
-                                UnobfuscatorCache.init(mApp);
-                            }
-                        } catch (Throwable t) {
-                            XposedBridge.log("[WAEX] Early Unobfuscator init error: " + t.getMessage());
-                        }
-
                         mApp.registerActivityLifecycleCallbacks(new WaCallback());
                         registerReceivers();
                         try {
                             boolean isSupported = supportedVersions.stream()
-                                    .filter(Objects::nonNull)
-                                    .map(String::trim)
                                     .anyMatch(s -> {
-                                        if (s.isEmpty()) return false;
-                                        String target = s.endsWith(".xx") ? s.substring(0, s.length() - 3) + "." : s;
-                                        if (!target.endsWith(".")) {
-                                            target = target + ".";
-                                        }
+                                        String target = s.endsWith(".xx") ? s.replace(".xx", ".") : s + ".";
                                         return (packageInfo.versionName + ".").startsWith(target);
                                     });
                             if (Feature.DEBUG) {
                                 ;
                             }
-                            boolean runtimeProbeEligible = isRuntimeProbeEligible(packageInfo.versionName);
-                            boolean bypassVersionCheck = pref.getBoolean("bypass_version_check", false);
-
-                            if (!isSupported && !runtimeProbeEligible && !bypassVersionCheck) {
-                                disableExpirationVersion(mApp.getClassLoader());
-                                String sb = "Unsupported version: " +
-                                        packageInfo.versionName +
-                                        "\n" +
-                                        "Only the function of ignoring the expiration of the WhatsApp version has been applied!";
-                                throw new Exception(sb);
-                            }
-
-                            // Version allowlists are validated-build metadata, not compatibility proof.
-                            // For known builds, newer WhatsApp 2.x hosts, or an explicit version-check
-                            // bypass, prove the required semantic contracts against the installed APK
-                            // before initComponents() can install any core hooks.
-                            HostCompatibility.requireCoreCompatibility(loader);
-
                             if (!isSupported) {
                                 disableExpirationVersion(mApp.getClassLoader());
-                                XposedBridge.log("[WAEX] Version " + packageInfo.versionName
-                                        + " is not in the validated-version list; proceeding after runtime compatibility probe");
+                                if (pref.getBoolean("bypass_version_check", false)) {
+                                    // User opted in: load all features despite unsupported version
+                                    load(loader, pref, packageInfo, sourceDir);
+                                } else {
+                                    String sb = "Unsupported version: " +
+                                            packageInfo.versionName +
+                                            "\n" +
+                                            "Only the function of ignoring the expiration of the WhatsApp version has been applied!";
+                                    throw new Exception(sb);
+                                }
+                            } else {
+                                // Version is supported — load normally
+                                load(loader, pref, packageInfo, sourceDir);
                             }
-                            load(loader, pref, packageInfo, sourceDir);
                         } catch (Throwable e) {
                             XposedBridge.log(e);
                             var error = new ErrorItem();
@@ -514,44 +480,31 @@ public class FeatureLoader {
                 });
     }
 
-    /**
-     * Select hosts that may be evaluated by the semantic compatibility probe.
-     * This is deliberately separate from supported_versions_*: those arrays remain
-     * the companion UI's list of builds that have actually been regression-tested.
-     */
-    private static boolean isRuntimeProbeEligible(String versionName) {
-        return versionName != null && versionName.startsWith("2.");
-    }
-
     public static void disableExpirationVersion(ClassLoader classLoader) throws Exception {
-        try {
-            var expirationClass = Unobfuscator.loadExpirationClass(classLoader);
-            if (expirationClass == null) return;
-            for (var method : expirationClass.getDeclaredMethods()) {
-                Class<?> returnType = method.getReturnType();
-                if (returnType.equals(Date.class) || returnType.equals(long.class) || returnType.equals(Long.class)) {
-                    /* Log removed */
-                    XposedBridge.hookMethod(method, new XC_MethodHook() {
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                            if (returnType.equals(Date.class)) {
-                                var calendar = Calendar.getInstance();
-                                calendar.set(2099, 11, 31);
-                                param.setResult(calendar.getTime());
-                            } else if (returnType.equals(long.class) || returnType.equals(Long.class)) {
-                                param.setResult(4102444800000L); // Year 2100-01-01 in milliseconds
-                            }
+        var expirationClass = Unobfuscator.loadExpirationClass(classLoader);
+        /* Log removed */
+        for (var method : expirationClass.getDeclaredMethods()) {
+            Class<?> returnType = method.getReturnType();
+            if (returnType.equals(Date.class) || returnType.equals(long.class) || returnType.equals(Long.class)) {
+                /* Log removed */
+                XposedBridge.hookMethod(method, new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        if (returnType.equals(Date.class)) {
+                            var calendar = Calendar.getInstance();
+                            calendar.set(2099, 11, 31);
+                            param.setResult(calendar.getTime());
+                        } else if (returnType.equals(long.class) || returnType.equals(Long.class)) {
+                            param.setResult(4102444800000L); // Year 2100-01-01 in milliseconds
                         }
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                            Object result = param.getResult();
-                            /* Log removed */
-                        }
-                    });
-                }
+                    }
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        Object result = param.getResult();
+                        /* Log removed */
+                    }
+                });
             }
-        } catch (Throwable t) {
-            XposedBridge.log("[WAEX] disableExpirationVersion error: " + t.getMessage());
         }
     }
 
@@ -623,10 +576,11 @@ public class FeatureLoader {
     }
 
     private static void initComponents(ClassLoader loader, android.content.SharedPreferences pref) throws Exception {
-        // FMessageWpp itself is a core contract. Optional accessors are isolated inside its
-        // initializer, while a genuinely required failure must abort loading instead of leaving
-        // every subsequent feature running against partially initialized static state.
-        FMessageWpp.initialize(loader);
+        try {
+            FMessageWpp.initialize(loader);
+        } catch (Throwable t) {
+            XposedBridge.log("[WAEX] Failed to initialize FMessageWpp: " + t.getMessage());
+        }
         try {
             com.waenhancer.xposed.core.components.ProtocolTreeNodeWpp.initialize(loader);
         } catch (Throwable t) {
@@ -677,9 +631,6 @@ public class FeatureLoader {
             }
 
             if (state == WppCore.ActivityChangeState.ChangeType.RESUMED) {
-                if (isHomeActivity(activity)) {
-                    com.waenhancer.diagnostics.RuntimeDiagnostics.opportunity(mApp, "Home / chat list");
-                }
                 if (isHomeActivity(activity)) {
                     triggerBetaCheckInHost(activity);
                 }
@@ -979,7 +930,6 @@ public class FeatureLoader {
                 );
 
                 if (activityName.contains("Status")) {
-                    com.waenhancer.diagnostics.RuntimeDiagnostics.opportunity(mApp, "Status");
                     FeatureRegistry.activateFeature(
                             FeatureRegistry.TriggerType.STATUS_VIEW,
                             activityName,
@@ -989,7 +939,6 @@ public class FeatureLoader {
                 }
 
                 if (activityName.contains("Call")) {
-                    com.waenhancer.diagnostics.RuntimeDiagnostics.opportunity(mApp, "Calls");
                     FeatureRegistry.activateFeature(
                             FeatureRegistry.TriggerType.CALL_STARTED,
                             activityName,
@@ -999,7 +948,6 @@ public class FeatureLoader {
                 }
 
                 if (activityName.contains("Conversation") || activityName.contains("Chat")) {
-                    com.waenhancer.diagnostics.RuntimeDiagnostics.opportunity(mApp, "Conversations");
                     FeatureRegistry.activateFeature(
                             FeatureRegistry.TriggerType.CONVERSATION_OPENED,
                             activityName,
@@ -1042,6 +990,7 @@ public class FeatureLoader {
                 SeparateGroup.class,
                 FloatingBottomBar.class,
                 ConversationScrollButtonGlass.class,
+                InspectorFeature.class,
                 IGStatus.class,
                 LiteMode.class,
                 MediaQuality.class,
@@ -1113,13 +1062,7 @@ public class FeatureLoader {
                             XposedBridge.log("Failed to invoke doHook on feature: " + classe.getSimpleName() + " - " + ex.getMessage());
                         }
                     }
-                    com.waenhancer.diagnostics.RuntimeDiagnostics.feature(mApp,
-                            classe.getSimpleName(), "resolverPassed", null);
-                    com.waenhancer.diagnostics.RuntimeDiagnostics.feature(mApp,
-                            classe.getSimpleName(), "installed", null);
                 } catch (Throwable e) {
-                    com.waenhancer.diagnostics.RuntimeDiagnostics.feature(mApp,
-                            classe.getSimpleName(), "error", e);
                     XposedBridge.log(e);
                     var error = new ErrorItem();
                     error.setPluginName(classe.getSimpleName());
@@ -1142,7 +1085,6 @@ public class FeatureLoader {
         } catch (InterruptedException e) {
             XposedBridge.log(e);
         }
-        com.waenhancer.diagnostics.RuntimeDiagnostics.flush(mApp);
     }
 
     private static void triggerBetaCheckInHost(Activity activity) {

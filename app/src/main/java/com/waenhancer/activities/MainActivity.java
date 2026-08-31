@@ -1,8 +1,10 @@
 package com.waenhancer.activities;
 
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
@@ -28,9 +30,13 @@ import com.waenhancer.notices.NoticeCenter;
 import com.waenhancer.ui.fragments.GeneralFragment;
 import com.waenhancer.ui.fragments.HomeFragment;
 import com.waenhancer.ui.fragments.base.BasePreferenceFragment;
+import com.waenhancer.config.SafePrefs;
 import com.waenhancer.utils.FilePicker;
 
 import java.io.File;
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.util.Collections;
 
 import android.view.View;
 import android.view.ViewGroup;
@@ -260,6 +266,8 @@ public class MainActivity extends BaseActivity {
             binding.btnBattery.setVisibility(android.view.View.GONE);
         }
 
+        setupInspectorButton();
+
         // Handle incoming navigation from search
         handleIncomingIntent(getIntent());
 
@@ -270,6 +278,81 @@ public class MainActivity extends BaseActivity {
                 androidx.core.app.ActivityCompat.requestPermissions(this, new String[]{permission}, 101);
             }
         }
+    }
+
+    private static final String INSPECTOR_SESSION_PREF = "inspector_session";
+
+    private SharedPreferences prefs() {
+        return androidx.preference.PreferenceManager.getDefaultSharedPreferences(this);
+    }
+
+    private boolean isInspectorArmed() {
+        String value = SafePrefs.getString(prefs(), INSPECTOR_SESSION_PREF, "");
+        return value != null && !value.isEmpty();
+    }
+
+    private void setupInspectorButton() {
+        updateInspectorButtonState();
+        binding.btnInspector.setOnClickListener(v -> toggleInspector());
+    }
+
+    private void updateInspectorButtonState() {
+        binding.btnInspector.setImageResource(
+                isInspectorArmed() ? R.drawable.eye_enabled : R.drawable.eye_disabled);
+    }
+
+    private void toggleInspector() {
+        if (isInspectorArmed()) {
+            disarmInspector();
+        } else {
+            armInspector();
+        }
+        updateInspectorButtonState();
+    }
+
+    /**
+     * Arms the Element Inspector session by writing {@code token|armedAtMillis} to the
+     * {@code inspector_session} preference. This exact "token|timestamp" pipe-delimited format
+     * is required by {@code InspectorFeature.parseSession(String)} on the read side (Task B3) —
+     * the timestamp is informational only; idle-timeout expiry is computed entirely by the
+     * overlay's own session tracking, not from this value.
+     */
+    private void armInspector() {
+        String token = generateInspectorToken();
+        String value = token + "|" + System.currentTimeMillis();
+        SafePrefs.put(this, prefs(), Collections.singletonMap(INSPECTOR_SESSION_PREF, value));
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.inspector_identify_ui_elements)
+                .setMessage(R.string.inspector_armed_message)
+                .setPositiveButton(R.string.inspector_open_whatsapp, (dialog, which) -> openWhatsApp())
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    /** Disarms the session by writing the empty string, which {@code parseSession} treats as unset. */
+    private void disarmInspector() {
+        SafePrefs.put(this, prefs(), Collections.singletonMap(INSPECTOR_SESSION_PREF, ""));
+        android.widget.Toast.makeText(this, R.string.inspector_disarmed_message, android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private String generateInspectorToken() {
+        byte[] randomBytes = new byte[16];
+        new SecureRandom().nextBytes(randomBytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
+    }
+
+    private void openWhatsApp() {
+        PackageManager packageManager = getPackageManager();
+        for (String pkg : new String[]{"com.whatsapp", "com.whatsapp.w4b"}) {
+            Intent intent = packageManager.getLaunchIntentForPackage(pkg);
+            if (intent != null) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+                return;
+            }
+        }
+        android.widget.Toast.makeText(this, R.string.inspector_whatsapp_not_found, android.widget.Toast.LENGTH_SHORT).show();
     }
 
     private void createMainDir() {
@@ -493,9 +576,6 @@ public class MainActivity extends BaseActivity {
 
     private void scrollInChildFragment(Fragment parentFragment, String preferenceKey) {
         Fragment childFragment = parentFragment.getChildFragmentManager().findFragmentById(R.id.frag_container);
-        if (childFragment == null && parentFragment instanceof GeneralFragment) {
-            childFragment = parentFragment.getChildFragmentManager().findFragmentById(R.id.general_frag_container);
-        }
         if (childFragment instanceof BasePreferenceFragment) {
             ((BasePreferenceFragment) childFragment).scrollToPreference(preferenceKey);
         }
@@ -513,6 +593,7 @@ public class MainActivity extends BaseActivity {
     protected void onResume() {
         super.onResume();
         invalidateOptionsMenu();
+        updateInspectorButtonState();
         // Re-check battery optimization each time the user returns to the app
         // (e.g. after granting exemption from system settings)
         var powerManager = (PowerManager) getSystemService(POWER_SERVICE);
