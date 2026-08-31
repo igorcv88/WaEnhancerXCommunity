@@ -26,9 +26,13 @@ scratch
 app/src/main/java/com/waenhancer/utils/WppTabChecker.java
 */build/
 /pro
+
 # Local environment secrets
 .env.local
 .env
+
+# Generated logs and transient build output
+*.log
 
 # Windows clipboard/IDE scratch files
 ~ClipboardTransferring.tmp
@@ -43,11 +47,8 @@ app/src/main/java/com/waenhancer/utils/WppTabChecker.java
 *keystore*base64*
 *key*base64*
 
-# Screenshots and capture material. These are shot on a real device against a
-# real account, so they carry contact names, photos and message text that have
-# nothing to do with the code. Kept on disk - the liquid-glass calibration
-# references live here and the handoff measures against them - but never
-# committed. See HANDOFF_LIQUID_GLASS.md.
+# Screenshots and capture material from real devices can contain contact names,
+# photos, message text, and other personal data. Keep them local and never commit them.
 demo/
 /Screenshot (*.jpg
 /Screenshot (*.png

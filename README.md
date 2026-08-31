@@ -28,6 +28,8 @@ The project is currently in **beta-stage development**. The core Community archi
 
 Feature availability can vary by WhatsApp build. WaEnhancer performs runtime compatibility checks before installing core hooks, and incompatible features are isolated when possible instead of assuming that every nearby WhatsApp version is safe.
 
+Remaining engineering work and intentionally deferred ideas are tracked in [ROADMAP.md](ROADMAP.md).
+
 ## Features
 
 | | |
@@ -75,6 +77,7 @@ For the project policies and technical model, see:
 - [Privacy policy](PRIVACY.md)
 - [Security policy](SECURITY.md)
 - [Architecture](ARCHITECTURE.md)
+- [Roadmap](ROADMAP.md)
 
 ## Contributing
 
