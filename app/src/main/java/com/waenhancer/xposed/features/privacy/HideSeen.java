@@ -180,9 +180,18 @@ public class HideSeen extends Feature {
             XposedBridge.log("WaEnhancer: HideSeen modern dispatch lookup failed: " + t.getMessage());
         }
 
+        List<Method> usableModernDispatchMethods = new ArrayList<>();
+        if (modernDispatchMethods != null) {
+            for (Method method : modernDispatchMethods) {
+                if (hasAndroidMessageParameter(method)) {
+                    usableModernDispatchMethods.add(method);
+                }
+            }
+        }
+
         final ThreadLocal<Boolean> inManualReceiptCheck = new ThreadLocal<>();
 
-        if (modernDispatchMethods != null && modernMessageInfoClass != null && modernDispatchMethods.length > 0) {
+        if (modernMessageInfoClass != null && !usableModernDispatchMethods.isEmpty()) {
             Others.propsBoolean.put(19148, false);
             final Class<?> finalInfoClass = modernMessageInfoClass;
 
@@ -190,9 +199,8 @@ public class HideSeen extends Feature {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                     diagnosticTriggered();
-                    if (param.args == null || param.args.length == 0 || !(param.args[0] instanceof Message)) return;
-                    Message message = (Message) param.args[0];
-                    if (message.arg1 != 419 && message.arg1 != 89) return;
+                    Message message = ReflectionUtils.getArg(param.args, Message.class, 0);
+                    if (message == null || (message.arg1 != 419 && message.arg1 != 89)) return;
                     Object obj = message.obj;
                     if (obj == null || !finalInfoClass.isInstance(obj)) return;
 
@@ -235,11 +243,9 @@ public class HideSeen extends Feature {
                                 anySuppressed = true;
                                 break;
                             }
-                        } else {
-                            if (checkPrivacyAndHideSeen(fmessageKey) || checkPrivacyAndHideReceipt(fmessageKey)) {
-                                anySuppressed = true;
-                                break;
-                            }
+                        } else if (checkPrivacyAndHideSeen(fmessageKey) || checkPrivacyAndHideReceipt(fmessageKey)) {
+                            anySuppressed = true;
+                            break;
                         }
                     }
 
@@ -249,10 +255,8 @@ public class HideSeen extends Feature {
                 }
             };
 
-            for (Method m : modernDispatchMethods) {
-                if (m != null) {
-                    XposedBridge.hookMethod(m, modernHook);
-                }
+            for (Method method : usableModernDispatchMethods) {
+                XposedBridge.hookMethod(method, modernHook);
             }
         } else {
             Others.propsBoolean.put(19148, true);
@@ -276,12 +280,11 @@ public class HideSeen extends Feature {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                         diagnosticTriggered();
-                        if (param.args == null || param.args.length == 0 || !(param.args[0] instanceof Message)) return;
-                        Message firstArg = (Message) param.args[0];
-                        if (firstArg.arg1 != 419 && firstArg.arg1 != 89) return;
+                        Message firstArg = ReflectionUtils.getArg(param.args, Message.class, 0);
+                        if (firstArg == null || (firstArg.arg1 != 419 && firstArg.arg1 != 89)) return;
                         Object obj = firstArg.obj;
                         inManualReceiptCheck.set(true);
-                        Object checkResult = null;
+                        Object checkResult;
                         try {
                             checkResult = finalMainCallerMethod.invoke(null, obj);
                         } finally {
@@ -301,8 +304,6 @@ public class HideSeen extends Feature {
                 }
             }
         }
-
-
 
         XposedBridge.hookMethod(receiptMethod, new XC_MethodHook() {
             @Override
@@ -369,6 +370,14 @@ public class HideSeen extends Feature {
                 }
             }
         });
+    }
+
+    private static boolean hasAndroidMessageParameter(Method method) {
+        if (method == null) return false;
+        for (Class<?> parameterType : method.getParameterTypes()) {
+            if (parameterType == Message.class) return true;
+        }
+        return false;
     }
 
     private static FMessageWpp.Key generateFMessageKey(ProtocolTreeNodeWpp node) {
