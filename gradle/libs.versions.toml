@@ -4,7 +4,6 @@ bcpkix-jdk18on = "1.83"
 betterypermissionhelper = "1.0.3"
 documentfile = "1.1.0"
 filepicker = "9.2.5"
-flatbuffers = "23.5.26"
 jstyleparser = "4.0.1"
 lombok = "1.18.42"
 okhttp = "5.3.2"
@@ -15,7 +14,6 @@ dexkit = "2.2.0"
 nav = "2.9.6"
 kotlin = "2.2.21"
 markwon = "4.6.2"
-compose-bom = "2025.02.00"
 blurview = "version-2.0.6"
 
 [libraries]
@@ -27,7 +25,6 @@ betterypermissionhelper = { module = "com.waseemsabir:betterypermissionhelper", 
 colorpicker = { module = "com.jaredrummler:colorpicker", version.ref = "colorpicker" }
 dexkit = { module = "org.luckypray:dexkit", version.ref = "dexkit" }
 filepicker = { module = "io.github.tutorialsandroid:filepicker", version.ref = "filepicker" }
-flatbuffers = { module = "com.google.flatbuffers:flatbuffers-java", version.ref = "flatbuffers" }
 jstyleparser = { module = "net.sf.cssbox:jstyleparser", version.ref = "jstyleparser" }
 libxposed-legacy = { group = "de.robv.android.xposed", name = "api", version.ref = "xposed-legacy" }
 
@@ -48,11 +45,6 @@ material = { module = "com.google.android.material:material", version = "1.14.0-
 markwon-core = { module = "io.noties.markwon:core", version.ref = "markwon" }
 markwon-html = { module = "io.noties.markwon:html", version.ref = "markwon" }
 
-androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
-androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
-androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3", version = "1.4.0-alpha05" }
-androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
-androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version = "1.12.0" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version = "2.8.7" }
 androidx-savedstate-ktx = { group = "androidx.savedstate", name = "savedstate-ktx", version = "1.2.1" }
 
@@ -61,4 +53,3 @@ androidApplication = { id = "com.android.application", version.ref = "agp" }
 materialthemebuilder = { id = "dev.rikka.tools.materialthemebuilder", version = "1.5.1" }
 androidLibrary = { id = "com.android.library", version.ref = "agp" }
 kotlinAndroid = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
-compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
