@@ -1,5 +1,6 @@
 package com.waenhancer.xposed.core;
 
+import com.waenhancer.diagnostics.RuntimeDiagnostics;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.core.devkit.ViewHolderCompat;
 
@@ -45,12 +46,17 @@ public final class HostCompatibility {
     }
 
     public static ProbeResult probe(ClassLoader loader) {
-        ProbeResult existing = cachedResult;
+        // Several resolvers below require DexKit. A diagnostics probe may run before FeatureLoader
+        // initializes it, so only a post-initialization result is allowed to populate the cache.
+        boolean cacheResult = Unobfuscator.getDexKit() != null;
+        ProbeResult existing = cacheResult ? cachedResult : null;
         if (existing != null) return existing;
 
         synchronized (LOCK) {
-            existing = cachedResult;
-            if (existing != null) return existing;
+            if (cacheResult) {
+                existing = cachedResult;
+                if (existing != null) return existing;
+            }
 
             List<String> required = new ArrayList<>();
             List<String> optional = new ArrayList<>();
@@ -96,9 +102,14 @@ public final class HostCompatibility {
             optional(optional, "FStatusKey", () -> Unobfuscator.loadFStatusKeyClass(loader));
             optional(optional, "StatusByKey", () -> Unobfuscator.loadGetStatusByKey(loader));
 
-            cachedResult = new ProbeResult(required, optional);
-            XposedBridge.log("[WAEX] Host compatibility probe: " + cachedResult.summary());
-            return cachedResult;
+            ProbeResult result = new ProbeResult(required, optional);
+            if (cacheResult) {
+                cachedResult = result;
+                RuntimeDiagnostics.probe(result.coreCompatible(),
+                        result.requiredFailures, result.optionalFailures);
+                XposedBridge.log("[WAEX] Host compatibility probe: " + result.summary());
+            }
+            return result;
         }
     }
 

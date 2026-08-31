@@ -13,14 +13,13 @@ import android.widget.TextView;
 import android.widget.CheckBox;
 
 import androidx.annotation.Nullable;
-import androidx.preference.PreferenceManager;
-
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.waenhancer.R;
 import com.waenhancer.activities.base.BaseActivity;
 import com.waenhancer.diagnostics.FeatureCatalog;
 import com.waenhancer.diagnostics.ValidationSession;
+import com.waenhancer.config.PreferenceStores;
 
 /** Preview-first local diagnostic exporter. */
 public class DiagnosticsActivity extends BaseActivity {
@@ -64,9 +63,9 @@ public class DiagnosticsActivity extends BaseActivity {
             CheckBox check = new CheckBox(this);
             check.setText(item.getValue().surface + " · " + item.getKey());
             check.setChecked(ValidationSession.manual(
-                    PreferenceManager.getDefaultSharedPreferences(this), item.getKey()));
+                    PreferenceStores.privateStore(this), item.getKey()));
             check.setOnCheckedChangeListener((button, checked) -> {
-                ValidationSession.setManual(PreferenceManager.getDefaultSharedPreferences(this), item.getKey(), checked);
+                ValidationSession.setManual(PreferenceStores.privateStore(this), item.getKey(), checked);
                 refresh();
             });
             checklist.addView(check);
@@ -90,7 +89,7 @@ public class DiagnosticsActivity extends BaseActivity {
         actions.setPadding(dp(12), dp(8), dp(12), dp(12));
 
         MaterialButton session = button(ValidationSession.active(
-                PreferenceManager.getDefaultSharedPreferences(this)) ? "Reset session" : "Start session");
+                PreferenceStores.privateStore(this)) ? "Reset session" : "Start session");
         session.setOnClickListener(v -> session());
         actions.addView(session, weighted());
 
@@ -121,11 +120,11 @@ public class DiagnosticsActivity extends BaseActivity {
 
     private void refresh() {
         reportView.setText(ValidationSession.buildReport(
-                this, PreferenceManager.getDefaultSharedPreferences(this)));
+                this, PreferenceStores.privateStore(this)));
     }
 
     private void session() {
-        android.content.SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        android.content.SharedPreferences prefs = PreferenceStores.privateStore(this);
         if (ValidationSession.active(prefs)) {
             ValidationSession.reset(prefs);
             recreate();

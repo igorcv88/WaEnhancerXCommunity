@@ -890,7 +890,7 @@ public class HomeFragment extends BaseFragment {
             versionView.setText(installedVersion);
 
             android.content.SharedPreferences diagnosticPrefs =
-                    androidx.preference.PreferenceManager.getDefaultSharedPreferences(activity);
+                    com.waenhancer.config.PreferenceStores.privateStore(activity);
             com.waenhancer.diagnostics.ValidationModel.Compatibility compatibility =
                     com.waenhancer.diagnostics.ValidationSession.compatibility(
                             activity, diagnosticPrefs, packageName, installedVersion);
