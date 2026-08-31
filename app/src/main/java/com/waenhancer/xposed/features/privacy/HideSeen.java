@@ -12,6 +12,7 @@ import com.waenhancer.xposed.core.WppCore;
 import com.waenhancer.xposed.core.components.FMessageWpp;
 import com.waenhancer.xposed.core.components.ProtocolTreeNodeWpp;
 import com.waenhancer.xposed.core.db.MessageHistory;
+import com.waenhancer.xposed.core.devkit.Beta10Resolvers;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.features.customization.HideSeenView;
 import com.waenhancer.xposed.features.general.Others;
@@ -22,13 +23,10 @@ import org.luckypray.dexkit.query.enums.StringMatchType;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 
 import de.robv.android.xposed.XC_MethodHook;
-import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 
@@ -82,7 +80,6 @@ public class HideSeen extends Feature {
     private void hookSendReadReceiptJob() throws Exception {
         Method sendReadReceiptJobMethod = Unobfuscator.loadHideViewSendReadJob(classLoader);
         Class<?> sendJobClass = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "SendReadReceiptJob");
-        /* Log removed */
 
         XposedBridge.hookMethod(sendReadReceiptJobMethod, new XC_MethodHook() {
             @Override
@@ -170,54 +167,140 @@ public class HideSeen extends Feature {
 
     private void hookReceiptMethod() throws Exception {
         Method receiptMethod = Unobfuscator.loadReceiptMethod(classLoader);
-        Method receiptMainCallerMethod = null;
+
+        Method[] modernDispatchMethods = null;
+        Class<?> modernMessageInfoClass = null;
         try {
-            receiptMainCallerMethod = Unobfuscator.loadReceiptMainCallerMethod(classLoader);
+            modernDispatchMethods = Beta10Resolvers.loadOnDispatchMessage(classLoader);
+            modernMessageInfoClass = Unobfuscator.loadReceiptMessageInfoClass(classLoader);
         } catch (Throwable t) {
-            XposedBridge.log("WaEnhancer: HideSeen receiptMainCallerMethod lookup failed: " + t.getMessage());
+            XposedBridge.log("WaEnhancer: HideSeen modern dispatch lookup failed: " + t.getMessage());
         }
 
-        Method[] receiptCallerMethods = null;
-        try {
-            receiptCallerMethods = Unobfuscator.loadReceiptCallersMethod(classLoader);
-        } catch (Throwable t) {
-            XposedBridge.log("WaEnhancer: HideSeen receiptCallerMethods lookup failed: " + t.getMessage());
-        }
-
-        final ThreadLocal<Boolean> inManualReceiptCheck = new ThreadLocal<>();
-
-        if (receiptCallerMethods != null && receiptMainCallerMethod != null) {
-            final Method finalMainCallerMethod = receiptMainCallerMethod;
-            XC_MethodHook hookCallerMethod = new XC_MethodHook() {
-                @Override
-                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                    diagnosticTriggered();
-                    if (param.args == null || param.args.length == 0 || !(param.args[0] instanceof Message)) return;
-                    Message firstArg = (Message) param.args[0];
-                    if (firstArg.arg1 != 419 && firstArg.arg1 != 89) return;
-                    Object obj = firstArg.obj;
-                    inManualReceiptCheck.set(true);
-                    Object checkResult = null;
-                    try {
-                        checkResult = finalMainCallerMethod.invoke(null, obj);
-                    } finally {
-                        inManualReceiptCheck.set(false);
-                    }
-
-                    if (checkResult == null) {
-                        param.setResult(null);
-                    }
-                }
-            };
-
-            for (Method m : receiptCallerMethods) {
-                if (m != null) {
-                    XposedBridge.hookMethod(m, hookCallerMethod);
+        List<Method> usableModernDispatchMethods = new ArrayList<>();
+        if (modernDispatchMethods != null) {
+            for (Method method : modernDispatchMethods) {
+                if (hasAndroidMessageParameter(method)) {
+                    usableModernDispatchMethods.add(method);
                 }
             }
         }
 
-        Others.propsBoolean.put(19148, true);
+        final ThreadLocal<Boolean> inManualReceiptCheck = new ThreadLocal<>();
+
+        if (modernMessageInfoClass != null && !usableModernDispatchMethods.isEmpty()) {
+            Others.propsBoolean.put(19148, false);
+            final Class<?> finalInfoClass = modernMessageInfoClass;
+
+            XC_MethodHook modernHook = new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    diagnosticTriggered();
+                    Message message = ReflectionUtils.getArg(param.args, Message.class, 0);
+                    if (message == null || (message.arg1 != 419 && message.arg1 != 89)) return;
+                    Object obj = message.obj;
+                    if (obj == null || !finalInfoClass.isInstance(obj)) return;
+
+                    FMessageWpp.UserJid userJid = null;
+                    String[] messageIds = null;
+
+                    for (java.lang.reflect.Field f : obj.getClass().getDeclaredFields()) {
+                        f.setAccessible(true);
+                        Object val = f.get(obj);
+                        if (val != null) {
+                            if (val.getClass().getName().endsWith("jid.DeviceJid") || val.getClass().getName().endsWith("jid.UserJid") || val.getClass().getName().endsWith("jid.Jid") || val.getClass().getName().endsWith("jid.PhoneUserJid")) {
+                                userJid = new FMessageWpp.UserJid(val);
+                            } else if (val instanceof String[]) {
+                                messageIds = (String[]) val;
+                            } else if (val instanceof java.util.List) {
+                                java.util.List<?> list = (java.util.List<?>) val;
+                                if (!list.isEmpty() && list.get(0) instanceof String) {
+                                    messageIds = list.toArray(new String[0]);
+                                }
+                            }
+                        }
+                    }
+
+                    if (messageIds == null || messageIds.length == 0 || userJid == null || userJid.isNull()) return;
+
+                    boolean anySuppressed = false;
+                    for (String messageId : messageIds) {
+                        FMessageWpp.Key fmessageKey = new FMessageWpp.Key(messageId, userJid, false);
+                        FMessageWpp fMessage = fmessageKey.getFMessage();
+                        MessageHistory.MessageType dbType = (fMessage != null && fMessage.isViewOnce()) ? MessageHistory.MessageType.VIEW_ONCE_TYPE : MessageHistory.MessageType.MESSAGE_TYPE;
+
+                        MessageHistory.MessageSeenItem hideSeenItem = MessageHistory.getInstance().getHideSeenMessage(
+                                fmessageKey.remoteJid.getPhoneRawString(),
+                                fmessageKey.messageID,
+                                dbType
+                        );
+
+                        if (hideSeenItem != null) {
+                            if (!hideSeenItem.viewed) {
+                                anySuppressed = true;
+                                break;
+                            }
+                        } else if (checkPrivacyAndHideSeen(fmessageKey) || checkPrivacyAndHideReceipt(fmessageKey)) {
+                            anySuppressed = true;
+                            break;
+                        }
+                    }
+
+                    if (anySuppressed) {
+                        message.arg1 = -1;
+                    }
+                }
+            };
+
+            for (Method method : usableModernDispatchMethods) {
+                XposedBridge.hookMethod(method, modernHook);
+            }
+        } else {
+            Others.propsBoolean.put(19148, true);
+            Method receiptMainCallerMethod = null;
+            try {
+                receiptMainCallerMethod = Unobfuscator.loadReceiptMainCallerMethod(classLoader);
+            } catch (Throwable t) {
+                XposedBridge.log("WaEnhancer: HideSeen receiptMainCallerMethod lookup failed: " + t.getMessage());
+            }
+
+            Method[] receiptCallerMethods = null;
+            try {
+                receiptCallerMethods = Unobfuscator.loadReceiptCallersMethod(classLoader);
+            } catch (Throwable t) {
+                XposedBridge.log("WaEnhancer: HideSeen receiptCallerMethods lookup failed: " + t.getMessage());
+            }
+
+            if (receiptCallerMethods != null && receiptMainCallerMethod != null) {
+                final Method finalMainCallerMethod = receiptMainCallerMethod;
+                XC_MethodHook hookCallerMethod = new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        diagnosticTriggered();
+                        Message firstArg = ReflectionUtils.getArg(param.args, Message.class, 0);
+                        if (firstArg == null || (firstArg.arg1 != 419 && firstArg.arg1 != 89)) return;
+                        Object obj = firstArg.obj;
+                        inManualReceiptCheck.set(true);
+                        Object checkResult;
+                        try {
+                            checkResult = finalMainCallerMethod.invoke(null, obj);
+                        } finally {
+                            inManualReceiptCheck.set(false);
+                        }
+
+                        if (checkResult == null) {
+                            param.setResult(null);
+                        }
+                    }
+                };
+
+                for (Method m : receiptCallerMethods) {
+                    if (m != null) {
+                        XposedBridge.hookMethod(m, hookCallerMethod);
+                    }
+                }
+            }
+        }
 
         XposedBridge.hookMethod(receiptMethod, new XC_MethodHook() {
             @Override
@@ -284,6 +367,14 @@ public class HideSeen extends Feature {
                 }
             }
         });
+    }
+
+    private static boolean hasAndroidMessageParameter(Method method) {
+        if (method == null) return false;
+        for (Class<?> parameterType : method.getParameterTypes()) {
+            if (parameterType == Message.class) return true;
+        }
+        return false;
     }
 
     private static FMessageWpp.Key generateFMessageKey(ProtocolTreeNodeWpp node) {
