@@ -41,7 +41,7 @@ rikkax-core = { module = "dev.rikka.rikkax.core:core", version = "1.4.1" }
 rikkax-material = { module = "dev.rikka.rikkax.material:material", version = "2.7.2" }
 rikkax-material-preference = { module = "dev.rikka.rikkax.material:material-preference", version = "2.0.0" }
 rikkax-widget-borderview = { module = "dev.rikka.rikkax.widget:borderview", version = "1.1.0" }
-material = { module = "com.google.android.material:material", version = "1.14.0-beta01" }
+material = { module = "com.google.android.material:material", version = "1.14.0" }
 markwon-core = { module = "io.noties.markwon:core", version.ref = "markwon" }
 markwon-html = { module = "io.noties.markwon:html", version.ref = "markwon" }
 
