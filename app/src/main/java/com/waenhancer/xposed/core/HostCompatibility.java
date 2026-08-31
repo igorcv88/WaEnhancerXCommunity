@@ -78,12 +78,10 @@ public final class HostCompatibility {
             // FeatureLoader will report the concrete feature that fails to install.
             optional(optional, "ConversationViewHolder", () -> ViewHolderCompat.loadViewHolder(loader));
             optional(optional, "ConversationViewHolderField", () -> ViewHolderCompat.loadContainerField(loader));
-            // Message text extraction is feature-scoped. WhatsApp 2.26.33 removed the
-            // extra_payment_note anchor used by this resolver, but the absence of that accessor
-            // does not invalidate the contracts needed to install unrelated hooks.
+            // Message text extraction is feature-scoped. WhatsApp 2.26.33 removed the old
+            // extra_payment_note anchor; even with the replacement resolver, a future accessor
+            // change must not prevent unrelated hooks from being installed.
             optional(optional, "NewMessage", () -> Unobfuscator.loadNewMessageMethod(loader));
-            optional(optional, "NewMessageWithMedia", () ->
-                    Unobfuscator.loadNewMessageWithMediaMethod(loader));
             optional(optional, "MediaType", () -> Unobfuscator.loadMediaTypeField(loader));
             optional(optional, "OriginalMessageKey", () ->
                     Unobfuscator.loadOriginalMessageKey(loader));

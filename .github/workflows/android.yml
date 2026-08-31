@@ -70,11 +70,6 @@ jobs:
             echo "VERSION_CODE in gradle.properties must be numeric" >&2
             exit 1
           }
-          [[ "$RUN_NUMBER" =~ ^[0-9]+$ ]] || {
-            echo "GitHub run number must be numeric" >&2
-            exit 1
-          }
-
           SERIES_PATTERN="${RELEASE_SERIES//./\.}"
           STABLE_PATCH=0
           BETA_PATCH=0
@@ -106,6 +101,10 @@ jobs:
                 PATCH=$((STABLE_PATCH + 1))
                 BETA_SEQUENCE=1
               fi
+              if (( BETA_SEQUENCE > 998 )); then
+                echo "Beta sequence exhausted for ${RELEASE_SERIES}.${PATCH}; publish stable before starting another patch" >&2
+                exit 1
+              fi
               VERSION_NAME="${RELEASE_SERIES}.${PATCH}-beta-${BETA_SEQUENCE}"
               TAG_NAME="v${VERSION_NAME}"
               RELEASE_TITLE="WaEnhancer Community ${VERSION_NAME} Beta"
@@ -128,10 +127,20 @@ jobs:
               ;;
           esac
 
-          # A patch can have several beta releases. Using PATCH alone would give all of them
-          # the same Android versionCode and prevent normal upgrades. The repository-scoped run
-          # number is monotonic and gives every published APK a distinct, increasing identity.
-          VERSION_CODE=$((10#$BASE_VERSION_CODE + 10#$RUN_NUMBER))
+          # Derive the Android identity solely from durable release tags. GitHub preserves the
+          # original run_number when an old failed run is retried, so run_number can move
+          # backwards relative to already-published APKs. Reserve 1..998 for betas and 999 for
+          # stable: promotion and the next patch therefore always increase versionCode.
+          if [[ "$CHANNEL" == "beta" ]]; then
+            CHANNEL_CODE=$BETA_SEQUENCE
+          else
+            CHANNEL_CODE=999
+          fi
+          VERSION_CODE=$((10#$BASE_VERSION_CODE + PATCH * 1000 + CHANNEL_CODE))
+          if (( VERSION_CODE > 2100000000 )); then
+            echo "Generated VERSION_CODE exceeds Android's supported range: ${VERSION_CODE}" >&2
+            exit 1
+          fi
 
           if git rev-parse -q --verify "refs/tags/${TAG_NAME}" >/dev/null; then
             echo "Generated tag already exists: ${TAG_NAME}" >&2
