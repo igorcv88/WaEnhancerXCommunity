@@ -18,3 +18,10 @@ updates:
     # and Android runtime libraries have different compatibility constraints, and
     # grouping everything into one PR makes one incompatible upgrade block every
     # unrelated patch update.
+    ignore:
+      # OkHttp 5.5.0+ publishes okhttp-android with compileSdk 37 metadata.
+      # This app intentionally stays on AGP 8.13.x / compileSdk 36 while the
+      # materialthemebuilder plugin is not yet safe to migrate to AGP 9.
+      - dependency-name: "com.squareup.okhttp3:okhttp"
+        versions:
+          - ">=5.5.0"
