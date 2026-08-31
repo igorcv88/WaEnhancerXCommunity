@@ -36,6 +36,7 @@ public class MenuStatusListener extends Feature {
 
     public static int currentIndex = -1;
 
+    private static Field currentIndexField = null;
     public static LinkedHashSet<OnMenuItemStatusListener> getMenuStatuses() {
         return menuStatuses;
     }
@@ -85,6 +86,14 @@ public class MenuStatusListener extends Feature {
     public void doHook() throws Throwable {
         var menuStatusMethod = Unobfuscator.loadMenuStatusMethod(classLoader);
         var menuManagerClass = Unobfuscator.loadMenuManagerClass(classLoader);
+
+        try {
+            currentIndexField = Unobfuscator.loadStatusPlaybackCurrentIndexField(classLoader);
+            if (currentIndexField != null) {
+                currentIndexField.setAccessible(true);
+            }
+        } catch (Throwable ignored) {
+        }
 
         Class<?> statusPlaybackBaseFragmentClass;
         Class<?> statusPlaybackContactFragmentClass;
@@ -141,7 +150,20 @@ public class MenuStatusListener extends Feature {
                     }
                     if (menu == null) return;
 
-                    int index = (int) XposedHelpers.getObjectField(fragmentInstance, "A00");
+                    int index = 0;
+                    try {
+                        if (currentIndexField != null) {
+                            index = currentIndexField.getInt(fragmentInstance);
+                        } else {
+                            try {
+                                index = (int) XposedHelpers.getObjectField(fragmentInstance, "A02");
+                            } catch (Throwable t2) {
+                                index = (int) XposedHelpers.getObjectField(fragmentInstance, "A00");
+                            }
+                        }
+                    } catch (Throwable t) {
+                        index = 0;
+                    }
                     @SuppressWarnings("unchecked")
                     List<?> listStatus = listStatusField != null ? (List<?>) listStatusField.get(fragmentInstance) : null;
                     XposedBridge.log("[WAEX] MenuStatusListener hook triggered! index: " + index + ", listStatus size: " + (listStatus != null ? listStatus.size() : "null"));
@@ -162,15 +184,15 @@ public class MenuStatusListener extends Feature {
 
                     XposedBridge.log("[WAEX] MenuStatusListener: parsed " + statusItemList.size() + " statusItems, " + fMessageList.size() + " fMessages");
 
-                    currentStatusList.clear();
-                    currentStatusList.addAll(fMessageList);
-                    currentIndex = index;
-                    StatusDownload.activeStatusObj = listStatus.get(index);
-
                     if (index < 0 || index >= statusItemList.size()) {
                         XposedBridge.log("[WAEX] MenuStatusListener: index " + index + " out of bounds for statusItemList size " + statusItemList.size());
                         return;
                     }
+
+                    currentStatusList.clear();
+                    currentStatusList.addAll(fMessageList);
+                    currentIndex = index;
+                    StatusDownload.activeStatusObj = listStatus.get(index);
 
                     StatusItemWaex currentStatusItem = statusItemList.get(index);
                     XposedBridge.log("[WAEX] Current status item: isFromMe=" + currentStatusItem.isFromMe() + ", isMedia=" + currentStatusItem.isMediaFile() + ", mediaFile=" + currentStatusItem.getMediaFile());

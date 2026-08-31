@@ -241,6 +241,36 @@ public class Unobfuscator {
         }
     }
 
+    public synchronized static Field loadStatusPlaybackCurrentIndexField(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getField(classLoader, () -> {
+            MethodDataList methods = dexkit.findMethod(FindMethod.create().matcher(
+                    MethodMatcher.create().addUsingString("playbackFragment/setPageActive no-messages ", StringMatchType.Contains)
+            ));
+            if (!methods.isEmpty()) {
+                MethodData methodData = methods.get(0);
+                String statusPlaybackClass = methodData.getDeclaredClassName();
+                for (UsingFieldData usingField : methodData.getUsingFields()) {
+                    FieldData field = usingField.getField();
+                    if (field.getClassName().equals(statusPlaybackClass) && field.getType().getName().equals("int")) {
+                        return field.getFieldInstance(classLoader);
+                    }
+                }
+            }
+            Class<?> statusPlaybackClass = findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "StatusPlaybackContactFragment");
+            Method menuStatusMethod = loadMenuStatusMethod(classLoader);
+            MethodData menuMethodData = dexkit.getMethodData(menuStatusMethod);
+            if (menuMethodData != null) {
+                for (UsingFieldData usingField : menuMethodData.getUsingFields()) {
+                    FieldData field = usingField.getField();
+                    if (field.getClassName().equals(statusPlaybackClass.getName()) && field.getType().getName().equals("int")) {
+                        return field.getFieldInstance(classLoader);
+                    }
+                }
+            }
+            throw new NoSuchFieldException("StatusPlayback current index field not found");
+        });
+    }
+
     // TODO: Classes and Methods for FreezeSeen
     public synchronized static Method loadFreezeSeenMethod(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader,
