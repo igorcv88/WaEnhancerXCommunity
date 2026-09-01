@@ -257,6 +257,10 @@ public class Others extends Feature {
             disableSensorProximity();
         }
 
+        if (prefs.getBoolean("disable_swipe_up_in_group", false)) {
+            disableSwipeUpInGroup();
+        }
+
         if (proximity_audios) {
             var classes = Unobfuscator.loadProximitySensorListenerClasses(classLoader);
             for (var cls : classes) {
@@ -429,6 +433,15 @@ public class Others extends Feature {
             XposedBridge.log("[WAEX] Failed to hook Conversation: " + t.toString());
         }
 
+    }
+
+    private void disableSwipeUpInGroup() throws Exception {
+        XposedBridge.hookMethod(Unobfuscator.loadSwipeUpInGroupMethod(classLoader), new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                param.setResult(ReflectionUtils.getDefaultValue(((Method) param.method).getReturnType()));
+            }
+        });
     }
 
     private void disableHomeFilters() throws Exception {

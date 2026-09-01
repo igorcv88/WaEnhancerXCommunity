@@ -4539,4 +4539,15 @@ public class Unobfuscator {
             return classes.get(0).getInstance(classLoader);
         });
     }
+
+    public static synchronized Method loadSwipeUpInGroupMethod(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            var id = UnobfuscatorCache.getInstance().getOfuscateIDString("Keep holding to talk");
+            var methods = getDexKitBridge().findMethod(org.luckypray.dexkit.query.matchers.MethodMatcher.create()
+                    .usingNumbers(id)
+            );
+            if (methods.isEmpty()) throw new NoSuchMethodError("SwipeUpInGroup method not found");
+            return methods.get(0).getMethodInstance(classLoader);
+        });
+    }
 }
