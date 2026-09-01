@@ -12,6 +12,7 @@ import androidx.annotation.NonNull;
 
 import com.waenhancer.R;
 import com.waenhancer.xposed.core.Feature;
+import com.waenhancer.xposed.core.WppCore;
 import com.waenhancer.xposed.core.components.AlertDialogWpp;
 import com.waenhancer.xposed.core.components.FMessageWpp;
 import com.waenhancer.xposed.core.components.SharedPreferencesWrapper;
@@ -76,8 +77,12 @@ public class CallType extends Feature {
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 if (param.args == null) return;
 
-                Context context = ReflectionUtils.getArg(param.args, Context.class, 0);
-                if (context == null) return;
+                Context callContext = ReflectionUtils.getArg(param.args, Context.class, 0);
+                if (callContext == null) return;
+                Activity activity = callContext instanceof Activity
+                        ? (Activity) callContext
+                        : WppCore.getCurrentActivity();
+                if (activity == null || activity.isFinishing()) return;
 
                 Object contactObj = findContactArgument(param.args);
                 if (contactObj == null) return;
@@ -105,7 +110,7 @@ public class CallType extends Feature {
                 Method originalMethod = (Method) param.method;
                 param.setResult(ReflectionUtils.getDefaultValue(originalMethod.getReturnType()));
 
-                AlertDialogWpp alertDialog = new AlertDialogWpp(context);
+                AlertDialogWpp alertDialog = new AlertDialogWpp(activity);
                 alertDialog.setTitle(UnobfuscatorCache.getInstance().getString("selectcalltype"));
                 alertDialog.setItems(new String[]{
                         com.waenhancer.xposed.core.FeatureLoader.getModuleString(
@@ -118,10 +123,7 @@ public class CallType extends Feature {
                     dialog.dismiss();
                     if (which == 0) {
                         Intent intent = new Intent(Intent.ACTION_DIAL, Uri.parse("tel:+" + phoneNumber));
-                        if (!(context instanceof Activity)) {
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        }
-                        context.startActivity(intent);
+                        activity.startActivity(intent);
                     } else if (which == 1) {
                         try {
                             XposedBridge.invokeOriginalMethod(originalMethod, originalThis, originalArgs);
