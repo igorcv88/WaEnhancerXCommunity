@@ -88,6 +88,7 @@ import com.waenhancer.xposed.features.others.BackupRestore;
 import com.waenhancer.xposed.features.others.AudioTranscript;
 import com.waenhancer.xposed.features.others.Channels;
 import com.waenhancer.xposed.features.others.CopyStatus;
+import com.waenhancer.xposed.features.others.CopySelectionMessage;
 import com.waenhancer.xposed.features.others.DebugFeature;
 import com.waenhancer.xposed.features.others.GoogleTranslate;
 import com.waenhancer.xposed.features.others.GroupAdmin;
@@ -1014,6 +1015,7 @@ public class FeatureLoader {
                 GroupAdmin.class,
                 Stickers.class,
                 CopyStatus.class,
+                CopySelectionMessage.class,
                 TextStatusComposer.class,
                 ToastViewer.class,
                 SettingsInjector.class,

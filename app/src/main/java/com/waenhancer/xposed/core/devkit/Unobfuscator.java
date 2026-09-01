@@ -4528,4 +4528,15 @@ public class Unobfuscator {
             throw new NoSuchMethodError("PhoneNumberUtil.isValidNumber method not found");
         });
     }
+
+    public static synchronized Class<?> loadPopupWindowMessageClass(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getClass(classLoader, () -> {
+            var classes = getDexKitBridge().findClass(org.luckypray.dexkit.query.matchers.ClassMatcher.create()
+                    .usingStrings("MessageSelectionDropDownRecyclerView")
+                    .superClass(android.widget.PopupWindow.class.getName())
+            );
+            if (classes.isEmpty()) throw new ClassNotFoundException("PopupWindowMessageClass not found");
+            return classes.get(0).getInstance(classLoader);
+        });
+    }
 }
