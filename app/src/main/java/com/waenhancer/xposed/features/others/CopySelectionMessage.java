@@ -80,22 +80,7 @@ public class CopySelectionMessage extends Feature {
                         mainPopupWindow.dismiss();
                     } catch (Throwable ignored) {}
                     
-                    View view = null;
-                    for (var entry : ConversationItemListener.listItems.entrySet()) {
-                        if (entry.getValue().messageId.equals(fMessage.getKey().messageID) &&
-                                ConversationItemListener.isViewBoundToMessage(entry.getKey(), fMessage.getKey().messageID)) {
-                            view = entry.getKey();
-                            break;
-                        }
-                    }
-                    
                     String textToShow = finalMessageText;
-                    if (view != null) {
-                        TextView textView = view.findViewById(Utils.getID("message_text", "id"));
-                        if (textView != null && textView.getText() != null) {
-                            textToShow = textView.getText().toString();
-                        }
-                    }
                     
                     showSelectionDialog(activity, textToShow);
                 });
@@ -134,7 +119,7 @@ public class CopySelectionMessage extends Feature {
                 Color.blue(textColor)
         );
         MaterialButton button = new MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
-        button.setText(Utils.getString(R.string.copy_selection_action));
+        button.setText(ctx.getString(R.string.copy_selection_action));
         button.setTextColor(textColor);
         button.setStrokeColor(ColorStateList.valueOf(strokeColor));
         button.setCornerRadius((int) Utils.dipToPixels(50f));
@@ -149,7 +134,7 @@ public class CopySelectionMessage extends Feature {
 
         TextInputLayout textInputLayout = new TextInputLayout(ctx, null, com.google.android.material.R.attr.textInputOutlinedStyle);
         textInputLayout.setCounterEnabled(true);
-        textInputLayout.setHint(Utils.getString(R.string.message));
+        textInputLayout.setHint(ctx.getString(R.string.message));
         
         TextInputEditText editText = new TextInputEditText(textInputLayout.getContext());
         editText.setText(messageText);
@@ -181,7 +166,7 @@ public class CopySelectionMessage extends Feature {
         );
 
         MaterialButton closeButton = new MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
-        closeButton.setText(Utils.getString(R.string.close));
+        closeButton.setText(ctx.getString(R.string.close));
         closeButton.setTextColor(textColor);
         closeButton.setStrokeColor(ColorStateList.valueOf(outlineColor));
         closeButton.setCornerRadius((int) Utils.dipToPixels(50f));
@@ -200,7 +185,7 @@ public class CopySelectionMessage extends Feature {
         container.addView(closeButton);
 
         AlertDialogWpp dialog = new AlertDialogWpp(activity);
-        dialog.setTitle(Utils.getString(R.string.copy_selection_dialog_title));
+        dialog.setTitle(ctx.getString(R.string.copy_selection_dialog_title));
         dialog.setView(container);
         var createdDialog = dialog.create();
 

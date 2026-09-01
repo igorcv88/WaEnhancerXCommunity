@@ -88,7 +88,8 @@ public class CallType extends Feature {
                     Object[] originalArgs = param.args.clone();
                     param.setResult(null); 
 
-                    var mAlertDialog = new AlertDialogWpp(context);
+                    final android.content.Context finalContext = context;
+                    var mAlertDialog = new AlertDialogWpp(finalContext);
                     mAlertDialog.setTitle(UnobfuscatorCache.getInstance().getString("selectcalltype"));
                     mAlertDialog.setItems(new String[]{
                             com.waenhancer.xposed.core.FeatureLoader.getModuleString(com.waenhancer.xposed.utils.Utils.getApplication(), R.string.phone_call),
@@ -100,7 +101,7 @@ public class CallType extends Feature {
                                 var intent = new Intent();
                                 intent.setAction(Intent.ACTION_DIAL);
                                 intent.setData(Uri.parse("tel:+" + phoneNumber));
-                                context.startActivity(intent);
+                                finalContext.startActivity(intent);
                                 break;
                             case 1:
                                 try {

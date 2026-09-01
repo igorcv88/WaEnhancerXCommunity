@@ -4531,10 +4531,10 @@ public class Unobfuscator {
 
     public static synchronized Class<?> loadPopupWindowMessageClass(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getClass(classLoader, () -> {
-            var classes = getDexKitBridge().findClass(org.luckypray.dexkit.query.matchers.ClassMatcher.create()
+            var classes = getDexKit().findClass(org.luckypray.dexkit.query.FindClass.create().matcher(org.luckypray.dexkit.query.matchers.ClassMatcher.create()
                     .usingStrings("MessageSelectionDropDownRecyclerView")
                     .superClass(android.widget.PopupWindow.class.getName())
-            );
+            ));
             if (classes.isEmpty()) throw new ClassNotFoundException("PopupWindowMessageClass not found");
             return classes.get(0).getInstance(classLoader);
         });
@@ -4543,9 +4543,9 @@ public class Unobfuscator {
     public static synchronized Method loadSwipeUpInGroupMethod(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
             var id = UnobfuscatorCache.getInstance().getOfuscateIDString("Keep holding to talk");
-            var methods = getDexKitBridge().findMethod(org.luckypray.dexkit.query.matchers.MethodMatcher.create()
+            var methods = getDexKit().findMethod(org.luckypray.dexkit.query.FindMethod.create().matcher(org.luckypray.dexkit.query.matchers.MethodMatcher.create()
                     .usingNumbers(id)
-            );
+            ));
             if (methods.isEmpty()) throw new NoSuchMethodError("SwipeUpInGroup method not found");
             return methods.get(0).getMethodInstance(classLoader);
         });

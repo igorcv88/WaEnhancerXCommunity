@@ -216,14 +216,15 @@ public class MenuStatusListener extends Feature {
                             }
                         }
 
-                        var menuItem = menuStatus.addMenu(waeSubMenu, currentStatusItem, fMessageList, index);
+                        final int finalIndex = index;
+                        var menuItem = menuStatus.addMenu(waeSubMenu, currentStatusItem, fMessageList, finalIndex);
                         if (menuItem == null) {
                             XposedBridge.log("[WAEX] listener " + menuStatus.getClass().getSimpleName() + " returned null menuItem");
                             continue;
                         }
 
                         menuItem.setOnMenuItemClickListener(item -> {
-                            menuStatus.onClick(item, fragmentInstance, currentStatusItem, fMessageList, index);
+                            menuStatus.onClick(item, fragmentInstance, currentStatusItem, fMessageList, finalIndex);
                             return true;
                         });
                     }

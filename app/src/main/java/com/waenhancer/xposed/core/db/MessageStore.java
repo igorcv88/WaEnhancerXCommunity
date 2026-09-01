@@ -203,7 +203,7 @@ public class MessageStore {
     }
 
     public void executeWritableSQL(String sql, int maxRetries, long retryDelayMs) {
-        Utils.databaseExecutor.execute(() -> {
+        Utils.getExecutor().execute(() -> {
             File dbFile = new File(Utils.getApplication().getFilesDir().getParentFile(), "/databases/msgstore.db");
             if (!dbFile.exists()) return;
 
