@@ -2,45 +2,31 @@ package com.waenhancer.xposed.utils;
 
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.content.res.AssetManager;
-import android.content.res.Resources;
 import android.view.ContextThemeWrapper;
+
 import com.waenhancer.BuildConfig;
 import com.waenhancer.R;
 
+/**
+ * A themed context backed by the module APK rather than WhatsApp's resources.
+ */
 public class ModuleContextWrapper extends ContextThemeWrapper {
-    private final Context moduleContext;
 
     public ModuleContextWrapper(Context base) {
-        super(base, R.style.AppTheme);
+        super(createModuleContext(base), R.style.AppTheme);
+    }
+
+    private static Context createModuleContext(Context base) {
+        if (base == null) {
+            throw new IllegalArgumentException("Base context must not be null");
+        }
         try {
-            moduleContext = base.createPackageContext(
+            return base.createPackageContext(
                     BuildConfig.APPLICATION_ID,
                     Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY
             );
         } catch (PackageManager.NameNotFoundException e) {
-            throw new RuntimeException("Module package not found", e);
+            throw new IllegalStateException("WaEnhancer module package not found", e);
         }
-    }
-
-    @Override
-    public Context getApplicationContext() {
-        return moduleContext.getApplicationContext();
-    }
-
-    @Override
-    public ClassLoader getClassLoader() {
-        ClassLoader cl = ModuleContextWrapper.class.getClassLoader();
-        return cl != null ? cl : super.getClassLoader();
-    }
-
-    @Override
-    public Resources getResources() {
-        return moduleContext.getResources();
-    }
-
-    @Override
-    public AssetManager getAssets() {
-        return moduleContext.getAssets();
     }
 }
