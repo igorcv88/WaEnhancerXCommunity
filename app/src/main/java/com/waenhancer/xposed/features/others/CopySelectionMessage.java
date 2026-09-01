@@ -179,14 +179,19 @@ public class CopySelectionMessage extends Feature {
         LinearLayout actions = new LinearLayout(ctx);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.END);
-        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        actionParams.topMargin = (int) (12 * density);
-        actionParams.setMarginStart((int) (8 * density));
-        actions.addView(copySelectedButton, actionParams);
-        actions.addView(closeButton, actionParams);
+        copyParams.topMargin = (int) (12 * density);
+        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        closeParams.topMargin = (int) (12 * density);
+        closeParams.setMarginStart((int) (8 * density));
+        actions.addView(copySelectedButton, copyParams);
+        actions.addView(closeButton, closeParams);
 
         LinearLayout container = new LinearLayout(ctx);
         container.setOrientation(LinearLayout.VERTICAL);
@@ -233,9 +238,9 @@ public class CopySelectionMessage extends Feature {
     }
 
     private static final class DialogHolder {
-        final Dialog dialog;
+        final android.app.Dialog dialog;
 
-        DialogHolder(Dialog dialog) {
+        DialogHolder(android.app.Dialog dialog) {
             this.dialog = dialog;
         }
     }
