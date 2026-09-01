@@ -59,6 +59,12 @@ public class MediaQuality extends Feature {
         if (videoQuality) {
             Others.propsBoolean.put(5549, true);
 
+            EncoderVideoCapabilities encoderVideoCapabilities = getPreferredEncoderCapabilities(VIDEO_MIME_AVC);
+            if (encoderVideoCapabilities == null) {
+                encoderVideoCapabilities = getPreferredEncoderCapabilities(VIDEO_MIME_HEVC);
+            }
+            final EncoderVideoCapabilities finalEncoderVideoCapabilities = encoderVideoCapabilities;
+
             var ProcessVideoQualityClass = Unobfuscator.loadProcessVideoQualityClass(classLoader);
             var processVideoQualityFields = Unobfuscator.getAllMapFields(ProcessVideoQualityClass);
 
@@ -69,6 +75,7 @@ public class MediaQuality extends Feature {
                     var fieldvideoMaxBitrate = processVideoQualityFields.get("videoMaxBitrate");
                     var fieldvideoMaxEdge = processVideoQualityFields.get("videoMaxEdge");
                     var fieldvideoLimitMb = processVideoQualityFields.get("videoLimitMb");
+                    var fieldVideoBitrateMode = processVideoQualityFields.get("videoBitrateMode");
                     if (fieldvideoLimitMb != null) {
                         fieldvideoLimitMb.setInt(processVideoQuality, maxSize);
                     }
@@ -78,6 +85,9 @@ public class MediaQuality extends Feature {
                     if (fieldvideoMaxBitrate != null) {
                         int bitrateBps = 24000 * 1000;
                         fieldvideoMaxBitrate.setInt(processVideoQuality, bitrateBps);
+                    }
+                    if (fieldVideoBitrateMode != null && finalEncoderVideoCapabilities != null && finalEncoderVideoCapabilities.supportsCBR()) {
+                        fieldVideoBitrateMode.setInt(processVideoQuality, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
                     }
                 }
             });
@@ -115,12 +125,7 @@ public class MediaQuality extends Feature {
             var mediaFields = Unobfuscator.loadMediaQualityOriginalVideoFields(classLoader);
             var mediaTranscodeParams = Unobfuscator.loadMediaQualityVideoFields(classLoader);
 
-            EncoderVideoCapabilities encoderVideoCapabilities = getPreferredEncoderCapabilities(VIDEO_MIME_AVC);
-            if (encoderVideoCapabilities == null) {
-                encoderVideoCapabilities = getPreferredEncoderCapabilities(VIDEO_MIME_HEVC);
-            }
 
-            final EncoderVideoCapabilities finalEncoderVideoCapabilities = encoderVideoCapabilities;
 
             XposedBridge.hookMethod(videoMethod, new XC_MethodHook() {
 
@@ -252,6 +257,9 @@ public class MediaQuality extends Feature {
                     int heightAlignment = Math.max(2, videoCaps.getHeightAlignment());
                     int maxBitrateKbps = Math.max(2000, videoCaps.getBitrateRange().getUpper() / 1000);
 
+                    MediaCodecInfo.EncoderCapabilities encoderCaps = caps.getEncoderCapabilities();
+                    boolean supportsCBR = encoderCaps != null && encoderCaps.isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
+
                     EncoderVideoCapabilities candidate = new EncoderVideoCapabilities(
                             info.getName(),
                             minWidth,
@@ -261,7 +269,8 @@ public class MediaQuality extends Feature {
                             widthAlignment,
                             heightAlignment,
                             maxBitrateKbps,
-                            videoCaps
+                            videoCaps,
+                            supportsCBR
                     );
 
                     if (fallback == null) {
@@ -301,7 +310,8 @@ public class MediaQuality extends Feature {
             int widthAlignment,
             int heightAlignment,
             int maxBitrateKbps,
-            @NonNull MediaCodecInfo.VideoCapabilities videoCapabilities
+            @NonNull MediaCodecInfo.VideoCapabilities videoCapabilities,
+            boolean supportsCBR
     ) {
     }
 
