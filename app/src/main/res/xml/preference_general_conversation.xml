@@ -160,6 +160,14 @@
 
 
 
+            <rikka.material.preference.MaterialSwitchPreference
+            app:key="copy_selection_message"
+            app:summary="@string/copy_selection_message_sum"
+            app:title="@string/copy_selection_message_title" />
+            <rikka.material.preference.MaterialSwitchPreference
+            app:key="disable_swipe_up_in_group"
+            app:summary="@string/disable_swipe_up_in_group_sum"
+            app:title="@string/disable_swipe_up_in_group" />
     </PreferenceCategory>
 
 </PreferenceScreen>

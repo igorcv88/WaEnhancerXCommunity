@@ -11,14 +11,21 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import de.robv.android.xposed.XposedBridge;
 
 public class MessageStore {
 
-
     private static MessageStore mInstance;
+    private static final ExecutorService writeExecutor = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "WaEnhancer-MessageStoreWrite");
+        thread.setDaemon(true);
+        return thread;
+    });
+
     private SQLiteDatabase sqLiteDatabase;
     private final Map<Long, String> originalKeyCache = Collections.synchronizedMap(new LinkedHashMap<Long, String>(100, 0.75f, true) {
         @Override
@@ -32,11 +39,13 @@ public class MessageStore {
         var dbFile = new File(dataDir, "/databases/msgstore.db");
         if (!dbFile.exists()) return;
         try {
-            sqLiteDatabase = SQLiteDatabase.openDatabase(dbFile.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
+            sqLiteDatabase = SQLiteDatabase.openDatabase(dbFile.getAbsolutePath(), null,
+                    SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
         } catch (Exception e) {
             XposedBridge.log("Failed to open msgstore.db as read-write, falling back to read-only: " + e.getMessage());
             try {
-                sqLiteDatabase = SQLiteDatabase.openDatabase(dbFile.getAbsolutePath(), null, SQLiteDatabase.OPEN_READONLY | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
+                sqLiteDatabase = SQLiteDatabase.openDatabase(dbFile.getAbsolutePath(), null,
+                        SQLiteDatabase.OPEN_READONLY | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
             } catch (Exception ex) {
                 XposedBridge.log("Failed to open msgstore.db even as read-only: " + ex.getMessage());
             }
@@ -63,7 +72,8 @@ public class MessageStore {
             String selection = "docid=?";
             String[] selectionArgs = new String[]{String.valueOf(id)};
 
-            cursor = sqLiteDatabase.query("message_ftsv2_content", columns, selection, selectionArgs, null, null, null);
+            cursor = sqLiteDatabase.query("message_ftsv2_content", columns, selection, selectionArgs,
+                    null, null, null);
             if (cursor.moveToFirst()) {
                 message = cursor.getString(cursor.getColumnIndexOrThrow("c0content"));
             }
@@ -80,7 +90,8 @@ public class MessageStore {
         String[] columns = new String[]{"text_data"};
         String selection = "key_id=?";
         String[] selectionArgs = new String[]{message_key};
-        try (Cursor cursor = sqLiteDatabase.query("message", columns, selection, selectionArgs, null, null, null)) {
+        try (Cursor cursor = sqLiteDatabase.query("message", columns, selection, selectionArgs,
+                null, null, null)) {
             if (cursor.moveToFirst()) {
                 return cursor.getString(0);
             }
@@ -95,7 +106,8 @@ public class MessageStore {
         String[] columns = new String[]{"_id"};
         String selection = "key_id=?";
         String[] selectionArgs = new String[]{message_key};
-        try (Cursor cursor = sqLiteDatabase.query("message", columns, selection, selectionArgs, null, null, null)) {
+        try (Cursor cursor = sqLiteDatabase.query("message", columns, selection, selectionArgs,
+                null, null, null)) {
             if (cursor.moveToFirst()) {
                 return cursor.getLong(0);
             }
@@ -110,7 +122,8 @@ public class MessageStore {
         String[] columns = new String[]{"file_path"};
         String selection = "message_row_id=?";
         String[] selectionArgs = new String[]{String.valueOf(id)};
-        try (Cursor cursor = sqLiteDatabase.query("message_media", columns, selection, selectionArgs, null, null, null)) {
+        try (Cursor cursor = sqLiteDatabase.query("message_media", columns, selection, selectionArgs,
+                null, null, null)) {
             if (cursor.moveToFirst()) {
                 return cursor.getString(0);
             }
@@ -125,7 +138,8 @@ public class MessageStore {
         String[] columns = new String[]{"text_data"};
         String selection = "_id=?";
         String[] selectionArgs = new String[]{String.valueOf(row_id)};
-        try (Cursor cursor = sqLiteDatabase.query("message", columns, selection, selectionArgs, null, null, null)) {
+        try (Cursor cursor = sqLiteDatabase.query("message", columns, selection, selectionArgs,
+                null, null, null)) {
             if (cursor.moveToFirst()) {
                 return cursor.getString(0);
             }
@@ -140,7 +154,8 @@ public class MessageStore {
         String cached = originalKeyCache.get(id);
         if (cached != null) return cached;
         String message = "";
-        try (Cursor cursor = sqLiteDatabase.query("message_add_on", new String[]{"key_id"}, "parent_message_row_id=?", new String[]{String.valueOf(id)}, null, null, null)) {
+        try (Cursor cursor = sqLiteDatabase.query("message_add_on", new String[]{"key_id"},
+                "parent_message_row_id=?", new String[]{String.valueOf(id)}, null, null, null)) {
             if (cursor.moveToFirst()) {
                 message = cursor.getString(0);
             }
@@ -193,7 +208,6 @@ public class MessageStore {
         try {
             if (sqLiteDatabase == null) return;
             if (sqLiteDatabase.isReadOnly()) {
-                // XposedBridge.log("Cannot execute SQL because database is opened in read-only mode: " + sql);
                 return;
             }
             sqLiteDatabase.execSQL(sql);
@@ -202,17 +216,76 @@ public class MessageStore {
         }
     }
 
-    public void storeMessageRead(String messageId) {
-        if (sqLiteDatabase == null) return;
-        try {
-            if (sqLiteDatabase.isReadOnly()) {
-                ;
-                return;
+    public void executeWritableSQL(String sql, Object[] bindArgs, int maxRetries, long retryDelayMs) {
+        final int attempts = Math.max(1, maxRetries);
+        final long baseDelayMs = Math.max(0L, retryDelayMs);
+        writeExecutor.execute(() -> {
+            File dbFile = new File(Utils.getApplication().getFilesDir().getParentFile(), "/databases/msgstore.db");
+            if (!dbFile.exists()) return;
+
+            for (int attempt = 1; attempt <= attempts; attempt++) {
+                SQLiteDatabase writeDb = null;
+                try {
+                    writeDb = SQLiteDatabase.openDatabase(
+                            dbFile.getAbsolutePath(),
+                            null,
+                            SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS
+                    );
+                    try {
+                        writeDb.execSQL("PRAGMA busy_timeout = 3000;");
+                    } catch (Exception ignored) {
+                    }
+
+                    if (bindArgs == null || bindArgs.length == 0) {
+                        writeDb.execSQL(sql);
+                    } else {
+                        writeDb.execSQL(sql, bindArgs);
+                    }
+                    return;
+                } catch (Exception e) {
+                    boolean locked = e instanceof android.database.sqlite.SQLiteDatabaseLockedException
+                            || e instanceof android.database.sqlite.SQLiteTableLockedException;
+                    if (!locked || attempt >= attempts) {
+                        XposedBridge.log(e);
+                        return;
+                    }
+
+                    try {
+                        Thread.sleep(baseDelayMs * attempt);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                } finally {
+                    if (writeDb != null) {
+                        try {
+                            writeDb.close();
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
             }
-            sqLiteDatabase.execSQL("UPDATE message SET status = 1 WHERE key_id = \"" + messageId + "\"");
-        } catch (Exception e) {
-            XposedBridge.log("Failed to storeMessageRead: " + e.getMessage());
-        }
+        });
+    }
+
+    public void executeWritableSQL(String sql, Object[] bindArgs) {
+        executeWritableSQL(sql, bindArgs, 3, 500L);
+    }
+
+    public void executeWritableSQL(String sql, int maxRetries, long retryDelayMs) {
+        executeWritableSQL(sql, null, maxRetries, retryDelayMs);
+    }
+
+    public void executeWritableSQL(String sql) {
+        executeWritableSQL(sql, null, 3, 500L);
+    }
+
+    public void storeMessageRead(String messageId) {
+        if (messageId == null || messageId.isEmpty()) return;
+        executeWritableSQL(
+                "UPDATE message SET status = 1 WHERE key_id = ?",
+                new Object[]{messageId}
+        );
     }
 
     public boolean isReadMessageStatus(String messageId) {
@@ -224,7 +297,8 @@ public class MessageStore {
             String selection = "key_id=?";
             String[] selectionArgs = new String[]{messageId};
 
-            cursor = sqLiteDatabase.query("message", columns, selection, selectionArgs, null, null, null);
+            cursor = sqLiteDatabase.query("message", columns, selection, selectionArgs,
+                    null, null, null);
             if (cursor.moveToFirst()) {
                 result = cursor.getInt(cursor.getColumnIndexOrThrow("status")) == 1;
             }
@@ -260,18 +334,18 @@ public class MessageStore {
 
         List<Long> chatRowIds = new ArrayList<>();
         String resolveSql =
-            "WITH resolved(jid_row_id) AS (\n" +
-            "    SELECT _id FROM jid WHERE raw_string=?\n" +
-            "    UNION\n" +
-            "    SELECT jm.jid_row_id FROM jid_map jm\n" +
-            "    INNER JOIN jid j ON j._id = jm.lid_row_id\n" +
-            "    WHERE j.raw_string=?\n" +
-            "    UNION\n" +
-            "    SELECT jm.lid_row_id FROM jid_map jm\n" +
-            "    INNER JOIN jid j ON j._id = jm.jid_row_id\n" +
-            "    WHERE j.raw_string=?\n" +
-            ")\n" +
-            "SELECT _id FROM chat WHERE jid_row_id IN (SELECT jid_row_id FROM resolved)";
+                "WITH resolved(jid_row_id) AS (\n" +
+                "    SELECT _id FROM jid WHERE raw_string=?\n" +
+                "    UNION\n" +
+                "    SELECT jm.jid_row_id FROM jid_map jm\n" +
+                "    INNER JOIN jid j ON j._id = jm.lid_row_id\n" +
+                "    WHERE j.raw_string=?\n" +
+                "    UNION\n" +
+                "    SELECT jm.lid_row_id FROM jid_map jm\n" +
+                "    INNER JOIN jid j ON j._id = jm.jid_row_id\n" +
+                "    WHERE j.raw_string=?\n" +
+                ")\n" +
+                "SELECT _id FROM chat WHERE jid_row_id IN (SELECT jid_row_id FROM resolved)";
 
         try (Cursor cursor = db.rawQuery(resolveSql, new String[]{rawJid, rawJid, rawJid})) {
             if (cursor != null) {
@@ -295,7 +369,8 @@ public class MessageStore {
                     long rowId = cursor.getLong(0);
                     long sortId = cursor.getLong(1);
                     MessageInfo info = new MessageInfo(rowId, sortId, chatRowId);
-                    if (firstMsg == null || sortId < firstMsg.sortId || (sortId == firstMsg.sortId && rowId < firstMsg.rowId)) {
+                    if (firstMsg == null || sortId < firstMsg.sortId
+                            || (sortId == firstMsg.sortId && rowId < firstMsg.rowId)) {
                         firstMsg = info;
                     }
                 }

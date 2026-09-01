@@ -125,6 +125,7 @@ public final class PreferenceSchema {
         add(entries, "channels", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "chatfilter", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "contributors_json", Type.STRING, Sensitivity.CACHE, Store.PRIVATE);
+        add(entries, "copy_selection_message", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "copystatus", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "css_failure_count", Type.INT, Sensitivity.RUNTIME, Store.PUBLIC);
         add(entries, "css_last_valid", Type.STRING, Sensitivity.RUNTIME, Store.PUBLIC);
@@ -144,6 +145,7 @@ public final class PreferenceSchema {
         add(entries, "disable_expiration", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "disable_profile_status", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "disable_sensor_proximity", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "disable_swipe_up_in_group", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "dont_ask_optimize_db", Type.BOOLEAN, Sensitivity.RUNTIME, Store.PUBLIC);
         add(entries, "dotonline", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "doubletap2like", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);

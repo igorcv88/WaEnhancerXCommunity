@@ -241,6 +241,36 @@ public class Unobfuscator {
         }
     }
 
+    public synchronized static Field loadStatusPlaybackCurrentIndexField(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getField(classLoader, () -> {
+            MethodDataList methods = dexkit.findMethod(FindMethod.create().matcher(
+                    MethodMatcher.create().addUsingString("playbackFragment/setPageActive no-messages ", StringMatchType.Contains)
+            ));
+            if (!methods.isEmpty()) {
+                MethodData methodData = methods.get(0);
+                String statusPlaybackClass = methodData.getDeclaredClassName();
+                for (UsingFieldData usingField : methodData.getUsingFields()) {
+                    FieldData field = usingField.getField();
+                    if (field.getClassName().equals(statusPlaybackClass) && field.getType().getName().equals("int")) {
+                        return field.getFieldInstance(classLoader);
+                    }
+                }
+            }
+            Class<?> statusPlaybackClass = findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "StatusPlaybackContactFragment");
+            Method menuStatusMethod = loadMenuStatusMethod(classLoader);
+            MethodData menuMethodData = dexkit.getMethodData(menuStatusMethod);
+            if (menuMethodData != null) {
+                for (UsingFieldData usingField : menuMethodData.getUsingFields()) {
+                    FieldData field = usingField.getField();
+                    if (field.getClassName().equals(statusPlaybackClass.getName()) && field.getType().getName().equals("int")) {
+                        return field.getFieldInstance(classLoader);
+                    }
+                }
+            }
+            throw new NoSuchFieldException("StatusPlayback current index field not found");
+        });
+    }
+
     // TODO: Classes and Methods for FreezeSeen
     public synchronized static Method loadFreezeSeenMethod(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader,
@@ -263,6 +293,14 @@ public class Unobfuscator {
     }
 
     // TODO: Classes and Methods for Receipt
+
+    public synchronized static Method loadStartOutgoingCallMethod(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            Method method = findFirstMethodUsingStrings(classLoader, StringMatchType.Contains, "outgoing-launch/cm-null-contact");
+            if (method == null) throw new NoSuchMethodException("StartOutgoingCall method not found");
+            return method;
+        });
+    }
 
     public synchronized static Method loadReceiptMethod(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
@@ -4488,6 +4526,28 @@ public class Unobfuscator {
                 return boolMethods.get(boolMethods.size() - 1);
             }
             throw new NoSuchMethodError("PhoneNumberUtil.isValidNumber method not found");
+        });
+    }
+
+    public static synchronized Class<?> loadPopupWindowMessageClass(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getClass(classLoader, () -> {
+            var classes = getDexKit().findClass(org.luckypray.dexkit.query.FindClass.create().matcher(org.luckypray.dexkit.query.matchers.ClassMatcher.create()
+                    .usingStrings("MessageSelectionDropDownRecyclerView")
+                    .superClass(android.widget.PopupWindow.class.getName())
+            ));
+            if (classes.isEmpty()) throw new ClassNotFoundException("PopupWindowMessageClass not found");
+            return classes.get(0).getInstance(classLoader);
+        });
+    }
+
+    public static synchronized Method loadSwipeUpInGroupMethod(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            var id = UnobfuscatorCache.getInstance().getOfuscateIDString("Keep holding to talk");
+            var methods = getDexKit().findMethod(org.luckypray.dexkit.query.FindMethod.create().matcher(org.luckypray.dexkit.query.matchers.MethodMatcher.create()
+                    .usingNumbers(id)
+            ));
+            if (methods.isEmpty()) throw new NoSuchMethodError("SwipeUpInGroup method not found");
+            return methods.get(0).getMethodInstance(classLoader);
         });
     }
 }
