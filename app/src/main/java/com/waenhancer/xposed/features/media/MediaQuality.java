@@ -20,9 +20,10 @@ import org.json.JSONObject;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
-import android.content.SharedPreferences;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XC_MethodReplacement;
+import android.content.SharedPreferences;
+import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 
@@ -85,17 +86,9 @@ public class MediaQuality extends Feature {
                         int bitrateBps = 24000 * 1000;
                         fieldvideoMaxBitrate.setInt(processVideoQuality, bitrateBps);
                     }
-                    if (fieldVideoBitrateMode != null
-                            && finalEncoderVideoCapabilities != null
-                            && finalEncoderVideoCapabilities.supportsCBR()) {
+                    if (fieldVideoBitrateMode != null && finalEncoderVideoCapabilities != null && finalEncoderVideoCapabilities.supportsCBR()) {
                         try {
-                            // Field.set performs the required boxing/unboxing for both int and
-                            // Integer mappings. If WhatsApp changes the field type, leave its
-                            // native bitrate mode untouched rather than failing the constructor.
-                            fieldVideoBitrateMode.set(
-                                    processVideoQuality,
-                                    MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR
-                            );
+                            fieldVideoBitrateMode.set(processVideoQuality, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
                         } catch (Throwable t) {
                             logDebug("Unable to apply CBR bitrate mode", t);
                         }
@@ -116,8 +109,7 @@ public class MediaQuality extends Feature {
                         Field field = booleanParams.get(2);
                         field.setBoolean(videoProcessor, false);
                     }
-                    var fieldMediaDataVideoConfiguration = ReflectionUtils.getFieldByType(
-                            videoProcessor.getClass(), MediaDataVideoConfiguration);
+                    var fieldMediaDataVideoConfiguration = ReflectionUtils.getFieldByType(videoProcessor.getClass(), MediaDataVideoConfiguration);
                     if (fieldMediaDataVideoConfiguration != null) {
                         var mediaDataVideoConfiguration = fieldMediaDataVideoConfiguration.get(videoProcessor);
                         if (mediaDataVideoConfiguration != null) {
@@ -130,13 +122,17 @@ public class MediaQuality extends Feature {
                 }
             });
 
+
             var videoMethod = Unobfuscator.loadMediaQualityVideoMethod2(classLoader);
             /* Log removed */
 
             var mediaFields = Unobfuscator.loadMediaQualityOriginalVideoFields(classLoader);
             var mediaTranscodeParams = Unobfuscator.loadMediaQualityVideoFields(classLoader);
 
+
+
             XposedBridge.hookMethod(videoMethod, new XC_MethodHook() {
+
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     var resizeVideo = param.getResult();
@@ -152,6 +148,7 @@ public class MediaQuality extends Feature {
                         isHighResolution = (int) param.args[1] == 3;
                     }
                     if (isHighResolution) {
+
                         if (realResolution) {
                             int width;
                             int height;
@@ -181,8 +178,7 @@ public class MediaQuality extends Feature {
                             int targetWidth = inverted ? height : width;
                             int targetHeight = inverted ? width : height;
 
-                            var sanitizedTargetSize = sanitizeVideoSize(
-                                    targetWidth, targetHeight, finalEncoderVideoCapabilities);
+                            var sanitizedTargetSize = sanitizeVideoSize(targetWidth, targetHeight, finalEncoderVideoCapabilities);
                             if (sanitizedTargetSize != null) {
                                 if (targetWidthField != null) {
                                     targetWidthField.setInt(resizeVideo, sanitizedTargetSize.first);
@@ -191,6 +187,7 @@ public class MediaQuality extends Feature {
                                     targetHeightField.setInt(resizeVideo, sanitizedTargetSize.second);
                                 }
                             }
+
                         }
                     }
                     if (prefs.getBoolean("video_maxfps", false)) {
@@ -202,6 +199,7 @@ public class MediaQuality extends Feature {
         }
 
         if (imageQuality) {
+
             var processImageQualityClass = Unobfuscator.loadProcessImageQualityClass(classLoader);
             var fieldsProcessImageQuality = Unobfuscator.getAllMapFields(processImageQualityClass);
 
@@ -224,13 +222,11 @@ public class MediaQuality extends Feature {
                 }
             });
 
+            // Prevent crashes in Media preview
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                XposedHelpers.findAndHookMethod(
-                        RecordingCanvas.class,
-                        "throwIfCannotDraw",
-                        Bitmap.class,
-                        XC_MethodReplacement.DO_NOTHING);
+                XposedHelpers.findAndHookMethod(RecordingCanvas.class, "throwIfCannotDraw", Bitmap.class, XC_MethodReplacement.DO_NOTHING);
             }
+
         }
     }
 
@@ -266,9 +262,7 @@ public class MediaQuality extends Feature {
                     int maxBitrateKbps = Math.max(2000, videoCaps.getBitrateRange().getUpper() / 1000);
 
                     MediaCodecInfo.EncoderCapabilities encoderCaps = caps.getEncoderCapabilities();
-                    boolean supportsCBR = encoderCaps != null
-                            && encoderCaps.isBitrateModeSupported(
-                            MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
+                    boolean supportsCBR = encoderCaps != null && encoderCaps.isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
 
                     EncoderVideoCapabilities candidate = new EncoderVideoCapabilities(
                             info.getName(),
@@ -330,10 +324,7 @@ public class MediaQuality extends Feature {
     }
 
     @Nullable
-    private Pair<Integer, Integer> sanitizeVideoSize(
-            int width,
-            int height,
-            @Nullable EncoderVideoCapabilities encoderVideoCapabilities) {
+    private Pair<Integer, Integer> sanitizeVideoSize(int width, int height, @Nullable EncoderVideoCapabilities encoderVideoCapabilities) {
         if (width <= 0 || height <= 0) {
             return null;
         }
@@ -345,43 +336,28 @@ public class MediaQuality extends Feature {
         if (encoderVideoCapabilities == null) {
             int safeWidth = makeEven(width);
             int safeHeight = makeEven(height);
-            return new Pair<>(
-                    Math.max(SAFE_MIN_VIDEO_DIMENSION, safeWidth),
-                    Math.max(SAFE_MIN_VIDEO_DIMENSION, safeHeight));
+            return new Pair<>(Math.max(SAFE_MIN_VIDEO_DIMENSION, safeWidth), Math.max(SAFE_MIN_VIDEO_DIMENSION, safeHeight));
         }
 
-        int safeWidth = clampInt(
-                width, encoderVideoCapabilities.minWidth, encoderVideoCapabilities.maxWidth);
-        int safeHeight = clampInt(
-                height, encoderVideoCapabilities.minHeight, encoderVideoCapabilities.maxHeight);
+        int safeWidth = clampInt(width, encoderVideoCapabilities.minWidth, encoderVideoCapabilities.maxWidth);
+        int safeHeight = clampInt(height, encoderVideoCapabilities.minHeight, encoderVideoCapabilities.maxHeight);
 
-        safeWidth = alignToNearest(
-                safeWidth,
-                encoderVideoCapabilities.widthAlignment,
-                encoderVideoCapabilities.minWidth,
-                encoderVideoCapabilities.maxWidth);
-        safeHeight = alignToNearest(
-                safeHeight,
-                encoderVideoCapabilities.heightAlignment,
-                encoderVideoCapabilities.minHeight,
-                encoderVideoCapabilities.maxHeight);
+        safeWidth = alignToNearest(safeWidth, encoderVideoCapabilities.widthAlignment, encoderVideoCapabilities.minWidth, encoderVideoCapabilities.maxWidth);
+        safeHeight = alignToNearest(safeHeight, encoderVideoCapabilities.heightAlignment, encoderVideoCapabilities.minHeight, encoderVideoCapabilities.maxHeight);
 
-        Pair<Integer, Integer> supportedSize = findSupportedSize(
-                safeWidth, safeHeight, encoderVideoCapabilities);
+        Pair<Integer, Integer> supportedSize = findSupportedSize(safeWidth, safeHeight, encoderVideoCapabilities);
         if (supportedSize != null) {
             return supportedSize;
         }
 
         int fallbackWidth = alignToNearest(
-                clampInt(Math.min(width, 1280), encoderVideoCapabilities.minWidth,
-                        encoderVideoCapabilities.maxWidth),
+                clampInt(Math.min(width, 1280), encoderVideoCapabilities.minWidth, encoderVideoCapabilities.maxWidth),
                 encoderVideoCapabilities.widthAlignment,
                 encoderVideoCapabilities.minWidth,
                 encoderVideoCapabilities.maxWidth
         );
         int fallbackHeight = alignToNearest(
-                clampInt(Math.min(height, 720), encoderVideoCapabilities.minHeight,
-                        encoderVideoCapabilities.maxHeight),
+                clampInt(Math.min(height, 720), encoderVideoCapabilities.minHeight, encoderVideoCapabilities.maxHeight),
                 encoderVideoCapabilities.heightAlignment,
                 encoderVideoCapabilities.minHeight,
                 encoderVideoCapabilities.maxHeight
@@ -396,15 +372,13 @@ public class MediaQuality extends Feature {
         int conservativeHeight = isLandscape ? FALLBACK_LANDSCAPE_HEIGHT : FALLBACK_LANDSCAPE_WIDTH;
 
         conservativeWidth = alignToNearest(
-                clampInt(conservativeWidth, encoderVideoCapabilities.minWidth,
-                        encoderVideoCapabilities.maxWidth),
+                clampInt(conservativeWidth, encoderVideoCapabilities.minWidth, encoderVideoCapabilities.maxWidth),
                 encoderVideoCapabilities.widthAlignment,
                 encoderVideoCapabilities.minWidth,
                 encoderVideoCapabilities.maxWidth
         );
         conservativeHeight = alignToNearest(
-                clampInt(conservativeHeight, encoderVideoCapabilities.minHeight,
-                        encoderVideoCapabilities.maxHeight),
+                clampInt(conservativeHeight, encoderVideoCapabilities.minHeight, encoderVideoCapabilities.maxHeight),
                 encoderVideoCapabilities.heightAlignment,
                 encoderVideoCapabilities.minHeight,
                 encoderVideoCapabilities.maxHeight
@@ -414,10 +388,7 @@ public class MediaQuality extends Feature {
     }
 
     @Nullable
-    private Pair<Integer, Integer> findSupportedSize(
-            int width,
-            int height,
-            @NonNull EncoderVideoCapabilities encoderVideoCapabilities) {
+    private Pair<Integer, Integer> findSupportedSize(int width, int height, @NonNull EncoderVideoCapabilities encoderVideoCapabilities) {
         if (isSizeSupported(encoderVideoCapabilities, width, height)) {
             return new Pair<>(width, height);
         }
@@ -428,31 +399,25 @@ public class MediaQuality extends Feature {
 
         for (int attempt = 0; attempt < 80; attempt++) {
             if (currentWidth >= currentHeight) {
-                currentWidth = alignDown(
-                        currentWidth - encoderVideoCapabilities.widthAlignment,
-                        encoderVideoCapabilities.widthAlignment);
+                currentWidth = alignDown(currentWidth - encoderVideoCapabilities.widthAlignment, encoderVideoCapabilities.widthAlignment);
                 if (currentWidth < encoderVideoCapabilities.minWidth) {
                     break;
                 }
                 int scaledHeight = Math.round(currentWidth / aspectRatio);
                 currentHeight = alignToNearest(
-                        clampInt(scaledHeight, encoderVideoCapabilities.minHeight,
-                                encoderVideoCapabilities.maxHeight),
+                        clampInt(scaledHeight, encoderVideoCapabilities.minHeight, encoderVideoCapabilities.maxHeight),
                         encoderVideoCapabilities.heightAlignment,
                         encoderVideoCapabilities.minHeight,
                         encoderVideoCapabilities.maxHeight
                 );
             } else {
-                currentHeight = alignDown(
-                        currentHeight - encoderVideoCapabilities.heightAlignment,
-                        encoderVideoCapabilities.heightAlignment);
+                currentHeight = alignDown(currentHeight - encoderVideoCapabilities.heightAlignment, encoderVideoCapabilities.heightAlignment);
                 if (currentHeight < encoderVideoCapabilities.minHeight) {
                     break;
                 }
                 int scaledWidth = Math.round(currentHeight * aspectRatio);
                 currentWidth = alignToNearest(
-                        clampInt(scaledWidth, encoderVideoCapabilities.minWidth,
-                                encoderVideoCapabilities.maxWidth),
+                        clampInt(scaledWidth, encoderVideoCapabilities.minWidth, encoderVideoCapabilities.maxWidth),
                         encoderVideoCapabilities.widthAlignment,
                         encoderVideoCapabilities.minWidth,
                         encoderVideoCapabilities.maxWidth
@@ -467,10 +432,7 @@ public class MediaQuality extends Feature {
         return null;
     }
 
-    private boolean isSizeSupported(
-            @NonNull EncoderVideoCapabilities encoderVideoCapabilities,
-            int width,
-            int height) {
+    private boolean isSizeSupported(@NonNull EncoderVideoCapabilities encoderVideoCapabilities, int width, int height) {
         try {
             return encoderVideoCapabilities.videoCapabilities.isSizeSupported(width, height);
         } catch (Exception ignored) {
@@ -525,16 +487,15 @@ public class MediaQuality extends Feature {
         return new Pair<>(scaledWidth, scaledHeight);
     }
 
+
     private void enableMediaQualityForStories() {
         boolean legacyHooked = false;
         try {
             Method hookMediaQualitySelection = Unobfuscator.loadMediaQualitySelectionMethod(classLoader);
-            XposedBridge.hookMethod(
-                    hookMediaQualitySelection, XC_MethodReplacement.returnConstant(true));
+            XposedBridge.hookMethod(hookMediaQualitySelection, XC_MethodReplacement.returnConstant(true));
             legacyHooked = true;
         } catch (Throwable t) {
-            XposedBridge.log("[WAEX] loadMediaQualitySelectionMethod failed, trying BottomBarConfig: "
-                    + t.getMessage());
+            XposedBridge.log("[WAEX] loadMediaQualitySelectionMethod failed, trying BottomBarConfig: " + t.getMessage());
         }
 
         if (!legacyHooked) {
@@ -561,4 +522,5 @@ public class MediaQuality extends Feature {
     public String getPluginName() {
         return "Media Quality";
     }
+
 }
