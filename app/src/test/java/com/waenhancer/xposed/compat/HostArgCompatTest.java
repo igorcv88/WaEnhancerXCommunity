@@ -48,4 +48,34 @@ public class HostArgCompatTest {
         assertNull(HostArgCompat.getArg(args, Double.class, 0));
         assertTrue(HostArgCompat.isInstance(int.class, 7));
     }
+
+    @Test
+    public void getArgMatchesPrimitiveTypesAgainstBoxedArguments() {
+        Object[] args = {"jid", 7, 9L};
+
+        assertEquals(Integer.valueOf(7), HostArgCompat.getArg(args, int.class, 0));
+        assertEquals(Long.valueOf(9L), HostArgCompat.getArg(args, long.class, 0));
+        assertNull(HostArgCompat.getArg(args, double.class, 0));
+    }
+
+    @Test
+    public void getArgToleratesNullSlotsAndMissingOrdinals() {
+        Object[] args = {null, 3, null, 5};
+
+        assertEquals(Integer.valueOf(3), HostArgCompat.getArg(args, int.class, 0));
+        assertEquals(Integer.valueOf(5), HostArgCompat.getArg(args, int.class, 1));
+        assertNull(HostArgCompat.getArg(args, int.class, 2));
+        assertEquals(Integer.valueOf(5), HostArgCompat.getArg(args, int.class, -1));
+        assertNull(HostArgCompat.getArg(null, int.class, 0));
+    }
+
+    /** Regression for the 2.26.33 Integer.intValue() NPEs: a moved int slot must be findable. */
+    @Test
+    public void findIndexOfTypeLocatesReorderedIntegerSlot() {
+        Object[] reordered = {"playbackFragment", null, 4};
+
+        assertEquals(2, HostArgCompat.findIndexOfType(reordered, int.class));
+        assertNull(HostArgCompat.numberAt(reordered, 1));
+        assertEquals(4, HostArgCompat.numberAt(reordered, 2).intValue());
+    }
 }

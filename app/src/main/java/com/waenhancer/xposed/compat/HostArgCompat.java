@@ -51,17 +51,25 @@ public final class HostArgCompat {
         return value instanceof Number ? (Number) value : null;
     }
 
+    /**
+     * Returns the {@code ordinal}-th argument assignable to {@code requestedType}, or the last
+     * matching argument when {@code ordinal} is {@code -1}. Primitive types are matched against
+     * their boxed counterparts, so {@code getArg(args, int.class, 0)} finds an {@code Integer}.
+     * Returns {@code null} when nothing matches instead of throwing.
+     */
+    @SuppressWarnings("unchecked")
     public static <T> T getArg(Object[] args, Class<T> requestedType, int ordinal) {
         if (args == null || requestedType == null) return null;
+        Class<?> boxed = boxedType(requestedType);
+        if (boxed == null) return null;
         int seen = 0;
-        T last = null;
+        Object last = null;
         for (Object arg : args) {
-            if (!requestedType.isInstance(arg)) continue;
-            T value = requestedType.cast(arg);
-            last = value;
-            if (ordinal >= 0 && seen++ == ordinal) return value;
+            if (!boxed.isInstance(arg)) continue;
+            last = arg;
+            if (ordinal >= 0 && seen++ == ordinal) return (T) arg;
         }
-        return ordinal == -1 ? last : null;
+        return ordinal == -1 ? (T) last : null;
     }
 
     private HostArgCompat() {

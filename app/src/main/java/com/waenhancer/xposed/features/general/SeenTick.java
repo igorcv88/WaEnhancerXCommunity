@@ -19,6 +19,7 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 
+import com.waenhancer.xposed.compat.HostArgCompat;
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.WppCore;
 import com.waenhancer.xposed.core.components.FMessageWpp;
@@ -155,15 +156,33 @@ public class SeenTick extends Feature {
         // hook current status for other features (e.g. StatusDownload activeStatusObj tracking)
         try {
             var setPageActiveMethod = Unobfuscator.loadStatusActivePage(classLoader);
-            /* Log removed */
             var fieldList = ReflectionUtils.getFieldByType(setPageActiveMethod.getDeclaringClass(), List.class);
+            if (fieldList == null) {
+                throw new NoSuchFieldException("StatusActivePage page list field not found");
+            }
+            final String listFieldName = fieldList.getName();
 
             XposedBridge.hookMethod(setPageActiveMethod, new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                    var position = (int) param.args[1];
-                    var list = (List<?>) XposedHelpers.getObjectField(param.args[0], fieldList.getName());
+                    // WhatsApp 2.26.33 reaches setPageActive through call shapes where the
+                    // legacy int slot is absent, null or moved. Never auto-unbox args[1]
+                    // blindly: that is the Integer.intValue() NPE seen in LSPosed logs.
+                    if (param.args == null || param.args.length < 2 || param.args[0] == null) return;
+                    Number positionArg = HostArgCompat.numberAt(param.args, 1);
+                    if (positionArg == null) {
+                        int idx = HostArgCompat.findIndexOfType(param.args, int.class);
+                        positionArg = idx >= 1 ? HostArgCompat.numberAt(param.args, idx) : null;
+                    }
+                    if (positionArg == null) return;
+                    int position = positionArg.intValue();
+
+                    Object listObject = XposedHelpers.getObjectField(param.args[0], listFieldName);
+                    if (!(listObject instanceof List<?>)) return;
+                    var list = (List<?>) listObject;
+                    if (position < 0 || position >= list.size()) return;
                     var rawObject = list.get(position);
+                    if (rawObject == null) return;
                     com.waenhancer.xposed.features.media.StatusDownload.activeStatusObj = rawObject;
                     
                     var ticktype = Integer.parseInt(prefs.getString("seentick", "0"));
