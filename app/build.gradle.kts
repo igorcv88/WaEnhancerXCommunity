@@ -219,6 +219,10 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260814")
+    // The Xposed API is compileOnly for the APK, but unit tests exercise helper classes
+    // (ReflectionUtils, argument compat) whose bytecode references XposedHelpers. Without it
+    // on the test runtime classpath those tests fail with NoClassDefFoundError.
+    testImplementation(libs.libxposed.legacy)
 }
 
 configurations.all {

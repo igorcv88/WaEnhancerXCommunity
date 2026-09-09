@@ -277,6 +277,9 @@ public final class PreferenceSchema {
         add(entries, "updateTime", Type.LONG, Sensitivity.RUNTIME, Store.PUBLIC);
         add(entries, "update_alert_pref", Type.BOOLEAN, Sensitivity.PRIVATE_SETTING, Store.PRIVATE);
         add(entries, "update_check", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        // RuntimeDiagnostics host snapshots: internal state, never exported.
+        add(entries, "validation_runtime_snapshot_wpp", Type.STRING, Sensitivity.RUNTIME, Store.PRIVATE);
+        add(entries, "validation_runtime_snapshot_business", Type.STRING, Sensitivity.RUNTIME, Store.PRIVATE);
         add(entries, "verify_blocked_contact", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "video_call_screen_rec", Type.BOOLEAN, Sensitivity.PRIVATE_SETTING, Store.PRIVATE);
         add(entries, "video_limit_size", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
