@@ -16,7 +16,9 @@ import com.waenhancer.xposed.core.WppCore;
 import com.waenhancer.xposed.core.components.FMessageWpp;
 
 import java.lang.reflect.Field;
-import java.util.HashSet;
+import java.lang.reflect.Method;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 import de.robv.android.xposed.XC_MethodHook;
 import android.content.SharedPreferences;
@@ -25,9 +27,11 @@ import de.robv.android.xposed.XposedHelpers;
 
 public class ConversationItemListener extends Feature {
 
-    public static HashSet<OnConversationItemListener> conversationListeners = new HashSet<>();
+    /** Iterated on the row-binding hot path while features register from other threads. */
+    public static final Set<OnConversationItemListener> conversationListeners = new CopyOnWriteArraySet<>();
     private static ListAdapter mAdapter;
     private static XC_MethodHook.Unhook hooked;
+    private static final Set<String> failedListeners = new CopyOnWriteArraySet<>();
 
     public ConversationItemListener(@NonNull ClassLoader loader, @NonNull SharedPreferences preferences) {
         super(loader, preferences);
@@ -92,17 +96,20 @@ public class ConversationItemListener extends Feature {
                     return;
                 }
 
-                ListAdapter adapter = (ListAdapter) param.args[0];
-                if (adapter instanceof HeaderViewListAdapter) {
-                    adapter = ((HeaderViewListAdapter) adapter).getWrappedAdapter();
-                }
+                ListAdapter adapter = unwrapBaseAdapter((ListAdapter) param.args[0]);
                 if (adapter == null) return;
+                if (adapter == mAdapter && hooked != null) return;
+
+                // getView may be declared on a superclass of the concrete adapter.
+                Method method = findGetView(adapter.getClass());
+                if (method == null) {
+                    XposedBridge.log("[WAEX] Conversation adapter exposes no getView: "
+                            + adapter.getClass().getName());
+                    return;
+                }
 
                 mAdapter = adapter;
                 if (hooked != null) hooked.unhook();
-
-                var method = mAdapter.getClass().getDeclaredMethod(
-                        "getView", int.class, View.class, ViewGroup.class);
                 hooked = XposedBridge.hookMethod(method, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
@@ -130,7 +137,7 @@ public class ConversationItemListener extends Feature {
                             try {
                                 listener.onItemBind(fMessage, viewGroup);
                             } catch (Throwable t) {
-                                XposedBridge.log("[WAEX] Conversation item listener failed open: " + t);
+                                logListenerFailureOnce(listener, t);
                             }
                         }
                         XposedHelpers.setAdditionalInstanceField(viewGroup, "fMessage", fMessage);
@@ -138,6 +145,27 @@ public class ConversationItemListener extends Feature {
                 });
             }
         });
+    }
+
+    private static Method findGetView(Class<?> adapterClass) {
+        for (Class<?> c = adapterClass; c != null && c != Object.class; c = c.getSuperclass()) {
+            try {
+                return c.getDeclaredMethod("getView", int.class, View.class, ViewGroup.class);
+            } catch (NoSuchMethodException ignored) {
+            }
+        }
+        return null;
+    }
+
+    /**
+     * A listener that throws once usually throws for every bound row. Log the first failure per
+     * listener class only, so a broken feature cannot flood the LSPosed log while scrolling.
+     */
+    private static void logListenerFailureOnce(OnConversationItemListener listener, Throwable t) {
+        if (failedListeners.add(listener.getClass().getName())) {
+            XposedBridge.log("[WAEX] Conversation item listener failed open: "
+                    + listener.getClass().getName() + ": " + t);
+        }
     }
 
     @NonNull
