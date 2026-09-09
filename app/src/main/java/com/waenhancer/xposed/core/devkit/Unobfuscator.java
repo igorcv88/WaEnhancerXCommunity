@@ -302,6 +302,20 @@ public class Unobfuscator {
         });
     }
 
+    /**
+     * Direct incoming read-receipt entrypoint exposed by current WhatsApp builds. Used as an
+     * additional enforcement point for HideSeen; callers must treat a failure as fail-open.
+     */
+    public synchronized static Method loadReadReceiptMethod(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            var method = findFirstMethodUsingStrings(classLoader, StringMatchType.Contains,
+                    "ReadReceipts/sendReceiptForIncomingMessage");
+            if (method == null)
+                throw new Exception("ReadReceipt method not found");
+            return method;
+        });
+    }
+
     public synchronized static Method loadReceiptMethod(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
             var classDeviceJid = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith,

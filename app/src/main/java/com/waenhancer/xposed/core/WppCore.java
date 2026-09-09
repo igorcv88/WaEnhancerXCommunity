@@ -25,6 +25,7 @@ import com.waenhancer.xposed.utils.ReflectionUtils;
 import com.waenhancer.R;
 import com.waenhancer.xposed.utils.Utils;
 
+import org.luckypray.dexkit.query.enums.StringMatchType;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -149,6 +150,7 @@ public class WppCore {
         // Load wa database
         loadWADatabase();
         hookStatusToMessageMapper(loader);
+        hookConversationUserJid(loader);
 
         if (!pref.getBoolean("lite_mode", false)) {
             com.waenhancer.xposed.core.components.FStatusWpp.initialize(loader);
@@ -712,11 +714,59 @@ public class WppCore {
         return null;
     }
 
+    private static volatile FMessageWpp.UserJid currentConversationJid;
     private static FMessageWpp.UserJid cachedUserJid;
     private static int cachedActivityHash;
 
+    /**
+     * Tracks the JID of the open Conversation from its own Intent extras.
+     *
+     * <p>Ported from upstream b376762f. The obfuscated conversation-delegate field moved on
+     * WhatsApp 2.26.33, which made {@link #getCurrentUserJid()} fall through to an expensive
+     * reflective object-graph walk on the UI thread (and often still fail). The Intent extra is
+     * a stable, unobfuscated contract, so it is preferred when available.</p>
+     */
+    private static void hookConversationUserJid(ClassLoader loader) {
+        try {
+            Class<?> conversationClass = Unobfuscator.findFirstClassUsingName(
+                    loader, StringMatchType.EndsWith, ".Conversation");
+            if (conversationClass == null) return;
+
+            XposedBridge.hookAllMethods(Activity.class, "onCreate", new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    if (!conversationClass.isInstance(param.thisObject)) return;
+                    try {
+                        var intent = ((Activity) param.thisObject).getIntent();
+                        var extras = intent == null ? null : intent.getExtras();
+                        String jid = extras == null ? null : extras.getString("jid");
+                        currentConversationJid = (jid == null || jid.isEmpty())
+                                ? null
+                                : new FMessageWpp.UserJid(jid);
+                    } catch (Throwable ignored) {
+                        currentConversationJid = null;
+                    }
+                }
+            });
+
+            XposedBridge.hookAllMethods(Activity.class, "onDestroy", new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    if (conversationClass.isInstance(param.thisObject)) {
+                        currentConversationJid = null;
+                    }
+                }
+            });
+        } catch (Throwable t) {
+            XposedBridge.log("WaEnhancer: conversation jid tracker unavailable: " + t.getMessage());
+        }
+    }
+
     @NonNull
     public static FMessageWpp.UserJid getCurrentUserJid() {
+        var trackedJid = currentConversationJid;
+        if (trackedJid != null && !trackedJid.isNull()) return trackedJid;
+
         var currentActivity = getCurrentActivity();
         if (currentActivity == null) return new FMessageWpp.UserJid();
 
@@ -1016,7 +1066,8 @@ public class WppCore {
     }
 
     public static Drawable getMyPhoto() {
-        String datafolder = Utils.getApplication().getCacheDir().getParent() + "/";
+        // Multi-account installs keep the avatar under accounts/<id>.
+        String datafolder = Utils.getAccountDataDir().getAbsolutePath() + "/";
         File file = new File(datafolder + "files" + "/" + "me");
         if (file.exists())
             return Drawable.createFromPath(file.getAbsolutePath());

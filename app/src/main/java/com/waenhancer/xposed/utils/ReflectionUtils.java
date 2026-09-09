@@ -297,6 +297,7 @@ public class ReflectionUtils {
 
     public static <T> List<Pair<Integer, T>> findInstancesOfType(Object[] args, Class<T> type) {
         var result = new ArrayList<Pair<Integer, T>>();
+        if (args == null || type == null) return result;
         for (int i = 0; i < args.length; i++) {
             var arg = args[i];
             if (arg == null || arg instanceof Class) continue;
@@ -321,10 +322,21 @@ public class ReflectionUtils {
         return result;
     }
 
+    /**
+     * Returns the {@code i}-th argument that is an instance of {@code typeClass}, or {@code null}
+     * when there is no such argument. Null arguments and {@code Class} literals are skipped, and a
+     * null {@code args} array is tolerated: hooks call this with host-supplied arrays whose shape
+     * changes between WhatsApp releases.
+     */
     public static <T> T getArg(Object[] args, Class<T> typeClass, int i) {
-        var list = findInstancesOfType(args, typeClass);
-        if (list.size() <= i) return null;
-        return list.get(i).second;
+        if (args == null || typeClass == null || i < 0) return null;
+        int seen = 0;
+        for (Object arg : args) {
+            if (arg == null || arg instanceof Class) continue;
+            if (!typeClass.isInstance(arg)) continue;
+            if (seen++ == i) return typeClass.cast(arg);
+        }
+        return null;
     }
 
     public static boolean isCalledFromString(String contains) {

@@ -65,6 +65,54 @@ public class HideSeen extends Feature {
         hookReceiptMethod();
         hookSenderPlayed();
         hookSenderPlayedBusiness();
+        hookEnforceHiding();
+    }
+
+    /**
+     * Port of upstream's direct read-receipt enforcement. The existing SendReadReceiptJob,
+     * dispatch and ProtocolTree hooks stay in place; this is an extra last line of defence for
+     * hosts that reach the receipt path without going through them.
+     *
+     * <p>Fail-open by design: if the host no longer exposes the method, HideSeen keeps working
+     * through the other hooks instead of aborting {@link #doHook()}.</p>
+     */
+    private void hookEnforceHiding() {
+        Method readReceiptMethod;
+        try {
+            readReceiptMethod = Unobfuscator.loadReadReceiptMethod(classLoader);
+        } catch (Throwable t) {
+            XposedBridge.log("WaEnhancer: HideSeen direct read-receipt lookup failed: " + t.getMessage());
+            return;
+        }
+
+        XposedBridge.hookMethod(readReceiptMethod, new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) {
+                try {
+                    if (FMessageWpp.TYPE == null) return;
+                    Object rawMessage = ReflectionUtils.getArg(param.args, FMessageWpp.TYPE, 0);
+                    if (rawMessage == null) return;
+
+                    FMessageWpp.Key key = new FMessageWpp(rawMessage).getKey();
+                    if (key == null || key.isFromMe || key.remoteJid == null
+                            || key.remoteJid.isNull() || key.remoteJid.isStatus()) {
+                        return;
+                    }
+                    if (!checkPrivacyAndHideReceipt(key)) return;
+
+                    param.setResult(null);
+                    if (key.messageID == null) return;
+                    MessageHistory.getInstance().insertHideSeenMessage(
+                            key.remoteJid.getPhoneRawString(),
+                            key.messageID,
+                            MessageHistory.MessageType.MESSAGE_TYPE,
+                            false);
+                } catch (Throwable t) {
+                    // Privacy enforcement must never destabilize WhatsApp.
+                    XposedBridge.log("WaEnhancer: HideSeen direct read-receipt guard failed open: " + t);
+                }
+            }
+        });
     }
 
     private void loadPreferences() {
@@ -331,6 +379,8 @@ public class HideSeen extends Feature {
 
                 FMessageWpp.Key fmessageKey = generateFMessageKey(protocolTreeNodeWpp);
                 if (fmessageKey == null) return;
+                // Status receipts are handled by processStatusReadReceipt/HideStatusView.
+                if (fmessageKey.remoteJid.isStatus()) return;
 
                 MessageHistory.MessageType dbType = MessageHistory.MessageType.MESSAGE_TYPE;
                 FMessageWpp fMessage = fmessageKey.getFMessage();

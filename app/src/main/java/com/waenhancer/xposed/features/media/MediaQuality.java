@@ -10,6 +10,7 @@ import android.util.Pair;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.waenhancer.xposed.compat.HostArgCompat;
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.features.general.Others;
@@ -145,7 +146,12 @@ public class MediaQuality extends Feature {
                         var hightResolution = Enum.valueOf((Class<Enum>) enumObj.getClass(), "RESOLUTION_1080P");
                         isHighResolution = hightResolution == enumObj;
                     } else {
-                        isHighResolution = (int) param.args[1] == 3;
+                        // 2.26.33 can move the resolution slot; never auto-unbox a fixed index.
+                        Integer resolutionArg = HostArgCompat.numberAt(param.args, 1) instanceof Integer
+                                ? (Integer) param.args[1]
+                                : (intParams.isEmpty() ? null : intParams.get(0).second);
+                        if (resolutionArg == null) return;
+                        isHighResolution = resolutionArg == 3;
                     }
                     if (isHighResolution) {
 

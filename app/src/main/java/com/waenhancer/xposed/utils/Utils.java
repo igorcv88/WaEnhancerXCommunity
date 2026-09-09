@@ -82,6 +82,40 @@ public class Utils {
         return FeatureLoader.mApp == null ? App.getInstance() : FeatureLoader.mApp;
     }
 
+    /**
+     * Root data directory of the WhatsApp account currently in use.
+     *
+     * <p>WhatsApp's multi-account support relocates per-account data (msgstore.db,
+     * shared_prefs, me.jpg) under {@code accounts/<id>} and records the active id in
+     * {@code app_account_switching/active_account}. Ported from upstream b376762f.</p>
+     *
+     * <p>Single-account installs have neither file, so this returns the normal data dir and
+     * behaviour is unchanged.</p>
+     */
+    @NonNull
+    public static File getAccountDataDir() {
+        File dataDir = getApplication().getFilesDir().getParentFile();
+        if (dataDir == null) return new File(getApplication().getApplicationInfo().dataDir);
+        try {
+            File activeAccount = new File(dataDir, "app_account_switching/active_account");
+            if (!activeAccount.isFile()) return dataDir;
+
+            String accountId;
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.FileReader(activeAccount))) {
+                String line = reader.readLine();
+                accountId = line == null ? "" : line.trim();
+            }
+            if (accountId.isEmpty()) return dataDir;
+
+            File accountDir = new File(new File(dataDir, "accounts"), accountId);
+            return accountDir.isDirectory() ? accountDir : dataDir;
+        } catch (Throwable t) {
+            // Never let account resolution break callers; fall back to the default dir.
+            return dataDir;
+        }
+    }
+
     public static ExecutorService getExecutor() {
         return executorService;
     }

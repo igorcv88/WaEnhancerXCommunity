@@ -15,6 +15,7 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.core.text.TextUtilsCompat;
 
+import com.waenhancer.xposed.compat.HostArgCompat;
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.components.WaContactWpp;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
@@ -80,16 +81,12 @@ public class ShowOnline extends Feature {
             @SuppressLint("ResourceType")
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                // Some WhatsApp builds expose more than one constructor on this class.
-                // Only the conversation-row constructor has Context + View as its first arguments.
-                if (param.args == null || param.args.length < 2
-                        || !(param.args[0] instanceof Context)
-                        || !(param.args[1] instanceof View)) {
-                    return;
-                }
-
-                var view = (View) param.args[1];
-                var context = (Context) param.args[0];
+                // Some WhatsApp builds expose more than one constructor on this class, and
+                // 2.26.33 reordered the parameters. Resolve Context/View by type instead of by
+                // fixed index (upstream b376762f) so a reorder does not silently kill the feature.
+                var context = HostArgCompat.getArg(param.args, Context.class, 0);
+                var view = HostArgCompat.getArg(param.args, View.class, 0);
+                if (context == null || view == null) return;
                 LinearLayout content = view.findViewById(Utils.getID("conversations_row_content", "id"));
                 if (content == null) {
                     content = view.findViewById(Utils.getID("row_content", "id"));
