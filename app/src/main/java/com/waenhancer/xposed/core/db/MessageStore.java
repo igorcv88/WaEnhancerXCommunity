@@ -35,7 +35,7 @@ public class MessageStore {
     });
 
     private MessageStore() {
-        var dataDir = Utils.getApplication().getFilesDir().getParentFile();
+        var dataDir = Utils.getAccountDataDir();
         var dbFile = new File(dataDir, "/databases/msgstore.db");
         if (!dbFile.exists()) return;
         try {
@@ -220,7 +220,7 @@ public class MessageStore {
         final int attempts = Math.max(1, maxRetries);
         final long baseDelayMs = Math.max(0L, retryDelayMs);
         writeExecutor.execute(() -> {
-            File dbFile = new File(Utils.getApplication().getFilesDir().getParentFile(), "/databases/msgstore.db");
+            File dbFile = new File(Utils.getAccountDataDir(), "/databases/msgstore.db");
             if (!dbFile.exists()) return;
 
             for (int attempt = 1; attempt <= attempts; attempt++) {
