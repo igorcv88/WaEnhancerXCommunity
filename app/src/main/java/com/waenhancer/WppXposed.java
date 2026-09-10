@@ -1,22 +1,14 @@
 package com.waenhancer;
 
-import android.annotation.SuppressLint;
 import android.app.Application;
-import android.content.Context;
-import android.content.ContextWrapper;
 import android.content.res.XModuleResources;
-import android.view.Window;
-import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
-import androidx.preference.PreferenceManager;
 
-import com.waenhancer.activities.MainActivity;
 import com.waenhancer.xposed.AntiUpdater;
 import com.waenhancer.xposed.bridge.ScopeHook;
 import com.waenhancer.xposed.core.FeatureLoader;
 import com.waenhancer.xposed.downgrade.Patch;
-import com.waenhancer.R;
 import com.waenhancer.xposed.utils.XResManager;
 import com.waenhancer.xposed.utils.Utils;
 
@@ -37,19 +29,21 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
     private String MODULE_PATH;
     public static XC_InitPackageResources.InitPackageResourcesParam ResParam;
 
-
-
     @NonNull
     public static XSharedPreferences getPref() {
         if (pref == null) {
             pref = new XSharedPreferences(BuildConfig.APPLICATION_ID, BuildConfig.APPLICATION_ID + "_preferences");
-            pref.makeWorldReadable();
+            // Legacy fallback only. Runtime hooks can fall back to HookProvider/ProviderSharedPreferences
+            // when direct XSharedPreferences access is unavailable.
+            try {
+                pref.makeWorldReadable();
+            } catch (Throwable ignored) {
+            }
             pref.reload();
         }
         return pref;
     }
 
-    @SuppressLint("WorldReadableFiles")
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
         if (Utils.DEBUG) {
@@ -62,57 +56,46 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
             if (Utils.DEBUG) {
                 ;
             }
-            XposedHelpers.findAndHookMethod("com.waenhancer.utils.ModuleStatus", lpparam.classLoader, "isModuleActive", XC_MethodReplacement.returnConstant(true));
-            
-            // Hook Application.onCreate in manager app to save active Xposed version locally
+
+            // Keep self-hooking intentionally narrow. On Android 17 the old manager-side hack
+            // that forced PreferenceManager.getDefaultSharedPreferencesMode() to
+            // MODE_WORLD_READABLE can crash the companion app during Application.onCreate.
+            // ModuleStatus is enough for the self-hook sentinel; preference transport to
+            // WhatsApp has a provider-backed fallback and must not mutate ContextImpl semantics.
+            XposedHelpers.findAndHookMethod(
+                    "com.waenhancer.utils.ModuleStatus",
+                    lpparam.classLoader,
+                    "isModuleActive",
+                    XC_MethodReplacement.returnConstant(true));
+
+            // Save the active Xposed API version without going through PreferenceManager. Using
+            // an explicitly MODE_PRIVATE file avoids the deprecated world-readable mode path and
+            // keeps the manager process independent from framework-private ContextImpl details.
             try {
                 XposedHelpers.findAndHookMethod(
                         "android.app.Application", lpparam.classLoader,
                         "onCreate", new XC_MethodHook() {
                             @Override
-                            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            protected void beforeHookedMethod(MethodHookParam param) {
                                 android.content.Context context = (android.content.Context) param.thisObject;
                                 try {
                                     int apiVersion = XposedBridge.getXposedVersion();
-                                    Class<?> prefMgr = Class.forName("androidx.preference.PreferenceManager", true, context.getClassLoader());
-                                    java.lang.reflect.Method getPrefs = prefMgr.getMethod("getDefaultSharedPreferences", android.content.Context.class);
-                                    android.content.SharedPreferences localPrefs = (android.content.SharedPreferences) getPrefs.invoke(null, context);
-                                    localPrefs.edit().putInt("active_xposed_api_version", apiVersion).commit();
-                                    /* Log removed */
+                                    android.content.SharedPreferences localPrefs = context.getSharedPreferences(
+                                            BuildConfig.APPLICATION_ID + "_preferences",
+                                            android.content.Context.MODE_PRIVATE);
+                                    localPrefs.edit()
+                                            .putInt("active_xposed_api_version", apiVersion)
+                                            .apply();
                                 } catch (Throwable t) {
-                                    XposedBridge.log("[WAEX] Failed to save active Xposed API version in manager: " + t.toString());
+                                    XposedBridge.log("[WAEX] Failed to save active Xposed API version in manager: " + t);
                                 }
                             }
                         });
             } catch (Throwable t) {
-                XposedBridge.log("[WAEX] Failed to hook Application.onCreate in manager: " + t.toString());
-            }
-            
-            // Bypass the Android 7.0+ SecurityException when using MODE_WORLD_READABLE in the module settings app process
-            try {
-                XposedHelpers.findAndHookMethod(
-                        "android.app.ContextImpl", lpparam.classLoader,
-                        "checkMode", int.class, new XC_MethodHook() {
-                            @Override
-                            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                                param.setResult(null);
-                            }
-                        });
-            } catch (Throwable t) {
-                XposedBridge.log("[WAEX] Failed to hook ContextImpl.checkMode: " + t.getMessage());
+                XposedBridge.log("[WAEX] Failed to hook Application.onCreate in manager: " + t);
             }
 
-            // Make default SharedPreferences world-readable so XSharedPreferences
-            // can read them from WhatsApp's process without ContentProvider IPC.
-            // This is the critical hook that the competitor uses and we were missing.
-            @SuppressWarnings("deprecation")
-            int worldReadable = ContextWrapper.MODE_WORLD_READABLE;
-            XposedHelpers.findAndHookMethod(
-                    PreferenceManager.class.getName(), lpparam.classLoader,
-                    "getDefaultSharedPreferencesMode",
-                    XC_MethodReplacement.returnConstant(worldReadable));
-
-            // Inject Bootloader Spoofer in the manager app itself for live verification
+            // Inject Bootloader Spoofer in the manager app itself for live verification.
             if (getPref().getBoolean("bootloader_spoofer", false)) {
                 try {
                     com.waenhancer.xposed.spoofer.HookBL.hook(lpparam.classLoader, getPref());
@@ -149,7 +132,7 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
 
             // Initialize module resources early
             XResManager.moduleResources = XModuleResources.createInstance(MODULE_PATH, null);
-            
+
             // Populate valid IDs immediately for hooks to work
             populateValidIds();
 
@@ -216,7 +199,7 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
                             int originalId = field.getInt(null);
                             if (originalId >= 0x70000000 && originalId <= 0x7FFFFFFF) {
                                 int hostId = XResManager.getHostId(originalId);
-                                
+
                                 // Update the R class field directly to the mapped ID
                                 field.set(null, hostId);
                                 count++;
@@ -263,7 +246,6 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
         }
     }
 
-
     public void disableSecureFlag() {
         XposedHelpers.findAndHookMethod(android.view.Window.class, "setFlags", int.class, int.class, new XC_MethodHook() {
             @Override
@@ -283,5 +265,4 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
             }
         });
     }
-
 }
