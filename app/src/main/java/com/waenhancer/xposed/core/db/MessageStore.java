@@ -27,6 +27,7 @@ public class MessageStore {
     });
 
     private SQLiteDatabase sqLiteDatabase;
+    private final String databasePath;
     private final Map<Long, String> originalKeyCache = Collections.synchronizedMap(new LinkedHashMap<Long, String>(100, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<Long, String> eldest) {
@@ -34,9 +35,8 @@ public class MessageStore {
         }
     });
 
-    private MessageStore() {
-        var dataDir = Utils.getAccountDataDir();
-        var dbFile = new File(dataDir, "/databases/msgstore.db");
+    private MessageStore(File dbFile) {
+        databasePath = dbFile.getAbsolutePath();
         if (!dbFile.exists()) return;
         try {
             sqLiteDatabase = SQLiteDatabase.openDatabase(dbFile.getAbsolutePath(), null,
@@ -52,12 +52,34 @@ public class MessageStore {
         }
     }
 
-    public static MessageStore getInstance() {
-        if (mInstance == null || mInstance.sqLiteDatabase == null || !mInstance.sqLiteDatabase.isOpen()) {
-            synchronized (MessageStore.class) {
-                if (mInstance == null || mInstance.sqLiteDatabase == null || !mInstance.sqLiteDatabase.isOpen()) {
-                    mInstance = new MessageStore();
-                }
+    private static File getActiveDatabaseFile() {
+        return new File(Utils.getAccountDataDir(), "databases/msgstore.db");
+    }
+
+    private void closeDatabase() {
+        SQLiteDatabase db = sqLiteDatabase;
+        sqLiteDatabase = null;
+        if (db != null) {
+            try {
+                db.close();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    public static synchronized MessageStore getInstance() {
+        File activeDbFile = getActiveDatabaseFile();
+        String activePath = activeDbFile.getAbsolutePath();
+        boolean databaseUnavailable = mInstance == null
+                || mInstance.sqLiteDatabase == null
+                || !mInstance.sqLiteDatabase.isOpen();
+        boolean accountChanged = mInstance != null && !activePath.equals(mInstance.databasePath);
+
+        if (databaseUnavailable || accountChanged) {
+            MessageStore previous = mInstance;
+            mInstance = new MessageStore(activeDbFile);
+            if (previous != null && previous != mInstance) {
+                previous.closeDatabase();
             }
         }
         return mInstance;
@@ -220,7 +242,7 @@ public class MessageStore {
         final int attempts = Math.max(1, maxRetries);
         final long baseDelayMs = Math.max(0L, retryDelayMs);
         writeExecutor.execute(() -> {
-            File dbFile = new File(Utils.getAccountDataDir(), "/databases/msgstore.db");
+            File dbFile = getActiveDatabaseFile();
             if (!dbFile.exists()) return;
 
             for (int attempt = 1; attempt <= attempts; attempt++) {
