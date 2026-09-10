@@ -7,6 +7,7 @@ import androidx.annotation.NonNull;
 
 import com.waenhancer.xposed.AntiUpdater;
 import com.waenhancer.xposed.bridge.ScopeHook;
+import com.waenhancer.xposed.bridge.client.DeferredProviderSharedPreferences;
 import com.waenhancer.xposed.core.FeatureLoader;
 import com.waenhancer.xposed.downgrade.Patch;
 import com.waenhancer.xposed.utils.XResManager;
@@ -137,7 +138,13 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
             populateValidIds();
 
             try {
-                FeatureLoader.start(classLoader, getPref(), lpparam.appInfo.sourceDir);
+                // The Application does not exist yet at handleLoadPackage time. Defer provider
+                // hydration until FeatureLoader receives callApplicationOnCreate, then make the
+                // provider-backed view authoritative before any startup preference is consumed.
+                FeatureLoader.start(
+                        classLoader,
+                        new DeferredProviderSharedPreferences(getPref()),
+                        lpparam.appInfo.sourceDir);
                 if (Utils.DEBUG) {
                     ;
                 }

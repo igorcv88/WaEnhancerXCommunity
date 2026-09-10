@@ -93,19 +93,33 @@ public class HideSeen extends Feature {
                     Object rawMessage = ReflectionUtils.getArg(param.args, FMessageWpp.TYPE, 0);
                     if (rawMessage == null) return;
 
-                    FMessageWpp.Key key = new FMessageWpp(rawMessage).getKey();
+                    FMessageWpp fMessage = new FMessageWpp(rawMessage);
+                    FMessageWpp.Key key = fMessage.getKey();
                     if (key == null || key.isFromMe || key.remoteJid == null
                             || key.remoteJid.isNull() || key.remoteJid.isStatus()) {
                         return;
                     }
                     if (!checkPrivacyAndHideSeen(key) && !checkPrivacyAndHideReceipt(key)) return;
 
+                    // Suppress first. Type classification is bookkeeping and must never expose a
+                    // receipt if a future host change makes isViewOnce() fail.
                     param.setResult(null);
                     if (key.messageID == null) return;
+
+                    MessageHistory.MessageType dbType = MessageHistory.MessageType.MESSAGE_TYPE;
+                    try {
+                        if (fMessage.isViewOnce()) {
+                            dbType = MessageHistory.MessageType.VIEW_ONCE_TYPE;
+                        }
+                    } catch (Throwable ignored) {
+                        // Preserve privacy and fall back to the historical bucket if classification
+                        // is unavailable; the hook itself has already been suppressed above.
+                    }
+
                     MessageHistory.getInstance().insertHideSeenMessage(
                             key.remoteJid.getPhoneRawString(),
                             key.messageID,
-                            MessageHistory.MessageType.MESSAGE_TYPE,
+                            dbType,
                             false);
                 } catch (Throwable t) {
                     // Privacy enforcement must never destabilize WhatsApp.
