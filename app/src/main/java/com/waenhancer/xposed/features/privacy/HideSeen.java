@@ -98,7 +98,7 @@ public class HideSeen extends Feature {
                             || key.remoteJid.isNull() || key.remoteJid.isStatus()) {
                         return;
                     }
-                    if (!checkPrivacyAndHideReceipt(key)) return;
+                    if (!checkPrivacyAndHideSeen(key) && !checkPrivacyAndHideReceipt(key)) return;
 
                     param.setResult(null);
                     if (key.messageID == null) return;
