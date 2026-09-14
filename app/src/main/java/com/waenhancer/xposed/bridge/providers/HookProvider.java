@@ -11,6 +11,7 @@ import android.os.Bundle;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.waenhancer.config.NspPreferenceMigration;
 import com.waenhancer.config.PreferenceSchema;
 import com.waenhancer.config.PreferenceStores;
 import com.waenhancer.security.CallerAuthority;
@@ -54,7 +55,18 @@ public class HookProvider extends ContentProvider {
 
     @Override
     public boolean onCreate() {
-        return getContext() != null;
+        Context context = getContext();
+        if (context == null) return false;
+
+        // Providers are installed before Application.onCreate(). During the phase-2 NSP metadata
+        // flip, WhatsApp may be the process that starts this package first. Restore the staged
+        // stores here as well so the very first provider read cannot observe an empty post-NSP
+        // preference directory.
+        try {
+            NspPreferenceMigration.restoreIfNeeded(context);
+        } catch (RuntimeException ignored) {
+        }
+        return true;
     }
 
     @Nullable
