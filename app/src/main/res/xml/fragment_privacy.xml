@@ -12,7 +12,7 @@
             app:summary="@string/hide_archived_chat_sum"
             app:title="@string/hide_archived_chat" />
 
-        <rikka.material.preference.MaterialSwitchPreference
+        <com.waenhancer.preference.RetainedDisabledSwitchPreference
             app:defaultValue="true"
             app:key="show_freezeLastSeen"
             app:summary="@string/show_freezeLastSeen_sum"
