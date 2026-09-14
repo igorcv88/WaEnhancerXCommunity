@@ -43,6 +43,7 @@ public class ViewOnce extends Feature {
                     var fMessage = new FMessageWpp(param.thisObject);
                     var key = fMessage.getKey();
                     if (key != null && returnValue == 1 && !key.isFromMe) {
+                        diagnosticTriggered();
                         param.args[0] = 0;
                     }
                 }
