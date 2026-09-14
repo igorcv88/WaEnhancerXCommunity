@@ -2,79 +2,66 @@ package com.waenhancer.xposed.utils;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+
 import com.waenhancer.BuildConfig;
+import com.waenhancer.config.PreferenceStores;
+import com.waenhancer.xposed.bridge.client.ProviderSharedPreferences;
 
 /**
- * Safely manages access to XSharedPreferences without triggering NoClassDefFoundError
- * for classes that implement Xposed interfaces.
+ * Process-local preference access point.
+ *
+ * <p>Hooked WhatsApp processes use the UID-validated HookProvider bridge. The companion app reads
+ * its own normal default preference store. This class no longer constructs XSharedPreferences, so
+ * it remains valid after LSPosed removes New XSharedPreferences support.</p>
  */
-public class XPrefManager {
+public final class XPrefManager {
 
-    private static SharedPreferences pref;
-    private static volatile boolean xprefsUnavailable = false;
+    private static volatile SharedPreferences pref;
+
+    private XPrefManager() {
+    }
+
+    public static void setPref(SharedPreferences preferences) {
+        pref = preferences;
+    }
 
     public static SharedPreferences getPref() {
-        if (pref != null) return pref;
-        if (com.waenhancer.xposed.utils.Utils.xprefs != null) {
-            pref = com.waenhancer.xposed.utils.Utils.xprefs;
-            return pref;
+        SharedPreferences current = pref;
+        if (current != null) return current;
+        current = Utils.xprefs;
+        if (current != null) {
+            pref = current;
         }
-        if (xprefsUnavailable) return null;
-
-        try {
-            // Use reflection to avoid direct dependency on XSharedPreferences in this class's load time
-            Class<?> xPrefsClass = Class.forName("de.robv.android.xposed.XSharedPreferences");
-            pref = (SharedPreferences) xPrefsClass.getConstructor(String.class, String.class)
-                    .newInstance(BuildConfig.APPLICATION_ID, BuildConfig.APPLICATION_ID + "_preferences");
-            
-            // Call makeWorldReadable and reload via reflection
-            try {
-                xPrefsClass.getMethod("makeWorldReadable").invoke(pref);
-                xPrefsClass.getMethod("reload").invoke(pref);
-            } catch (Throwable ignored) {}
-            
-            return pref;
-        } catch (Throwable t) {
-            if (!(t instanceof ClassNotFoundException) && !(t.getCause() != null && t.getCause() instanceof ClassNotFoundException)) {
-                android.util.Log.e("WaE-XPrefManager", "Failed to initialize XSharedPreferences", t);
-            }
-            xprefsUnavailable = true;
-            return null;
-        }
+        return current;
     }
 
     public static void reload() {
-        if (pref != null) {
-            try {
-                Class<?> xPrefsClass = Class.forName("de.robv.android.xposed.XSharedPreferences");
-                if (xPrefsClass.isInstance(pref)) {
-                    xPrefsClass.getMethod("reload").invoke(pref);
-                } else {
-                    try {
-                        pref.getClass().getMethod("reload").invoke(pref);
-                    } catch (Throwable ignored) {}
-                }
-            } catch (Throwable ignored) {}
-        }
-        if (com.waenhancer.xposed.utils.Utils.xprefs != null) {
-            try {
-                Class<?> xPrefsClass = Class.forName("de.robv.android.xposed.XSharedPreferences");
-                if (xPrefsClass.isInstance(com.waenhancer.xposed.utils.Utils.xprefs)) {
-                    xPrefsClass.getMethod("reload").invoke(com.waenhancer.xposed.utils.Utils.xprefs);
-                } else {
-                    try {
-                        com.waenhancer.xposed.utils.Utils.xprefs.getClass().getMethod("reload").invoke(com.waenhancer.xposed.utils.Utils.xprefs);
-                    } catch (Throwable ignored) {}
-                }
-            } catch (Throwable ignored) {}
+        SharedPreferences current = getPref();
+        if (current == null) return;
+        try {
+            current.getClass().getMethod("reload").invoke(current);
+        } catch (NoSuchMethodException ignored) {
+            // Ordinary app-local SharedPreferences are already live in-process.
+        } catch (Throwable ignored) {
         }
     }
 
     public static SharedPreferences getPref(Context context) {
-        SharedPreferences xposedPref = getPref();
-        if (xposedPref != null) return xposedPref;
-        
-        // Fallback to provider-based or local prefs
-        return context.getSharedPreferences(BuildConfig.APPLICATION_ID + "_preferences", Context.MODE_PRIVATE);
+        SharedPreferences current = getPref();
+        if (current != null) return current;
+        if (context == null) return null;
+
+        Context appContext = context.getApplicationContext();
+        if (appContext == null) appContext = context;
+
+        if (BuildConfig.APPLICATION_ID.equals(appContext.getPackageName())) {
+            current = PreferenceStores.publicStore(appContext);
+        } else {
+            SharedPreferences localPrefs = appContext.getSharedPreferences(
+                    "wae_embedded_prefs", Context.MODE_PRIVATE);
+            current = new ProviderSharedPreferences(appContext, localPrefs, null);
+        }
+        pref = current;
+        return current;
     }
 }

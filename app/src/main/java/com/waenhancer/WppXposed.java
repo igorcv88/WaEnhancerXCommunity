@@ -3,8 +3,6 @@ package com.waenhancer;
 import android.app.Application;
 import android.content.res.XModuleResources;
 
-import androidx.annotation.NonNull;
-
 import com.waenhancer.xposed.AntiUpdater;
 import com.waenhancer.xposed.bridge.ScopeHook;
 import com.waenhancer.xposed.bridge.client.DeferredProviderSharedPreferences;
@@ -18,7 +16,6 @@ import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.IXposedHookZygoteInit;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XC_MethodReplacement;
-import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_InitPackageResources;
@@ -26,24 +23,8 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackageResources, IXposedHookZygoteInit {
 
-    private static XSharedPreferences pref;
     private String MODULE_PATH;
     public static XC_InitPackageResources.InitPackageResourcesParam ResParam;
-
-    @NonNull
-    public static XSharedPreferences getPref() {
-        if (pref == null) {
-            pref = new XSharedPreferences(BuildConfig.APPLICATION_ID, BuildConfig.APPLICATION_ID + "_preferences");
-            // Legacy fallback only. Runtime hooks can fall back to HookProvider/ProviderSharedPreferences
-            // when direct XSharedPreferences access is unavailable.
-            try {
-                pref.makeWorldReadable();
-            } catch (Throwable ignored) {
-            }
-            pref.reload();
-        }
-        return pref;
-    }
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
@@ -58,20 +39,15 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
                 ;
             }
 
-            // Keep self-hooking intentionally narrow. On Android 17 the old manager-side hack
-            // that forced PreferenceManager.getDefaultSharedPreferencesMode() to
-            // MODE_WORLD_READABLE can crash the companion app during Application.onCreate.
-            // ModuleStatus is enough for the self-hook sentinel; preference transport to
-            // WhatsApp has a provider-backed fallback and must not mutate ContextImpl semantics.
+            // Keep self-hooking intentionally narrow. Runtime configuration no longer depends on
+            // XSharedPreferences: the manager reads its own private/default store and WhatsApp uses
+            // the UID-validated HookProvider bridge.
             XposedHelpers.findAndHookMethod(
                     "com.waenhancer.utils.ModuleStatus",
                     lpparam.classLoader,
                     "isModuleActive",
                     XC_MethodReplacement.returnConstant(true));
 
-            // Save the active Xposed API version without going through PreferenceManager. Using
-            // an explicitly MODE_PRIVATE file avoids the deprecated world-readable mode path and
-            // keeps the manager process independent from framework-private ContextImpl details.
             try {
                 XposedHelpers.findAndHookMethod(
                         "android.app.Application", lpparam.classLoader,
@@ -80,29 +56,36 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
                             protected void beforeHookedMethod(MethodHookParam param) {
                                 android.content.Context context = (android.content.Context) param.thisObject;
                                 try {
-                                    int apiVersion = XposedBridge.getXposedVersion();
+                                    // Phase 2 will remove NSP metadata. Restoring here as well as in
+                                    // App.onCreate makes the self-hook path safe on the very first
+                                    // post-migration process start, before any setting is consumed.
+                                    com.waenhancer.config.NspPreferenceMigration.restoreIfNeeded(context);
+
                                     android.content.SharedPreferences localPrefs = context.getSharedPreferences(
                                             BuildConfig.APPLICATION_ID + "_preferences",
                                             android.content.Context.MODE_PRIVATE);
+
+                                    int apiVersion = XposedBridge.getXposedVersion();
                                     localPrefs.edit()
                                             .putInt("active_xposed_api_version", apiVersion)
                                             .apply();
+
+                                    if (localPrefs.getBoolean("bootloader_spoofer", false)) {
+                                        try {
+                                            com.waenhancer.xposed.spoofer.HookBL.hook(
+                                                    lpparam.classLoader, localPrefs);
+                                        } catch (Throwable t) {
+                                            XposedBridge.log("[WAEX] Failed to hook Bootloader Spoofer in settings app: "
+                                                    + t.getMessage());
+                                        }
+                                    }
                                 } catch (Throwable t) {
-                                    XposedBridge.log("[WAEX] Failed to save active Xposed API version in manager: " + t);
+                                    XposedBridge.log("[WAEX] Failed to initialize manager self-hook preferences: " + t);
                                 }
                             }
                         });
             } catch (Throwable t) {
                 XposedBridge.log("[WAEX] Failed to hook Application.onCreate in manager: " + t);
-            }
-
-            // Inject Bootloader Spoofer in the manager app itself for live verification.
-            if (getPref().getBoolean("bootloader_spoofer", false)) {
-                try {
-                    com.waenhancer.xposed.spoofer.HookBL.hook(lpparam.classLoader, getPref());
-                } catch (Throwable t) {
-                    XposedBridge.log("[WAEX] Failed to hook Bootloader Spoofer in settings app: " + t.getMessage());
-                }
             }
             return;
         }
@@ -113,7 +96,7 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
 
         AntiUpdater.hookSession(lpparam);
 
-        Patch.handleLoadPackage(lpparam, getPref());
+        Patch.handleLoadPackage(lpparam);
 
         ScopeHook.hook(lpparam);
 
@@ -138,12 +121,12 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
             populateValidIds();
 
             try {
-                // The Application does not exist yet at handleLoadPackage time. Defer provider
-                // hydration until FeatureLoader receives callApplicationOnCreate, then make the
-                // provider-backed view authoritative before any startup preference is consumed.
+                // The Application does not exist yet at handleLoadPackage time. The deferred
+                // wrapper intentionally has no XSharedPreferences fallback: as soon as the host
+                // Application exists it hydrates from the module's UID-validated HookProvider.
                 FeatureLoader.start(
                         classLoader,
-                        new DeferredProviderSharedPreferences(getPref()),
+                        new DeferredProviderSharedPreferences(),
                         lpparam.appInfo.sourceDir);
                 if (Utils.DEBUG) {
                     ;

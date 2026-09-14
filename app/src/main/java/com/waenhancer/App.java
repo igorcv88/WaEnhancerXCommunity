@@ -29,6 +29,7 @@ public class App extends Application {
     private static App instance;
     private static final ExecutorService executorService = Executors.newCachedThreadPool();
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private android.content.SharedPreferences.OnSharedPreferenceChangeListener nspSnapshotListener;
 
     public static void showRequestStoragePermission(Activity activity) {
         com.waenhancer.ui.helpers.BottomSheetHelper.showConfirmation(
@@ -63,12 +64,24 @@ public class App extends Application {
         LocalDiagnostics.record(this, "lifecycle", "Manager process started");
 
         var sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
+
+        // Phase 1 of removing LSPosed New XSharedPreferences: while NSP is still declared, the
+        // helper only captures a typed copy in filesDir. Once a later release removes the NSP
+        // metadata, the same helper restores that copy into the normal app-private stores before
+        // any setting is consumed.
+        try {
+            com.waenhancer.config.NspPreferenceMigration.restoreIfNeeded(this);
+            sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
+        } catch (RuntimeException ignored) {
+        }
+
         if (sharedPreferences.getBoolean("verify_blocked_contact", false)) {
             sharedPreferences.edit().putBoolean("verify_blocked_contact", false).apply();
         }
 
-        // Keep the legacy preference bridge operational until Block C performs the
-        // audited public/private storage migration.
+        // Keep the legacy preference bridge operational until the staged NSP migration has been
+        // validated in a released build. Phase 2 will remove the NSP manifest metadata only after
+        // the provider-backed runtime path and snapshot have both been exercised on-device.
         File prefFile = new File(
                 getApplicationInfo().dataDir,
                 "shared_prefs/" + getPackageName() + "_preferences.xml");
@@ -99,6 +112,11 @@ public class App extends Application {
             // Storage migration must never stop the app from starting.
         }
 
+        try {
+            com.waenhancer.config.NspPreferenceMigration.captureIfNeeded(this);
+        } catch (RuntimeException ignored) {
+        }
+
         int mode;
         try {
             mode = Integer.parseInt(sharedPreferences.getString("thememode", "0"));
@@ -116,6 +134,19 @@ public class App extends Application {
             } catch (RuntimeException ignored) {
             }
         });
+
+        // Hold a strong reference because SharedPreferences listeners are weakly referenced by the
+        // framework. Capture both stores after any change so the final NSP-removal release has a
+        // current migration snapshot even if the user upgrades without restarting the manager.
+        nspSnapshotListener = (prefs, key) -> executorService.execute(() -> {
+            try {
+                com.waenhancer.config.NspPreferenceMigration.captureIfNeeded(this);
+            } catch (RuntimeException ignored) {
+            }
+        });
+        sharedPreferences.registerOnSharedPreferenceChangeListener(nspSnapshotListener);
+        com.waenhancer.config.PreferenceStores.privateStore(this)
+                .registerOnSharedPreferenceChangeListener(nspSnapshotListener);
 
         final Thread.UncaughtExceptionHandler originalHandler =
                 Thread.getDefaultUncaughtExceptionHandler();
