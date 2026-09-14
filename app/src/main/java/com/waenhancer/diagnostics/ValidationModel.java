@@ -17,6 +17,7 @@ public final class ValidationModel {
         public boolean enabled = true;
         public boolean loaded;
         public boolean resolverPassed;
+        public boolean resolverFailed;
         public boolean installed;
         public boolean opportunity;
         public boolean triggered;
@@ -28,12 +29,16 @@ public final class ValidationModel {
         public FeatureState state() {
             if (!enabled) return FeatureState.DISABLED;
             if (error) return FeatureState.ERROR;
-            if (!loaded) return opportunity ? FeatureState.NOT_LOADED : FeatureState.NOT_EXERCISED;
-            if (!resolverPassed) return FeatureState.RESOLVER_FAILED;
+
+            // A callback can only execute if the class was loaded and a hook actually reached the
+            // host method. It is therefore stronger runtime evidence than the optional installation
+            // bookkeeping flags and must not be hidden behind a missing resolverPassed marker.
             if (triggered) return FeatureState.TRIGGERED;
+
+            if (!loaded) return opportunity ? FeatureState.NOT_LOADED : FeatureState.NOT_EXERCISED;
+            if (resolverFailed) return FeatureState.RESOLVER_FAILED;
             if (installed && opportunity) return FeatureState.INSTALLED; // installed, but apparently dead
-            if (installed) return FeatureState.NOT_EXERCISED;
-            return FeatureState.NOT_LOADED;
+            return FeatureState.NOT_EXERCISED;
         }
     }
 
@@ -44,13 +49,13 @@ public final class ValidationModel {
         boolean complete = sessionActive;
         for (FeatureEvidence feature : features) {
             if (!feature.enabled) continue;
-            errors |= feature.error || (feature.required && feature.loaded && !feature.resolverPassed);
+            errors |= feature.error || feature.resolverFailed;
             if (feature.required) {
-                // A real callback trigger already proves that an opportunity occurred. Requiring a
-                // separate coarse surface marker here made a session impossible to validate when the
-                // feature was correctly instrumented but the generic activity observer did not know
-                // about that WhatsApp surface.
-                complete &= feature.loaded && feature.installed && feature.triggered;
+                // A real callback trigger proves the feature was loaded, its resolver reached a
+                // hookable member and the installed hook executed. Requiring separate bookkeeping
+                // flags made validation impossible for the normal (non-lazy) loader even when the
+                // feature was visibly working on-device.
+                complete &= feature.triggered;
                 if (feature.manualRequired) complete &= feature.manualConfirmed;
             }
         }
