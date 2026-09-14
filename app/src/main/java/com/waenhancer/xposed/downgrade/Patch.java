@@ -11,14 +11,12 @@ import java.lang.reflect.Field;
 import java.util.Objects;
 
 import de.robv.android.xposed.XC_MethodHook;
-import android.content.SharedPreferences;
-import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public class Patch {
-    public static void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam, SharedPreferences prefs) throws Throwable {
+    public static void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
         if (!("android".equals(lpparam.packageName)) || !(lpparam.processName.equals("android")))
             return;
         XC_MethodHook hookDowngradeObject = new XC_MethodHook() {
@@ -69,7 +67,6 @@ public class Patch {
                             "com.android.server.pm.parsing.pkg.AndroidPackage",
                             "android.content.pm.PackageInfoLite");
                     if (checkDowngrade1 != null) {
-                        // 允许降级
                         XposedBridge.hookMethod(checkDowngrade1, hookDowngradeObject);
                     }
                     // exists on flyme 9(Android 11) only
