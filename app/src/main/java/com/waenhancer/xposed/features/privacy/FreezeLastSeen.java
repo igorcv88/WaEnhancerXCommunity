@@ -23,7 +23,15 @@ public class FreezeLastSeen extends Feature {
         if (freezeLastSeen || ghostmode) {
             var method = Unobfuscator.loadFreezeSeenMethod(classLoader);
             /* Log removed */
-            XposedBridge.hookMethod(method, XC_MethodReplacement.DO_NOTHING);
+            XposedBridge.hookMethod(method, new XC_MethodReplacement() {
+                @Override
+                protected Object replaceHookedMethod(MethodHookParam param) {
+                    diagnosticTriggered();
+                    // Same behavior as XC_MethodReplacement.DO_NOTHING, with the diagnostic
+                    // callback recorded before the original host method is suppressed.
+                    return null;
+                }
+            });
         }
     }
 

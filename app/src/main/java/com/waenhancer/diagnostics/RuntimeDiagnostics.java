@@ -9,6 +9,7 @@ import com.waenhancer.BuildConfig;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -28,10 +29,45 @@ public final class RuntimeDiagnostics {
 
     private static JSONObject snapshot = new JSONObject();
     private static volatile Context appContext;
+    private static volatile String initializedIdentity;
     private static boolean dirty;
     private static boolean writerScheduled;
 
     private RuntimeDiagnostics() {}
+
+    /**
+     * Initialize diagnostics once for the current host/module process.
+     *
+     * <p>Feature constructors are reached only after the host Application exists and the normal
+     * feature-loading path has initialized DexKit. Keeping the once-only guard here prevents every
+     * Feature constructor from resetting the authoritative probe fields back to non-definitive.</p>
+     *
+     * @return {@code true} only for the caller that initialized this process snapshot.
+     */
+    public static boolean initializeOnce(Context context) {
+        Context safeContext = safeContext(context);
+        if (safeContext == null) return false;
+        try {
+            String hostPackage = safeContext.getPackageName();
+            String hostVersion = safeContext.getPackageManager()
+                    .getPackageInfo(hostPackage, 0).versionName;
+            if (hostVersion == null) hostVersion = "unknown";
+            int xposedApi = de.robv.android.xposed.XposedBridge.getXposedVersion();
+            String identity = hostPackage + "|" + hostVersion + "|"
+                    + BuildConfig.VERSION_NAME + "|" + xposedApi;
+
+            synchronized (LOCK) {
+                if (identity.equals(initializedIdentity)) return false;
+                initializedIdentity = identity;
+                snapshot = new JSONObject();
+                dirty = false;
+            }
+            initialize(safeContext, hostPackage, hostVersion, xposedApi);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
 
     public static void initialize(Context context, String hostPackage, String hostVersion, int xposedApi) {
         Context safeContext = safeContext(context);
@@ -59,6 +95,23 @@ public final class RuntimeDiagnostics {
         recordProbe(appContext, core, required, optional, true);
     }
 
+    /** Record an unexpected failure of the authoritative probe instead of leaving a stale/blank snapshot. */
+    public static void probeFailure(Context context, Throwable error) {
+        String detail = "probe=" + safeError(error);
+        recordProbe(context, false, Collections.singletonList(detail), Collections.emptyList(), true);
+    }
+
+    private static String safeError(Throwable error) {
+        if (error == null) return "unknown";
+        String message = error.getMessage();
+        if (message == null || message.trim().isEmpty()) {
+            return error.getClass().getSimpleName();
+        }
+        message = message.replace('\n', ' ').replace('\r', ' ').trim();
+        if (message.length() > 180) message = message.substring(0, 180) + "…";
+        return error.getClass().getSimpleName() + ": " + message;
+    }
+
     private static void recordProbe(Context context, boolean core, List<String> required,
             List<String> optional, boolean definitive) {
         mutate(context, root -> root.put("corePassed", core)
@@ -76,18 +129,23 @@ public final class RuntimeDiagnostics {
             if (f == null) { f = new JSONObject(); features.put(name, f); }
             long now = System.currentTimeMillis();
             f.put(event, true).put(event + "At", now).put("updatedAt", now);
+            root.put("updatedAt", now);
             if (error != null) f.put("errorType", error.getClass().getSimpleName());
         }, false);
-        if (error != null || "triggered".equals(event)) {
-            requestPersist(context, HOT_PATH_WRITE_DELAY_MS);
-        }
+
+        // All feature evidence must eventually reach the companion. The scheduled writer coalesces
+        // the burst of constructor/installation events into one or two writes, while callbacks on
+        // hot paths still avoid synchronous Binder I/O.
+        requestPersist(context, HOT_PATH_WRITE_DELAY_MS);
     }
 
     public static void opportunity(Context context, String surface) {
         mutate(context, root -> {
             JSONObject o = root.optJSONObject("opportunities");
             if (o == null) { o = new JSONObject(); root.put("opportunities", o); }
-            o.put(surface, System.currentTimeMillis());
+            long now = System.currentTimeMillis();
+            o.put(surface, now);
+            root.put("updatedAt", now);
         }, false);
         requestPersist(context, HOT_PATH_WRITE_DELAY_MS);
     }

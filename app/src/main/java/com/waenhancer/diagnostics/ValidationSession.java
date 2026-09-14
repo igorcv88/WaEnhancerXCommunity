@@ -69,6 +69,7 @@ public final class ValidationSession {
             e.manualConfirmed = targetSession && manual(prefs, item.getKey());
             e.loaded = f != null && f.optBoolean("loaded");
             e.resolverPassed = f != null && f.optBoolean("resolverPassed");
+            e.resolverFailed = f != null && f.optBoolean("resolverFailed");
             e.installed = f != null && f.optBoolean("installed");
             e.triggered = f != null && f.optBoolean("triggered")
                     && ValidationModel.occurredDuringSession(f.optLong("triggeredAt", 0L), started);
@@ -104,6 +105,11 @@ public final class ValidationSession {
         out.append("Overall: ").append(label(state)).append('\n');
         out.append("Core probe: ").append(currentSnapshot ? (core ? "PASS" : "FAIL") : "NOT RUN").append('\n');
         if (currentSnapshot) {
+            long updatedAt = runtime.optLong("updatedAt", 0L);
+            if (updatedAt > 0L) {
+                long ageSeconds = Math.max(0L, (System.currentTimeMillis() - updatedAt) / 1000L);
+                out.append("Runtime snapshot age: ").append(ageSeconds).append("s\n");
+            }
             appendArray(out, "Required contract failures", runtime.optJSONArray("requiredFailures"));
             appendArray(out, "Optional contract failures", optional);
         } else {

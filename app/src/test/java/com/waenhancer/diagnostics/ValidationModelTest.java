@@ -24,6 +24,19 @@ public class ValidationModelTest {
         assertEquals(ValidationModel.FeatureState.NOT_EXERCISED, feature.state());
     }
 
+    @Test public void loadedWithoutExplicitResolverOutcomeIsNotAResolverFailure() {
+        ValidationModel.FeatureEvidence feature = new ValidationModel.FeatureEvidence();
+        feature.loaded = true;
+        assertEquals(ValidationModel.FeatureState.NOT_EXERCISED, feature.state());
+    }
+
+    @Test public void explicitResolverFailureIsReported() {
+        ValidationModel.FeatureEvidence feature = new ValidationModel.FeatureEvidence();
+        feature.loaded = true;
+        feature.resolverFailed = true;
+        assertEquals(ValidationModel.FeatureState.RESOLVER_FAILED, feature.state());
+    }
+
     @Test public void coreFailureAlwaysMeansIncompatible() {
         assertEquals(ValidationModel.Compatibility.INCOMPATIBLE,
                 ValidationModel.aggregate(false, false, true, true, List.of()));
@@ -53,6 +66,17 @@ public class ValidationModelTest {
         feature.required = true;
         feature.loaded = true; feature.resolverPassed = true; feature.installed = true;
         feature.triggered = true; feature.opportunity = false;
+        assertEquals(ValidationModel.Compatibility.VALIDATED,
+                ValidationModel.aggregate(true, false, false, true, List.of(feature)));
+    }
+
+    @Test public void triggeredCallbackProvesRuntimePathWithoutInstallBookkeeping() {
+        ValidationModel.FeatureEvidence feature = new ValidationModel.FeatureEvidence();
+        feature.required = true;
+        feature.manualRequired = true;
+        feature.manualConfirmed = true;
+        feature.triggered = true;
+        assertEquals(ValidationModel.FeatureState.TRIGGERED, feature.state());
         assertEquals(ValidationModel.Compatibility.VALIDATED,
                 ValidationModel.aggregate(true, false, false, true, List.of(feature)));
     }

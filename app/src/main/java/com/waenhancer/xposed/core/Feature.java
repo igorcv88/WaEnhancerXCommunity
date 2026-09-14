@@ -24,6 +24,21 @@ public abstract class Feature {
     public Feature(@NonNull ClassLoader classLoader, @NonNull SharedPreferences preferences) {
         this.classLoader = classLoader;
         this.prefs = preferences;
+
+        // The old diagnostics code had an initialize() method and a definitive HostCompatibility
+        // probe, but neither was ever invoked. Feature construction happens after FeatureLoader has
+        // initialized DexKit, so the first Feature is a safe one-shot point to bind the snapshot to
+        // the real host/module build and execute the authoritative semantic resolver probe.
+        boolean diagnosticsInitialized = com.waenhancer.diagnostics.RuntimeDiagnostics.initializeOnce(
+                FeatureLoader.mApp);
+        if (diagnosticsInitialized) {
+            try {
+                HostCompatibility.probe(classLoader);
+            } catch (Throwable t) {
+                com.waenhancer.diagnostics.RuntimeDiagnostics.probeFailure(FeatureLoader.mApp, t);
+            }
+        }
+
         com.waenhancer.diagnostics.RuntimeDiagnostics.feature(
                 FeatureLoader.mApp, getClass().getSimpleName(), "loaded", null);
     }
