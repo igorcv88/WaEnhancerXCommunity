@@ -5,7 +5,6 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 import android.content.SharedPreferences;
-import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 
 public abstract class Feature {
@@ -60,13 +59,12 @@ public abstract class Feature {
     }
 
     protected void reloadPrefs() {
-        if (prefs instanceof XSharedPreferences) {
-            ((XSharedPreferences) prefs).reload();
-        } else if (prefs.getClass().getName().contains("ProviderSharedPreferences")) {
-            try {
-                java.lang.reflect.Method reload = prefs.getClass().getMethod("reload");
-                reload.invoke(prefs);
-            } catch (Exception ignored) {}
+        try {
+            java.lang.reflect.Method reload = prefs.getClass().getMethod("reload");
+            reload.invoke(prefs);
+        } catch (NoSuchMethodException ignored) {
+            // Ordinary SharedPreferences are live in-process and do not need an explicit reload.
+        } catch (Throwable ignored) {
         }
     }
 
