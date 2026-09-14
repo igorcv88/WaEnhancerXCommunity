@@ -210,7 +210,7 @@ public class MenuHome extends Feature {
     }
 
     private void InsertFreezeLastSeenOption(Menu menu, Activity activity, boolean buttonAction) {
-        boolean freeze = prefs.getBoolean("freeze_last_seen_actual", false);
+        boolean freeze = prefs.getBoolean("freezelastseen", false);
         if (!prefs.getBoolean("show_freezeLastSeen", true) && !freeze) return;
         if (menu.findItem(MENU_ID_FREEZE) != null) return;
 
@@ -234,8 +234,8 @@ public class MenuHome extends Feature {
 
         final String finalTitleFreeze = title;
         itemMenu.setOnMenuItemClickListener(item -> {
-            boolean current = prefs.getBoolean("freeze_last_seen_actual", false);
-            showToggleDialog(activity, finalTitleFreeze, "freeze_last_seen_actual", current);
+            boolean current = prefs.getBoolean("freezelastseen", false);
+            showToggleDialog(activity, finalTitleFreeze, "freezelastseen", current);
             return true;
         });
     }
@@ -341,7 +341,7 @@ public class MenuHome extends Feature {
             .setMessage(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, R.string.restart_wpp, 
                 "It is necessary to restart WhatsApp for the changes in WaEnhancer X to take effect.\n\nDo you want to restart?"))
             .setPositiveButton(com.waenhancer.xposed.core.FeatureLoader.getModuleString(activity, android.R.string.ok, "OK"), (dialog, which) -> {
-                if ("ghostmode_actual".equals(key) || "dndmode_actual".equals(key) || "freeze_last_seen_actual".equals(key) || "hidereceipt".equals(key)) {
+                if ("ghostmode_actual".equals(key) || "dndmode_actual".equals(key) || "freezelastseen".equals(key) || "hidereceipt".equals(key)) {
                     if (prefs instanceof com.waenhancer.xposed.bridge.client.ProviderSharedPreferences) {
                         prefs.edit().putBoolean(key, !current).commit();
                     } else {
