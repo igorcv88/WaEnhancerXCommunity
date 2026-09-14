@@ -71,7 +71,7 @@ public final class NspPreferenceMigration {
                 if (digits.length() > 0) minVersion = Integer.parseInt(digits.toString());
             }
             return minVersion > 92;
-        } catch (PackageManager.NameNotFoundException | NumberFormatException | RuntimeException ignored) {
+        } catch (PackageManager.NameNotFoundException | RuntimeException ignored) {
             return false;
         }
     }
