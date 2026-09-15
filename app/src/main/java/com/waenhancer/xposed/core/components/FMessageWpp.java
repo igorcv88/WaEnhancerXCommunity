@@ -3,6 +3,7 @@ package com.waenhancer.xposed.core.components;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.waenhancer.xposed.compat.HostResolverCompat;
 import com.waenhancer.xposed.core.WppCore;
 import com.waenhancer.xposed.core.db.MessageStore;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
@@ -85,7 +86,7 @@ public class FMessageWpp {
         // method. Each dependent feature can then fail/report on its own resolver instead of
         // inheriting unrelated null state from an earlier optional miss.
         try {
-            messageMethod = Unobfuscator.loadNewMessageMethod(classLoader);
+            messageMethod = HostResolverCompat.loadNewMessageMethod(classLoader);
         } catch (Throwable t) {
             logOptionalResolverFailure("messageMethod", t);
         }
