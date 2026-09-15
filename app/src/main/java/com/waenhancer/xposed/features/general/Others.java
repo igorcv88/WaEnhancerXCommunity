@@ -21,6 +21,7 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 
+import com.waenhancer.xposed.compat.HostArgCompat;
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.WppCore;
 import com.waenhancer.xposed.core.components.FMessageWpp;
@@ -1572,65 +1573,51 @@ public class Others extends Feature {
     }
 
     private void hookProps() throws Exception {
-        var methodPropsBoolean = Unobfuscator.loadPropsBooleanMethod(classLoader);
+        Method methodPropsBoolean = Unobfuscator.loadPropsBooleanMethod(classLoader);
         var dataUsageActivityClass = WppCore.getDataUsageActivityClass(classLoader);
+        final int boolArgIdx = HostArgCompat.findPreferredIntParameterIndex(methodPropsBoolean.getParameterTypes());
 
-        // Pre-compute the argument index for the Integer prop key once, instead of
-        // reflectively scanning param.args on every call (called hundreds of times/sec).
-        final int boolArgIdx = findIntArgIndex(((Method) methodPropsBoolean).getParameterTypes());
+        if (boolArgIdx < 0) {
+            XposedBridge.log("[WAEX] hookProps boolean skipped: ambiguous/no int property key in "
+                    + Unobfuscator.getMethodDescriptor(methodPropsBoolean));
+        } else {
+            XposedBridge.hookMethod(methodPropsBoolean, new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                    Integer key = HostArgCompat.integerAt(param.args, boolArgIdx);
+                    if (key == null) return;
 
-        XposedBridge.hookMethod(methodPropsBoolean, new XC_MethodHook() {
-            @Override
-            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                int i;
-                if (boolArgIdx >= 0) {
-                    i = (int) param.args[boolArgIdx];
-                } else {
-                    var list = ReflectionUtils.findInstancesOfType(param.args, Integer.class);
-                    if (list.isEmpty()) return;
-                    i = (int) list.get(0).second;
-                }
-
-                var propValue = propsBoolean.get(i);
-                if (propValue != null) {
-                    // Fix Bug in Settings Data Usage
-                    if (i == 4023) {
-                        if (ReflectionUtils.isCalledFromClass(dataUsageActivityClass)) return;
+                    var propValue = propsBoolean.get(key);
+                    if (propValue != null) {
+                        // Fix Bug in Settings Data Usage
+                        if (key == 4023) {
+                            if (ReflectionUtils.isCalledFromClass(dataUsageActivityClass)) return;
+                        }
+                        param.setResult(propValue);
                     }
+                }
+            });
+        }
+
+        Method methodPropsInteger = Unobfuscator.loadPropsIntegerMethod(classLoader);
+        final int intArgIdx = HostArgCompat.findPreferredIntParameterIndex(methodPropsInteger.getParameterTypes());
+
+        if (intArgIdx < 0) {
+            XposedBridge.log("[WAEX] hookProps integer skipped: ambiguous/no int property key in "
+                    + Unobfuscator.getMethodDescriptor(methodPropsInteger));
+        } else {
+            XposedBridge.hookMethod(methodPropsInteger, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    Integer key = HostArgCompat.integerAt(param.args, intArgIdx);
+                    if (key == null) return;
+
+                    var propValue = propsInteger.get(key);
+                    if (propValue == null) return;
                     param.setResult(propValue);
                 }
-            }
-        });
-
-        var methodPropsInteger = Unobfuscator.loadPropsIntegerMethod(classLoader);
-        final int intArgIdx = findIntArgIndex(((Method) methodPropsInteger).getParameterTypes());
-
-        XposedBridge.hookMethod(methodPropsInteger, new XC_MethodHook() {
-            @Override
-            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                int i;
-                if (intArgIdx >= 0) {
-                    i = (int) param.args[intArgIdx];
-                } else {
-                    var list = ReflectionUtils.findInstancesOfType(param.args, Integer.class);
-                    if (list.isEmpty()) return;
-                    i = (int) list.get(0).second;
-                }
-                var propValue = propsInteger.get(i);
-                if (propValue == null) return;
-                param.setResult(propValue);
-            }
-        });
-    }
-
-    /** Finds the first Integer/int parameter index in the method signature. */
-    private static int findIntArgIndex(Class<?>[] paramTypes) {
-        for (int idx = 0; idx < paramTypes.length; idx++) {
-            if (paramTypes[idx] == int.class || paramTypes[idx] == Integer.class) {
-                return idx;
-            }
+            });
         }
-        return -1;
     }
 
     private void hookSearchbar(String filterChats) throws Exception {
