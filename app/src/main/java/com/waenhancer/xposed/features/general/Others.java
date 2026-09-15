@@ -1400,7 +1400,6 @@ public class Others extends Feature {
                 }
                 var mediaType = results.get(0);
                 var audioType = results.get(1);
-                if (mediaType.second != 2 && mediaType.second != 9) return;
                 int effectiveAudioType = audio_type == 2 ? 1 : audio_type;
                 param.args[audioType.first] = effectiveAudioType - 1;
             }
