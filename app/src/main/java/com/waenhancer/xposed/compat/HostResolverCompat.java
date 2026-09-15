@@ -38,7 +38,7 @@ public final class HostResolverCompat {
         try {
             return Unobfuscator.loadNewMessageMethod(loader);
         } catch (Throwable ignored) {
-            // Continue with the structural fallback below.
+            // Continue with the semantic fallback below.
         }
 
         var dexkit = Unobfuscator.getDexKit();
@@ -82,7 +82,6 @@ public final class HostResolverCompat {
                 if (candidate.getParamCount() != 0) continue;
                 if (candidate.getReturnType() == null
                         || !String.class.getName().equals(candidate.getReturnType().getName())) continue;
-                if ("toString".equals(candidate.getName())) continue;
 
                 Method method;
                 try {
@@ -90,15 +89,15 @@ public final class HostResolverCompat {
                 } catch (Throwable ignored) {
                     continue;
                 }
-                if (Modifier.isStatic(method.getModifiers())) continue;
+                if (Modifier.isStatic(method.getModifiers()) || "toString".equals(method.getName())) continue;
 
                 int score = 0;
                 for (UsingFieldData usingField : candidate.getUsingFields()) {
                     var field = usingField.getField();
-                    if (!fMessageName.equals(field.getDeclaredClass().getName())) continue;
+                    if (!fMessageName.equals(field.getClassName())) continue;
                     String typeName = field.getType().getName();
                     if (String.class.getName().equals(typeName)) score += 2;
-                    if (byte[].class.getName().equals(typeName)) score += 3;
+                    if (byte[].class.getName().equals(typeName) || "byte[]".equals(typeName)) score += 3;
                 }
 
                 if (score > bestScore) {
