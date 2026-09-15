@@ -215,11 +215,9 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
     public void initZygote(StartupParam startupParam) throws Throwable {
         MODULE_PATH = startupParam.modulePath;
 
-        // Write a system property that persists until reboot.
-        // Reading debug.* properties requires NO permission from any app,
-        // so WaEnhancer can detect LSPosed even when it's not in module scope.
-        // Writing debug.* properties IS allowed from the zygote/root context
-        // that initZygote runs under.
+        // This property is an optional convenience marker only. Some modern LSPosed/Android
+        // combinations reject SystemProperties.set() from this callback even though the module is
+        // already injected and fully functional. Never report that as a runtime module failure.
         try {
             Class<?> sysProp = Class.forName("android.os.SystemProperties");
             java.lang.reflect.Method set = sysProp.getMethod("set", String.class, String.class);
@@ -227,12 +225,15 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
             try {
                 int apiVersion = de.robv.android.xposed.XposedBridge.getXposedVersion();
                 set.invoke(null, "debug.waenhancer.lsposed.api", String.valueOf(apiVersion));
-                /* Log removed */
             } catch (Throwable t2) {
-                XposedBridge.log("[WAEX] LSPosed marker written: debug.waenhancer.lsposed=1 (Failed to write API version: " + t2.getMessage() + ")");
+                if (Utils.DEBUG) {
+                    XposedBridge.log("[WAEX] Optional LSPosed API marker unavailable: " + t2);
+                }
             }
         } catch (Throwable t) {
-            XposedBridge.log("[WAEX] Failed to write LSPosed marker: " + t.getMessage());
+            if (Utils.DEBUG) {
+                XposedBridge.log("[WAEX] Optional LSPosed marker unavailable: " + t);
+            }
         }
     }
 
