@@ -6,7 +6,7 @@
   <img alt="Status: Beta" src="https://img.shields.io/badge/status-beta-22c55e" />
   <img alt="Android 9+" src="https://img.shields.io/badge/Android-9%2B-3DDC84?logo=android&amp;logoColor=white" />
   <img alt="LSPosed API 82" src="https://img.shields.io/badge/LSPosed-API%2082-6C63FF" />
-  <a href="https://github.com/igorcv88/WaEnhancerXCommunity/actions/workflows/ci.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/igorcv88/WaEnhancerXCommunity/ci.yml?branch=master&amp;label=build" /></a>
+  <a href="https://github.com/igorcv88/WaEnhancerXCommunity/actions/workflows/build-apk-release.yml"><img alt="Build APK Release" src="https://img.shields.io/github/actions/workflow/status/igorcv88/WaEnhancerXCommunity/build-apk-release.yml?branch=master&amp;label=release%20build" /></a>
   <a href="https://github.com/igorcv88/WaEnhancerXCommunity/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/igorcv88/WaEnhancerXCommunity?label=release" /></a>
   <a href="https://github.com/igorcv88/WaEnhancerXCommunity/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/igorcv88/WaEnhancerXCommunity/total" /></a>
   <a href="https://github.com/igorcv88/WaEnhancerXCommunity/stargazers"><img alt="Stars" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Frepos%2Figorcv88%2FWaEnhancerXCommunity&amp;query=%24.stargazers_count&amp;label=stars&amp;logo=github&amp;labelColor=555&amp;color=2f81f7&amp;style=flat" /></a>
