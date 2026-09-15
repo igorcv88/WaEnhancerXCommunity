@@ -52,6 +52,49 @@ public final class HostArgCompat {
     }
 
     /**
+     * Returns an Integer only when the requested runtime slot is actually populated by one.
+     * This is deliberately stricter than {@link #numberAt(Object[], int)} for host methods whose
+     * semantic key is declared as {@code int}/{@code Integer}; a null boxed argument must fail
+     * open instead of being auto-unboxed by a hook callback.
+     */
+    public static Integer integerAt(Object[] args, int index) {
+        if (args == null || index < 0 || index >= args.length) return null;
+        Object value = args[index];
+        return value instanceof Integer ? (Integer) value : null;
+    }
+
+    /**
+     * Finds an unambiguous property-key-like integer slot in a host method signature.
+     *
+     * <p>Primitive {@code int} is preferred because it cannot be null at the Java call boundary.
+     * This matters for current WhatsApp property accessors such as
+     * {@code (..., Integer optionalValue, int fieldId)}: choosing the first int-like parameter
+     * selects the nullable boxed value and can cause an {@code Integer.intValue()} NPE on every
+     * invocation. If there is no primitive int, a single boxed {@code Integer} is accepted as a
+     * compatibility fallback. Ambiguous signatures return {@code -1} so callers can skip the hook
+     * rather than guess a semantic argument.</p>
+     */
+    public static int findPreferredIntParameterIndex(Class<?>[] parameterTypes) {
+        if (parameterTypes == null) return -1;
+
+        int primitiveIndex = -1;
+        for (int i = 0; i < parameterTypes.length; i++) {
+            if (parameterTypes[i] != int.class) continue;
+            if (primitiveIndex >= 0) return -1;
+            primitiveIndex = i;
+        }
+        if (primitiveIndex >= 0) return primitiveIndex;
+
+        int boxedIndex = -1;
+        for (int i = 0; i < parameterTypes.length; i++) {
+            if (parameterTypes[i] != Integer.class) continue;
+            if (boxedIndex >= 0) return -1;
+            boxedIndex = i;
+        }
+        return boxedIndex;
+    }
+
+    /**
      * Returns the {@code ordinal}-th argument assignable to {@code requestedType}, or the last
      * matching argument when {@code ordinal} is {@code -1}. Primitive types are matched against
      * their boxed counterparts, so {@code getArg(args, int.class, 0)} finds an {@code Integer}.
