@@ -265,6 +265,29 @@ jobs:
           cp "$SOURCE_APK" "$APK_PATH"
           echo "path=$APK_PATH" >> "$GITHUB_OUTPUT"
 
+      - name: Locate and name R8 mapping
+        id: mapping
+        shell: bash
+        env:
+          VERSION_NAME: ${{ steps.metadata.outputs.version_name }}
+        run: |
+          set -euo pipefail
+
+          SOURCE_MAPPING="$(find app/build/outputs/mapping -type f -name 'mapping.txt' -print -quit)"
+          test -n "$SOURCE_MAPPING" && test -s "$SOURCE_MAPPING" || {
+            echo "R8 mapping.txt was not produced for the minified release" >&2
+            exit 1
+          }
+
+          MAPPING_PATH="release/WaEnhancerCommunity-v${VERSION_NAME}-mapping.txt"
+          cp "$SOURCE_MAPPING" "$MAPPING_PATH"
+          echo "path=$MAPPING_PATH" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### R8 retrace"
+            echo "- Mapping: \`$(basename "$MAPPING_PATH")\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Verify signature, identity, version, and checksum
         id: verify
         shell: bash
@@ -362,6 +385,7 @@ jobs:
           RELEASE_TITLE: ${{ steps.metadata.outputs.release_title }}
           APK_PATH: ${{ steps.apk.outputs.path }}
           CHECKSUM_PATH: ${{ steps.verify.outputs.checksum_path }}
+          MAPPING_PATH: ${{ steps.mapping.outputs.path }}
           NOTES_PATH: ${{ steps.notes.outputs.path }}
           CHANNEL: ${{ steps.metadata.outputs.channel }}
           PRERELEASE: ${{ steps.metadata.outputs.prerelease }}
@@ -372,6 +396,7 @@ jobs:
             release create "$TAG_NAME"
             "$APK_PATH"
             "$CHECKSUM_PATH"
+            "$MAPPING_PATH"
             --target "$GITHUB_SHA"
             --title "$RELEASE_TITLE"
             --notes-file "$NOTES_PATH"

@@ -26,6 +26,7 @@ public class HostArgCompatTest {
         assertEquals(-1, HostArgCompat.findIndexOfType(args, int.class));
         assertNull(HostArgCompat.numberAt(args, 0));
         assertNull(HostArgCompat.numberAt(args, 5));
+        assertNull(HostArgCompat.integerAt(args, 0));
         assertFalse(HostArgCompat.isInstance(int.class, null));
     }
 
@@ -77,5 +78,35 @@ public class HostArgCompatTest {
         assertEquals(2, HostArgCompat.findIndexOfType(reordered, int.class));
         assertNull(HostArgCompat.numberAt(reordered, 1));
         assertEquals(4, HostArgCompat.numberAt(reordered, 2).intValue());
+    }
+
+    /** Regression for X.00D.A01(X.00F, X.00D, Integer, int) on WhatsApp 2.26.33.76. */
+    @Test
+    public void propertyKeyPrefersPrimitiveIntOverNullableInteger() {
+        Class<?>[] signature = {Object.class, Object.class, Integer.class, int.class};
+        Object[] args = {new Object(), new Object(), null, Integer.valueOf(8135)};
+
+        int index = HostArgCompat.findPreferredIntParameterIndex(signature);
+
+        assertEquals(3, index);
+        assertEquals(Integer.valueOf(8135), HostArgCompat.integerAt(args, index));
+        assertNull(HostArgCompat.integerAt(args, 2));
+    }
+
+    @Test
+    public void preferredIntParameterFallsBackToSingleBoxedInteger() {
+        Class<?>[] signature = {Object.class, Integer.class};
+
+        assertEquals(1, HostArgCompat.findPreferredIntParameterIndex(signature));
+        assertEquals(Integer.valueOf(7), HostArgCompat.integerAt(new Object[]{"x", 7}, 1));
+    }
+
+    @Test
+    public void preferredIntParameterRejectsAmbiguousSignatures() {
+        assertEquals(-1, HostArgCompat.findPreferredIntParameterIndex(
+                new Class<?>[]{int.class, Object.class, int.class}));
+        assertEquals(-1, HostArgCompat.findPreferredIntParameterIndex(
+                new Class<?>[]{Integer.class, Object.class, Integer.class}));
+        assertEquals(-1, HostArgCompat.findPreferredIntParameterIndex(null));
     }
 }
