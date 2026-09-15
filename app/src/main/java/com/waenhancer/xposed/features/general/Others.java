@@ -368,12 +368,12 @@ public class Others extends Feature {
 
         callInfo();
 
-        XposedBridge.log("[WAEX] Unconditional disablePhotoProfileStatus check starting...");
-        try {
-            disablePhotoProfileStatus();
-            XposedBridge.log("[WAEX] disablePhotoProfileStatus hook applied successfully!");
-        } catch (Throwable t) {
-            XposedBridge.log("[WAEX] disablePhotoProfileStatus error: " + t.toString());
+        if (disableProfileStatus) {
+            try {
+                disablePhotoProfileStatus();
+            } catch (Throwable t) {
+                XposedBridge.log("[WAEX] disablePhotoProfileStatus error: " + t);
+            }
         }
 
         if (disableExpiration) {
@@ -456,7 +456,6 @@ public class Others extends Feature {
         XposedBridge.hookAllConstructors(filterView, new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                // Only hide during HomeActivity — other activities may share this view class
                 View view = (View) param.thisObject;
                 Activity current = Utils.getActivityFromView(view);
                 if (current == null) {
@@ -550,7 +549,7 @@ public class Others extends Feature {
         } catch (Throwable t) {
             // Ignore log spam
         }
-        return true; // Fallback to hiding during initial layout / early inflation
+        return true;
     }
 
     private static final Set<String> hookedPageChangeListeners = new HashSet<>();
@@ -564,7 +563,6 @@ public class Others extends Feature {
             hookedPageChangeListeners.add(className);
         }
 
-        // Find all void(int) methods declared in the listener interface (obfuscated or not) and hook them
         for (Method m : listenerInterface.getDeclaredMethods()) {
             if (m.getParameterTypes().length == 1 && m.getParameterTypes()[0] == int.class && m.getReturnType() == void.class) {
                 final String methodName = m.getName();
@@ -608,7 +606,6 @@ public class Others extends Feature {
                 return;
             }
 
-            // Programmatically find the listener interface from setOnPageChangeListener signature
             Class<?> listenerInterface = null;
             for (Method m : vpSuper.getDeclaredMethods()) {
                 if (m.getName().equals("setOnPageChangeListener") && m.getParameterTypes().length == 1) {
@@ -632,7 +629,6 @@ public class Others extends Feature {
 
             final Class<?> finalInterface = listenerInterface;
 
-            // Find all methods on ViewPager that accept finalInterface as a single parameter and hook them
             for (Method m : vpSuper.getDeclaredMethods()) {
                 if (m.getParameterTypes().length == 1 && m.getParameterTypes()[0] == finalInterface) {
                     final String mName = m.getName();
@@ -651,7 +647,6 @@ public class Others extends Feature {
                 }
             }
 
-            // Also check standard public methods from superclasses
             for (Method m : vpSuper.getMethods()) {
                 if (m.getParameterTypes().length == 1 && m.getParameterTypes()[0] == finalInterface) {
                     final String mName = m.getName();
@@ -678,14 +673,12 @@ public class Others extends Feature {
         final int fabId = Utils.getID("fab_second", "id");
 
         if (fabId > 0) {
-            // Hook ViewPager early to intercept its listeners as they are being set on startup
             try {
                 Class<?> vpClass = XposedHelpers.findClass("androidx.viewpager.widget.ViewPager", classLoader);
                 setupViewPagerHooks(vpClass, fabId);
             } catch (Throwable t) {
             }
 
-            // Dynamic interceptor to force GONE on any post-layout visibility updates by WhatsApp
             final XC_MethodHook visibilityHook = new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
@@ -698,10 +691,8 @@ public class Others extends Feature {
                 }
             };
 
-            // Hook setVisibility on ImageView.class to narrow down hook scope significantly (since FAB is an ImageView)
             XposedHelpers.findAndHookMethod(ImageView.class, "setVisibility", int.class, visibilityHook);
 
-            // Hook 1: Catch the view immediately when it attaches to the window hierarchy
             XposedHelpers.findAndHookMethod(ImageView.class, "onAttachedToWindow", new XC_MethodHook() {
                 private final Set<Class<?>> hookedClasses = new HashSet<>();
 
@@ -711,7 +702,6 @@ public class Others extends Feature {
                     if (view.getId() == fabId) {
                         boolean hideFab = isNotUpdatesTabActive(view);
 
-                        // Dynamically traverse up the hierarchy to hook setVisibility overrides (always do this for fab_second)
                         Class<?> clazz = view.getClass();
                         while (clazz != null && clazz != ImageView.class && clazz != View.class) {
                             boolean alreadyHooked;
@@ -720,16 +710,12 @@ public class Others extends Feature {
                             }
                             if (!alreadyHooked) {
                                 try {
-                                    // Check if this class overrides setVisibility
                                     clazz.getDeclaredMethod("setVisibility", int.class);
-
-                                    // Hook it
                                     XposedHelpers.findAndHookMethod(clazz, "setVisibility", int.class, visibilityHook);
                                     synchronized (hookedClasses) {
                                         hookedClasses.add(clazz);
                                     }
                                 } catch (NoSuchMethodException ignored) {
-                                    // Walk up
                                 } catch (Throwable t) {
                                 }
                             }
@@ -764,12 +750,6 @@ public class Others extends Feature {
         }
     }
 
-    /**
-     * Filters layout elements by their resource ID by hooking
-     * View.invalidate(boolean). This replicates the dev4mod behavior of
-     * dynamically forcing visibility to GONE on any invalidated view whose ID
-     * is listed in the filter config.
-     */
     private void filterItems(String filterItems) {
         String currentPkg = null;
         if (FeatureLoader.mApp != null) {
@@ -805,7 +785,6 @@ public class Others extends Feature {
                 XposedBridge.log("[WAEX] Failed to parse JSON filter_items: " + e.toString());
             }
         } else {
-            // Fallback to old format
             var items = filterItems.split("\n");
             for (String item : items) {
                 String idStr = item.trim();
@@ -819,7 +798,6 @@ public class Others extends Feature {
             return;
         }
 
-        // Build a map of layout ids to FilterItem config
         var targetMap = new HashMap<Integer, FilterItem>();
         for (var item : itemsList) {
             var id = Utils.getID(item.id, "id");
@@ -875,53 +853,29 @@ public class Others extends Feature {
     }
 
     private void disablePhotoProfileStatus() throws Exception {
-        Class<?> refreshStatusClass;
-        try {
-            refreshStatusClass = Unobfuscator.loadRefreshStatusClass(classLoader);
-        } catch (Exception e) {
-            XposedBridge.log("[WAEX] disablePhotoProfileStatus: RefreshStatus class not found, skipping: " + e.toString());
-            return;
+        var photoProfileClass = Unobfuscator.findFirstClassUsingName(
+                classLoader, StringMatchType.EndsWith, ".WDSProfilePhoto");
+        if (photoProfileClass == null) {
+            throw new ClassNotFoundException("WDSProfilePhoto not found");
         }
-        var photoProfileClass = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, ".WDSProfilePhoto");
-        XposedBridge.log("[WAEX] disablePhotoProfileStatus: refreshStatusClass=" + refreshStatusClass.getName());
-        XposedBridge.log("[WAEX] disablePhotoProfileStatus: photoProfileClass=" + (photoProfileClass != null ? photoProfileClass.getName() : "null"));
-        var convClass = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, ".ConversationsFragment");
-        XposedBridge.log("[WAEX] disablePhotoProfileStatus: convClass=" + (convClass != null ? convClass.getName() : "null"));
-        var jidClass = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "jid.Jid");
-        XposedBridge.log("[WAEX] disablePhotoProfileStatus: jidClass=" + (jidClass != null ? jidClass.getName() : "null"));
-        var method = ReflectionUtils.findMethodUsingFilter(convClass, m -> m.getParameterCount() > 0 && !Modifier.isStatic(m.getModifiers()) && m.getParameterTypes()[0] == View.class && ReflectionUtils.findIndexOfType(m.getParameterTypes(), jidClass) != -1);
-        XposedBridge.log("[WAEX] disablePhotoProfileStatus: method=" + (method != null ? method.getName() : "null"));
-        var field = ReflectionUtils.getFieldByExtendType(convClass, refreshStatusClass);
-        XposedBridge.log("[WAEX] disablePhotoProfileStatus: field=" + (field != null ? field.getName() : "null"));
-        if (field == null) {
-            XposedBridge.log("[WAEX] disablePhotoProfileStatus: field is null, dumping all fields of convClass:");
-            for (java.lang.reflect.Field f : convClass.getDeclaredFields()) {
-                XposedBridge.log("[WAEX] convClass field: " + f.getName() + " of type " + f.getType().getName());
-            }
-            XposedBridge.log("[WAEX] disablePhotoProfileStatus: field is null, returning early!");
-            return;
-        }
-        XposedBridge.hookMethod(method, new XC_MethodHook() {
-            private Object backup;
 
+        // In WhatsApp 2.26.33 the old X.3jQ status manager is no longer stored directly on
+        // ConversationsFragment; it is reached through a provider/delegate. Temporarily nulling
+        // that nested manager would make the host dereference null. Enforce the user-facing
+        // contract at the stable WDSProfilePhoto boundary instead.
+        XposedBridge.hookAllMethods(photoProfileClass, "setStatusIndicatorEnabled", new XC_MethodHook() {
             @Override
-            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                this.backup = field.get(param.thisObject);
-                field.set(param.thisObject, null);
-            }
-
-            @Override
-            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                field.set(param.thisObject, this.backup);
+            protected void beforeHookedMethod(MethodHookParam param) {
+                if (param.args != null && param.args.length > 0) {
+                    param.args[0] = false;
+                }
             }
         });
 
-        XposedBridge.hookAllMethods(photoProfileClass, "setStatusIndicatorEnabled", new XC_MethodHook() {
+        XposedBridge.hookAllMethods(photoProfileClass, "getStatusIndicatorEnabled", new XC_MethodHook() {
             @Override
-            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                if ((boolean) param.args[0]) {
-                    param.setResult(null);
-                }
+            protected void afterHookedMethod(MethodHookParam param) {
+                param.setResult(false);
             }
         });
     }
@@ -1144,10 +1098,8 @@ public class Others extends Feature {
                 }
 
                 XposedHelpers.setAdditionalInstanceField(dateTextView, "wae_device_source_message_id", messageId);
-                // Tag the view for fast identification in the global setText hook
                 dateTextView.setTag(com.waenhancer.R.id.wae_device_source_tag, Boolean.TRUE);
 
-                // Offload database lookup to a background thread
                 CompletableFuture.supplyAsync(() -> {
                     return resolveMessageDeviceId(messageId, fMessage);
                 }).thenAcceptAsync(resolvedDeviceId -> {
@@ -1160,11 +1112,10 @@ public class Others extends Feature {
                     XposedHelpers.setAdditionalInstanceField(dateTextView, DEVICE_SOURCE_SUFFIX_FIELD, suffix);
 
                     bindMessageDeviceSource(dateTextView, resolvedDeviceId);
-                    // Optimized view update: only recurse if absolutely necessary
                     if (!suffix.isEmpty()) {
                         applyDeviceSourceToMatchingTextViews(viewGroup, dateTextView, suffix);
                     }
-                }, executor); // Use a shared executor for UI updates
+                }, executor);
             }
         });
     }
@@ -1305,7 +1256,6 @@ public class Others extends Feature {
                 if (!(param.thisObject instanceof TextView textView)) {
                     return;
                 }
-                // Fast tag check - only tagged views can carry a suffix
                 if (textView.getTag(com.waenhancer.R.id.wae_device_source_tag) == null) {
                     return;
                 }
@@ -1450,10 +1400,9 @@ public class Others extends Feature {
                 }
                 var mediaType = results.get(0);
                 var audioType = results.get(1);
-                // The former value 2 depended on a closed external transcoder. Degrade it
-                // to ordinary audio instead of mislabelling an incompatible file as Opus.
+                if (mediaType.second != 2 && mediaType.second != 9) return;
                 int effectiveAudioType = audio_type == 2 ? 1 : audio_type;
-                param.args[audioType.first] = effectiveAudioType - 1; // 1 = voice notes || 0 = audio voice
+                param.args[audioType.first] = effectiveAudioType - 1;
             }
         });
 
@@ -1589,7 +1538,6 @@ public class Others extends Feature {
 
                     var propValue = propsBoolean.get(key);
                     if (propValue != null) {
-                        // Fix Bug in Settings Data Usage
                         if (key == 4023) {
                             if (ReflectionUtils.isCalledFromClass(dataUsageActivityClass)) return;
                         }
@@ -1707,7 +1655,7 @@ public class Others extends Feature {
         try {
             boolean isDark = (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
                     == Configuration.UI_MODE_NIGHT_YES;
-            int textColor = isDark ? 0xFFE9EDEF : 0xFF111B21; // WhatsApp light text vs dark text
+            int textColor = isDark ? 0xFFE9EDEF : 0xFF111B21;
 
             AlertDialogWpp dialog = new AlertDialogWpp(context);
             dialog.setTitle("Select Text");
@@ -1719,9 +1667,8 @@ public class Others extends Feature {
             contentTextView.setTextIsSelectable(true);
             contentTextView.setFocusable(true);
             contentTextView.setFocusableInTouchMode(true);
-            contentTextView.setHighlightColor(0x4D00A884); // Semi-transparent WhatsApp Green
+            contentTextView.setHighlightColor(0x4D00A884);
 
-            // Add vertical padding inside the bottom sheet
             int verticalPadding = (int) (8 * context.getResources().getDisplayMetrics().density);
             contentTextView.setPadding(0, verticalPadding, 0, verticalPadding);
 
