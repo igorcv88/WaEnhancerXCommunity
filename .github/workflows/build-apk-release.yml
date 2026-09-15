@@ -1,0 +1,402 @@
+name: Build APK Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Release channel"
+        required: true
+        default: beta
+        type: choice
+        options:
+          - beta
+          - stable
+
+concurrency:
+  group: waenhancer-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_SERIES: "0.0"
+
+jobs:
+  release:
+    name: Test, build, verify, and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out selected commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Ensure release comes from master
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
+            echo "::error::Run Build APK Release from the master branch."
+            exit 1
+          fi
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+
+      - name: Validate release-note generator
+        run: python3 -m py_compile .github/scripts/build_release_notes.py
+
+      - name: Resolve next version automatically
+        id: metadata
+        shell: bash
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin
+
+          BASE_VERSION_CODE="$(sed -n 's/^VERSION_CODE=//p' gradle.properties | tr -d '\r' | tail -n 1)"
+          [[ "$BASE_VERSION_CODE" =~ ^[0-9]+$ ]] || {
+            echo "VERSION_CODE in gradle.properties must be numeric" >&2
+            exit 1
+          }
+
+          SERIES_PATTERN="${RELEASE_SERIES//./\.}"
+          STABLE_PATCH=0
+          BETA_PATCH=0
+          BETA_SEQUENCE=0
+
+          while IFS= read -r tag; do
+            if [[ "$tag" =~ ^v${SERIES_PATTERN}\.([0-9]+)$ ]]; then
+              patch=$((10#${BASH_REMATCH[1]}))
+              (( patch > STABLE_PATCH )) && STABLE_PATCH=$patch
+            elif [[ "$tag" =~ ^v${SERIES_PATTERN}\.([0-9]+)-beta-([0-9]+)$ ]]; then
+              patch=$((10#${BASH_REMATCH[1]}))
+              sequence=$((10#${BASH_REMATCH[2]}))
+              if (( patch > BETA_PATCH )); then
+                BETA_PATCH=$patch
+                BETA_SEQUENCE=$sequence
+              elif (( patch == BETA_PATCH && sequence > BETA_SEQUENCE )); then
+                BETA_SEQUENCE=$sequence
+              fi
+            fi
+          done < <(git tag --list "v${RELEASE_SERIES}.*")
+
+          PREVIOUS_TAG=""
+          case "$CHANNEL" in
+            beta)
+              if (( BETA_PATCH > STABLE_PATCH )); then
+                PATCH=$BETA_PATCH
+                PREVIOUS_TAG="v${RELEASE_SERIES}.${PATCH}-beta-${BETA_SEQUENCE}"
+                BETA_SEQUENCE=$((BETA_SEQUENCE + 1))
+              else
+                PATCH=$((STABLE_PATCH + 1))
+                BETA_SEQUENCE=1
+                if (( STABLE_PATCH > 0 )); then
+                  PREVIOUS_TAG="v${RELEASE_SERIES}.${STABLE_PATCH}"
+                fi
+              fi
+              if (( BETA_SEQUENCE > 998 )); then
+                echo "Beta sequence exhausted for ${RELEASE_SERIES}.${PATCH}; publish stable first" >&2
+                exit 1
+              fi
+              VERSION_NAME="${RELEASE_SERIES}.${PATCH}-beta-${BETA_SEQUENCE}"
+              TAG_NAME="v${VERSION_NAME}"
+              RELEASE_TITLE="WaEnhancer Community ${VERSION_NAME} Beta"
+              PRERELEASE=true
+              CHANNEL_CODE=$BETA_SEQUENCE
+              ;;
+            stable)
+              if (( BETA_PATCH > STABLE_PATCH )); then
+                PATCH=$BETA_PATCH
+              else
+                PATCH=$((STABLE_PATCH + 1))
+              fi
+              if (( STABLE_PATCH > 0 )); then
+                PREVIOUS_TAG="v${RELEASE_SERIES}.${STABLE_PATCH}"
+              fi
+              VERSION_NAME="${RELEASE_SERIES}.${PATCH}"
+              TAG_NAME="v${VERSION_NAME}"
+              RELEASE_TITLE="WaEnhancer Community ${VERSION_NAME}"
+              PRERELEASE=false
+              CHANNEL_CODE=999
+              ;;
+            *)
+              echo "Unsupported release channel: $CHANNEL" >&2
+              exit 1
+              ;;
+          esac
+
+          VERSION_CODE=$((10#$BASE_VERSION_CODE + PATCH * 1000 + CHANNEL_CODE))
+          if (( VERSION_CODE > 2100000000 )); then
+            echo "Generated VERSION_CODE exceeds Android's supported range: ${VERSION_CODE}" >&2
+            exit 1
+          fi
+
+          if git rev-parse -q --verify "refs/tags/${TAG_NAME}" >/dev/null; then
+            echo "Generated tag already exists: ${TAG_NAME}" >&2
+            exit 1
+          fi
+          if [[ -n "$PREVIOUS_TAG" ]] && ! git rev-parse -q --verify "refs/tags/${PREVIOUS_TAG}" >/dev/null; then
+            echo "Resolved previous release tag does not exist: ${PREVIOUS_TAG}" >&2
+            exit 1
+          fi
+
+          {
+            echo "version_name=$VERSION_NAME"
+            echo "version_code=$VERSION_CODE"
+            echo "tag_name=$TAG_NAME"
+            echo "release_title=$RELEASE_TITLE"
+            echo "channel=$CHANNEL"
+            echo "prerelease=$PRERELEASE"
+            echo "previous_tag=$PREVIOUS_TAG"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Release metadata"
+            echo "- Version: \`${VERSION_NAME}\`"
+            echo "- Android versionCode: \`${VERSION_CODE}\`"
+            echo "- Channel: \`${CHANNEL}\`"
+            echo "- Tag: \`${TAG_NAME}\`"
+            if [[ -n "$PREVIOUS_TAG" ]]; then
+              echo "- Changelog base: \`${PREVIOUS_TAG}\`"
+            else
+              echo "- Changelog base: initial release"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Decode and inspect signing key
+        id: signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Required secret ${name} is missing" >&2
+              exit 1
+            fi
+          done
+
+          KEYSTORE_PATH="$RUNNER_TEMP/waenhancer-community-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+
+          keytool -list \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" >/dev/null
+
+          EXPECTED_CERT_SHA256="$(keytool -list -v \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" \
+            | awk -F': ' '/SHA256:/{print $2; exit}' \
+            | tr -d ':' \
+            | tr '[:upper:]' '[:lower:]')"
+
+          test -n "$EXPECTED_CERT_SHA256" || {
+            echo "Could not read signing certificate SHA-256" >&2
+            exit 1
+          }
+
+          echo "keystore_path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
+          echo "expected_cert_sha256=$EXPECTED_CERT_SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Run unit tests and build signed release APK
+        shell: bash
+        env:
+          VERSION_NAME: ${{ steps.metadata.outputs.version_name }}
+          VERSION_CODE: ${{ steps.metadata.outputs.version_code }}
+          KEYSTORE_PATH: ${{ steps.signing.outputs.keystore_path }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew clean \
+            :app:testWhatsappDebugUnitTest \
+            :app:assembleWhatsappRelease \
+            -PVERSION_NAME="$VERSION_NAME" \
+            -PVERSION_CODE="$VERSION_CODE" \
+            -PandroidStoreFile="$KEYSTORE_PATH" \
+            -PandroidStorePassword="$KEYSTORE_PASSWORD" \
+            -PandroidKeyAlias="$KEY_ALIAS" \
+            -PandroidKeyPassword="$KEY_PASSWORD"
+
+      - name: Locate release APK and R8 mapping
+        id: artifacts
+        shell: bash
+        env:
+          VERSION_NAME: ${{ steps.metadata.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          SOURCE_APK="$(find app/build/outputs/apk/whatsapp/release -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          SOURCE_MAPPING="$(find app/build/outputs/mapping -type f -name 'mapping.txt' -print -quit)"
+
+          test -n "$SOURCE_APK" && test -s "$SOURCE_APK" || {
+            echo "Release APK was not produced" >&2
+            exit 1
+          }
+          test -n "$SOURCE_MAPPING" && test -s "$SOURCE_MAPPING" || {
+            echo "R8 mapping.txt was not produced for the minified release" >&2
+            exit 1
+          }
+
+          mkdir -p release
+          APK_PATH="release/WaEnhancerCommunity-v${VERSION_NAME}.apk"
+          MAPPING_PATH="release/WaEnhancerCommunity-v${VERSION_NAME}-mapping.txt"
+          cp "$SOURCE_APK" "$APK_PATH"
+          cp "$SOURCE_MAPPING" "$MAPPING_PATH"
+
+          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
+          echo "mapping_path=$MAPPING_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Verify signature, identity, version, and checksum
+        id: verify
+        shell: bash
+        env:
+          APK_PATH: ${{ steps.artifacts.outputs.apk_path }}
+          MAPPING_PATH: ${{ steps.artifacts.outputs.mapping_path }}
+          EXPECTED_CERT_SHA256: ${{ steps.signing.outputs.expected_cert_sha256 }}
+          EXPECTED_VERSION_NAME: ${{ steps.metadata.outputs.version_name }}
+          EXPECTED_VERSION_CODE: ${{ steps.metadata.outputs.version_code }}
+          EXPECTED_APPLICATION_ID: com.waenhancer.community
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS_VERSION="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V | tail -n 1)"
+          APKSIGNER="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/aapt"
+
+          test -x "$APKSIGNER" || { echo "apksigner not found" >&2; exit 1; }
+          test -x "$AAPT" || { echo "aapt not found" >&2; exit 1; }
+
+          SIGNATURE_REPORT="$($APKSIGNER verify --verbose --print-certs "$APK_PATH")"
+          printf '%s\n' "$SIGNATURE_REPORT"
+
+          if grep -qi 'CN=Android Debug' <<< "$SIGNATURE_REPORT"; then
+            echo "APK is signed with an Android debug certificate" >&2
+            exit 1
+          fi
+
+          ACTUAL_CERT_SHA256="$(awk '/^(Signer #[0-9]+ |V[0-9.]+ Signer: )certificate SHA-256 digest:/{print $NF; exit}' <<< "$SIGNATURE_REPORT" \
+            | tr -d ':' \
+            | tr '[:upper:]' '[:lower:]')"
+          [[ "$ACTUAL_CERT_SHA256" == "$EXPECTED_CERT_SHA256" ]] || {
+            echo "APK certificate does not match the configured keystore" >&2
+            exit 1
+          }
+
+          BADGING="$($AAPT dump badging "$APK_PATH" | head -n 1)"
+          ACTUAL_APPLICATION_ID="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<< "$BADGING")"
+          ACTUAL_VERSION_CODE="$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" <<< "$BADGING")"
+          ACTUAL_VERSION_NAME="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<< "$BADGING")"
+
+          [[ "$ACTUAL_APPLICATION_ID" == "$EXPECTED_APPLICATION_ID" ]] || {
+            echo "Unexpected application ID: $ACTUAL_APPLICATION_ID" >&2
+            exit 1
+          }
+          [[ "$ACTUAL_VERSION_CODE" == "$EXPECTED_VERSION_CODE" ]] || {
+            echo "Unexpected versionCode: $ACTUAL_VERSION_CODE" >&2
+            exit 1
+          }
+          [[ "$ACTUAL_VERSION_NAME" == "$EXPECTED_VERSION_NAME" ]] || {
+            echo "Unexpected versionName: $ACTUAL_VERSION_NAME" >&2
+            exit 1
+          }
+
+          SHA256="$(sha256sum "$APK_PATH" | awk '{print $1}')"
+          CHECKSUM_PATH="${APK_PATH}.sha256"
+          printf '%s  %s\n' "$SHA256" "$(basename "$APK_PATH")" > "$CHECKSUM_PATH"
+
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "checksum_path=$CHECKSUM_PATH" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Verification"
+            echo "- Unit tests: passed"
+            echo "- Release APK: signed and identity/version verified"
+            echo "- APK SHA-256: \`${SHA256}\`"
+            echo "- R8 mapping: \`$(basename "$MAPPING_PATH")\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build human-readable release notes
+        id: notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_TAG: ${{ steps.metadata.outputs.previous_tag }}
+          HEAD_SHA: ${{ github.sha }}
+          VERSION_NAME: ${{ steps.metadata.outputs.version_name }}
+          SHA256: ${{ steps.verify.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          NOTES_PATH="$RUNNER_TEMP/release-notes.md"
+          export NOTES_PATH
+          python3 .github/scripts/build_release_notes.py
+          test -s "$NOTES_PATH"
+          echo "path=$NOTES_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        id: publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.metadata.outputs.tag_name }}
+          RELEASE_TITLE: ${{ steps.metadata.outputs.release_title }}
+          APK_PATH: ${{ steps.artifacts.outputs.apk_path }}
+          CHECKSUM_PATH: ${{ steps.verify.outputs.checksum_path }}
+          MAPPING_PATH: ${{ steps.artifacts.outputs.mapping_path }}
+          NOTES_PATH: ${{ steps.notes.outputs.path }}
+          CHANNEL: ${{ steps.metadata.outputs.channel }}
+          PRERELEASE: ${{ steps.metadata.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          ARGS=(
+            release create "$TAG_NAME"
+            "$APK_PATH"
+            "$CHECKSUM_PATH"
+            "$MAPPING_PATH"
+            --target "$GITHUB_SHA"
+            --title "$RELEASE_TITLE"
+            --notes-file "$NOTES_PATH"
+          )
+
+          if [[ "$PRERELEASE" == "true" ]]; then
+            ARGS+=(--prerelease)
+          fi
+          if [[ "$CHANNEL" == "beta" ]]; then
+            ARGS+=(--latest=false)
+          fi
+
+          gh "${ARGS[@]}"
+          RELEASE_URL="$(gh release view "$TAG_NAME" --json url --jq '.url')"
+          echo "url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Published"
+            echo "- Release: ${RELEASE_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary signing material
+        if: always()
+        shell: bash
+        env:
+          KEYSTORE_PATH: ${{ steps.signing.outputs.keystore_path }}
+        run: |
+          if [[ -n "${KEYSTORE_PATH:-}" ]]; then
+            rm -f "$KEYSTORE_PATH"
+          fi
