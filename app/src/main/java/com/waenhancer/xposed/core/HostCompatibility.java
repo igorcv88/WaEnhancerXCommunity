@@ -1,6 +1,7 @@
 package com.waenhancer.xposed.core;
 
 import com.waenhancer.diagnostics.RuntimeDiagnostics;
+import com.waenhancer.xposed.compat.HostResolverCompat;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.core.devkit.ViewHolderCompat;
 
@@ -87,10 +88,10 @@ public final class HostCompatibility {
             // FeatureLoader will report the concrete feature that fails to install.
             optional(optional, "ConversationViewHolder", () -> ViewHolderCompat.loadViewHolder(loader));
             optional(optional, "ConversationViewHolderField", () -> ViewHolderCompat.loadContainerField(loader));
-            // Message text extraction is feature-scoped. WhatsApp 2.26.33 removed the old
-            // extra_payment_note anchor; even with the replacement resolver, a future accessor
-            // change must not prevent unrelated hooks from being installed.
-            optional(optional, "NewMessage", () -> Unobfuscator.loadNewMessageMethod(loader));
+            // Message text extraction is feature-scoped. Prefer the legacy resolver on hosts where
+            // it still works, then use the structural compatibility resolver when anchor ordering
+            // changes without changing the underlying FMessage contract.
+            optional(optional, "NewMessage", () -> HostResolverCompat.loadNewMessageMethod(loader));
             optional(optional, "NewMessageWithMedia", () ->
                     Unobfuscator.loadNewMessageWithMediaMethod(loader));
             optional(optional, "MediaType", () -> Unobfuscator.loadMediaTypeField(loader));
