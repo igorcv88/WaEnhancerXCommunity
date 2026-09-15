@@ -18,6 +18,7 @@ import com.waenhancer.xposed.bridge.WaeIIFace;
 import com.waenhancer.xposed.bridge.client.BaseClient;
 import com.waenhancer.xposed.bridge.client.BridgeClient;
 import com.waenhancer.xposed.bridge.client.ProviderClient;
+import com.waenhancer.xposed.compat.HostResolverCompat;
 import com.waenhancer.xposed.core.components.FMessageWpp;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.core.devkit.UnobfuscatorCache;
@@ -259,7 +260,6 @@ public class WppCore {
 
     public static boolean sendMessage(Object userJidRaw, String message) {
         try {
-            // Get the JID raw string from the Jid object
             String jidRawString = (String) XposedHelpers.callMethod(userJidRaw, "getRawString");
             if (jidRawString == null) {
                 if (Utils.DEBUG) {
@@ -268,7 +268,6 @@ public class WppCore {
                 Utils.showToast("Error: could not find JID", Toast.LENGTH_SHORT);
                 return false;
             }
-            // Strip device suffix if LID: e.g. "4306.0:0@lid" -> "4306@lid"
             jidRawString = jidRawString.replaceFirst("\\.[\\d:]+@", "@");
             if (Utils.DEBUG) {
                 ;
@@ -282,13 +281,6 @@ public class WppCore {
         }
     }
 
-    /**
-     * Sends a message headlessly via WhatsApp notification RemoteInput reply.
-     * 
-     * @param contactName The display name of the contact as shown in WA
-     *                    notification title.
-     * @param message     The text to send.
-     */
     @SuppressWarnings("deprecation")
     public static boolean sendMessageViaNotification(String contactName, String message) {
         try {
@@ -303,7 +295,6 @@ public class WppCore {
                 if (notif.actions == null)
                     continue;
 
-                // Match by android.title (contact display name)
                 String title = notif.extras.getString("android.title");
                 if (title == null || !title.equalsIgnoreCase(contactName))
                     continue;
@@ -628,16 +619,6 @@ public class WppCore {
         throw new Exception("VoipCallInfoClass not found");
     }
 
-    // public static Activity getActivityBySimpleName(String name) {
-    // for (var activity : activities) {
-    // if (activity.getClass().getSimpleName().equals(name)) {
-    // return activity;
-    // }
-    // }
-    // return null;
-    // }
-
-
     @NonNull
     public static String getContactName(FMessageWpp.UserJid userJid) {
         loadWADatabase();
@@ -718,14 +699,6 @@ public class WppCore {
     private static FMessageWpp.UserJid cachedUserJid;
     private static int cachedActivityHash;
 
-    /**
-     * Tracks the JID of the open Conversation from its own Intent extras.
-     *
-     * <p>Ported from upstream b376762f. The obfuscated conversation-delegate field moved on
-     * WhatsApp 2.26.33, which made {@link #getCurrentUserJid()} fall through to an expensive
-     * reflective object-graph walk on the UI thread (and often still fail). The Intent extra is
-     * a stable, unobfuscated contract, so it is preferred when available.</p>
-     */
     private static void hookConversationUserJid(ClassLoader loader) {
         try {
             Class<?> conversationClass = Unobfuscator.findFirstClassUsingName(
@@ -775,7 +748,6 @@ public class WppCore {
             return cachedUserJid;
         }
 
-        long start = System.currentTimeMillis();
         try {
             var conversation = getCurrentConversation();
             if (conversation == null)
@@ -783,8 +755,7 @@ public class WppCore {
             ensureConversationJidResolvers(conversation.getClassLoader());
 
             Object jidObject = null;
-            
-            // Try using the captured delegate (Upstream optimization)
+
             if (mConversationDelegate != null && conversationJidField != null) {
                 try {
                     jidObject = conversationJidField.get(mConversationDelegate);
@@ -840,16 +811,9 @@ public class WppCore {
         if (conversationDelegateField != null && conversationJidField != null) {
             return;
         }
-        long start = System.currentTimeMillis();
-        if (Utils.DEBUG) {
-            ;
-        }
         try {
             if (conversationDelegateField == null) {
-                conversationDelegateField = Unobfuscator.loadConversationDelegateField(loader);
-                if (Utils.DEBUG) {
-                    ;
-                }
+                conversationDelegateField = HostResolverCompat.loadConversationDelegateField(loader);
             }
         } catch (Exception e) {
             XposedBridge.log("[WAEX] Error loading conversationDelegateField: " + e.getMessage());
@@ -857,9 +821,6 @@ public class WppCore {
         try {
             if (conversationJidField == null) {
                 conversationJidField = Unobfuscator.loadUserJidConversationDelegate(loader);
-                if (Utils.DEBUG) {
-                    ;
-                }
             }
         } catch (Exception e) {
             XposedBridge.log("[WAEX] Error loading conversationJidField: " + e.getMessage());
@@ -1024,16 +985,13 @@ public class WppCore {
         if (jid == null) return null;
         String datafolder = Utils.getApplication().getFilesDir().getParent() + "/";
         String bareJid = stripJID(jid);
-        
-        // Try Profile Pictures cache (uses bare JID)
+
         File file = new File(datafolder + "cache/Profile Pictures/" + bareJid + ".jpg");
         if (file.exists()) return file;
-        
-        // Try Avatars folder (uses FULL JID)
+
         file = new File(datafolder + "files/Avatars/" + jid + ".j");
         if (file.exists()) return file;
-        
-        // Try me photo if it's our own JID
+
         if (jid.equals(Utils.getMyNumber())) {
             file = new File(datafolder + "files/me");
             if (file.exists()) return file;
@@ -1050,11 +1008,6 @@ public class WppCore {
         return startup_prefs.getString("push_name", "WhatsApp");
     }
 
-    // public static String getMyNumber() {
-    // var mainPrefs = getMainPrefs();
-    // return mainPrefs.getString("registration_jid", "");
-    // }
-
     public static SharedPreferences getMainPrefs() {
         return Utils.getApplication().getSharedPreferences(
                 Utils.getApplication().getPackageName() + "_preferences_light", Context.MODE_PRIVATE);
@@ -1066,7 +1019,6 @@ public class WppCore {
     }
 
     public static Drawable getMyPhoto() {
-        // Multi-account installs keep the avatar under accounts/<id>.
         String datafolder = Utils.getAccountDataDir().getAbsolutePath() + "/";
         File file = new File(datafolder + "files" + "/" + "me");
         if (file.exists())
@@ -1091,7 +1043,6 @@ public class WppCore {
             if (conversation.isInstance(mCurrentActivity))
                 return mCurrentActivity;
 
-            // for tablet UI, they're using HomeActivity instead of Conversation
             Class<?> home = getHomeActivityClass(mCurrentActivity.getClassLoader());
             if (mCurrentActivity.getResources().getConfiguration().smallestScreenWidthDp >= 600
                     && home.isInstance(mCurrentActivity))
@@ -1108,7 +1059,6 @@ public class WppCore {
             if (conversation == null)
                 return null;
 
-            // Strategy 1: Safely get title via reflection to avoid UI thread issues
             try {
                 Field f = Activity.class.getDeclaredField("mTitle");
                 f.setAccessible(true);
@@ -1122,8 +1072,6 @@ public class WppCore {
             } catch (Throwable ignored) {
             }
 
-            // Strategy 2: Fallback to Activity.getTitle() (might be safer than
-            // findViewById)
             CharSequence activityTitle = conversation.getTitle();
             if (activityTitle != null && activityTitle.length() > 0
                     && !activityTitle.toString().equalsIgnoreCase("WhatsApp")) {
@@ -1131,7 +1079,6 @@ public class WppCore {
             }
 
         } catch (Throwable t) {
-            // Extremely defensive
         }
         return null;
     }
