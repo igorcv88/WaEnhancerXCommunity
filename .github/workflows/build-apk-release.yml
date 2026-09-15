@@ -239,7 +239,7 @@ jobs:
             -PandroidKeyPassword="$KEY_PASSWORD"
 
       - name: Locate release APK and R8 mapping
-        id: outputs
+        id: artifacts
         shell: bash
         env:
           VERSION_NAME: ${{ steps.metadata.outputs.version_name }}
@@ -270,7 +270,8 @@ jobs:
         id: verify
         shell: bash
         env:
-          APK_PATH: ${{ steps.outputs.outputs.apk_path }}
+          APK_PATH: ${{ steps.artifacts.outputs.apk_path }}
+          MAPPING_PATH: ${{ steps.artifacts.outputs.mapping_path }}
           EXPECTED_CERT_SHA256: ${{ steps.signing.outputs.expected_cert_sha256 }}
           EXPECTED_VERSION_NAME: ${{ steps.metadata.outputs.version_name }}
           EXPECTED_VERSION_CODE: ${{ steps.metadata.outputs.version_code }}
@@ -330,7 +331,7 @@ jobs:
             echo "- Unit tests: passed"
             echo "- Release APK: signed and identity/version verified"
             echo "- APK SHA-256: \`${SHA256}\`"
-            echo "- R8 mapping: \`$(basename "${{ steps.outputs.outputs.mapping_path }}")\`"
+            echo "- R8 mapping: \`$(basename "$MAPPING_PATH")\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build human-readable release notes
@@ -357,9 +358,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ steps.metadata.outputs.tag_name }}
           RELEASE_TITLE: ${{ steps.metadata.outputs.release_title }}
-          APK_PATH: ${{ steps.outputs.outputs.apk_path }}
+          APK_PATH: ${{ steps.artifacts.outputs.apk_path }}
           CHECKSUM_PATH: ${{ steps.verify.outputs.checksum_path }}
-          MAPPING_PATH: ${{ steps.outputs.outputs.mapping_path }}
+          MAPPING_PATH: ${{ steps.artifacts.outputs.mapping_path }}
           NOTES_PATH: ${{ steps.notes.outputs.path }}
           CHANNEL: ${{ steps.metadata.outputs.channel }}
           PRERELEASE: ${{ steps.metadata.outputs.prerelease }}
