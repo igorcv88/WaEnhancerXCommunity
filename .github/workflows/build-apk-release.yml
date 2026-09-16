@@ -259,9 +259,18 @@ jobs:
 
           mkdir -p release
           APK_PATH="release/WaEnhancerCommunity-v${VERSION_NAME}.apk"
-          MAPPING_PATH="release/WaEnhancerCommunity-v${VERSION_NAME}-mapping.txt"
+          RAW_MAPPING_PATH="$RUNNER_TEMP/WaEnhancerCommunity-v${VERSION_NAME}-mapping.txt"
+          MAPPING_PATH="release/WaEnhancerCommunity-v${VERSION_NAME}-mapping.zip"
           cp "$SOURCE_APK" "$APK_PATH"
-          cp "$SOURCE_MAPPING" "$MAPPING_PATH"
+          cp "$SOURCE_MAPPING" "$RAW_MAPPING_PATH"
+          (cd "$RUNNER_TEMP" && zip -9 -q "$GITHUB_WORKSPACE/$MAPPING_PATH" "$(basename "$RAW_MAPPING_PATH")")
+          rm -f "$RAW_MAPPING_PATH"
+
+          test -s "$MAPPING_PATH" || {
+            echo "Compressed R8 mapping archive was not produced" >&2
+            exit 1
+          }
+          python3 -m zipfile -t "$MAPPING_PATH"
 
           echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
           echo "mapping_path=$MAPPING_PATH" >> "$GITHUB_OUTPUT"
@@ -284,6 +293,8 @@ jobs:
 
           test -x "$APKSIGNER" || { echo "apksigner not found" >&2; exit 1; }
           test -x "$AAPT" || { echo "aapt not found" >&2; exit 1; }
+          test -s "$MAPPING_PATH" || { echo "R8 mapping archive is missing" >&2; exit 1; }
+          python3 -m zipfile -t "$MAPPING_PATH"
 
           SIGNATURE_REPORT="$($APKSIGNER verify --verbose --print-certs "$APK_PATH")"
           printf '%s\n' "$SIGNATURE_REPORT"
@@ -331,7 +342,7 @@ jobs:
             echo "- Unit tests: passed"
             echo "- Release APK: signed and identity/version verified"
             echo "- APK SHA-256: \`${SHA256}\`"
-            echo "- R8 mapping: \`$(basename "$MAPPING_PATH")\`"
+            echo "- R8 mapping archive: \`$(basename "$MAPPING_PATH")\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build human-readable release notes
