@@ -24,6 +24,13 @@ import de.robv.android.xposed.XposedHelpers;
  */
 public final class HostResolverCompat {
 
+    private static final String[] CONVERSATION_ANCHORS = {
+            "conversation/createconversation",
+            "conversation/create",
+            "conversation/refresh",
+            "conversation/onCreate"
+    };
+
     private HostResolverCompat() { }
 
     /**
@@ -130,26 +137,25 @@ public final class HostResolverCompat {
             Field legacy = Unobfuscator.loadConversationDelegateField(loader);
             if (legacy != null) return legacy;
         } catch (Throwable ignored) {
-            // Continue with the reversed-assignability fallback below.
+            // Continue with the structural fallback below.
         }
 
         Class<?> conversation = XposedHelpers.findClass("com.whatsapp.Conversation", loader);
         Class<?> conversationFragment = XposedHelpers.findClassIfExists(
                 "com.whatsapp.ConversationFragment", loader);
+        Class<?> jidClass = Unobfuscator.findFirstClassUsingName(
+                loader, StringMatchType.EndsWith, "jid.Jid");
 
-        String[] anchors = {
-                "conversation/createconversation",
-                "conversation/create",
-                "conversation/refresh",
-                "conversation/onCreate"
-        };
-
-        for (String anchor : anchors) {
+        for (String anchor : CONVERSATION_ANCHORS) {
             Class<?>[] implementations = Unobfuscator.findAllClassUsingStrings(
                     loader, StringMatchType.Contains, anchor);
             if (implementations == null) continue;
 
             for (Class<?> implementation : implementations) {
+                // A conversation delegate must itself expose the active JID. This disambiguates
+                // unrelated providers/helpers that happen to share one of the conversation anchors.
+                if (findAssignableInstanceField(implementation, jidClass) == null) continue;
+
                 Field field = findAssignableStorageField(conversation, implementation);
                 if (field != null) return field;
 
@@ -166,9 +172,25 @@ public final class HostResolverCompat {
 
         for (Class<?> current = owner; current != null; current = current.getSuperclass()) {
             for (Field field : current.getDeclaredFields()) {
+                if (Modifier.isStatic(field.getModifiers())) continue;
                 Class<?> fieldType = field.getType();
                 if (fieldType == Object.class) continue;
                 if (fieldType.isAssignableFrom(implementation)) {
+                    field.setAccessible(true);
+                    return field;
+                }
+            }
+        }
+        return null;
+    }
+
+    static Field findAssignableInstanceField(Class<?> owner, Class<?> targetSupertype) {
+        if (owner == null || targetSupertype == null) return null;
+
+        for (Class<?> current = owner; current != null; current = current.getSuperclass()) {
+            for (Field field : current.getDeclaredFields()) {
+                if (Modifier.isStatic(field.getModifiers())) continue;
+                if (targetSupertype.isAssignableFrom(field.getType())) {
                     field.setAccessible(true);
                     return field;
                 }
