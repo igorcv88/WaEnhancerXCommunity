@@ -116,6 +116,11 @@ public final class ValidationSession {
             out.append("Runtime snapshot: not available for this installed build/module\n");
         }
 
+        out.append("Runtime callback probes: ")
+                .append(FeatureCatalog.runtimeProbeCount()).append('/')
+                .append(FeatureCatalog.entries().size()).append(" catalog features\n");
+        out.append("NO_RUNTIME_PROBE means this feature has no callback telemetry yet; changing its setting cannot change this report.\n");
+
         String currentSurface = "";
         List<String> pendingManual = new ArrayList<>();
         for (Map.Entry<String, ValidationModel.FeatureEvidence> item : evidence.entrySet()) {
@@ -124,11 +129,31 @@ public final class ValidationSession {
                 currentSurface = catalog.surface; out.append("\n[").append(currentSurface).append("]\n");
             }
             ValidationModel.FeatureEvidence e = item.getValue();
-            out.append("- ").append(item.getKey()).append(": ").append(e.state());
-            if (e.installed && !e.triggered && e.opportunity) out.append(" (hook never triggered after opportunity)");
-            if (e.manualRequired) {
+            boolean runtimeProbe = FeatureCatalog.hasRuntimeProbe(item.getKey());
+            ValidationModel.FeatureState stateForFeature = e.state();
+
+            out.append("- ").append(item.getKey()).append(": ");
+            if (!runtimeProbe && stateForFeature == ValidationModel.FeatureState.NOT_EXERCISED) {
+                out.append("NO_RUNTIME_PROBE");
+            } else {
+                out.append(stateForFeature);
+            }
+
+            if (e.installed && !e.triggered && e.opportunity) {
+                out.append(" (hook never triggered after opportunity)");
+            }
+
+            if (runtimeProbe && active(prefs) && !e.triggered) {
+                String hint = FeatureCatalog.exerciseHint(item.getKey());
+                if (!hint.isEmpty()) out.append(" · exercise: ").append(hint);
+            }
+
+            // Only the required smoke-suite features currently have manual confirmation controls
+            // in DiagnosticsActivity. Showing "behavior NOT VERIFIED" for every catalog feature made
+            // the report imply that the user could confirm states for controls that do not exist.
+            if (e.manualRequired && e.required) {
                 out.append(" · behavior ").append(e.manualConfirmed ? "CONFIRMED" : "NOT VERIFIED");
-                if (!e.manualConfirmed && e.enabled) pendingManual.add(item.getKey());
+                if (e.triggered && !e.manualConfirmed) pendingManual.add(item.getKey());
             }
             out.append('\n');
         }
