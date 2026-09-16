@@ -197,7 +197,19 @@ public class BottomBarPreviewModelTest {
         BottomBarPreviewModel model = BottomBarPreviewModel.from(prefs);
 
         assertEquals(40, model.iconSizeDp);
-        assertEquals(8, model.textSizeSp);
+        assertEquals(0, model.textSizeSp);
+    }
+
+    @Test
+    public void zeroTextSizeIsPreservedForIconOnlyMode() {
+        Map<String, Object> prefs = snapshot();
+        prefs.put("floating_bottom_bar_text_size", 0f);
+
+        BottomBarPreviewModel model = BottomBarPreviewModel.from(prefs);
+
+        assertEquals(0, model.textSizeSp);
+        assertEquals(0f, BottomBarPreferenceSchema.normalize(
+                "floating_bottom_bar_text_size", 0f), 0f);
     }
 
     @Test

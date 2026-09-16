@@ -34,6 +34,27 @@ public class BottomBarGeometryTest {
     }
 
     @Test
+    public void zeroTextSizeIsExplicitIconOnlyMode() {
+        BottomBarGeometry geometry = automatic(24, 16, 0f, 3);
+
+        assertFalse(geometry.labelVisible);
+        assertEquals(0, geometry.labelHeightPx);
+        assertEquals(0, geometry.spacingPx);
+        assertEquals(Math.round((24 + 6) * DENSITY), geometry.pillHeightPx);
+        assertFalse(geometry.compressed);
+    }
+
+    @Test
+    public void zeroTextSizeIgnoresMeasuredLabelOverride() {
+        BottomBarGeometry geometry = BottomBarGeometry.resolve(false, 0, 24, 16, 0f, 3,
+                DENSITY, 1f, 80);
+
+        assertFalse(geometry.labelVisible);
+        assertEquals(0, geometry.labelHeightPx);
+        assertEquals(0, geometry.spacingPx);
+    }
+
+    @Test
     public void automaticHeightNeverReturnsAWrapContentSentinel() {
         // The bug this class exists for: WhatsApp's tab frame answers a wrap_content measure
         // with the entire available height, so the bar must always be given an exact figure.

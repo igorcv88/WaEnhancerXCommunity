@@ -36,7 +36,10 @@ public final class BottomBarPreferenceSchema {
         add(specs, "floating_bottom_bar_fab_offset", 80, -32, 128, 1);
         add(specs, "floating_bottom_bar_glass_opacity", 35, 10, 100, 5);
         add(specs, "floating_bottom_bar_icon_size", 24, 16, 40, 1);
-        add(specs, "floating_bottom_bar_text_size", 12, 8, 18, 1);
+        // 0 is an intentional icon-only mode. BottomBarGeometry turns it into GONE labels rather
+        // than merely drawing zero-sized text, so WhatsApp's active indicator also lays out as
+        // icon-only instead of reserving an invisible label box.
+        add(specs, "floating_bottom_bar_text_size", 12, 0, 18, 1);
         add(specs, "floating_bottom_bar_padding_vertical", 6, 0, 24, 1);
         add(specs, "floating_bottom_bar_icon_label_spacing", 2, 0, 16, 1);
         add(specs, "floating_bottom_bar_manual_height", 64, 48, 96, 1);
