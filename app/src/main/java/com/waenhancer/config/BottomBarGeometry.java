@@ -43,7 +43,7 @@ public final class BottomBarGeometry {
     public final int spacingPx;
     /** Height of the label's line box, or {@code 0} when the label had to be dropped. */
     public final int labelHeightPx;
-    /** False when the pill is too short to show a label at all. */
+    /** False when the pill is too short to show a label at all, or text size is explicitly zero. */
     public final boolean labelVisible;
     /** True when the requested metrics did not fit and something above was reduced. */
     public final boolean compressed;
@@ -70,11 +70,15 @@ public final class BottomBarGeometry {
      * decoration, the icon still identifies the tab at 12dp, and a clipped label is worse than no
      * label.</p>
      *
+     * <p>A label text size of {@code 0} is an explicit icon-only mode. In that mode the label and
+     * its spacing take no room at all, which lets the hooked bar set WhatsApp's label views to
+     * {@code GONE} instead of leaving an invisible label box in the active-item layout.</p>
+     *
      * @param manualHeight      true when the user chose a fixed height
      * @param manualHeightDp    that fixed height
      * @param iconSizeDp        requested icon side
      * @param spacingDp         requested icon-to-label gap
-     * @param labelTextSp       label text size
+     * @param labelTextSp       label text size; {@code 0} requests an icon-only bar
      * @param paddingVerticalDp requested padding above and below the content
      * @param density           display density
      * @param fontScale         the user's font scale, so a large-text device is not clipped
@@ -104,18 +108,22 @@ public final class BottomBarGeometry {
                                             float fontScale, int labelHeightPxOverride) {
         float scale = density <= 0f ? 1f : density;
         float fonts = fontScale <= 0f ? 1f : fontScale;
+        boolean labelRequested = labelTextSp > 0f;
 
         int icon = px(iconSizeDp, scale);
-        int spacing = px(spacingDp, scale);
+        int spacing = labelRequested ? px(spacingDp, scale) : 0;
         int padding = px(paddingVerticalDp, scale);
-        int label = labelHeightPxOverride > 0
-                ? labelHeightPxOverride
-                : Math.round(labelTextSp * scale * fonts * LABEL_LINE_FACTOR);
+        int label = labelRequested
+                ? (labelHeightPxOverride > 0
+                        ? labelHeightPxOverride
+                        : Math.round(labelTextSp * scale * fonts * LABEL_LINE_FACTOR))
+                : 0;
         int minIcon = px(MIN_ICON_DP, scale);
 
         if (!manualHeight) {
             int height = 2 * padding + icon + spacing + label;
-            return new BottomBarGeometry(height, padding, icon, spacing, label, true, false);
+            return new BottomBarGeometry(height, padding, icon, spacing, label,
+                    labelRequested, false);
         }
 
         int height = Math.max(px(manualHeightDp, scale), minIcon);
@@ -143,8 +151,8 @@ public final class BottomBarGeometry {
 
         // 4. Only then the label. A clipped label is worse than an honest icon-only bar.
         inner = height - 2 * padding;
-        boolean labelVisible = true;
-        if (icon + spacing + label > inner) {
+        boolean labelVisible = labelRequested;
+        if (labelVisible && icon + spacing + label > inner) {
             labelVisible = false;
             label = 0;
             spacing = 0;
