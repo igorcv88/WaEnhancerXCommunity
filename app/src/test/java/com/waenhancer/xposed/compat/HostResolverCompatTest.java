@@ -11,7 +11,14 @@ public class HostResolverCompatTest {
 
     private interface DelegateContract { }
 
-    private static final class DelegateImpl implements DelegateContract { }
+    private static class JidBase { }
+
+    private static final class UserJid extends JidBase { }
+
+    private static final class DelegateImpl implements DelegateContract {
+        @SuppressWarnings("unused")
+        private UserJid jid;
+    }
 
     private static class BaseOwner {
         @SuppressWarnings("unused")
@@ -19,6 +26,9 @@ public class HostResolverCompatTest {
     }
 
     private static final class Owner extends BaseOwner {
+        @SuppressWarnings("unused")
+        private static DelegateImpl staticDelegate;
+
         @SuppressWarnings("unused")
         private Object unrelatedObject;
     }
@@ -31,5 +41,15 @@ public class HostResolverCompatTest {
         assertNotNull(field);
         assertEquals("delegate", field.getName());
         assertEquals(DelegateContract.class, field.getType());
+    }
+
+    @Test
+    public void delegateJidLookupFindsAssignableInstanceField() {
+        Field field = HostResolverCompat.findAssignableInstanceField(
+                DelegateImpl.class, JidBase.class);
+
+        assertNotNull(field);
+        assertEquals("jid", field.getName());
+        assertEquals(UserJid.class, field.getType());
     }
 }
