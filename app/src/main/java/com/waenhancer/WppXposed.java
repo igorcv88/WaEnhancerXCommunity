@@ -215,9 +215,10 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
     public void initZygote(StartupParam startupParam) throws Throwable {
         MODULE_PATH = startupParam.modulePath;
 
-        // This property is an optional convenience marker only. Some modern LSPosed/Android
-        // combinations reject SystemProperties.set() from this callback even though the module is
-        // already injected and fully functional. Never report that as a runtime module failure.
+        // initZygote runs before an Android app process exists. Keep this callback independent of
+        // Utils and other application helpers: merely reading Utils.DEBUG initializes Utils, whose
+        // static Handler depends on an app/main Looper and can abort module initialization here.
+        // The properties below are optional diagnostics only; failure must never block hook loading.
         try {
             Class<?> sysProp = Class.forName("android.os.SystemProperties");
             java.lang.reflect.Method set = sysProp.getMethod("set", String.class, String.class);
@@ -226,14 +227,10 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
                 int apiVersion = de.robv.android.xposed.XposedBridge.getXposedVersion();
                 set.invoke(null, "debug.waenhancer.lsposed.api", String.valueOf(apiVersion));
             } catch (Throwable t2) {
-                if (Utils.DEBUG) {
-                    XposedBridge.log("[WAEX] Optional LSPosed API marker unavailable: " + t2);
-                }
+                XposedBridge.log("[WAEX] Optional LSPosed API marker unavailable: " + t2);
             }
         } catch (Throwable t) {
-            if (Utils.DEBUG) {
-                XposedBridge.log("[WAEX] Optional LSPosed marker unavailable: " + t);
-            }
+            XposedBridge.log("[WAEX] Optional LSPosed marker unavailable: " + t);
         }
     }
 
