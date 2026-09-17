@@ -85,6 +85,22 @@ public class PreferenceSchemaTest {
         assertEquals("bottom bar keys absent from the schema: " + missing, 0, missing.size());
     }
 
+    /** Every numeric bottom-bar setting is consumed inside the hooked WhatsApp process. */
+    @Test
+    public void everyBottomBarKeyIsReadableByHookProcess() {
+        List<String> misclassified = new ArrayList<>();
+        for (String key : BottomBarPreferenceSchema.all().keySet()) {
+            PreferenceSchema.Entry entry = PreferenceSchema.entry(key);
+            if (entry == null
+                    || entry.sensitivity != PreferenceSchema.Sensitivity.PUBLIC_SETTING
+                    || entry.store != PreferenceSchema.Store.PUBLIC) {
+                misclassified.add(key);
+            }
+        }
+        assertEquals("bottom bar runtime keys must be PUBLIC_SETTING/Store.PUBLIC: "
+                + misclassified, 0, misclassified.size());
+    }
+
     /** A secret must never be placed in the world-readable store. */
     @Test
     public void noSecretLivesInThePublicStore() {
