@@ -40,6 +40,42 @@ public final class LiquidGlassSettings {
     /** The round scroll-to-bottom button that floats over the message list. */
     public static final String SCROLL_BUTTON = "liquid_glass_scroll_button";
 
+    /** Independently enabled, opt-in surfaces. The bottom bar keeps its existing style picker. */
+    public enum Surface {
+        TOOLBARS("toolbars", "Headers and selection toolbar"),
+        SEARCH("search", "Search fields and filters"),
+        FAB("fab", "Floating action buttons"),
+        COMPOSER("composer", "Message input and send button"),
+        QUOTES("quotes", "Quoted replies and voice drafts"),
+        BUBBLES("bubbles", "Message bubbles"),
+        CARDS("cards", "Cards in lists and contact info"),
+        PANELS("panels", "Menus, dialogs and bottom sheets");
+
+        public final String key;
+        public final String title;
+
+        Surface(String suffix, String title) {
+            this.key = "liquid_glass_" + suffix;
+            this.title = title;
+        }
+    }
+
+    public static boolean isEnabled(SharedPreferences prefs, Surface surface) {
+        if (prefs == null || surface == null) return false;
+        try {
+            return prefs.getBoolean(surface.key, false);
+        } catch (ClassCastException ignored) {
+            return false;
+        }
+    }
+
+    public static boolean hasAppSurfaces(SharedPreferences prefs) {
+        for (Surface surface : Surface.values()) {
+            if (isEnabled(prefs, surface)) return true;
+        }
+        return false;
+    }
+
     /** What the theme means by "on": the variant every themed surface resolves. */
     public static final GlassSpec.Variant MATERIAL = GlassSpec.Variant.LIQUID;
 
