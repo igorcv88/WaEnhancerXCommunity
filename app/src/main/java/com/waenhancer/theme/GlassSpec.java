@@ -322,6 +322,14 @@ public final class GlassSpec {
                 lensStrength, rimWidthDp, dispersion, specular, innerShadow, adaptive, morphing);
     }
 
+    /** This renderer has no BlurView fallback: preserve legibility when optics are unavailable. */
+    public GlassSpec withoutOptics() {
+        int fill = (Math.max(fillColor >>> 24, Math.round(NO_BLUR_MIN_OPACITY * 255f)) << 24)
+                | (fillColor & 0x00FFFFFF);
+        return new GlassSpec(fill, 0f, strokeColor, strokeWidthDp, highlightColor,
+                refractionColor, contentColor, animate, true, 0f, 0f, 0f, 0f, 0f, false, false);
+    }
+
     private float baseEdgeAlpha() {
         return ((strokeColor >>> 24) & 0xFF) / 255f;
     }

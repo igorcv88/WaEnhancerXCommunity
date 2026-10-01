@@ -43,7 +43,10 @@ import org.luckypray.dexkit.query.matchers.MethodMatcher;
 /** App-wide presentation adapters. Keeps native hierarchy, IDs, listeners, IME and scrolling. */
 public final class AppLiquidGlass extends Feature {
     private final WeakHashMap<View, WeakReference<Session>> sessions = new WeakHashMap<>();
-    private final Set<Method> drawHooks = new HashSet<>();
+    private final Map<Integer, Surface> resourceSurfaces = new java.util.HashMap<>();
+    private final Set<Integer> unknownResources = new HashSet<>();
+    private long captureChildren, skippedChildren, captureNanos;
+    private long captureReportAt;
     private final Set<String> reported = new HashSet<>();
     private WeakReference<Session> foreground = new WeakReference<>(null);
 
@@ -61,7 +64,8 @@ public final class AppLiquidGlass extends Feature {
                 if (session != null) session.close();
             } else if (state == WppCore.ActivityChangeState.ChangeType.RESUMED) {
                 reloadPrefs();
-                Session session = watch(decor, null);
+                Session session = watch(decor);
+                if (session != null) session.recording.observeWindow(activity.getWindow());
                 foreground = new WeakReference<>(session);
                 if (session != null) {
                     session.cachedMaterial = null;
@@ -69,39 +73,44 @@ public final class AppLiquidGlass extends Feature {
                 }
             }
         });
+        installCaptureHook();
+        installRippleCaptureGuard();
+        installDiscoveryHooks();
+        installTintObserver();
         installBubbleHook();
         XposedBridge.hookAllMethods(Dialog.class, "show", new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
                 Dialog dialog = (Dialog) param.thisObject;
-                if (!LiquidGlassSettings.isEnabled(prefs, Surface.PANELS) || dialog.getWindow() == null) return;
+                if (!LiquidGlassSettings.hasAppSurfaces(prefs) || dialog.getWindow() == null) return;
                 View decor = dialog.getWindow().getDecorView();
                 decor.post(() -> {
-                    Session session = watch(decor, foreground.get());
+                    Session session = watch(decor);
                     if (session == null) return;
+                    session.recording.observeWindow(dialog.getWindow());
                     // Platform alert panel, not the entire full-screen dialog decor.
                     View panel = findByName(decor, "parentPanel", "android");
-                    if (panel != null) session.bind(panel, Surface.PANELS, false);
+                    if (panel != null && LiquidGlassSettings.isEnabled(prefs, Surface.PANELS)) session.bind(panel, Surface.PANELS, false);
                     session.scan();
                 });
             }
         });
         XC_MethodHook popupHook = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
-                if (!LiquidGlassSettings.isEnabled(prefs, Surface.PANELS)) return;
+                if (!LiquidGlassSettings.hasAppSurfaces(prefs)) return;
                 PopupWindow popup = (PopupWindow) param.thisObject;
                 View content = popup.getContentView();
                 if (content == null || !popup.isShowing()) return;
                 content.post(() -> {
                     if (!popup.isShowing()) return;
                     View decor = content.getRootView();
-                    Session session = watch(decor, foreground.get());
+                    Session session = watch(decor);
                     if (session == null) return;
                     View target = content;
                     // PopupBackgroundView draws the native shell; content is not reparented.
                     if (content.getParent() instanceof View && ((View) content.getParent()).getBackground() != null) {
                         target = (View) content.getParent();
                     }
-                    session.bind(target, Surface.PANELS, false);
+                    if (LiquidGlassSettings.isEnabled(prefs, Surface.PANELS)) session.bind(target, Surface.PANELS, false);
                     session.scan();
                 });
             }
@@ -154,28 +163,145 @@ public final class AppLiquidGlass extends Feature {
         return reference == null ? null : reference.get();
     }
 
-    private Session watch(View root, Session source) {
+    private Session watch(View root) {
         Session existing = sessionFor(root);
         if (existing != null && !existing.closed) return existing;
         if (root == null) return null;
-        Session session = new Session(root, source);
+        Session session = new Session(root);
         sessions.put(root, new WeakReference<>(session));
         session.attach();
         return session;
     }
 
-    private void ensureDrawHook(View view) {
+    /** One fixed hook, never a growing list of concrete View.draw methods. */
+    private void installCaptureHook() {
         try {
-            Method method = view.getClass().getMethod("draw", Canvas.class);
-            if (!drawHooks.add(method)) return;
-            XposedBridge.hookMethod(method, new XC_MethodHook() {
+            Method method = ViewGroup.class.getDeclaredMethod("drawChild", Canvas.class, View.class, long.class);
+            XposedBridge.hookMethod(method, new XC_MethodHook(XC_MethodHook.PRIORITY_HIGHEST) {
                 @Override protected void beforeHookedMethod(MethodHookParam param) {
-                    if (SharedGlassBackdrop.shouldSkip((View) param.thisObject)) param.setResult(null);
+                    if (!SharedGlassBackdrop.isCapturing()) return;
+                    View child = (View) param.args[1];
+                    captureChildren++;
+                    if (SharedGlassBackdrop.shouldSkip(child) || GlassSurface.isGlassHost(child)) {
+                        skippedChildren++; param.setResult(false); return;
+                    }
+                    ViewGroup parent = (ViewGroup) param.thisObject;
+                    Canvas canvas = (Canvas) param.args[0];
+                    long start = System.nanoTime();
+                    int save = canvas.save();
+                    try {
+                        // Capture recursively, bypassing cached child display lists containing glass.
+                        // Native onDraw/dispatchDraw and their child order remain in charge.
+                        if (parent.getClipChildren()) canvas.clipRect(0, 0, parent.getWidth(), parent.getHeight());
+                        canvas.translate(child.getLeft() - parent.getScrollX(), child.getTop() - parent.getScrollY());
+                        canvas.concat(child.getMatrix());
+                        if (child.getClipBounds() != null) canvas.clipRect(child.getClipBounds());
+                        if (child.getAlpha() < 1f) canvas.saveLayerAlpha(0, 0, child.getWidth(), child.getHeight(), Math.round(child.getAlpha() * 255));
+                        canvas.translate(-child.getScrollX(), -child.getScrollY());
+                        child.draw(canvas);
+                    } catch (RuntimeException | LinkageError error) {
+                        // Xposed otherwise swallows callback exceptions and executes the native
+                        // cached drawChild, which would reintroduce recursive display lists.
+                        param.setThrowable(error);
+                        return;
+                    } finally {
+                        canvas.restoreToCount(save);
+                        captureNanos += System.nanoTime() - start;
+                    }
+                    param.setResult(false);
+                    long now = SystemClock.uptimeMillis();
+                    if (now - captureReportAt >= 10_000) {
+                        captureReportAt = now;
+                        XposedBridge.log("[LiquidGlass/App] capture hook methods=1 children=" + captureChildren
+                                + " skipped=" + skippedChildren + " inclusiveDrawMs=" + captureNanos / 1_000_000d);
+                        captureChildren = skippedChildren = captureNanos = 0;
+                    }
                 }
             });
-        } catch (Throwable error) {
-            report("draw-hook", "capture exclusion unavailable: " + error);
+            report("capture-hook", "one ViewGroup.drawChild capture hook installed");
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
+            // Without deterministic subtree exclusion, never publish recursive captures.
+            SharedGlassBackdrop.disableCapture();
+            report("capture-hook-missing", "capture disabled; using opaque material fallback: " + error);
         }
+    }
+
+    /** A second GPU recording must not retarget a native ripple animator away from HWUI. */
+    private void installRippleCaptureGuard() {
+        try {
+            XposedBridge.hookMethod(android.graphics.drawable.RippleDrawable.class.getDeclaredMethod("draw", Canvas.class),
+                    new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam param) {
+                    if (!SharedGlassBackdrop.isCapturing() || !((Canvas) param.args[0]).isHardwareAccelerated()) return;
+                    android.graphics.drawable.RippleDrawable ripple = (android.graphics.drawable.RippleDrawable) param.thisObject;
+                    Canvas canvas = (Canvas) param.args[0];
+                    // Keep static content; omit the feedback/mask layer in the backdrop only.
+                    try {
+                        for (int i = 0; i < ripple.getNumberOfLayers(); i++) {
+                            if (ripple.getId(i) != android.R.id.mask) ripple.getDrawable(i).draw(canvas);
+                        }
+                        param.setResult(null);
+                    } catch (RuntimeException | LinkageError error) { param.setThrowable(error); }
+                }
+            });
+            report("ripple-guard", "one native RippleDrawable capture guard installed");
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
+            SharedGlassBackdrop.disableCapture();
+            report("ripple-guard-missing", "capture disabled to preserve native ripple animator targets: " + error);
+        }
+    }
+
+    private void installDiscoveryHooks() {
+        try {
+            XC_MethodHook childrenAdded = new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    if (SharedGlassBackdrop.isCapturing()) return;
+                    View child = (View) param.args[0];
+                    Session session = sessionFor(((View) param.thisObject).getRootView());
+                    if (session != null && child != null) session.discoverLater(child);
+                }
+            };
+            XposedBridge.hookMethod(ViewGroup.class.getDeclaredMethod("addView", View.class, int.class,
+                    ViewGroup.LayoutParams.class), childrenAdded);
+            XposedBridge.hookMethod(ViewGroup.class.getDeclaredMethod("attachViewToParent", View.class, int.class,
+                    ViewGroup.LayoutParams.class), childrenAdded);
+            XposedBridge.hookMethod(ViewGroup.class.getDeclaredMethod("addViewInLayout", View.class, int.class,
+                    ViewGroup.LayoutParams.class, boolean.class), childrenAdded);
+            XposedBridge.hookMethod(View.class.getDeclaredMethod("setBackgroundDrawable", Drawable.class),
+                    new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    if (SharedGlassBackdrop.isCapturing()) return;
+                    View target = (View) param.thisObject;
+                    Session session = sessionFor(target.getRootView());
+                    if (session != null && !session.installing) session.discoverLater(target);
+                }
+            });
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
+            report("discovery-hook-missing", "incremental discovery unavailable: " + error);
+        }
+    }
+
+    private void installTintObserver() {
+        XposedBridge.hookAllMethods(View.class, "setBackgroundTintList", new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                View view = (View) param.thisObject;
+                Session session = sessionFor(view.getRootView());
+                if (session == null || session.installing) return;
+                Binding binding = session.bindings.get(view);
+                if (binding != null) binding.tintChanged = true;
+            }
+        });
+    }
+
+    private Surface surfaceFor(View view) {
+        int id = view.getId();
+        if (id == View.NO_ID || id == 0 || unknownResources.contains(id)) return null;
+        Surface cached = resourceSurfaces.get(id);
+        if (cached != null) return cached;
+        try { cached = GlassSurfaceCatalog.surface(view.getResources().getResourceEntryName(id)); }
+        catch (android.content.res.Resources.NotFoundException ignored) { }
+        if (cached == null) unknownResources.add(id); else resourceSurfaces.put(id, cached);
+        return cached;
     }
 
     private void report(String key, String message) {
@@ -188,26 +314,25 @@ public final class AppLiquidGlass extends Feature {
     }
 
     private final class Session implements ViewTreeObserver.OnGlobalLayoutListener,
-            ViewTreeObserver.OnPreDrawListener, View.OnAttachStateChangeListener {
+            ViewTreeObserver.OnPreDrawListener, View.OnAttachStateChangeListener, ViewTreeObserver.OnScrollChangedListener {
         private final WeakReference<View> root;
-        private final WeakReference<Session> source;
         private final SharedGlassBackdrop recording;
         private final WeakHashMap<View, Binding> bindings = new WeakHashMap<>();
-        private long lastScan;
+        private final WeakHashMap<View, Surface> candidates = new WeakHashMap<>();
+        private final Set<View> pendingDiscovery = java.util.Collections.newSetFromMap(new WeakHashMap<>());
+        private boolean discoveryPosted;
+        private boolean discovered;
+        private boolean installing;
         private boolean closed;
         private GlassSpec cachedMaterial;
         private long materialAt;
 
-        Session(View root, Session source) {
+        Session(View root) {
             this.root = new WeakReference<>(root);
-            this.source = new WeakReference<>(source);
             this.recording = new SharedGlassBackdrop(root);
         }
 
-        SharedGlassBackdrop backdrop() {
-            Session parent = source.get();
-            return parent != null && !parent.closed ? parent.recording : recording;
-        }
+        SharedGlassBackdrop backdrop() { return recording; }
 
         GlassSpec resolvedMaterial() {
             View view = root.get();
@@ -227,17 +352,18 @@ public final class AppLiquidGlass extends Feature {
             if (view == null) return;
             view.getViewTreeObserver().addOnGlobalLayoutListener(this);
             view.getViewTreeObserver().addOnPreDrawListener(this);
+            view.getViewTreeObserver().addOnScrollChangedListener(this);
             view.addOnAttachStateChangeListener(this);
         }
 
         @Override public void onGlobalLayout() {
-            if (SystemClock.uptimeMillis() - lastScan >= 300) scan();
+            recording.markMotion();
+            scan(); // Reconcile known candidates; no periodic full-tree discovery.
         }
 
         @Override public boolean onPreDraw() {
             if (!bindings.isEmpty() && !closed && !SharedGlassBackdrop.isCapturing()) {
-                backdrop().beginFrame();
-                backdrop().request();
+                recording.prepareFrame();
             }
             return true;
         }
@@ -246,29 +372,61 @@ public final class AppLiquidGlass extends Feature {
             if (closed || SharedGlassBackdrop.isCapturing()) return;
             View view = root.get();
             if (view == null) return;
-            lastScan = SystemClock.uptimeMillis();
+
             try {
                 for (Map.Entry<View, Binding> entry : new ArrayList<>(bindings.entrySet())) {
                     View target = entry.getKey();
                     if (target == null) continue;
                     Binding binding = entry.getValue();
-                    if (!LiquidGlassSettings.isEnabled(prefs, binding.surface) || !target.isAttachedToWindow()) {
+                    if (target.getRootView() != view) {
+                        recording.exclude(target, false);
+                        if (binding.glass.belongsTo(recording)) binding.restore(target);
+                        bindings.remove(target);
+                    } else if (!LiquidGlassSettings.isEnabled(prefs, binding.surface) || !target.isAttachedToWindow()) {
+                        recording.exclude(target, false);
                         binding.restore(target);
                         bindings.remove(target);
                     } else if (target.getBackground() != binding.glass) {
                         // A native rebind wins. Capture its new background rather than restoring
                         // an old drawable over whatever WhatsApp just changed.
-                        binding.restoreChildren();
+                        recording.exclude(target, false);
+                        binding.restore(target);
                         bindings.remove(target);
-                        bind(target, binding.surface, binding.nativeMask);
+                        if (target.getBackground() instanceof GlassMaterialDrawable) adopt(target, (GlassMaterialDrawable) target.getBackground());
+                        else bind(target, binding.surface, binding.nativeMask);
                     }
                 }
                 if (!LiquidGlassSettings.hasAppSurfaces(prefs)) return;
-                walk(view, 0);
+                if (!discovered) { discovered = true; walk(view, 0); }
+                for (Map.Entry<View, Surface> entry : new ArrayList<>(candidates.entrySet())) {
+                    View candidate = entry.getKey();
+                    if (candidate != null && candidate.isAttachedToWindow() && candidate.getRootView() == view
+                            && LiquidGlassSettings.isEnabled(prefs, entry.getValue())) bind(candidate, entry.getValue(), false);
+                }
                 if (!bindings.isEmpty()) recording.request();
             } catch (Throwable error) {
                 report("scan-error", "surface scan skipped: " + error);
             }
+        }
+
+        @Override public void onScrollChanged() { recording.markMotion(); }
+
+        void discoverLater(View view) {
+            if (closed || SharedGlassBackdrop.isCapturing()) return;
+            pendingDiscovery.add(view);
+            if (discoveryPosted) return;
+            View decor = root.get();
+            if (decor == null) return;
+            discoveryPosted = true;
+            decor.post(() -> {
+                discoveryPosted = false;
+                if (closed) return;
+                for (View candidate : new ArrayList<>(pendingDiscovery)) {
+                    if (candidate != null && candidate.isAttachedToWindow() && candidate.getRootView() == root.get()) walk(candidate, 0);
+                }
+                pendingDiscovery.clear();
+                scan();
+            });
         }
 
         private void walk(View view, int depth) {
@@ -276,28 +434,30 @@ public final class AppLiquidGlass extends Feature {
             if (view.getBackground() instanceof GlassMaterialDrawable && !bindings.containsKey(view)) {
                 GlassMaterialDrawable glass = (GlassMaterialDrawable) view.getBackground();
                 if (LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)) {
-                    Binding binding = new Binding(view, glass.original(), Surface.BUBBLES, true);
-                    binding.glass = glass;
-                    bindings.put(view, binding);
-                    ensureDrawHook(view);
-                    SharedGlassBackdrop.exclude(view, true);
+                    adopt(view, glass);
                 } else {
                     glass.restoreCallback();
                     view.setBackground(glass.original());
-                    SharedGlassBackdrop.exclude(view, false);
+                    recording.exclude(view, false);
                 }
             }
-            String name = null;
-            if (view.getId() != View.NO_ID && view.getId() != 0) {
-                try { name = view.getResources().getResourceEntryName(view.getId()); }
-                catch (android.content.res.Resources.NotFoundException ignored) { }
+            Surface surface = surfaceFor(view);
+            if (surface != null) {
+                candidates.put(view, surface);
+                if (LiquidGlassSettings.isEnabled(prefs, surface)) bind(view, surface, false);
             }
-            Surface surface = GlassSurfaceCatalog.surface(name);
-            if (surface != null && LiquidGlassSettings.isEnabled(prefs, surface)) bind(view, surface, false);
             if (view instanceof ViewGroup) {
                 ViewGroup group = (ViewGroup) view;
                 for (int i = 0; i < group.getChildCount(); i++) walk(group.getChildAt(i), depth + 1);
             }
+        }
+
+        private void adopt(View view, GlassMaterialDrawable glass) {
+            Binding binding = new Binding(view, glass.original(), Surface.BUBBLES, true);
+            binding.glass = glass;
+            bindings.put(view, binding);
+            glass.attachBackdrop(this::backdrop, () -> LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES) ? resolvedMaterial() : null);
+            recording.exclude(view, true);
         }
 
         void bind(View view, Surface surface, boolean nativeMask) {
@@ -306,22 +466,22 @@ public final class AppLiquidGlass extends Feature {
             try {
                 Binding binding = new Binding(view, view.getBackground(), surface, nativeMask);
                 binding.glass = new GlassMaterialDrawable(view, binding.original, this::backdrop,
-                        () -> material(surface), GlassSurfaceCatalog.radiusDp(surface), nativeMask);
+                        () -> LiquidGlassSettings.isEnabled(prefs, surface) ? resolvedMaterial() : null, GlassSurfaceCatalog.radiusDp(surface), nativeMask);
                 // Ensure exclusions exist before making the surface eligible for capture.
-                ensureDrawHook(view);
                 bindings.put(view, binding);
-                SharedGlassBackdrop.exclude(view, true);
+                recording.exclude(view, true);
+                installing = true;
                 view.setBackgroundTintList(null);
                 view.setBackground(binding.glass);
                 view.setPadding(binding.left, binding.top, binding.right, binding.bottom);
-                binding.clearFullBleed(view, 0);
+
                 report("surface-" + surface, surface + " background installed; native layout retained");
                 diagnosticTriggered();
             } catch (Throwable error) {
                 Binding binding = bindings.remove(view);
-                if (binding != null) binding.restore(view);
+                if (binding != null) { recording.exclude(view, false); binding.restore(view); }
                 report("bind-" + surface, surface + " unchanged: " + error);
-            }
+            } finally { installing = false; }
         }
 
         void close() {
@@ -333,14 +493,18 @@ public final class AppLiquidGlass extends Feature {
                 if (observer.isAlive()) {
                     observer.removeOnGlobalLayoutListener(this);
                     observer.removeOnPreDrawListener(this);
+                    observer.removeOnScrollChangedListener(this);
                 }
                 view.removeOnAttachStateChangeListener(this);
                 sessions.remove(view);
             }
             for (Map.Entry<View, Binding> entry : new ArrayList<>(bindings.entrySet())) {
-                if (entry.getKey() != null) entry.getValue().restore(entry.getKey());
+                View target = entry.getKey();
+                if (target == null) continue;
+                recording.exclude(target, false);
+                if (entry.getValue().glass.belongsTo(recording)) entry.getValue().restore(target);
             }
-            bindings.clear();
+            bindings.clear(); candidates.clear(); pendingDiscovery.clear();
             recording.release();
         }
         @Override public void onViewAttachedToWindow(View view) { }
@@ -348,13 +512,9 @@ public final class AppLiquidGlass extends Feature {
     }
 
     private static final class BackgroundState {
-        final Drawable background;
         final ColorStateList tint;
-        final android.graphics.PorterDuff.Mode tintMode;
         BackgroundState(View view) {
-            background = view.getBackground();
             tint = view.getBackgroundTintList();
-            tintMode = view.getBackgroundTintMode();
         }
     }
 
@@ -364,8 +524,8 @@ public final class AppLiquidGlass extends Feature {
         final boolean nativeMask;
         final BackgroundState state;
         final int left, top, right, bottom;
-        final WeakHashMap<View, BackgroundState> cleared = new WeakHashMap<>();
         GlassMaterialDrawable glass;
+        boolean tintChanged;
         Binding(View view, Drawable original, Surface surface, boolean nativeMask) {
             this.original = original;
             this.surface = surface;
@@ -374,48 +534,19 @@ public final class AppLiquidGlass extends Feature {
             left = view.getPaddingLeft(); top = view.getPaddingTop();
             right = view.getPaddingRight(); bottom = view.getPaddingBottom();
         }
-        void clearFullBleed(View view, int depth) {
-            if (!(view instanceof ViewGroup) || depth > 1) return;
-            ViewGroup group = (ViewGroup) view;
-            for (int i = 0; i < group.getChildCount(); i++) {
-                View child = group.getChildAt(i);
-                // Small controls, badges, avatars and other glass surfaces keep their background.
-                if (child.getBackground() != null && !(child.getBackground() instanceof GlassMaterialDrawable)
-                        && child.getWidth() >= view.getWidth() * 0.90f
-                        && child.getHeight() >= view.getHeight() * 0.90f) {
-                    cleared.put(child, new BackgroundState(child));
-                    child.setBackgroundTintList(null);
-                    int l = child.getPaddingLeft(), t = child.getPaddingTop();
-                    int r = child.getPaddingRight(), b = child.getPaddingBottom();
-                    child.setBackground(null);
-                    child.setPadding(l, t, r, b);
-                    clearFullBleed(child, depth + 1);
-                }
-            }
-        }
-        void restoreChildren() {
-            for (Map.Entry<View, BackgroundState> entry : cleared.entrySet()) {
-                View child = entry.getKey();
-                if (child == null || child.getBackground() != null) continue;
-                int l = child.getPaddingLeft(), t = child.getPaddingTop();
-                int r = child.getPaddingRight(), b = child.getPaddingBottom();
-                child.setBackground(entry.getValue().background);
-                child.setBackgroundTintMode(entry.getValue().tintMode);
-                child.setBackgroundTintList(entry.getValue().tint);
-                child.setPadding(l, t, r, b);
-            }
-            cleared.clear();
-        }
         void restore(View view) {
-            SharedGlassBackdrop.exclude(view, false);
             if (view.getBackground() == glass) {
                 glass.restoreCallback();
+                // Preserve native padding/tint updates made while glass was active.
+                int l = view.getPaddingLeft(), t = view.getPaddingTop();
+                int r = view.getPaddingRight(), b = view.getPaddingBottom();
+                boolean restoreTint = !tintChanged && view.getBackgroundTintList() == null;
+                android.graphics.PorterDuff.Mode liveMode = view.getBackgroundTintMode();
                 view.setBackground(original);
-                view.setBackgroundTintMode(state.tintMode);
-                view.setBackgroundTintList(state.tint);
-                view.setPadding(left, top, right, bottom);
+                if (restoreTint) view.setBackgroundTintList(state.tint);
+                view.setBackgroundTintMode(liveMode);
+                view.setPadding(l, t, r, b);
             }
-            restoreChildren();
         }
     }
 

@@ -34,29 +34,48 @@ Os testes de matemática anunciados por uma engine ajudam a verificar fórmulas.
 
 `LiquidGlassSettings.Surface` acrescenta oito categorias independentes. `GlassSurfaceCatalog` mapeia nomes semânticos presentes no código do WaThemer. Roots de página, `entry`, `bottom_nav_container` e `scroll_bottom` não são alvos desse catálogo.
 
-`AppLiquidGlass` acompanha o lifecycle das activities e janelas de Dialog/PopupWindow. A aplicação acontece no slot de background da View. Não há reparenting, inserção de filho em ConstraintLayout, mudança de IDs, listeners, layout params, margens ou IME. Padding e tint são preservados na aplicação e devolvidos no desligamento. Fundos de filhos que cobrem pelo menos 90% de ambos os eixos podem ser removidos em até dois níveis e são restaurados sem sobrescrever um rebind nativo posterior.
+`AppLiquidGlass` mantém os backgrounds das Views nativas, sem reparenting ou mudança de layout/IME. `clearFullBleed` foi removido integralmente: nenhum fundo de filho é apagado por tamanho. O desligamento preserva padding/tint mode atuais e updates nativos de tint, inclusive clear explícito. Rebind nativo é adotado sem sobrescrever o background novo ou empilhar wrappers.
 
-As bolhas usam o anchor DexKit `Unreachable code: direction=` com retorno Drawable. Zero ou vários resultados desativam somente esse adapter. O drawable nativo continua fornecendo padding, dimensões, estado e máscara da silhueta. Nada modifica o conteúdo/armazenamento das mensagens.
+As bolhas continuam usando DexKit com o anchor `Unreachable code: direction=` e retorno Drawable, recusando zero/vários candidatos. O wrapper encaminha state, level, visibility, hotspot/bounds, layout direction/RTL, auto-mirroring e tint/filter ao drawable que fornece a máscara. Após descoberta, cada consumidor usa o provider de sua própria janela.
 
-`GlassMaterialDrawable` usa a mesma função óptica AGSL de `LiquidLens`, extraída para um construtor de shader compartilhado. Somente o background é refratado; texto e ícones continuam sendo desenhados pelo WhatsApp. A máscara DST_IN mantém a forma nativa das bolhas, inclusive cauda e agrupamento quando definidos pelo drawable retornado.
+`GlassMaterialDrawable` mantém o programa AGSL compilado. `LiquidLens.updateMaterialUniforms` atualiza **todos** os uniforms quando material imutável/geometria/density muda, eliminando o key parcial. Compilação AGSL inválida desativa somente aquele programa; falhas de input/matrix/recording têm retry separado. O fallback usa `GlassSpec.withoutOptics`, com fill mínimo de 72%, sem depender da capacidade BlurView/RenderScript que este drawable não implementa. Texto/ícones continuam fora do efeito.
 
-`SharedGlassBackdrop` grava a árvore da activity em bitmap reduzido, compartilhado entre seus consumidores. A gravação é postada fora de onDraw, com intervalos de pelo menos 100 ms e até 400.000 pixels. Hooks de draw excluem as superfícies de vidro da gravação para impedir realimentação/duplicação do próprio texto. A posição do sampling usa `getLocationOnScreen` tanto na origem quanto no consumidor.
+`SharedGlassBackdrop` agora usa gravação primária GPU em RenderNode, uma vez por token Choreographer/window/frame durante pre-draw, compartilhada por todas as superfícies da janela. Cada material grava seu recorte e aplica o AGSL via RenderEffect; não há readback GPU→bitmap. Software permanece fallback a no máximo 10 Hz/400.000 pixels. GPU/software têm backoff independente e circuito temporário de até 30 segundos, recuperável; erro transitório não desliga a Session para sempre.
 
-O limite por frame é 24 consumidores de shader e 3.000.000 de pixels de saída. Consumidores excedentes recebem o material em camadas. Isso é um limite inicial de engenharia, não um orçamento medido no S25. A resolução do material/capacidades fica em cache por até um segundo, evitando consultas a serviços do sistema por bolha/frame.
+Exclusões pertencem ao provider. Um hook fixo em `ViewGroup.drawChild`, ativo somente durante capture, substitui os hooks progressivos em `View.draw`: percorre filhos sem reutilizar display lists contendo vidro, reaplicando matriz/alpha/scroll/clip. Um guard fixo em `RippleDrawable.draw` mantém camadas estáticas e omite a animação durante gravação GPU para impedir retargeting do animador HWUI. Se esses guards não puderem ser instalados, a captura não é publicada. Os logs reportam métodos instalados, contagem de filhos/exclusões e tempo inclusivo de captura. Esse tempo soma subtrees; não é tempo exclusivo total.
 
-Menus e dialogs usam a gravação da activity em primeiro plano. Ainda não há composição integral de várias janelas intermediárias, incluindo seu dim do compositor. Referências fracas e cleanup por detach/ENDED devolvem backgrounds e liberam as gravações.
+O orçamento pertence ao provider e reinicia somente quando muda o token real de frame. O custo inicial é proporcional à resolução de saída e aos taps de blur/dispersion/composição da máscara. Há tiers normal/motion/conserving, com limites de contagem 24/12/8. Scroll/layout marca motion; misses persistentes em FrameMetrics reduzem o tier com histerese; battery saver/thermal moderate+ reduz para conserving. Deadline, draw duration e GPU duration são observados quando disponíveis, com agregados a cada 300 frames. Os pesos/limites **ainda precisam de calibração no S25 Ultra**: não são medições desse aparelho.
+
+A descoberta faz uma travessia inicial, cacheia resource IDs semânticos e acompanha filhos adicionados/backgrounds alterados. GlobalLayout reconcilia bindings/candidatos conhecidos; não faz walk completo periódico a cada 300 ms. DexKit de bolhas continua fail-closed.
+
+`WindowStackBackdrop` usa WindowInspector (API 29+) e tokens de parentesco para compor Activity, dialogs e subwindows anteriores até a janela alvo, inserindo FLAG_DIM_BEHIND antes de cada camada. Base application vem antes de dialogs; irmãos mantêm ordem de registro. Windows acima e de outro app token são omitidas. Vidro de janela inferior usa a gravação própria já publicada naquele frame: popup sobre dialog inclui o panel inferior e dim, sem ciclo entre providers. Topologia incompleta/cíclica volta à raiz própria. Sampling mantém `getLocationOnScreen`.
+
+### Correções da revisão
+
+| Ponto | Mudança | Verificação disponível |
+|---|---|---|
+| 1 | Budget idempotente por token Choreographer | JUnit: duas Sessions/tokens e count cap |
+| 2 | Retry/cooldown independentes GPU/software | JUnit: falha transitória, backoff e recuperação |
+| 3 | RenderNode compartilhado por frame; software continua 10 Hz | Compilação de API; GPU físico pendente |
+| 4 | Trabalho ponderado, tiers e FrameMetrics/power/thermal | JUnit de custo/tier/histerese; calibração S25 pendente |
+| 5 | Sets por provider e cleanup | Inspeção de lifecycle; runtime físico pendente |
+| 6 | Hook fixo de subtree, guard de ripple e counters | Compilação; custo/classes concretas no aparelho pendentes |
+| 7 | Descoberta inicial/incremental; cache de resource IDs | Inspeção; churn RecyclerView físico pendente |
+| 8 | Remoção integral de clearFullBleed | Inspeção: nenhum adapter apaga fundos de filhos |
+| 9 | Programa reutilizado; todos os uniforms atualizados | Compilação; mudança visual de parâmetros pendente |
+| 10 | Sampling recuperável separado da compilação | Retry testado; falhas GPU reais pendentes |
+| 11 | Propagação nativa ampliada; matriz física abaixo | Compilação; drawables stateful reais pendentes |
+| 12 | Stack de janelas com dim e vidro inferior | JUnit de ordem/isolamento/ciclo; composição física pendente |
+| Inline | Fallback sem óptica com piso de 72% | JUnit em GlassSpecTest |
 
 ### Limitações concretas desta versão
 
-- Há um novo caminho de captura compartilhada por software. A navbar e o scroll button existentes mantêm sua captura anterior; não foi unificado todo o pipeline.
-- A atualização do backdrop é limitada a 10 Hz enquanto a árvore desenha. A geometria/shader desenha no ritmo da View; o conteúdo capturado pode ficar defasado durante uma rolagem rápida.
-- Software Canvas pode recusar hardware bitmaps ou conteúdo de determinadas Views. Um erro encerra a captura dessa sessão e mantém o fallback, com log.
-- Android 13+ usa AGSL quando há gravação e canvas acelerado. Em APIs anteriores ou em falhas, os novos adapters usam material translúcido com rim, sem prometer blur/refração equivalentes.
-- Fundos sem detalhes, padding que termina a lista antes do compositor e pais opacos podem continuar produzindo material pouco visível. Não foram portadas as alterações de geometria do WaThemer que fazem mensagens atravessarem os headers/compositor.
-- Nem todos os cards, todos os modelos de mensagem, campos de pesquisa obfuscados, configurações, mídia ou telas de chamada têm targets resolvidos. Não há repaint genérico de cada row nem alteração das barras de sistema nesta rodada.
-- A leitura de posição por drawable pode depender de invalidação das Views no scroll/reciclagem. Swipe-to-reply, animações, seleção, agrupamento e RTL precisam de teste físico.
-- A máscara depende da opacidade do drawable nativo. Temas que já deixem esse drawable transparente podem reduzir/apagar o vidro da bolha.
-- Desligar as novas categorias e voltar ao WhatsApp restaura os bindings observados. Bolhas ainda não registradas retornam ao drawable original quando a árvore é varrida; novos resultados do factory já vêm nativos.
+- Navbar/scroll button mantêm sua engine anterior. Novos providers não unificam esse pipeline.
+- A composição cobre janelas normais do mesmo app token, não SurfaceFlinger transforms, window blur-behind, teclado/system bars de outros processos, SurfaceView/vídeo protegido ou ordem arbitrária de janelas especiais. API anterior a 29 usa somente a raiz própria.
+- ViewGroup customizado que não passe por drawChild, animação legacy/outline shadow e efeitos nativos complexos exigem validação. Matriz/alpha/scroll/clip não equivalem a toda operação de HWUI. Fallback protege de exceções; não prova equivalência visual. Guards de ripple não substituem teste real de toque/seleção.
+- Descoberta incremental cobre addView/addViewInLayout/attachViewToParent e setBackgroundDrawable. Versões que anexem rows por outros caminhos internos podem exigir adapters adicionais. Não há polling da árvore inteira como compensação silenciosa.
+- Software fallback pode atrasar até 100 ms. API anterior a 33 ou captura/óptica indisponível recebe material sem blur com piso de opacidade; não se promete refração equivalente.
+- Pais opacos/ausência de underlay podem continuar produzindo material pouco visível. Não foram portadas mudanças de geometria/wallpaper do WaThemer sem validar os targets. Remover a heurística evita dano funcional; alguns alvos podem continuar opacos.
 
 ## Notificações reais / heads-up
 
@@ -91,12 +110,27 @@ A próxima investigação física deve ser observacional: identificar a classe r
 
 - `git diff --check`: passou.
 - Compilação Java 17 dos arquivos novos/alterados de configuração, renderer, hook e activity contra classes Android 36 e DexKit: passou. Foram usados stubs para as dependências internas/AndroidX/Material não instaladas e para símbolos de runtime Kotlin; o callback XC_MethodHook veio do fonte real do XposedBridge. Isso é uma verificação de sintaxe/tipos/API, não uma build Gradle do aplicativo.
-- JUnit 4.13.2 (compilado do tag r4.13.2): 52 testes passaram em `LiquidGlassSettingsTest`, `AppGlassSettingsTest`, `SharedGlassBackdropBudgetTest` e `GlassSpecTest`, com o FakeSharedPreferences existente.
+- JUnit 4.13.2 (compilado do tag r4.13.2): 62 testes passaram em `LiquidGlassSettingsTest`, `AppGlassSettingsTest`, `SharedGlassBackdropBudgetTest`, `GlassSpecTest` e `GlassWindowOrderTest`, com o FakeSharedPreferences existente.
 - Build APK/Gradle completa: não executada; `./gradlew --version` tentou baixar `gradle-8.14.5-bin.zip` e falhou com `Network is unreachable`. JDK 21/SDK/dependências completos não estão preparados nesse ambiente.
 - Teste visual, AGSL em GPU, desempenho e firmware físico: pendentes. Nenhum workflow foi disparado.
 
 ## Aceitação física antes de tratar como estável
 
-Começar com toolbars, compositor e painéis, depois ativar bolhas/cards. Confirmar mensagens enviadas/recebidas de uma e várias linhas, agrupamento e caudas, quote, mídia, voz, seleção, swipe-to-reply, teclado aberto/fechado, rolagem longa e retornos de background. Conferir Broadcast e FAB, além de Calls/Groups/Home, claro/escuro e retorno ao visual anterior ao desligar as novas opções.
+Começar com toolbars, compositor e painéis, depois bolhas/cards. Registrar versão exata do WhatsApp, firmware, refresh rate e energia. A build APK completa e esta matriz continuam **pendentes**, não são resultados de testes executados.
 
-Comparar frame time, uso de CPU e memória com os switches desligados. Os logs `[LiquidGlass/App]` distinguem instalação por categoria, factory de bolhas acionado e falha de resolução/captura. Se o compositor continuar plano por não existir conteúdo atrás, a próxima mudança é o port específico de wallpaper/underlay e geometria da conversa; trocar apenas parâmetros do shader não corrige essa causa.
+| Cenário físico | Verificar |
+|---|---|
+| Enviada/recebida; agrupamento first/middle/last | Cauda, cantos, padding, máscara sem vazamento |
+| Seleção/pressed, reactions, disappearing indicator | State/level/hotspot e transições nativas |
+| Swipe-to-reply parcial, quoted message, voz/draft | Tradução, máscara/clipping, composição preservados |
+| Mídia/imagens/vídeo e mensagens longas | Silhueta nativa; sem retargeting de ripple/crash |
+| RTL e claro/escuro | Mirroring, outline, ícones e legibilidade |
+| Mudanças de material/opacity/density | Uniforms/fallback atualizados sem shader antigo |
+| Dialog + popup sobre dialog; abrir/fechar repetidamente | Dialog inferior/dim no backdrop; nenhum ciclo |
+| Scroll 60/120 Hz; teclado; animação de layout | Backdrop GPU sincronizado, sem fotografia atrasada |
+| Battery saver/thermal; saída de conserving | Tier reduz/recupera; comparar com switches desligados |
+| Falha isolada/repetida; fonte volta a existir | Retry/cooldown recupera sem reiniciar Activity |
+| Rebind/tint alterado ou limpo/padding alterado; toggle off | Estado nativo preservado, sem wrapper duplicado |
+| Broadcast, FAB, Calls/Groups/Home; background/resume | Funcionalidade e layout preservados |
+
+Coletar FrameMetrics draw/GPU/misses e counters de capture antes/depois, sem conteúdo de mensagens. Comparar CPU/memória/temperatura/bateria em condições iguais. Se composer continuar plano por falta de underlay ou pai opaco, o próximo adapter precisa identificar o backing layer exato; não reintroduzir remoção geométrica genérica.

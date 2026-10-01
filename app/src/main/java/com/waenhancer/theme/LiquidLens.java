@@ -781,6 +781,16 @@ public final class LiquidLens {
     /** Same optical pass for a background drawable; foreground text is never filtered. */
     static RuntimeShader materialShader(GlassSpec spec, int width, int height,
                                        float cornerRadiusPx, float density) {
+        RuntimeShader shader = newMaterialShader();
+        updateMaterialUniforms(shader, spec, width, height, cornerRadiusPx, density);
+        return shader;
+    }
+
+    static RuntimeShader newMaterialShader() { return new RuntimeShader(SHADER); }
+
+    /** Refresh all baked uniforms while keeping the compiled program. */
+    static void updateMaterialUniforms(RuntimeShader shader, GlassSpec spec, int width, int height,
+                                      float cornerRadiusPx, float density) {
         float bevel = Math.max(1f, Math.min(spec.rimWidthDp * density,
                 height * MAX_BEVEL_FRACTION));
         float refract = spec.lensStrength * MAX_DISPLACEMENT * bevel;
@@ -791,7 +801,6 @@ public final class LiquidLens {
                 Math.min(SPREAD_DP * density, MAX_SPREAD_PX));
         float blur = Math.max(0f,
                 Math.min(MAX_BLUR_PX, spec.blurRadius * BLUR_DP_PER_UNIT * density));
-        RuntimeShader shader = new RuntimeShader(SHADER);
         shader.setFloatUniform("uSize", width, height);
         shader.setFloatUniform("uRadius", cornerRadiusPx);
         shader.setFloatUniform("uBevel", bevel);
@@ -815,7 +824,6 @@ public final class LiquidLens {
         shader.setFloatUniform("uActiveTint", 0f, 0f, 0f, 0f);
         shader.setFloatUniform("uActive", 0f);
         shader.setFloatUniform("uPress", 0f);
-        return shader;
     }
 
     /** Updates the selected-tab lens without reallocating the shader or render effect. */
