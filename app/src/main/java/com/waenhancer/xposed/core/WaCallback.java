@@ -11,7 +11,9 @@ import androidx.annotation.Nullable;
 public class WaCallback implements Application.ActivityLifecycleCallbacks {
 
     private static void triggerActivityState(@NonNull Activity activity, WppCore.ActivityChangeState.ChangeType type) {
-        WppCore.listenerAcitivity.forEach((listener) -> listener.onChange(activity, type));
+        WppCore.listenerAcitivity.dispatch(listener -> listener.onChange(activity, type),
+                failure -> de.robv.android.xposed.XposedBridge.log(
+                        "WaEnhancer: activity feature callback failed: " + failure));
     }
 
     @Override

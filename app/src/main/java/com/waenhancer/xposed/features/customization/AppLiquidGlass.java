@@ -182,7 +182,9 @@ public final class AppLiquidGlass extends Feature {
                     if (!SharedGlassBackdrop.isCapturing()) return;
                     View child = (View) param.args[1];
                     captureChildren++;
-                    if (SharedGlassBackdrop.shouldSkip(child) || GlassSurface.isGlassHost(child)) {
+                    // GlassMaterialDrawable suppresses only its own background during capture.
+                    // Skipping a bound ViewGroup here also drops native text/icons/children.
+                    if (GlassSurface.isGlassHost(child)) {
                         skippedChildren++; param.setResult(false); return;
                     }
                     ViewGroup parent = (ViewGroup) param.thisObject;
@@ -379,17 +381,14 @@ public final class AppLiquidGlass extends Feature {
                     if (target == null) continue;
                     Binding binding = entry.getValue();
                     if (target.getRootView() != view) {
-                        recording.exclude(target, false);
                         if (binding.glass.belongsTo(recording)) binding.restore(target);
                         bindings.remove(target);
                     } else if (!LiquidGlassSettings.isEnabled(prefs, binding.surface) || !target.isAttachedToWindow()) {
-                        recording.exclude(target, false);
                         binding.restore(target);
                         bindings.remove(target);
                     } else if (target.getBackground() != binding.glass) {
                         // A native rebind wins. Capture its new background rather than restoring
                         // an old drawable over whatever WhatsApp just changed.
-                        recording.exclude(target, false);
                         binding.restore(target);
                         bindings.remove(target);
                         if (target.getBackground() instanceof GlassMaterialDrawable) adopt(target, (GlassMaterialDrawable) target.getBackground());
@@ -438,7 +437,6 @@ public final class AppLiquidGlass extends Feature {
                 } else {
                     glass.restoreCallback();
                     view.setBackground(glass.original());
-                    recording.exclude(view, false);
                 }
             }
             Surface surface = surfaceFor(view);
@@ -457,7 +455,6 @@ public final class AppLiquidGlass extends Feature {
             binding.glass = glass;
             bindings.put(view, binding);
             glass.attachBackdrop(this::backdrop, () -> LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES) ? resolvedMaterial() : null);
-            recording.exclude(view, true);
         }
 
         void bind(View view, Surface surface, boolean nativeMask) {
@@ -467,9 +464,8 @@ public final class AppLiquidGlass extends Feature {
                 Binding binding = new Binding(view, view.getBackground(), surface, nativeMask);
                 binding.glass = new GlassMaterialDrawable(view, binding.original, this::backdrop,
                         () -> LiquidGlassSettings.isEnabled(prefs, surface) ? resolvedMaterial() : null, GlassSurfaceCatalog.radiusDp(surface), nativeMask);
-                // Ensure exclusions exist before making the surface eligible for capture.
+                // Register ownership before making the material eligible for capture.
                 bindings.put(view, binding);
-                recording.exclude(view, true);
                 installing = true;
                 view.setBackgroundTintList(null);
                 view.setBackground(binding.glass);
@@ -479,7 +475,7 @@ public final class AppLiquidGlass extends Feature {
                 diagnosticTriggered();
             } catch (Throwable error) {
                 Binding binding = bindings.remove(view);
-                if (binding != null) { recording.exclude(view, false); binding.restore(view); }
+                if (binding != null) binding.restore(view);
                 report("bind-" + surface, surface + " unchanged: " + error);
             } finally { installing = false; }
         }
@@ -501,7 +497,6 @@ public final class AppLiquidGlass extends Feature {
             for (Map.Entry<View, Binding> entry : new ArrayList<>(bindings.entrySet())) {
                 View target = entry.getKey();
                 if (target == null) continue;
-                recording.exclude(target, false);
                 if (entry.getValue().glass.belongsTo(recording)) entry.getValue().restore(target);
             }
             bindings.clear(); candidates.clear(); pendingDiscovery.clear();

@@ -67,3 +67,7 @@ User scope decision: compatible fixes now; translation/new features and architec
 | [7e8f3714](https://github.com/Dev4Mod/WaEnhancer/commit/7e8f3714fb3b6d7a72948229edfa43b3e46234ee) | fix(Layouts): remove animateLayoutChanges attribute from base_fragment and fragment_home | Ported | Remove broad animateLayoutChanges from base/home containers. |
 | [d42cec04](https://github.com/Dev4Mod/WaEnhancer/commit/d42cec046f44d1c49cc5f25d3950b30646313866) | feat(RealPathUtil): refactor downloads document handling and add getDownloadsPath utility | Ported | Downloads raw:, msf:, and numeric ID handling shared by document/tree paths. |
 | [749c3cae](https://github.com/Dev4Mod/WaEnhancer/commit/749c3cae4a1f1cffc2572a4a2365517ba6ce0322) | update(changelog): update changelog.txt | Metadata | Final audited upstream changelog/head. |
+
+## Refresh after merged-runtime review
+
+Fetched `Dev4Mod/WaEnhancer/master` again during the unified #64/#65 review. Its head remains `749c3cae4a1f1cffc2572a4a2365517ba6ce0322`; `749c3cae..upstream/master` contains zero commits. No newer upstream implementation is inferred. Community is now based on merged `master` at `a951ab07` rather than the pre-PR baseline above. Current adaptations, validation and migration gate are recorded in [UNIFIED_RUNTIME_REVIEW_2026-10-06.md](UNIFIED_RUNTIME_REVIEW_2026-10-06.md) and `handoff.md`.

@@ -60,16 +60,20 @@ public class ActivityStateRegistry {
 
     public static List<Activity> getActivitiesInState(WppCore.ActivityChangeState.ChangeType type) {
         List<Activity> result = new ArrayList<>();
-        for (Map.Entry<Activity, WppCore.ActivityChangeState.ChangeType> entry : activityStates.entrySet()) {
-            if (entry.getValue() == type) {
-                result.add(entry.getKey());
+        synchronized (activityStates) {
+            for (Map.Entry<Activity, WppCore.ActivityChangeState.ChangeType> entry : activityStates.entrySet()) {
+                if (entry.getValue() == type) {
+                    result.add(entry.getKey());
+                }
             }
         }
         return result;
     }
 
     public static void cleanup() {
-        activityBySimpleName.entrySet().removeIf(entry -> entry.getValue().get() == null);
+        synchronized (activityBySimpleName) {
+            activityBySimpleName.entrySet().removeIf(entry -> entry.getValue().get() == null);
+        }
     }
 
     public static int getTrackedCount() {

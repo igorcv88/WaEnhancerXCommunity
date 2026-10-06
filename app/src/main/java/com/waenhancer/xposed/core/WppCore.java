@@ -49,7 +49,7 @@ import de.robv.android.xposed.XposedHelpers;
 
 public class WppCore {
 
-    static final HashSet<ActivityChangeState> listenerAcitivity = new HashSet<>();
+    static final FeatureCallbacks<ActivityChangeState> listenerAcitivity = new FeatureCallbacks<>();
     @SuppressLint("StaticFieldLeak")
     static Activity mCurrentActivity;
     private static Method mGenJidMethod;

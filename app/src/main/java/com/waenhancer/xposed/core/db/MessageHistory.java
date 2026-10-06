@@ -130,6 +130,10 @@ public class MessageHistory extends SQLiteOpenHelper {
     public final void insertHideSeenMessage(String jid, String message_id, MessageType type, boolean viewed) {
         synchronized (this) {
             if (dbWrite == null) return;
+            // A delayed hiding callback may arrive after explicit release. Only the explicit
+            // updateViewedMessage rollback path may revoke that authorization.
+            MessageSeenItem previous = getHideSeenMessage(jid, message_id, type);
+            if (!viewed && previous != null && previous.viewed) return;
             if (updateViewedMessage(jid, message_id, type, viewed)) {
                 return;
             }
@@ -147,28 +151,24 @@ public class MessageHistory extends SQLiteOpenHelper {
         }
     }
 
-    public boolean updateViewedMessage(String jid, String message_id, MessageType type, boolean viewed) {
+    public synchronized boolean updateViewedMessage(String jid, String message_id, MessageType type, boolean viewed) {
         if (dbWrite == null) return false;
-        Cursor cursor = dbWrite.query("hide_seen_messages", new String[]{"_id"}, "jid=? AND message_id=? AND type =?", new String[]{jid, message_id, String.valueOf(type.ordinal())}, null, null, null);
-        if (!cursor.moveToFirst()) {
-            cursor.close();
-            return false;
-        }
-        synchronized (this) {
+        try (Cursor cursor = dbWrite.query("hide_seen_messages", new String[]{"_id"}, "jid=? AND message_id=? AND type =?", new String[]{jid, message_id, String.valueOf(type.ordinal())}, null, null, null)) {
+            if (!cursor.moveToFirst()) return false;
             ContentValues content = new ContentValues();
             content.put("viewed", viewed ? 1 : 0);
-            dbWrite.update("hide_seen_messages", content, "_id=?", new String[]{cursor.getString(cursor.getColumnIndexOrThrow("_id"))});
+            if (dbWrite.update("hide_seen_messages", content, "_id=?",
+                    new String[]{cursor.getString(cursor.getColumnIndexOrThrow("_id"))}) != 1) return false;
 
             // Update cache directly
             String cacheKey = createSeenMessageCacheKey(jid, message_id, type);
             seenMessageCache.put(cacheKey, new MessageSeenItem(jid, message_id, viewed));
             invalidateSeenMessagesListCache(jid, type);
         }
-        cursor.close();
         return true;
     }
 
-    public MessageSeenItem getHideSeenMessage(String jid, String message_id, MessageType type) {
+    public synchronized MessageSeenItem getHideSeenMessage(String jid, String message_id, MessageType type) {
         // Check cache first
         String cacheKey = createSeenMessageCacheKey(jid, message_id, type);
         MessageSeenItem cachedItem = seenMessageCache.get(cacheKey);
@@ -195,12 +195,12 @@ public class MessageHistory extends SQLiteOpenHelper {
         return message;
     }
 
-    public MessageSeenItem getHideSeenMessageOnlyCache(String jid, String message_id, MessageType type) {
+    public synchronized MessageSeenItem getHideSeenMessageOnlyCache(String jid, String message_id, MessageType type) {
         String cacheKey = createSeenMessageCacheKey(jid, message_id, type);
         return seenMessageCache.get(cacheKey);
     }
 
-    public List<MessageSeenItem> getHideSeenMessages(String jid, MessageType type, boolean viewed) {
+    public synchronized List<MessageSeenItem> getHideSeenMessages(String jid, MessageType type, boolean viewed) {
         // Check cache first
         String cacheKey = createSeenMessagesListCacheKey(jid, type, viewed);
         List<MessageSeenItem> cachedList = seenMessagesListCache.get(cacheKey);
@@ -248,24 +248,30 @@ public class MessageHistory extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase sqLiteDatabase, int oldVersion, int newVersion) {
+        if (oldVersion < 4) {
+            // These schemas used host row IDs instead of stable message keys. Without a
+            // validated account-specific mapping, abort rather than erase or misattribute them.
+            throw new android.database.sqlite.SQLiteException(
+                    "Legacy MessageHistory requires row-ID migration; source database preserved");
+        }
         if (oldVersion < 7) {
-            /* Log removed */
-            sqLiteDatabase.execSQL("DROP TABLE IF EXISTS MessageHistory;");
-            sqLiteDatabase.execSQL("DROP TABLE IF EXISTS hide_seen_messages;");
-            onCreate(sqLiteDatabase);
+            // SQLiteOpenHelper runs onUpgrade inside a transaction. The archive stays in the
+            // same DB; duplicate bookkeeping rows merge with authorization preserved by MAX.
+            for (String sql : MessageHistoryMigration.TO_V7) sqLiteDatabase.execSQL(sql);
+            try (Cursor expected = sqLiteDatabase.rawQuery(MessageHistoryMigration.EXPECTED_COUNT, null);
+                 Cursor actual = sqLiteDatabase.rawQuery(MessageHistoryMigration.ACTUAL_COUNT, null)) {
+                if (!expected.moveToFirst() || !actual.moveToFirst()
+                        || expected.getLong(0) != actual.getLong(0)) {
+                    throw new android.database.sqlite.SQLiteException("Receipt migration validation failed");
+                }
+            }
         }
     }
 
     @Override
     public void onDowngrade(SQLiteDatabase sqLiteDatabase, int oldVersion, int newVersion) {
-        try {
-            /* Log removed */
-            sqLiteDatabase.execSQL("DROP TABLE IF EXISTS MessageHistory;");
-            sqLiteDatabase.execSQL("DROP TABLE IF EXISTS hide_seen_messages;");
-            onCreate(sqLiteDatabase);
-        } catch (Throwable t) {
-            Utils.logError("Failed to handle database downgrade: " + t.getMessage());
-        }
+        // SQLiteOpenHelper rejects unknown newer schemas while retaining the source file.
+        super.onDowngrade(sqLiteDatabase, oldVersion, newVersion);
     }
 
     private String createSeenMessageCacheKey(String jid, String message_id, MessageType type) {
@@ -281,7 +287,7 @@ public class MessageHistory extends SQLiteOpenHelper {
         seenMessagesListCache.remove(createSeenMessagesListCacheKey(jid, type, false));
     }
 
-    public void clearCaches() {
+    public synchronized void clearCaches() {
         messagesCache.evictAll();
         seenMessageCache.evictAll();
         seenMessagesListCache.evictAll();

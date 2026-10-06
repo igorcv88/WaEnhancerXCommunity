@@ -45,6 +45,8 @@ The runtime diagnostics layer records resolver/install/trigger evidence without 
 
 Compatibility evidence is scoped to the installed WhatsApp build and module build. Absence of evidence must not be promoted to a false incompatibility claim.
 
+The injected `MessageHistory` SQLite store treats `viewed` as explicit receipt-release authorization. Its DB/cache operations are serialized so delayed privacy callbacks cannot revoke that authorization. Known legacy message-key schemas (versions 4–6) migrate to version 7 transactionally while retaining original receipt rows in an archive table. Unmapped row-ID schemas and unknown downgrades preserve their source files; they require a validated migration before their old history can become active.
+
 ## Themes and visual customization
 
 The visual stack has three separate responsibilities:

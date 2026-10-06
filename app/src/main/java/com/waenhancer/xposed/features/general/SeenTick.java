@@ -63,8 +63,8 @@ public class SeenTick extends Feature {
     private static Object mWaJobManager;
     private static Class<?> mSendReadClass;
     private static Method WaJobManagerMethod;
-    private static FMessageWpp.UserJid currentJid;
-    private static String currentScreen = "none";
+    private static volatile FMessageWpp.UserJid currentJid;
+    private static volatile String currentScreen = "none";
     private final ConcurrentHashMap<String, WeakReference<ImageView>> messageMap = new ConcurrentHashMap<>();
 
     public SeenTick(@NonNull ClassLoader loader, @NonNull SharedPreferences preferences) {
@@ -186,9 +186,7 @@ public class SeenTick extends Feature {
                     if (rawObject == null) return;
                     com.waenhancer.xposed.features.media.StatusDownload.activeStatusObj = rawObject;
                     
-                    var ticktype = Integer.parseInt(prefs.getString("seentick", "0"));
-                    if (ticktype == 0) return;
-
+                    // Reply release is independent of the manual receipt button setting.
                     var object = ReflectionUtils.findFMessageInObject(rawObject, FMessageWpp.TYPE, FMessageWpp.Key.TYPE, classLoader);
                     if (object == null) {
                         return;
@@ -430,17 +428,22 @@ public class SeenTick extends Feature {
                 var userJid = new FMessageWpp.UserJid(WppCore.createUserJid(rawJid));
 
                 if (userJid.isNull()) return;
-                // The outgoing job owns the destination; an unrelated visible status must
-                // not redirect a chat reply's authorization to a different conversation.
-                if (userJid.isStatus()) {
-                    if (statuses.isEmpty()) return;
-                    var first = statuses.stream().findFirst().orElse(null);
-                    if (first == null) return;
+                var first = statuses.stream().findFirst().orElse(null);
+                var author = first == null ? null : first.getUserJid();
+                boolean statusResumed = "status".equals(currentScreen)
+                        && WppCore.getActivityStateBySimpleName("StatusPlaybackActivity")
+                        == WppCore.ActivityChangeState.ChangeType.RESUMED;
+                // Status replies target the author's contact JID, not status@broadcast.
+                // Lifecycle plus author matching rejects paused status context and unrelated
+                // outgoing recipients. The destination alone cannot identify a status reply.
+                if (author != null && StatusReplyRouting.matches(statusResumed,
+                        userJid.getPhoneRawString(), userJid.getUserRawString(),
+                        author.getPhoneRawString(), author.getUserRawString())) {
                     MessageStore.getInstance().storeMessageRead(first.getKey().messageID);
                     var view = getRegisteredView(first.getKey().messageID);
                     if (view != null) view.post(() -> setSeenButton(view, true));
-                    sendBlueTickStatus(currentJid);
-                } else {
+                    sendBlueTickStatus(author);
+                } else if (!userJid.isStatus()) {
                     sendBlueTick(userJid);
                 }
                 HideSeenView.updateAllBubbleViews();
