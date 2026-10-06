@@ -683,7 +683,7 @@ public class FMessageWpp {
 
         @Nullable
         public String getUserRawString() {
-            if (this.phoneJid == null) return null;
+            if (this.userJid == null) return null;
             String raw = (String) XposedHelpers.callMethod(this.userJid, "getRawString");
             if (raw == null) return null;
             return raw.replaceFirst("\\.[\\d:]+@", "@");

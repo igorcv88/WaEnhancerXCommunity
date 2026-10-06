@@ -16,9 +16,7 @@ import android.view.Window;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 import java.util.WeakHashMap;
 
 /** One GPU recording per window/frame, shared by all its background drawables. */
@@ -28,10 +26,8 @@ public final class SharedGlassBackdrop {
     public static void disableCapture() { captureAvailable = false; }
     private static final int MAX_PIXELS = 400_000;
     private static final ThreadLocal<SharedGlassBackdrop> CAPTURING = new ThreadLocal<>();
-    // Registry contains providers, never a process-wide exclusion set.
+    // Registry contains providers; material drawables suppress their own capture recursively.
     private static final WeakHashMap<View, WeakReference<SharedGlassBackdrop>> PROVIDERS = new WeakHashMap<>();
-    private final Set<View> excluded = Collections.newSetFromMap(new WeakHashMap<>());
-    private final Set<View> captureExcluded = Collections.newSetFromMap(new WeakHashMap<>());
     private final WeakReference<View> root;
     private View currentLayer;
     private final GlassRenderPolicy policy = new GlassRenderPolicy();
@@ -57,13 +53,6 @@ public final class SharedGlassBackdrop {
     public SharedGlassBackdrop(View root) {
         this.root = new WeakReference<>(root);
         if (root != null) PROVIDERS.put(root, new WeakReference<>(this));
-    }
-    public void exclude(View view, boolean value) {
-        if (value) excluded.add(view); else excluded.remove(view);
-    }
-    public static boolean shouldSkip(View view) {
-        SharedGlassBackdrop active = CAPTURING.get();
-        return active != null && active.captureExcluded.contains(view);
     }
     public static boolean isCapturing() { return CAPTURING.get() != null; }
     /** Lower windows can draw their already-recorded glass; the window being recorded cannot. */
@@ -140,8 +129,6 @@ public final class SharedGlassBackdrop {
         List<View> layers;
         try { layers = WindowStackBackdrop.layers(view); }
         catch (RuntimeException | LinkageError unavailable) { layers = new ArrayList<>(); layers.add(view); }
-        captureExcluded.clear();
-        captureExcluded.addAll(excluded);
         // Publish each lower window once for this frame before entering the capture scope.
         // Its lenses can then be rendered into the upper snapshot without referencing that snapshot.
         for (View layer : layers) {
@@ -160,7 +147,7 @@ public final class SharedGlassBackdrop {
                 try { drawLayers(canvas, layers); }
                 finally { CAPTURING.remove(); gpu.endRecording(); }
                 gpuValid = true; gpuRetry.success();
-                bitmap = null; recordingCanvas = null; captureExcluded.clear();
+                bitmap = null; recordingCanvas = null;
                 return;
             } catch (RuntimeException | LinkageError | OutOfMemoryError error) {
                 gpuValid = false; gpuRetry.failure(now);
@@ -187,7 +174,7 @@ public final class SharedGlassBackdrop {
         } catch (RuntimeException | LinkageError | OutOfMemoryError error) {
             bitmap = null; recordingCanvas = null; softwareRetry.failure(now);
             if (softwareRetry.failures() == 1) android.util.Log.w("WaEnhancerX/Backdrop", "Software capture cooling down", error);
-        } finally { CAPTURING.remove(); captureExcluded.clear(); }
+        } finally { CAPTURING.remove(); }
     }
     private void drawLayers(Canvas canvas, List<View> layers) {
         try {
@@ -207,7 +194,7 @@ public final class SharedGlassBackdrop {
         released = true;
         Window window = measuredWindow.get();
         if (window != null && metricsListener != null) window.removeOnFrameMetricsAvailableListener(metricsListener);
-        metricsListener = null; excluded.clear(); captureExcluded.clear(); policy.clear();
+        metricsListener = null; policy.clear();
         View view = root.get(); if (view != null) PROVIDERS.remove(view);
         if (Build.VERSION.SDK_INT >= 29 && gpu != null) gpu.discardDisplayList();
         gpu = null; gpuValid = false; bitmap = null; recordingCanvas = null;

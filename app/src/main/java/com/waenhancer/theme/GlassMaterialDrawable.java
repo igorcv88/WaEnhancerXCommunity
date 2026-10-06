@@ -77,7 +77,6 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         Rect b = getBounds();
         if (provider == null || material == null || b.isEmpty()) { drawOriginal(canvas); return; }
         provider.request();
-        if (nativeMask) provider.exclude(view, true);
         float density = view.getResources().getDisplayMetrics().density;
         float radius = Math.min(radiusDp * density, Math.min(b.width(), b.height()) / 2f);
         boolean changed = appliedMaterial != material || materialWidth != b.width()

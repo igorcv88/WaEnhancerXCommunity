@@ -63,8 +63,8 @@ public class SeenTick extends Feature {
     private static Object mWaJobManager;
     private static Class<?> mSendReadClass;
     private static Method WaJobManagerMethod;
-    private static FMessageWpp.UserJid currentJid;
-    private static String currentScreen = "none";
+    private static volatile FMessageWpp.UserJid currentJid;
+    private static volatile String currentScreen = "none";
     private final ConcurrentHashMap<String, WeakReference<ImageView>> messageMap = new ConcurrentHashMap<>();
 
     public SeenTick(@NonNull ClassLoader loader, @NonNull SharedPreferences preferences) {
@@ -186,9 +186,7 @@ public class SeenTick extends Feature {
                     if (rawObject == null) return;
                     com.waenhancer.xposed.features.media.StatusDownload.activeStatusObj = rawObject;
                     
-                    var ticktype = Integer.parseInt(prefs.getString("seentick", "0"));
-                    if (ticktype == 0) return;
-
+                    // Reply release is independent of the manual receipt button setting.
                     var object = ReflectionUtils.findFMessageInObject(rawObject, FMessageWpp.TYPE, FMessageWpp.Key.TYPE, classLoader);
                     if (object == null) {
                         return;
@@ -430,17 +428,49 @@ public class SeenTick extends Feature {
                 var userJid = new FMessageWpp.UserJid(WppCore.createUserJid(rawJid));
 
                 if (userJid.isNull()) return;
-                // The outgoing job owns the destination; an unrelated visible status must
-                // not redirect a chat reply's authorization to a different conversation.
-                if (userJid.isStatus()) {
-                    if (statuses.isEmpty()) return;
-                    var first = statuses.stream().findFirst().orElse(null);
-                    if (first == null) return;
-                    MessageStore.getInstance().storeMessageRead(first.getKey().messageID);
-                    var view = getRegisteredView(first.getKey().messageID);
-                    if (view != null) view.post(() -> setSeenButton(view, true));
-                    sendBlueTickStatus(currentJid);
-                } else {
+                // Resolve the outgoing message itself; the viewer may have advanced or closed.
+                // Do not use Key(String, ..., true): that legacy constructor hardcodes false.
+                FMessageWpp quotedStatus = null;
+                boolean statusQuote = false;
+                try {
+                    var outgoingId = (String) XposedHelpers.getObjectField(obj, "id");
+                    if (outgoingId == null || outgoingId.isEmpty()) return;
+                    var outgoingKey = XposedHelpers.newInstance(FMessageWpp.Key.TYPE,
+                            userJid.userJid, outgoingId, true);
+                    var outgoingObject = WppCore.getFMessageFromKey(outgoingKey);
+                    if (outgoingObject == null) return;
+                    var outgoing = new FMessageWpp(outgoingObject);
+                    if (!outgoing.getKey().isFromMe
+                            || !outgoingId.equals(outgoing.getKey().messageID)) return;
+                    var quote = outgoing.getOriginalKey();
+                    statusQuote = quote != null && quote.remoteJid != null
+                            && quote.remoteJid.isStatus();
+                    if (statusQuote && !quote.isFromMe && quote.messageID != null
+                            && !quote.messageID.isEmpty()) {
+                        // getOriginalKey().getFMessage() wraps the outgoing message, so load
+                        // the quoted key explicitly rather than relying on that cached wrapper.
+                        var quotedObject = WppCore.getFMessageFromKey(quote.thisObject);
+                        if (quotedObject != null) {
+                            var candidate = new FMessageWpp(quotedObject);
+                            var selected = StatusReplyRouting.selectQuoted(quote.messageID, candidate,
+                                    item -> item.getKey().messageID,
+                                    item -> !item.getKey().isFromMe && item.getKey().remoteJid != null
+                                            && item.getKey().remoteJid.isStatus());
+                            if (!selected.isEmpty()) quotedStatus = selected.get(0);
+                        }
+                    }
+                } catch (Throwable failure) {
+                    logDebug("Status reply identity unavailable: " + failure.getClass().getSimpleName());
+                    return;
+                }
+                if (statusQuote) {
+                    var author = quotedStatus == null ? null : quotedStatus.getUserJid();
+                    if (author != null && StatusReplyRouting.matches(true,
+                            userJid.getPhoneRawString(), userJid.getUserRawString(),
+                            author.getPhoneRawString(), author.getUserRawString())) {
+                        sendBlueTickStatus(author, List.of(quotedStatus));
+                    }
+                } else if (!userJid.isStatus()) {
                     sendBlueTick(userJid);
                 }
                 HideSeenView.updateAllBubbleViews();
@@ -567,10 +597,14 @@ public class SeenTick extends Feature {
         }
 
         List<FMessageWpp> snapshot = new ArrayList<>(statuses);
-
         snapshot.forEach(statuses::remove);
+        sendBlueTickStatus(currentJid, snapshot);
+    }
 
-        if (snapshot.isEmpty()) return;
+    private void sendBlueTickStatus(FMessageWpp.UserJid author, List<FMessageWpp> selected) {
+        if (author == null || "status_me".equals(author.getPhoneNumber()) || selected.isEmpty()) return;
+        // Freeze the requested items before scheduling; automatic replies pass only their quote.
+        List<FMessageWpp> snapshot = List.copyOf(selected);
 
         CompletableFuture.runAsync(() -> {
             try {
@@ -604,7 +638,7 @@ public class SeenTick extends Feature {
                 Object[] args = ReflectionUtils.initArray(paramTypes);
 
                 args[jidIndexes.get(0).first] = userJidSender;
-                args[jidIndexes.get(1).first] = currentJid.phoneJid;
+                args[jidIndexes.get(1).first] = author.phoneJid;
                 args[messageIdIndex] = arr_s;
 
                 Object sendJob2 = sendJobConstrutor.newInstance(args);

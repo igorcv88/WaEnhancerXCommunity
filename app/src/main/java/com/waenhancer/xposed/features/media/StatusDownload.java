@@ -83,7 +83,7 @@ public class StatusDownload extends Feature {
             @Override
             public void onClick(MenuItem item, Object fragmentInstance, List<FMessageWpp> fMessageList, int currentIndex) {}
         };
-        MenuStatusListener.getMenuStatuses().add(downloadStatus);
+        MenuStatusListener.registerStatusListener(downloadStatus);
 
         var sharedMenu = new MenuStatusListener.OnMenuItemStatusListener() {
 
@@ -116,7 +116,7 @@ public class StatusDownload extends Feature {
             @Override
             public void onClick(MenuItem item, Object fragmentInstance, List<FMessageWpp> fMessageList, int currentIndex) {}
         };
-        MenuStatusListener.getMenuStatuses().add(sharedMenu);
+        MenuStatusListener.registerStatusListener(sharedMenu);
     }
 
     private void sharedStatus(StatusItemWaex statusItem, Object fragmentInstance, int currentIndex) {

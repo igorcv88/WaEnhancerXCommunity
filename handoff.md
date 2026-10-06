@@ -6,18 +6,20 @@ This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent
 
 Repository: https://github.com/igorcv88/WaEnhancerXCommunity
 
-Base: `master` at `4f4d0c64fff855508289e08ee064b5ff3261b2c4`. The installed Community `v0.0.8` has the same tree as that base. Working branch: `fix/receipts-upstream-audit`. Published ready-for-review PR: https://github.com/igorcv88/WaEnhancerXCommunity/pull/65 (`draft=false`, open, not merged). Initial implementation/audit commit: `47ba889050551df0f1128be0b2d70cb9b0e5410c`. A documentation follow-up records publication; use the actual PR head for subsequent work.
+Unified base: `master` at `a951ab07b9ad0a74258c69bbe4dcd0a5a02a848a`. PR #65 merged as `d93e907133a4b753395cd01839ebf87b836c41be`; PR #64 merged as `a951ab07`. Their receipt/compatibility/glass changes are all carried by the current base. Current working branch: `fix/unified-runtime-review`; published as ready-for-review PR #66. The original #65 implementation was `47ba889050551df0f1128be0b2d70cb9b0e5410c`, followed by `b4bfe43d`.
+
+The user now authorizes the staged upstream migrations and asked to review the unified default branch first, including both merged PRs' review comments. The required full build baseline is currently blocked at the Gradle distribution download and missing JDK 21. Implemented stabilization is documented below; framework migrations have not been represented as complete.
 
 The user confirmed Community `v0.0.8`, ordinary WhatsApp `2.26.33.76`. Initial report said Hide Delivered was off; **the user corrected this: Hide Delivered was enabled**. Correct target behavior: receipts remain hidden before replying, but Send Blue Ticks upon Reply releases delivered/read state when the user sends a reply. Manual Send Blue Tick / Mark Viewed currently releases both, according to the user's two-phone comparison. Treat that as reported device evidence, not a test of this branch.
 
 User decisions:
 
-- Compatible upstream fixes and receipt correction now; new translation features and architectural migrations separately.
+- Earlier #65 scope: compatible fixes and receipt correction. Current scope: unified runtime review followed by staged Kotlin/UI, Yuki/KavaRef/KSP, preference transport, DataStore and status/history migrations; translation/system emoji/public recordings remain separate features.
 - Include all migrations/pending changes here and provide a prompt to start migration in a new instance.
 - English reasoning/documentation/replies; ask for missing facts or user-dependent choices.
 - Reuse related open PRs; create PRs ready for review, never draft. Workflows stay manual.
 
-Open PR inventory checked at task start: #64 `feat/app-wide-liquid-glass` at `8bdfbe9e1e583ebf3951cc16e8f56d717d68e5dc`, plus dependency PRs #63, #62, #61, #55, #54, #43. None covers receipts. #64 remains separate and unmerged; this task does not validate its rendering or fix its outstanding review findings.
+Earlier #65 open PR inventory: #64 `feat/app-wide-liquid-glass` at `8bdfbe9e1e583ebf3951cc16e8f56d717d68e5dc`, plus dependency PRs #63, #62, #61, #55, #54, #43. None covers receipts. #64 has since merged. The current review includes its rendering/capture code and comments; new device rendering evidence is still absent. Refreshed open inventory contains dependency PRs #63, #62, #61, #55, #54 and #43, with no related open stabilization/foundation PR.
 
 ## Receipt diagnosis and implementation
 
@@ -28,7 +30,7 @@ Source inspection of both the base and `v0.0.8` found:
 3. The modern dispatch hook suppressed an entire dispatch based on any unviewed hidden row or Hide Seen setting. The protocol hook also returned null for any old unviewed row, independent of receipt type. These broad rules could suppress delivery even when only Hide Read was selected.
 4. Outgoing-job discovery used `Contains` for SendE2EMessageJob. Reply handling could route a chat reply into the visible status branch based on stale `currentScreen`.
 
-Changes on this branch:
+Changes merged through #65:
 
 - `ReceiptRelease.enqueue` publishes authorization before enqueueing, restores pending flags on authorization/enqueue failure, and preserves rollback errors as suppressed exceptions. `SeenTick` requires a successful DB authorization update before invoking the queue. The existing job `blue_on_reply` marker remains in place.
 - The direct guard, dispatch gate, and protocol gate honor per-message authorization. Old unviewed rows are bookkeeping, not an unconditional command to cancel all receipt kinds. Read-specific hiding stays at read job/direct/protocol gates; the broad dispatch gate uses effective Hide Delivered (including custom privacy/ghost mode).
@@ -69,9 +71,31 @@ Already covered or intentionally separate: recording selection share/delete, mod
 
 Next physical check on the affected build: hide delivered + blue on reply enabled, verify one tick while receiving/reading without reply, send a normal chat reply, then verify two blue ticks on the sender without using the manual menu. Repeat with multiple pending messages and a notification reply. Compare with Hide Delivered off / Hide Read on: two gray ticks before reply, blue after reply. Confirm manual release, custom per-contact overrides, ghost mode, groups, self chat, PN/LID contacts, voice/view-once and status routes. Also check document picker, recordings list, online row recycling, concurrent media previews and cancellation.
 
+## Unified review checkpoint — 2026-10-06
+
+Review base: `a951ab07`; current branch: `fix/unified-runtime-review`. Detailed findings, scope and acceptance: [docs/UNIFIED_RUNTIME_REVIEW_2026-10-06.md](docs/UNIFIED_RUNTIME_REVIEW_2026-10-06.md).
+
+Implemented:
+
+- Correct #65's unresolved status-reply routing comment through resumed viewer + matching author PN/LID; keep outgoing contact routing for other jobs. Decouple status tracking from the manual-button toggle and correct `UserJid.getUserRawString()`'s null guard.
+- Confirm #64's opacity comment was already fixed in `8bdfbe9e`; retain the 72% no-optics fallback. Fix whole-view capture exclusion so native text/children survive while material backgrounds suppress themselves; retain separate glass-host exclusion.
+- Snapshot/concurrent activity and contact callback registration, per-feature dispatch error isolation, locked activity-map iteration, snapshot status menus and registration API for both download/share consumers. Isolate status menu build/click failures.
+- Serialize receipt DB/cache reads and writes; prevent delayed hiding callbacks from revoking explicit authorization; report success only after one updated row.
+- Preserve known version 4–6 edit history and original receipt rows on history upgrades. Archive the source receipt table, merge duplicates with authorization retained, recreate indexes and validate logical-row counts in the existing SQLiteOpenHelper transaction. Older row-ID schemas and downgrades retain their files instead of destructive resets. Below version 4, mapping remains unresolved and existing recovery can use an empty in-memory store.
+
+Validation: 212 current-source JUnit tests passed across 27 classes, five production-SQL SQLite migration/rollback cases passed, partial Java 17/API 36 checks passed, all resource/manifest XML parsed and `git diff --check` passed. These are offline tests/API checks with the specific shims/signature stubs described in the review report. They do not establish a full APK or device result. No workflow dispatched.
+
+Full build attempt: `./gradlew :app:assembleWhatsappDebug :app:testWhatsappDebugUnitTest --no-daemon` failed at Gradle 8.14.5 distribution download (`Network is unreachable`) before project configuration. Only Java 17 is installed. Need an accessible JDK 21/Android SDK 36 environment with Gradle/dependency access to establish the mandatory baseline. Keep framework stages pending until that is resolved.
+
+Refreshed `Dev4Mod/WaEnhancer/master`: still `749c3cae4a1f1cffc2572a4a2365517ba6ce0322`, zero newer commits. The X-lineage source remains unavailable as previously recorded. Original installed evidence remains Community v0.0.8 / WhatsApp 2.26.33.76; no new installed build evidence was supplied.
+
+Published ready-for-review [PR #66](https://github.com/igorcv88/WaEnhancerXCommunity/pull/66), without merging. Its implementation commit is `be90f84475be867b722fc8aaca16850ea6d14bfe`; the remote implementation tree matches the locally validated tree `a8e757797f2ddcb02afdadc71f8262e81c1983fe`. #64's already-fixed opacity thread is resolved; #65's routing thread remains open until its corrective PR is merged.
+
+Next: establish the full baseline; start the first Kotlin UI slice with Java-compatible signatures, then advance through the dependency order below. Preference transport's eager editor IPC, unacknowledged commit and dropped trailing hydration notifications require correction in that stage. Translation, system emoji, public recording storage, contact-picker and remaining compatibility ports remain separate.
+
 ## Pending migration program for a new instance
 
-The user requested a new-instance migration prompt. This current PR implements fixes; the migrations below remain **unimplemented**. Begin by refreshing origin/upstream refs and reading this branch/PR: carry the receipt fix forward whether it has merged or remains open. Audit commits newer than the pinned upstream head rather than assuming the snapshot is still latest. Reuse related migration PRs if present; otherwise open ready-for-review migration PRs linked to this task.
+The user requested a new-instance migration prompt. The foundation migrations below remain **unimplemented**. Current stabilization implements prerequisite runtime/data fixes, with a full build baseline still required before framework adoption. Begin by refreshing origin/upstream refs and reading this branch/PR: carry the receipt fix forward whether it has merged or remains open. Audit commits newer than the pinned upstream head rather than assuming the snapshot is still latest. Reuse related migration PRs if present; otherwise open ready-for-review migration PRs linked to this task.
 
 ### Suggested sequence and concrete source anchors
 
@@ -92,8 +116,16 @@ The user requested a new-instance migration prompt. This current PR implements f
 - **Audio/resolver/reflection subset**: remaining `a27a81a8`; compare narrower audio-origin strings/primitive matching and audio-type behavior against Community's existing features before porting. Keep argument helpers' supported semantics, including index handling, and record version-specific evidence.
 - **Earlier deferred upstream features** recorded in Community commit `26087b95`: account-specific WhatsApp preference reading (`CDSharedPreferences`, `b376762f`) and CaptureDevice (`ce90c7dd`). Community already ports account data directory resolution, intent-based current conversation JID and typed ShowOnline args. Reassess the deferred reader/device feature when its dependencies are present; do not mark them as implemented by this audit.
 - **Separate X source availability**: obtain an accessible newer source/commit history for the X lineage if the user wants that audit completed. The DMCA-blocked URL supplies no new source evidence.
-- **Liquid Glass #64** remains its own open work. It is outside the receipt/foundation migration PR; preserve its branch and review state when planning cross-cutting framework conversions.
+- **Liquid Glass #64** is now merged into the unified baseline. Preserve its opt-in adapters and capture/resource contracts during framework conversion; its physical calibration is still pending.
 
 ## Conversation log
 
 - 2026-10-06, Codex: fetched current Community and original-upstream histories; recorded the X API block. User supplied installed versions and corrected Hide Delivered to enabled. User selected compatible fixes now, new features/migrations separately, then explicitly requested migration state and a startup prompt for a new instance. Implemented the fixes and validation above. Published PR #65, ready for review. The remote implementation tree was verified to match the locally validated tree (`dac5266ed21bfeec25a36c1f769f35005cb49dc6`).
+
+- 2026-10-06, Codex: user merged #64/#65 and requested immediate unified-runtime review before migration. Implemented the findings above, refreshed upstream and published ready-for-review PR #66 without merging. The framework migration gate remains blocked by the full build environment; no APK or physical validation is claimed.
+
+## PR #66 P1 follow-up — 2026-10-06
+
+Confirmed review thread `PRRT_kwDOT1qrJs6pldOj`: matching only the visible author allowed a delayed reply to status A to release status B from that author. Replaced automatic viewer-based selection with lookup of the outgoing job's `id`, an explicitly outgoing host key and its original quoted status key. Validate the exact incoming status ID and author PN/LID; pass only that item in an immutable list to the receipt worker. No visible-item fallback is permitted. Manual single/all-status actions retain their selected-list behavior. An unavailable outgoing identity skips automatic release for that job; the host `id` field/original-key resolver/lookup must be checked on-device, including ordinary chat replies. Avoid the legacy `Key(String, UserJid, boolean)` constructor here because it currently hardcodes incoming keys, and avoid the original-key wrapper's outgoing-message cache.
+
+Validation: 216 offline JUnit tests across 27 classes passed after compiling the changed selector/test source; four additional regressions cover delayed A/B selection, missing/wrong quote, own/chat quote rejection and immutable queued selection. Partial Java 17/API 36 hook compilation and `git diff --check` passed. Initial harness invocation from the repository root failed three source-path checks; rerunning from the required `app` directory passed. Full APK/device checks remain blocked as recorded above. Update the existing ready-for-review PR #66; do not merge or dispatch workflows. Next physical acceptance: reply to A, advance to B before the queued send runs, and verify only A is released; repeat after closing the viewer and with PN/LID contacts and normal/notification chat replies.

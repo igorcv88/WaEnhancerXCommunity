@@ -5,12 +5,11 @@ import android.view.View;
 import androidx.annotation.NonNull;
 
 import com.waenhancer.xposed.core.Feature;
+import com.waenhancer.xposed.core.FeatureCallbacks;
 import com.waenhancer.xposed.core.components.WaContactWpp;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.core.devkit.ViewHolderCompat;
 import com.waenhancer.xposed.utils.ReflectionUtils;
-
-import java.util.HashSet;
 
 import de.robv.android.xposed.XC_MethodHook;
 import android.content.SharedPreferences;
@@ -18,7 +17,7 @@ import de.robv.android.xposed.XposedBridge;
 
 public class ContactItemListener extends Feature {
 
-    public static HashSet<OnContactItemListener> contactListeners = new HashSet<>();
+    public static final FeatureCallbacks<OnContactItemListener> contactListeners = new FeatureCallbacks<>();
 
     private static java.lang.reflect.Field cachedViewField;
 
@@ -51,9 +50,8 @@ public class ContactItemListener extends Feature {
                 var userJid = waContact.getUserJid();
                 if (userJid == null || userJid.isNull()) return;
 
-                for (OnContactItemListener listener : contactListeners) {
-                    listener.onBind(waContact, view);
-                }
+                contactListeners.dispatch(listener -> listener.onBind(waContact, view),
+                        failure -> XposedBridge.log("WaEnhancer: contact feature callback failed: " + failure));
             }
         });
     }

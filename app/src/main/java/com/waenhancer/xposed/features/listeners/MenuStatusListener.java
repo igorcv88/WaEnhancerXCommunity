@@ -37,8 +37,9 @@ public class MenuStatusListener extends Feature {
 
     private static Field currentIndexField = null;
 
-    public static LinkedHashSet<OnMenuItemStatusListener> getMenuStatuses() {
-        return menuStatuses;
+    /** Snapshot only; callers register through registerStatusListener. */
+    public static synchronized LinkedHashSet<OnMenuItemStatusListener> getMenuStatuses() {
+        return new LinkedHashSet<>(menuStatuses);
     }
 
     public static synchronized void registerStatusListener(OnMenuItemStatusListener listener) {
@@ -198,7 +199,7 @@ public class MenuStatusListener extends Feature {
                     StatusDownload.activeStatusObj = activeRawStatus;
 
                     SubMenu waeSubMenu = null;
-                    for (OnMenuItemStatusListener menuStatus : menuStatuses) {
+                    for (OnMenuItemStatusListener menuStatus : getMenuStatuses()) {
                         if (waeSubMenu == null) {
                             String waeTitle = "WaEnhancerX";
                             try {
@@ -221,15 +222,25 @@ public class MenuStatusListener extends Feature {
                         }
 
                         final int finalIndex = index;
-                        var menuItem = menuStatus.addMenu(
-                                waeSubMenu, currentStatusItem, fMessageList, finalIndex);
+                        MenuItem menuItem;
+                        try {
+                            menuItem = menuStatus.addMenu(
+                                    waeSubMenu, currentStatusItem, fMessageList, finalIndex);
+                        } catch (Throwable failure) {
+                            XposedBridge.log("WaEnhancer: status menu feature unavailable: " + failure);
+                            continue;
+                        }
                         if (menuItem == null) {
                             continue;
                         }
 
                         menuItem.setOnMenuItemClickListener(item -> {
-                            menuStatus.onClick(
-                                    item, fragmentInstance, currentStatusItem, fMessageList, finalIndex);
+                            try {
+                                menuStatus.onClick(
+                                        item, fragmentInstance, currentStatusItem, fMessageList, finalIndex);
+                            } catch (Throwable failure) {
+                                XposedBridge.log("WaEnhancer: status menu feature action failed: " + failure);
+                            }
                             return true;
                         });
                     }
