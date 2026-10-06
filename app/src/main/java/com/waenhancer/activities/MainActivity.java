@@ -417,7 +417,7 @@ public class MainActivity extends BaseActivity {
                     prefKey = "always_typing_global";
                 } else if (className.contains("ContactOnlineNotificationsTileService")) {
                     fragmentPos = 0;
-                    prefKey = "show_toast_on_contact_online";
+                    prefKey = "showonline";
                     parentKey = "conversation";
                 } else if (className.contains("HideDeliveredTileService")) {
                     fragmentPos = 1;

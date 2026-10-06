@@ -137,3 +137,31 @@ The user supplied a runner failure at `:app:compileWhatsappDebugJavaWithJavac`: 
 Replaced the hidden call with a shared UI-thread `GlassFrameClock` fed by public `Choreographer.postFrameCallback` timestamps. Coalesce requests across windows, retain once-per-token pre-draw capture/budgeting, and retain the 100 ms software fallback. Bootstrap handles the initial missing token. An idle-to-active first traversal may retain the previous backdrop until the next callback. Callbacks do not self-schedule or invalidate views and retain no provider references.
 
 Validation: three clock regression tests passed; partial renderer/backdrop/adapters/settings compilation passed using the public API 36 SDK stub jar mirrored by `Sable/android-platforms` at `1e98db1a199e8f7f85541af26bfc27019501b132` (confirmed hidden getter absent). Third-party/module signature stubs remain; full APK and frame/device acceptance remain pending. `git diff --check` passed. No workflow dispatched. Published ready-for-review [PR #67](https://github.com/igorcv88/WaEnhancerXCommunity/pull/67), without merging, because #66 has merged. Implementation commit `ccf46969fc6bcfa3580802466426e4a0b907d9fe` has the validated tree `70a0171d234c8baaba409edb9ac902fe1e8d2ba1`. Next: rerun the user's manual full build on the follow-up head, then validate motion, idle resume, multiple windows and bootstrap before marking the build gate complete.
+
+## Preference-bridge audit — 2026-10-06
+
+Branch `ccr-dd7125c8-r29snt`, based on master `88f5799` (PR #67 merged). User report: none of the eight #64 Liquid Glass surfaces worked inside WhatsApp, while the floating bar did.
+
+Root cause (confirmed in code): `HookProvider.get_all_preferences`/`get_preference` serve only keys that `PreferenceSchema` marks `Store.PUBLIC`, and `put_preference` rejects unknown keys. The `LiquidGlassSettings.Surface` keys (`liquid_glass_{toolbars,search,fab,composer,quotes,bubbles,cards,panels}`) were never registered, so `AppLiquidGlass` always read `false`. Same bug class as PR #60. `AppLiquidGlass` installs its hooks unconditionally and gates at runtime, so registration is the whole bridge fix.
+
+Audit of every literal hook-side read (`prefs|pref|mPrefs|activePrefs.getX("key", …)` under `xposed/`), tile-service keys and key constants found the same defect elsewhere:
+
+- `ghostmode_actual`, `dndmode_actual`: Ghost/DND state toggled by QS tiles and the WhatsApp home menu. Absent from schema → hooks (`HideSeen`, `FreezeLastSeen`, `TypingPrivacy`, `DndMode`, `MenuHome`) always saw `false`; the home-menu toggle's provider write was also rejected. Registered PUBLIC_SETTING/PUBLIC.
+- `call_recording_use_root`: written after a successful `su` check, read by `CallRecording`. Registered RUNTIME/PUBLIC (device-local, not exported).
+- `custom_versions_wpp`, `custom_versions_business`: user-added supported versions read by `FeatureLoader`. Registered STRING_SET PUBLIC_SETTING/PUBLIC.
+- `ContactOnlineNotificationsTileService` toggled nonexistent key `show_toast_on_contact_online`; the real setting is `showonline`. Fixed tile and MainActivity long-press scroll target.
+- `BaseTileService` always wrote the default (public) file; `SmartTypingTileService`'s `always_typing_global` is schema-PRIVATE, so tile and settings screen diverged. Tiles now use `PreferenceStores.storeFor`.
+- `BasePreferenceFragment` used `waex_color_mode`/`waex_color_preset`; real keys are `wae_*`, so preset disabling under Monet and activity recreation never ran. Renamed.
+
+Regression tests: `LiquidGlassSettingsTest.everySurfaceKeyCrossesTheHookBridge`; `PreferenceSchemaTest.everyHookReadKeyCrossesTheBridge` (source scan with a documented allowlist of no-writer defaults), `everyTileKeyIsInTheSchema`, `hookStateKeysArePublic`. Negative check: with the original schema/tile, all four fail naming the broken keys.
+
+Validation: this container now has JDK 21 + Android SDK 36 (installed in-session). `./gradlew :app:testWhatsappDebugUnitTest` passed: 338 tests, 44 classes, 0 failures. `./gradlew :app:assembleWhatsappDebug` succeeded — first full APK build of the post-#67 tree (confirms the public-SDK `Choreographer` fix compiles). Release variant/signing not built. Maven Central rate-limited (429) twice before succeeding. No workflow dispatched, no device test.
+
+Reported, not fixed (need product decisions):
+
+- `always_typing_global`/`_mode`/`_target`/`_contacts` have UI and a tile but no hook consumer; the global Always Typing feature appears unimplemented in hooks (per-contact `AlwaysTyping` lives in CustomPrivacy JSON).
+- `HookBL` reads `bootloader_spoofer_default_xml`, which nothing writes; non-custom bootloader spoofing is a no-op. Embedding key material would violate the invariants.
+- Module-only keys absent from the schema (`update_alert_frequency`, `downgrades_enabled`, `obsolete_downgrade_notice`, `community_repo_stats_*`) are not bridge failures, but are excluded from settings backup.
+- The source scan only sees literal keys; constant/variable keys are covered by targeted tests (Glass, bottom bar, custom versions).
+
+Next device check: install over the current build without clearing data; enable only Toolbars and Composer, force-stop WhatsApp, reopen. If both render glass, the bridge was the global blocker; then evaluate per-surface discovery (Bubbles DexKit resolver, Panels Dialog/PopupWindow hooks, GlassSurfaceCatalog IDs on 2.26.33.76). Also verify Ghost/DND tiles and home-menu toggles now affect behavior, the contact-online tile toggles `showonline`, and root call recording uses root.
