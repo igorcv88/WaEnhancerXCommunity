@@ -758,30 +758,7 @@ public final class LiquidLens {
         }
 
         try {
-            RuntimeShader shader = new RuntimeShader(SHADER);
-            shader.setFloatUniform("uSize", width, height);
-            shader.setFloatUniform("uRadius", cornerRadiusPx);
-            shader.setFloatUniform("uBevel", bevel);
-            shader.setFloatUniform("uRefract", refract);
-            shader.setFloatUniform("uDispersion", spec.dispersion);
-            shader.setFloatUniform("uLight", LIGHT_X, LIGHT_Y);
-            shader.setFloatUniform("uSpec", spec.specular);
-            shader.setFloatUniform("uInnerShadow", spec.innerShadow);
-            shader.setFloatUniform("uHair", hairline);
-            shader.setFloatUniform("uSpread", spread);
-            shader.setFloatUniform("uTint",
-                    Color.red(spec.fillColor) / 255f,
-                    Color.green(spec.fillColor) / 255f,
-                    Color.blue(spec.fillColor) / 255f,
-                    Color.alpha(spec.fillColor) / 255f);
-            shader.setFloatUniform("uSat", saturation);
-            shader.setFloatUniform("uBlur", blur);
-            shader.setFloatUniform("uActiveCenter", 0f, 0f);
-            shader.setFloatUniform("uActiveHalf", 0f, 0f);
-            shader.setFloatUniform("uActiveRadius", 0f);
-            shader.setFloatUniform("uActiveTint", 0f, 0f, 0f, 0f);
-            shader.setFloatUniform("uActive", 0f);
-            shader.setFloatUniform("uPress", 0f);
+            RuntimeShader shader = materialShader(spec, width, height, cornerRadiusPx, density);
 
             view.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"));
             installed.put(view, new ShaderState(key, shader));
@@ -799,6 +776,54 @@ public final class LiquidLens {
             clear(view);
             return false;
         }
+    }
+
+    /** Same optical pass for a background drawable; foreground text is never filtered. */
+    static RuntimeShader materialShader(GlassSpec spec, int width, int height,
+                                       float cornerRadiusPx, float density) {
+        RuntimeShader shader = newMaterialShader();
+        updateMaterialUniforms(shader, spec, width, height, cornerRadiusPx, density);
+        return shader;
+    }
+
+    static RuntimeShader newMaterialShader() { return new RuntimeShader(SHADER); }
+
+    /** Refresh all baked uniforms while keeping the compiled program. */
+    static void updateMaterialUniforms(RuntimeShader shader, GlassSpec spec, int width, int height,
+                                      float cornerRadiusPx, float density) {
+        float bevel = Math.max(1f, Math.min(spec.rimWidthDp * density,
+                height * MAX_BEVEL_FRACTION));
+        float refract = spec.lensStrength * MAX_DISPLACEMENT * bevel;
+        float saturation = 1f + (MAX_SATURATION - 1f) * spec.lensStrength;
+        float hairline = Math.max(MIN_HAIRLINE_PX,
+                Math.min(HAIRLINE_DP * density, MAX_HAIRLINE_PX));
+        float spread = Math.max(MIN_SPREAD_PX,
+                Math.min(SPREAD_DP * density, MAX_SPREAD_PX));
+        float blur = Math.max(0f,
+                Math.min(MAX_BLUR_PX, spec.blurRadius * BLUR_DP_PER_UNIT * density));
+        shader.setFloatUniform("uSize", width, height);
+        shader.setFloatUniform("uRadius", cornerRadiusPx);
+        shader.setFloatUniform("uBevel", bevel);
+        shader.setFloatUniform("uRefract", refract);
+        shader.setFloatUniform("uDispersion", spec.dispersion);
+        shader.setFloatUniform("uLight", LIGHT_X, LIGHT_Y);
+        shader.setFloatUniform("uSpec", spec.specular);
+        shader.setFloatUniform("uInnerShadow", spec.innerShadow);
+        shader.setFloatUniform("uHair", hairline);
+        shader.setFloatUniform("uSpread", spread);
+        shader.setFloatUniform("uTint",
+                Color.red(spec.fillColor) / 255f,
+                Color.green(spec.fillColor) / 255f,
+                Color.blue(spec.fillColor) / 255f,
+                Color.alpha(spec.fillColor) / 255f);
+        shader.setFloatUniform("uSat", saturation);
+        shader.setFloatUniform("uBlur", blur);
+        shader.setFloatUniform("uActiveCenter", 0f, 0f);
+        shader.setFloatUniform("uActiveHalf", 0f, 0f);
+        shader.setFloatUniform("uActiveRadius", 0f);
+        shader.setFloatUniform("uActiveTint", 0f, 0f, 0f, 0f);
+        shader.setFloatUniform("uActive", 0f);
+        shader.setFloatUniform("uPress", 0f);
     }
 
     /** Updates the selected-tab lens without reallocating the shader or render effect. */

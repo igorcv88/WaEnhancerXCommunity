@@ -19,10 +19,8 @@ import com.waenhancer.config.LiquidGlassSettings;
 /**
  * Where the Liquid Glass theme is switched on, surface by surface.
  *
- * <p>The theme is not a single toggle, because glass is not free and not every surface wants it.
- * Each row here is one surface that has been measured on a device and found to hold the material;
- * a surface that has not been measured yet is not listed, so this page never offers a switch whose
- * result nobody has looked at.</p>
+ * <p>Existing controls keep their settings. App-wide adapters are separately opt-in and marked
+ * experimental until their discovery, rendering and performance have been checked on a device.</p>
  *
  * <p>Built in code rather than as a preference screen, following
  * {@link BottomBarCustomizationActivity}: these rows are not all plain booleans. The floating bar's
@@ -56,9 +54,9 @@ public class LiquidGlassActivity extends AppCompatActivity {
         controls.setOrientation(LinearLayout.VERTICAL);
         controls.setPadding(dp(20), dp(4), dp(20), dp(40));
 
-        addCaption("Glass is applied only where it earns its cost: chrome that sits still, over "
-                + "content that moves behind it. Lists, message bubbles and settings rows are "
-                + "deliberately left alone.");
+        addCaption("Choose where to apply Liquid Glass. New surfaces are experimental and off by "
+                + "default. The effect is more visible over a detailed wallpaper. Your existing "
+                + "navigation bar and scroll button settings are kept.");
 
         addSection("Home");
         addBarRow();
@@ -69,9 +67,15 @@ public class LiquidGlassActivity extends AppCompatActivity {
                         + "it as you scroll, which is what the material is made of.",
                 LiquidGlassSettings.SCROLL_BUTTON);
 
-        addCaption("The message input row was tried and dropped: the list is padded so bubbles stop "
-                + "above it, so the only thing behind it is a wallpaper that never moves. Measured "
-                + "at 49 luma of variation against the 235 behind the message list.");
+        addSection("Across WhatsApp");
+        for (LiquidGlassSettings.Surface surface : LiquidGlassSettings.Surface.values()) {
+            addSurfaceRow(surface.title, surfaceSummary(surface), surface.key);
+        }
+
+        addCaption("New surface switches take effect when you return to WhatsApp. If a surface "
+                + "is missing in your WhatsApp version, it is left unchanged. Android 13+ supports "
+                + "refraction; older devices use a translucent rim. Menus use the last background "
+                + "snapshot from the screen beneath them.");
 
         root.addView(controls, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -80,6 +84,19 @@ public class LiquidGlassActivity extends AppCompatActivity {
         scroll.addView(root, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         return scroll;
+    }
+
+    private String surfaceSummary(LiquidGlassSettings.Surface surface) {
+        return switch (surface) {
+            case TOOLBARS -> "Chat and page headers, including the toolbar shown when selecting messages.";
+            case SEARCH -> "Search capsules and conversation filter controls.";
+            case FAB -> "New chat, new broadcast and other named floating buttons.";
+            case COMPOSER -> "The input capsule and send/record control. Keyboard and message layout stay native.";
+            case QUOTES -> "Reply previews, quoted message frames and voice-note drafts.";
+            case BUBBLES -> "Keeps native bubble shape and padding. Requires a compatible bubble resolver; use a wallpaper for visible detail.";
+            case CARDS -> "Named information and action cards. Lists keep their native scrolling and row layout.";
+            case PANELS -> "Native popup menus, dialogs and sheets. Buttons and dismissal gestures stay native.";
+        };
     }
 
     /**

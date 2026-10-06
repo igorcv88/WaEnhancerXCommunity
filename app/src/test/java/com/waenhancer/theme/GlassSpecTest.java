@@ -402,4 +402,20 @@ public class GlassSpecTest {
 
         assertEquals(spec, spec.adaptTo(0, true));
     }
+    @Test public void drawableFallbackRaisesLiquidOpacityAndDisablesAllOptics() {
+        GlassSpec optical = GlassSpec.resolve(GlassSpec.Variant.LIQUID, true, 0, 0, 10, true, false);
+        GlassSpec fallback = optical.withoutOptics();
+        assertTrue(alphaOf(optical.fillColor) < 10);
+        assertTrue(alphaOf(fallback.fillColor) >= Math.round(.72f * 255));
+        assertEquals(optical.fillColor & 0xFFFFFF, fallback.fillColor & 0xFFFFFF);
+        assertEquals(0f, fallback.blurRadius, 0f);
+        assertEquals(0f, fallback.lensStrength, 0f);
+        assertFalse(fallback.adaptive); assertFalse(fallback.morphing);
+        assertTrue(fallback.usingFallback);
+    }
+    @Test public void drawableFallbackDoesNotReduceAnAlreadyDenseFill() {
+        GlassSpec dense = GlassSpec.resolve(GlassSpec.Variant.FROST, false, 0, 0, 100, true, false);
+        assertEquals(dense.fillColor, dense.withoutOptics().fillColor);
+    }
+
 }
