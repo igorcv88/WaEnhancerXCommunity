@@ -42,18 +42,7 @@ public class RealPathUtil {
             // DownloadsProvider
             else if (isDownloadsDocument(uri)) {
                 final String id = DocumentsContract.getDocumentId(uri);
-                if (id != null) {
-                    if (id.startsWith("raw:")) {
-                        return id.substring(4);
-                    }
-                    try {
-                        final Uri contentUri = ContentUris.withAppendedId(
-                                Uri.parse("content://downloads/public_downloads"), Long.parseLong(id));
-                        return getDataColumn(context, contentUri, null, null);
-                    } catch (NumberFormatException e) {
-                        return null;
-                    }
-                }
+                return getDownloadsPath(context, id);
             }
             // MediaProvider
             else if (isMediaDocument(uri)) {
@@ -116,18 +105,7 @@ public class RealPathUtil {
             // DownloadsProvider
             else if (isDownloadsDocument(uri)) {
                 final String id = DocumentsContract.getTreeDocumentId(uri);
-                if (id != null) {
-                    if (id.startsWith("raw:")) {
-                        return id.substring(4);
-                    }
-                    try {
-                        final Uri contentUri = ContentUris.withAppendedId(
-                                Uri.parse("content://downloads/public_downloads"), Long.parseLong(id));
-                        return getDataColumn(context, contentUri, null, null);
-                    } catch (NumberFormatException e) {
-                        return null;
-                    }
-                }
+                return getDownloadsPath(context, id);
             }
             // MediaProvider
             else if (isMediaDocument(uri)) {
@@ -204,6 +182,23 @@ public class RealPathUtil {
         return null;
     }
 
+
+    /** Downloads IDs can be raw paths, MediaStore IDs, or numeric download IDs. */
+    private static String getDownloadsPath(Context context, String id) {
+        if (id == null) return null;
+        if (id.startsWith("raw:")) return id.substring(4);
+        if (id.startsWith("msf:")) {
+            return getDataColumn(context, MediaStore.Files.getContentUri("external"),
+                    "_id=?", new String[]{id.substring(4)});
+        }
+        try {
+            Uri contentUri = ContentUris.withAppendedId(
+                    Uri.parse("content://downloads/public_downloads"), Long.parseLong(id));
+            return getDataColumn(context, contentUri, null, null);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
 
     /**
      * @param uri The Uri to check.

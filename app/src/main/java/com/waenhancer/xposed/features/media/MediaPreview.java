@@ -27,14 +27,13 @@ import com.waenhancer.R;
 import com.waenhancer.xposed.utils.Utils;
 
 import java.io.File;
-import java.lang.reflect.InvocationTargetException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.Locale;
-import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicReference;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
@@ -42,13 +41,10 @@ import javax.crypto.spec.SecretKeySpec;
 
 import de.robv.android.xposed.XC_MethodHook;
 import android.content.SharedPreferences;
-import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
-import okio.BufferedSink;
-import okio.Okio;
 
 
 public class MediaPreview extends Feature {
@@ -56,8 +52,6 @@ public class MediaPreview extends Feature {
     private static final String HTML_LOADING = "<!DOCTYPE html><html><head> <meta charset=\"UTF-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"> <title>Loading</title> <style> body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f0f0; font-family: Arial, sans-serif; } .loader { display: flex; align-items: center; } .spinner { width: 40px; height: 40px; border: 4px solid rgba(0, 0, 0, 0.1); border-top: 4px solid #000; border-radius: 50%; animation: spin 1s linear infinite; } @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } } .text { margin-left: 10px; font-size: 18px; } </style></head><body> <div class=\"loader\"> <div class=\"spinner\"></div> <div class=\"text\">$loading</div> </div></body></html>";
     private static final String HTML_VIDEO = "<!DOCTYPE html><html><head> <meta charset=\"UTF-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"> <title>Player de Vídeo</title> <style> body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f0f0; font-family: Arial, sans-serif; } .video-container { text-align: center; } video { width: 100%; height: auto; } </style></head><body> <div class=\"video-container\"> <video controls> <source src=\"$url\" type=\"video/mp4\"> Browser not supported. </video> </div></body></html>";
     private static final String HTML_IMAGE = "<!DOCTYPE html><html><head> <meta charset=\"UTF-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"> <title>Image</title> <style> body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f0f0; font-family: Arial, sans-serif; } .full-screen-image { width: 100%; height: auto;} </style></head><body> <img src=\"$url\" class=\"full-screen-image\"></body></html>";
-    private File filePath;
-    private AlertDialog dialog;
 
     static HashMap<String, byte[]> MEDIA_KEYS = new HashMap<>();
 
@@ -172,147 +166,146 @@ public class MediaPreview extends Feature {
 
     }
 
-    /**
-     * @noinspection ResultOfMethodCallIgnored
-     */
     @SuppressLint("SetJavaScriptEnabled")
     private void startPlayer(long id, Context context, boolean isNewsletter) {
-        var executor = Executors.newSingleThreadExecutor();
-        try {
-            Cursor cursor0 = MessageStore.getInstance().getDatabase().rawQuery(String.format(Locale.ENGLISH, "SELECT message_url,mime_type,hex(media_key),direct_path FROM message_media WHERE message_row_id =\"%d\"", id), null);
-            if (cursor0 != null && cursor0.getCount() > 0) {
-                cursor0.moveToFirst();
-                AtomicReference<String> url = new AtomicReference<>(cursor0.getString(0));
-                String mine_type = cursor0.getString(1);
-                String media_key = cursor0.getString(2);
-                String direct_path = cursor0.getString(3);
-                cursor0.close();
-                if (isNewsletter) {
-                    url.set("https://mmg.whatsapp.net" + direct_path);
-                }
-                var alertDialog = new AlertDialog.Builder(context);
-                FrameLayout frameLayout = new FrameLayout(context);
-                var webView = new WebView(context);
-                webView.getSettings().setAllowFileAccess(true);
-                webView.getSettings().setSupportZoom(true);
-                webView.getSettings().setBuiltInZoomControls(true);
-                webView.getSettings().setDisplayZoomControls(false);
-                webView.getSettings().setJavaScriptEnabled(true);
-                webView.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-                webView.loadDataWithBaseURL(null, HTML_LOADING.replace("$loading", com.waenhancer.xposed.core.FeatureLoader.getModuleString(com.waenhancer.xposed.utils.Utils.getApplication(), R.string.loading)), "text/html", "UTF-8", null);
-                frameLayout.addView(webView);
-                alertDialog.setView(frameLayout);
-                alertDialog.setOnDismissListener(dialog1 -> {
-                    if (filePath != null && filePath.exists()) {
-                        filePath.delete();
-                    }
-                    if (!executor.isShutdown())
-                        executor.shutdownNow();
-                });
-                dialog = alertDialog.create();
-                dialog.show();
-                executor.execute(() -> decodeMedia(url.get(), media_key, mine_type, executor, webView, isNewsletter));
+        String url;
+        String mimeType;
+        String mediaKey;
+        try (Cursor cursor = MessageStore.getInstance().getDatabase().rawQuery(
+                "SELECT message_url,mime_type,hex(media_key),direct_path FROM message_media WHERE message_row_id=?",
+                new String[]{String.valueOf(id)})) {
+            if (cursor == null || !cursor.moveToFirst()) return;
+            url = cursor.getString(0);
+            mimeType = cursor.getString(1);
+            mediaKey = cursor.getString(2);
+            if (isNewsletter) {
+                String directPath = cursor.getString(3);
+                if (directPath == null) return;
+                url = "https://mmg.whatsapp.net" + directPath;
             }
-        } catch (Exception e) {
-            logDebug(e);
-            Utils.showToast(e.getMessage(), Toast.LENGTH_LONG);
-            if (dialog != null && dialog.isShowing())
-                dialog.dismiss();
-            if (!executor.isShutdown())
-                executor.shutdownNow();
+        } catch (Exception failure) {
+            logDebug(failure);
+            return;
+        }
+        if (url == null || mimeType == null) return;
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        AtomicBoolean dismissed = new AtomicBoolean();
+        File output;
+        try {
+            output = File.createTempFile("mediapreview-", mimeType.startsWith("image") ? ".jpg" : ".mp4",
+                    Utils.getApplication().getCacheDir());
+        } catch (IOException failure) {
+            executor.shutdownNow();
+            logDebug(failure);
+            return;
+        }
+        WebView webView = new WebView(context);
+        webView.getSettings().setAllowFileAccess(true);
+        webView.getSettings().setSupportZoom(true);
+        webView.getSettings().setBuiltInZoomControls(true);
+        webView.getSettings().setDisplayZoomControls(false);
+        webView.getSettings().setJavaScriptEnabled(true);
+        webView.setLayoutParams(new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        webView.loadDataWithBaseURL(null, HTML_LOADING.replace("$loading",
+                com.waenhancer.xposed.core.FeatureLoader.getModuleString(
+                        Utils.getApplication(), R.string.loading)), "text/html", "UTF-8", null);
+        AlertDialog previewDialog = new AlertDialog.Builder(context).setView(webView).create();
+        previewDialog.setOnDismissListener(ignored -> {
+            dismissed.set(true);
+            executor.shutdownNow();
+            output.delete();
+            webView.stopLoading();
+            webView.destroy();
+        });
+        try {
+            previewDialog.show();
+            String requestUrl = url;
+            executor.execute(() -> decodeMedia(requestUrl, mediaKey, mimeType,
+                    executor, webView, previewDialog, output, dismissed, isNewsletter));
+        } catch (Exception failure) {
+            dismissed.set(true);
+            executor.shutdownNow();
+            output.delete();
+            if (previewDialog.isShowing()) previewDialog.dismiss();
+            else webView.destroy();
+            logDebug(failure);
         }
     }
 
-    /**
-     * Decodifica a mídia.
-     *
-     * @param url          A URL da mídia.
-     * @param mediaKey     A chave de mídia.
-     * @param mimeType     O tipo MIME da mídia.
-     * @param executor     O executor de tarefas.
-     * @param webView      A visualização da web.
-     * @param isNewsletter Indica se a mensagem é de um boletim informativo.
-     */
-    private void decodeMedia(String url, String mediaKey, String mimeType, ExecutorService executor, WebView webView, boolean isNewsletter) {
+    /** Stream the download to disk; each preview owns its files, worker, and dialog. */
+    private void decodeMedia(String url, String mediaKey, String mimeType, ExecutorService executor,
+                             WebView webView, AlertDialog previewDialog, File output,
+                             AtomicBoolean dismissed, boolean isNewsletter) {
+        File encrypted = null;
         try {
-            String fileExtension = mimeType.startsWith("image") ? ".jpg" : ".mp4";
-            filePath = new File(Utils.getApplication().getCacheDir(), "mediapreview" + fileExtension);
-
-            byte[] encryptedData = Objects.requireNonNull(new OkHttpClient.Builder()
+            encrypted = File.createTempFile("mediapreview-", ".enc", output.getParentFile());
+            try (okhttp3.Response response = new OkHttpClient.Builder()
                     .addInterceptor(chain -> chain.proceed(chain.request().newBuilder()
-                            .addHeader("User-Agent", "Chrome/117.0.5938.150")
-                            .build()))
-                    .build()
-                    .newCall(new Request.Builder().url(url).build())
-                    .execute()
-                    .body()).source().readByteArray();
-
-            if (filePath.exists()) {
-                //noinspection ResultOfMethodCallIgnored
-                filePath.delete();
+                            .addHeader("User-Agent", "Chrome/117.0.5938.150").build()))
+                    .build().newCall(new Request.Builder().url(url).build()).execute()) {
+                if (!response.isSuccessful() || response.body() == null)
+                    throw new IOException("Media download failed: HTTP " + response.code());
+                try (java.io.InputStream input = response.body().byteStream();
+                     FileOutputStream download = new FileOutputStream(encrypted)) {
+                    byte[] buffer = new byte[8192];
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        if (dismissed.get() || Thread.currentThread().isInterrupted()) return;
+                        download.write(buffer, 0, count);
+                    }
+                }
             }
-
-            byte[] decryptedData = isNewsletter ? encryptedData : decryptMedia(encryptedData, mediaKey, mimeType);
-            assert decryptedData != null;
-
-            try (BufferedSink bufferedSink = Okio.buffer(Okio.sink(filePath))) {
-                bufferedSink.write(decryptedData);
+            if (dismissed.get()) return;
+            if (isNewsletter) {
+                java.nio.file.Files.copy(encrypted.toPath(), output.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } else {
+                decryptMediaFile(encrypted, output, mediaKey, mimeType);
             }
-
+            if (output.length() == 0) throw new IOException("Empty media file");
             webView.post(() -> {
-                String fileUrl = "file://" + filePath.getAbsolutePath();
-                if (mimeType.contains("image")) {
-                    webView.loadDataWithBaseURL(null, HTML_IMAGE.replace("$url", fileUrl), "text/html", "UTF-8", null);
-                } else {
-                    webView.loadDataWithBaseURL(null, HTML_VIDEO.replace("$url", fileUrl), "text/html", "UTF-8", null);
+                if (dismissed.get() || !previewDialog.isShowing()) return;
+                String fileUrl = "file://" + output.getAbsolutePath();
+                webView.loadDataWithBaseURL(null,
+                        (mimeType.startsWith("image") ? HTML_IMAGE : HTML_VIDEO).replace("$url", fileUrl),
+                        "text/html", "UTF-8", null);
+            });
+        } catch (Throwable failure) {
+            logDebug(failure);
+            webView.post(() -> {
+                if (dismissed.get()) return;
+                Utils.showToast("Media preview failed", Toast.LENGTH_LONG);
+                if (previewDialog.isShowing()) {
+                    try { previewDialog.dismiss(); } catch (IllegalArgumentException ignored) {}
                 }
             });
-        } catch (Throwable e) {
-            if (e instanceof InvocationTargetException) {
-                logDebug(e.getCause());
-                Utils.showToast(Objects.requireNonNull(e.getCause()).getMessage(), Toast.LENGTH_LONG);
-            } else {
-                logDebug(e);
-                Utils.showToast(e.getMessage(), Toast.LENGTH_LONG);
-            }
-            if (dialog != null && dialog.isShowing()) {
-                dialog.dismiss();
-            }
         } finally {
-            if (!executor.isShutdown()) {
-                executor.shutdownNow();
-            }
+            if (encrypted != null) encrypted.delete();
+            if (dismissed.get()) output.delete();
+            executor.shutdown();
         }
     }
 
-
-    /**
-     * Descriptografa a mídia.
-     *
-     * @param encryptedData Os dados criptografados.
-     * @param mediaKey      A chave de mídia.
-     * @param mimeType      O tipo MIME da mídia.
-     * @return Os dados descriptografados.
-     * @throws Exception Se ocorrer um erro durante a descriptografia.
-     */
-    private byte[] decryptMedia(byte[] encryptedData, String mediaKey, String mimeType) throws Exception {
-        if (mediaKey.length() % 2 != 0 || mediaKey.length() != 64) {
-            throw new IllegalArgumentException("Invalid media key.");
-        }
-
+    private void decryptMediaFile(File encrypted, File output, String mediaKey, String mimeType)
+            throws Exception {
+        if (mediaKey == null || !mediaKey.matches("[0-9a-fA-F]{64}"))
+            throw new IllegalArgumentException("Invalid media key");
         byte[] keyBytes = new byte[32];
         for (int i = 0; i < 64; i += 2) {
-            keyBytes[i / 2] = (byte) ((Character.digit(mediaKey.charAt(i), 16) << 4) + Character.digit(mediaKey.charAt(i + 1), 16));
+            keyBytes[i / 2] = (byte) ((Character.digit(mediaKey.charAt(i), 16) << 4)
+                    + Character.digit(mediaKey.charAt(i + 1), 16));
         }
-
-        byte[] typeKey = MEDIA_KEYS.getOrDefault(mimeType, MEDIA_KEYS.get("document"));
+        String normalizedMime = mimeType.split(";", 2)[0].trim();
+        byte[] typeKey = MEDIA_KEYS.get(normalizedMime);
+        if (typeKey == null) typeKey = MEDIA_KEYS.get(normalizedMime.split("/", 2)[0]);
+        if (typeKey == null) typeKey = MEDIA_KEYS.get("document");
         byte[] derivedKey = HKDF.createFor(3).deriveSecrets(keyBytes, typeKey, 112);
-        byte[] iv = Arrays.copyOfRange(derivedKey, 0, 16);
-        byte[] aesKey = Arrays.copyOfRange(derivedKey, 16, 48);
-
         Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(aesKey, "AES"), new IvParameterSpec(iv));
-        return cipher.doFinal(Arrays.copyOfRange(encryptedData, 0, encryptedData.length - 10));
+        cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(Arrays.copyOfRange(derivedKey, 16, 48), "AES"),
+                new IvParameterSpec(Arrays.copyOfRange(derivedKey, 0, 16)));
+        MediaPreviewPayload.decrypt(encrypted, output, cipher);
     }
 
     @NonNull

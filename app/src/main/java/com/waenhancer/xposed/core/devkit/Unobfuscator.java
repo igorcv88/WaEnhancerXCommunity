@@ -1693,14 +1693,22 @@ public class Unobfuscator {
 
     public synchronized static Method loadStatusUserMethod(ClassLoader loader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(loader, () -> {
-            var id = UnobfuscatorCache.getInstance().getOfuscateIDString("lastseensun%s");
-            if (id < 1)
-                throw new Exception("GetStatusUser ID not found");
-            var result = dexkit.findMethod(
-                    FindMethod.create().matcher(MethodMatcher.create().addUsingNumber(id).returnType(String.class)));
-            if (result.isEmpty())
-                throw new Exception("GetStatusUser method not found");
-            return result.get(result.size() - 1).getMethodInstance(loader);
+            // Newer hosts use a different resource string; retain the historical anchor.
+            for (String anchor : new String[]{"last seen %s", "lastseensun%s"}) {
+                int id = UnobfuscatorCache.getInstance().getOfuscateIDString(anchor);
+                if (id < 1) continue;
+                var direct = dexkit.findMethod(FindMethod.create().matcher(
+                        MethodMatcher.create().addUsingNumber(id).returnType(String.class)));
+                if (!direct.isEmpty()) return direct.get(direct.size() - 1).getMethodInstance(loader);
+                var producers = dexkit.findMethod(FindMethod.create().matcher(
+                        MethodMatcher.create().addUsingNumber(id)));
+                for (var producer : producers) {
+                    for (var caller : producer.getCallers()) {
+                        if (caller.getParamCount() == 3) return caller.getMethodInstance(loader);
+                    }
+                }
+            }
+            throw new Exception("GetStatusUser method not found");
         });
     }
 

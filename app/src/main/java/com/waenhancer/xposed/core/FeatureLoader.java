@@ -91,6 +91,7 @@ import com.waenhancer.xposed.features.others.CopyStatus;
 import com.waenhancer.xposed.features.others.CopySelectionMessage;
 import com.waenhancer.xposed.features.others.DebugFeature;
 import com.waenhancer.xposed.features.others.GoogleTranslate;
+import com.waenhancer.xposed.features.others.MinorFixes;
 import com.waenhancer.xposed.features.others.GroupAdmin;
 import com.waenhancer.xposed.features.others.MenuHome;
 import com.waenhancer.xposed.features.others.SettingsInjector;
@@ -965,6 +966,7 @@ public class FeatureLoader {
 
         var classes = new Class<?>[] {
                 DebugFeature.class,
+                MinorFixes.class,
                 ContactItemListener.class,
                 ConversationItemListener.class,
                 MenuStatusListener.class,

@@ -3,6 +3,10 @@ package com.waenhancer.xposed.features.customization;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Color;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.util.LruCache;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -35,13 +39,23 @@ import de.robv.android.xposed.XposedHelpers;
 
 public class ShowOnline extends Feature {
 
-    private Object mStatusUser;
-    private Object mInstancePresence;
+    private volatile Object mStatusUser;
+    private volatile Object mInstancePresence;
     private Method sendPresenceMethod;
     private Method tcTokenMethod;
     private Method getStatusUser;
     private java.lang.reflect.Field fieldTokenDBInstance;
     private Class<?> tokenClass;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    // Shared bounded executor avoids a new pool per row or module feature.
+    private final LruCache<String, CachedStatus> statusCache = new LruCache<>(128);
+    private final java.util.Set<String> pending = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final int BOUND_JID = 0x7FFF0005;
+    private static final class CachedStatus {
+        final String status;
+        final long expires;
+        CachedStatus(String status) { this.status = status; this.expires = SystemClock.uptimeMillis() + 1000; }
+    }
 
     public ShowOnline(@NonNull ClassLoader loader, @NonNull SharedPreferences preferences) {
         super(loader, preferences);
@@ -224,8 +238,12 @@ public class ShowOnline extends Feature {
             @SuppressLint("ResourceType")
             public void onBind(WaContactWpp waContact, View view) {
                 try {
+                    if (waContact == null || view == null) return;
                     var userJid = waContact.getUserJid();
-                    if (userJid == null || userJid.isGroup()) return;
+                    if (userJid == null || userJid.isNull() || userJid.isGroup()) return;
+                    String jid = userJid.getPhoneRawString();
+                    if (jid == null) return;
+                    view.setTag(BOUND_JID, jid);
 
                     ImageView csDot = showOnlineIcon ? view.findViewById(0x7FFF0001) : null;
                     if (showOnlineIcon && csDot != null) {
@@ -233,13 +251,57 @@ public class ShowOnline extends Feature {
                     }
                     TextView lastSeenText = showOnlineText ? view.findViewById(0x7FFF0002) : null;
 
-                    if (mInstancePresence == null || mStatusUser == null) return;
-                    var tokenDBInstance = fieldTokenDBInstance.get(mInstancePresence);
-                    var tokenData = ReflectionUtils.callMethod(tcTokenMethod, tokenDBInstance, userJid.userJid);
-                    var tokenObj = tokenClass.getConstructors()[0].newInstance(tokenData == null ? null : XposedHelpers.getObjectField(tokenData, "A01"));
-                    sendPresenceMethod.invoke(null, userJid.userJid, null, tokenObj, mInstancePresence);
-                    var status = (String) ReflectionUtils.callMethod(getStatusUser, mStatusUser, waContact.getObject(), false);
-                    setStatus(status, csDot, lastSeenText);
+                    if (lastSeenText != null) lastSeenText.setText("");
+                    CachedStatus cached = statusCache.get(jid);
+                    if (cached != null && cached.expires > SystemClock.uptimeMillis()) {
+                        setStatus(cached.status, csDot, lastSeenText);
+                        return;
+                    }
+                    Object presence = mInstancePresence;
+                    Object statusOwner = mStatusUser;
+                    if (presence == null || statusOwner == null || !pending.add(jid)) return;
+                    Utils.getExecutor().execute(() -> {
+                        String resolved = null;
+                        boolean succeeded = false;
+                        try {
+                            var tokenDBInstance = fieldTokenDBInstance.get(presence);
+                            var tokenData = ReflectionUtils.callMethod(tcTokenMethod, tokenDBInstance, userJid.userJid);
+                            var tokenObj = tokenClass.getConstructors()[0].newInstance(tokenData == null
+                                    ? null : XposedHelpers.getObjectField(tokenData, "A01"));
+                            sendPresenceMethod.invoke(null, userJid.userJid, null, tokenObj, presence);
+                            if (getStatusUser.getReturnType() == String.class) {
+                                resolved = (String) ReflectionUtils.callMethod(getStatusUser,
+                                        statusOwner, waContact.getObject(), false);
+                            } else {
+                                Object result = ReflectionUtils.callMethod(getStatusUser,
+                                        statusOwner, waContact.getObject(), 0, false);
+                                if (result != null) {
+                                    try {
+                                        Object value = XposedHelpers.getObjectField(result, "A01");
+                                        if (value instanceof String) resolved = (String) value;
+                                    } catch (NoSuchFieldError unavailable) {
+                                        var fields = ReflectionUtils.findAllFieldsUsingFilter(
+                                                result.getClass(), field -> field.getType() == String.class);
+                                        if (fields.length == 1) {
+                                            fields[0].setAccessible(true);
+                                            resolved = (String) fields[0].get(result);
+                                        }
+                                    }
+                                }
+                            }
+                            succeeded = true;
+                        } catch (Exception failure) {
+                            XposedBridge.log(failure);
+                        } finally {
+                            pending.remove(jid);
+                        }
+                        if (!succeeded) return;
+                        String status = resolved;
+                        main.post(() -> {
+                            statusCache.put(jid, new CachedStatus(status));
+                            if (jid.equals(view.getTag(BOUND_JID))) setStatus(status, csDot, lastSeenText);
+                        });
+                    });
                 } catch (Exception e) {
                     XposedBridge.log(e);
                 }

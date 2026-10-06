@@ -172,6 +172,10 @@
         <item>2.26.32.xx</item>
         <item>2.26.33.xx</item>
         <item>2.26.34.xx</item>
+        <item>2.26.35.xx</item>
+        <item>2.26.36.xx</item>
+        <item>2.26.37.xx</item>
+        <item>2.26.38.xx</item>
     </string-array>
 
     <string-array name="supported_versions_business">
@@ -188,6 +192,10 @@
         <item>2.26.32.xx</item>
         <item>2.26.33.xx</item>
         <item>2.26.34.xx</item>
+        <item>2.26.35.xx</item>
+        <item>2.26.36.xx</item>
+        <item>2.26.37.xx</item>
+        <item>2.26.38.xx</item>
     </string-array>
 
     <string-array name="image_picker">

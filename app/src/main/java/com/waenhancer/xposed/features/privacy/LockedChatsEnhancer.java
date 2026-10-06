@@ -69,8 +69,30 @@ public class LockedChatsEnhancer extends Feature {
         XposedBridge.hookMethod(loadedContacts, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                var list = (List) XposedHelpers.getObjectField(param.args[0], "A01");
+                if (param.args.length == 0 || param.args[0] == null || chatCache == null
+                        || lockedChatsFields.length < 2) return;
+                Object contacts = param.args[0];
+                // Keep the known field when present; only accept an unambiguous typed fallback.
+                java.lang.reflect.Field listField = null;
+                try {
+                    listField = contacts.getClass().getDeclaredField("A01");
+                    if (!List.class.isAssignableFrom(listField.getType())) listField = null;
+                } catch (NoSuchFieldException ignored) {}
+                if (listField == null) {
+                    for (var field : contacts.getClass().getDeclaredFields()) {
+                        if (!List.class.isAssignableFrom(field.getType())) continue;
+                        if (listField != null) return;
+                        listField = field;
+                    }
+                }
+                if (listField == null) return;
+                listField.setAccessible(true);
+                Object rawList = listField.get(contacts);
+                if (!(rawList instanceof List<?>)) return;
+                var list = new ArrayList<>((List<?>) rawList);
+                lockedChatsFields[1].setAccessible(true);
                 HashSet<?> lockedChats = (HashSet<?>) lockedChatsFields[1].get(chatCache);
+                if (lockedChats == null) return;
                 var lockedNumbers = lockedChats.stream().map(userjid -> new FMessageWpp.UserJid(userjid).getPhoneNumber()).collect(Collectors.toList());
                 list.removeIf(item -> {
                     if (!WaContactWpp.TYPE.isInstance(item)) return false;
@@ -78,6 +100,7 @@ public class LockedChatsEnhancer extends Feature {
                     var phoneNumber = waContact.getUserJid().getPhoneNumber();
                     return lockedNumbers.contains(phoneNumber);
                 });
+                listField.set(contacts, list);
             }
         });
     }
