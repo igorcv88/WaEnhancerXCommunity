@@ -22,6 +22,7 @@ import java.util.WeakHashMap;
 /** One GPU recording per window/frame, shared by all its background drawables. */
 public final class SharedGlassBackdrop {
     public static final long FRAME_INTERVAL_MS = 100; // Software fallback only.
+    private static final GlassFrameClock FRAME_CLOCK = new GlassFrameClock();
     private static boolean captureAvailable = true;
     public static void disableCapture() { captureAvailable = false; }
     private static final int MAX_PIXELS = 400_000;
@@ -62,14 +63,20 @@ public final class SharedGlassBackdrop {
     }
     public void markMotion() { motionUntil = SystemClock.uptimeMillis() + 250; }
 
-    /** Use Choreographer's token, not the number of Session/pre-draw invocations. */
+    /** Share public frame-callback timestamps across all window/pre-draw invocations. */
     public void prepareFrame() {
         if (released || isCapturing()) return;
         View view = root.get();
         if (view == null || !view.isAttachedToWindow()) return;
         long token;
-        try { token = Choreographer.getInstance().getFrameTimeNanos(); }
-        catch (IllegalStateException outsideFrame) { request(); return; }
+        try {
+            token = FRAME_CLOCK.currentFrame(callback ->
+                    Choreographer.getInstance().postFrameCallback(callback::accept));
+        }
+        catch (IllegalStateException outsideLooper) { request(); return; }
+        // The first traversal bootstraps normally; the callback runs before the next traversal.
+        // A one-shot callback does not invalidate views or perpetually schedule idle frames.
+        if (token == Long.MIN_VALUE) { request(); return; }
         long now = SystemClock.uptimeMillis();
         if (now - powerChecked >= 1000) {
             powerChecked = now;
