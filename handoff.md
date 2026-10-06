@@ -6,7 +6,7 @@ This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent
 
 Repository: https://github.com/igorcv88/WaEnhancerXCommunity
 
-Base: `master` at `4f4d0c64fff855508289e08ee064b5ff3261b2c4`. The installed Community `v0.0.8` has the same tree as that base. Working branch: `fix/receipts-upstream-audit`. A new ready-for-review PR is being prepared for this task; publication details will be appended after creation.
+Base: `master` at `4f4d0c64fff855508289e08ee064b5ff3261b2c4`. The installed Community `v0.0.8` has the same tree as that base. Working branch: `fix/receipts-upstream-audit`. Published ready-for-review PR: https://github.com/igorcv88/WaEnhancerXCommunity/pull/65 (`draft=false`, open, not merged). Initial implementation/audit commit: `47ba889050551df0f1128be0b2d70cb9b0e5410c`. A documentation follow-up records publication; use the actual PR head for subsequent work.
 
 The user confirmed Community `v0.0.8`, ordinary WhatsApp `2.26.33.76`. Initial report said Hide Delivered was off; **the user corrected this: Hide Delivered was enabled**. Correct target behavior: receipts remain hidden before replying, but Send Blue Ticks upon Reply releases delivered/read state when the user sends a reply. Manual Send Blue Tick / Mark Viewed currently releases both, according to the user's two-phone comparison. Treat that as reported device evidence, not a test of this branch.
 
@@ -64,7 +64,7 @@ Already covered or intentionally separate: recording selection share/delete, mod
 - 14 focused JUnit tests passed: 5 receipt-policy scenarios, 5 immediate-worker/rollback cases, 4 streamed payload/corruption cases.
 - Java 17 compilation check passed for 11 changed/new classes (`HideSeen`, `SeenTick`, `LockedChatsEnhancer`, `ShowOnline`, `MinorFixes`, `MediaPreview`, `MediaPreviewPayload`, `ReceiptPolicy`, `ReceiptRelease`, `RealPathUtil`, `FloatSeekBarPreference`), plus the extracted actual changed DexKit resolver. Android API 36 and DexKit APIs are real cached artifacts; unavailable internal/AndroidX/Material/Kotlin/OkHttp dependencies are represented by signature stubs. This is a partial type/API check, not an APK build or runtime test.
 - Full `:app:testWhatsappDebugUnitTest` was attempted and blocked at downloading Gradle 8.14.5 (`Network is unreachable`). Project requires a JDK 21 toolchain while targeting JVM 17; available local runtime here is Java 17.
-- `git diff --check` passed. Edited resource XML is checked separately before publication.
+- `git diff --check` passed. Edited resource XML and the Git-mode-120000 CLAUDE.md symlink were verified.
 - No workflow dispatched; no APK built or installed; no new device result.
 
 Next physical check on the affected build: hide delivered + blue on reply enabled, verify one tick while receiving/reading without reply, send a normal chat reply, then verify two blue ticks on the sender without using the manual menu. Repeat with multiple pending messages and a notification reply. Compare with Hide Delivered off / Hide Read on: two gray ticks before reply, blue after reply. Confirm manual release, custom per-contact overrides, ghost mode, groups, self chat, PN/LID contacts, voice/view-once and status routes. Also check document picker, recordings list, online row recycling, concurrent media previews and cancellation.
@@ -96,4 +96,4 @@ The user requested a new-instance migration prompt. This current PR implements f
 
 ## Conversation log
 
-- 2026-10-06, Codex: fetched current Community and original-upstream histories; recorded the X API block. User supplied installed versions and corrected Hide Delivered to enabled. User selected compatible fixes now, new features/migrations separately, then explicitly requested migration state and a startup prompt for a new instance. Implemented the fixes and validation above. Publication status follows below.
+- 2026-10-06, Codex: fetched current Community and original-upstream histories; recorded the X API block. User supplied installed versions and corrected Hide Delivered to enabled. User selected compatible fixes now, new features/migrations separately, then explicitly requested migration state and a startup prompt for a new instance. Implemented the fixes and validation above. Published PR #65, ready for review. The remote implementation tree was verified to match the locally validated tree (`dac5266ed21bfeec25a36c1f769f35005cb49dc6`).
