@@ -72,7 +72,7 @@ The app reads release metadata from `igorcv88/WaEnhancerXCommunity`. Stable and 
 
 Downloaded APKs are verified before installation: published SHA-256, package identity, signing certificate, and version policy. Downgrades require an explicit user action.
 
-Official releases are produced by the manually triggered GitHub Actions release workflow with JDK 17. The workflow validates the Gradle wrapper, signs the release APK, verifies certificate/package/version metadata, calculates SHA-256, and publishes the APK directly to a GitHub Release.
+Official releases are produced by the manually triggered GitHub Actions release workflow with JDK 21 and JVM 17 application bytecode. The workflow validates the Gradle wrapper, signs the release APK, verifies certificate/package/version metadata, calculates SHA-256, and publishes the APK directly to a GitHub Release.
 
 ## Invariants
 

@@ -27,6 +27,7 @@ import com.waenhancer.xposed.core.db.MessageHistory;
 import com.waenhancer.xposed.core.db.MessageStore;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.features.customization.HideSeenView;
+import com.waenhancer.xposed.features.privacy.ReceiptRelease;
 import com.waenhancer.xposed.features.listeners.MenuStatusListener;
 import com.waenhancer.xposed.utils.DesignUtils;
 import com.waenhancer.xposed.utils.ReflectionUtils;
@@ -417,17 +418,21 @@ public class SeenTick extends Feature {
 
     private void hookOnSendMessages() throws Exception {
         var messageJobMethod = Unobfuscator.loadBlueOnReplayMessageJobMethod(classLoader);
-        var messageSendClass = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.Contains, "SendE2EMessageJob");
+        var messageSendClass = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "SendE2EMessageJob");
 
         XposedBridge.hookMethod(messageJobMethod, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 if (!prefs.getBoolean("blueonreply", false)) return;
+                if (!messageSendClass.isInstance(param.thisObject)) return;
                 var obj = messageSendClass.cast(param.thisObject);
                 var rawJid = (String) XposedHelpers.getObjectField(obj, "jid");
                 var userJid = new FMessageWpp.UserJid(WppCore.createUserJid(rawJid));
 
-                if (Objects.equals(currentScreen, "status") && !userJid.isStatus()) {
+                if (userJid.isNull()) return;
+                // The outgoing job owns the destination; an unrelated visible status must
+                // not redirect a chat reply's authorization to a different conversation.
+                if (userJid.isStatus()) {
                     if (statuses.isEmpty()) return;
                     var first = statuses.stream().findFirst().orElse(null);
                     if (first == null) return;
@@ -531,7 +536,20 @@ public class SeenTick extends Feature {
 
                 Object sendJob = sendJobConstrutor.newInstance(args);
                 XposedHelpers.setAdditionalInstanceField(sendJob, "blue_on_reply", true);
-                WaJobManagerMethod.invoke(mWaJobManager, sendJob);
+                // Publish authorization first: the queue can run the job before invoke returns.
+                // Every suppression layer reads the same record, including the direct guard.
+                ReceiptRelease.enqueue(groupMessages,
+                        message -> {
+                            if (!MessageHistory.getInstance().updateViewedMessage(
+                                    userJid.getPhoneRawString(), message.getKey().messageID,
+                                    MessageHistory.MessageType.MESSAGE_TYPE, true)) {
+                                throw new IllegalStateException("Could not authorize pending read receipt");
+                            }
+                        },
+                        message -> MessageHistory.getInstance().updateViewedMessage(
+                                userJid.getPhoneRawString(), message.getKey().messageID,
+                                MessageHistory.MessageType.MESSAGE_TYPE, false),
+                        () -> WaJobManagerMethod.invoke(mWaJobManager, sendJob));
 
                 sentMessages.addAll(groupMessages);
 

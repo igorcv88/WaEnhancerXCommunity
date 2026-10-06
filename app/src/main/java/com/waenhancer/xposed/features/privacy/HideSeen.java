@@ -99,27 +99,28 @@ public class HideSeen extends Feature {
                             || key.remoteJid.isNull() || key.remoteJid.isStatus()) {
                         return;
                     }
-                    if (!checkPrivacyAndHideSeen(key) && !checkPrivacyAndHideReceipt(key)) return;
+                    boolean hideSeen = checkPrivacyAndHideSeen(key);
+                    boolean hideDelivered = checkPrivacyAndHideReceipt(key);
+                    if (!hideSeen && !hideDelivered) return;
+                    MessageHistory.MessageType receiptType = MessageHistory.MessageType.MESSAGE_TYPE;
+                    try {
+                        if (fMessage.isViewOnce()) receiptType = MessageHistory.MessageType.VIEW_ONCE_TYPE;
+                    } catch (Throwable ignored) {
+                        // A classification failure must not release a private receipt.
+                    }
+                    MessageHistory.MessageSeenItem previous = MessageHistory.getInstance().getHideSeenMessage(
+                            key.remoteJid.getPhoneRawString(), key.messageID, receiptType);
+                    if (!ReceiptPolicy.suppressRead(hideSeen, hideDelivered,
+                            previous != null && previous.viewed)) return;
 
-                    // Suppress first. Type classification is bookkeeping and must never expose a
-                    // receipt if a future host change makes isViewOnce() fail.
+                    // Authorization has been checked; preserve hiding for ordinary receipts.
                     param.setResult(null);
                     if (key.messageID == null) return;
-
-                    MessageHistory.MessageType dbType = MessageHistory.MessageType.MESSAGE_TYPE;
-                    try {
-                        if (fMessage.isViewOnce()) {
-                            dbType = MessageHistory.MessageType.VIEW_ONCE_TYPE;
-                        }
-                    } catch (Throwable ignored) {
-                        // Preserve privacy and fall back to the historical bucket if classification
-                        // is unavailable; the hook itself has already been suppressed above.
-                    }
 
                     MessageHistory.getInstance().insertHideSeenMessage(
                             key.remoteJid.getPhoneRawString(),
                             key.messageID,
-                            dbType,
+                            receiptType,
                             false);
                 } catch (Throwable t) {
                     // Privacy enforcement must never destabilize WhatsApp.
@@ -298,14 +299,10 @@ public class HideSeen extends Feature {
                                 dbType
                         );
 
-                        if (hideSeenItem != null) {
-                            if (!hideSeenItem.viewed) {
-                                anySuppressed = true;
-                            }
-                            continue;
-                        }
-
-                        if (checkPrivacyAndHideSeen(fmessageKey) || checkPrivacyAndHideReceipt(fmessageKey)) {
+                        // These dispatch codes alone do not establish a read-receipt kind.
+                        // Hide Read is enforced at the read job/direct/protocol gates instead.
+                        if (ReceiptPolicy.suppressDispatch(checkPrivacyAndHideReceipt(fmessageKey),
+                                hideSeenItem != null && hideSeenItem.viewed)) {
                             MessageHistory.getInstance().insertHideSeenMessage(
                                     fmessageKey.remoteJid.getPhoneRawString(),
                                     fmessageKey.messageID,
@@ -408,15 +405,14 @@ public class HideSeen extends Feature {
                         dbType
                 );
 
-                if (hideSeenItem != null) {
-                    if (hideSeenItem.viewed) return;
-                    param.setResult(null);
-                    return;
-                }
+                // Explicit receipt authorization overrides privacy for this message. An old
+                // unviewed row is bookkeeping, not permission to cancel all receipt kinds.
+                if (hideSeenItem != null && hideSeenItem.viewed) return;
 
                 boolean hideSeen = checkPrivacyAndHideSeen(fmessageKey);
                 boolean hideReceipt = checkPrivacyAndHideReceipt(fmessageKey);
 
+                String receiptType = typeKV == null ? null : typeKV.getValue();
                 if (hideReceipt) {
                     if (typeKV == null) {
                         protocolTreeNodeWpp.addKeyValue("type", "inactive");
@@ -432,7 +428,7 @@ public class HideSeen extends Feature {
                 Boolean isManual = inManualReceiptCheck.get();
                 if (isManual != null && isManual) return;
 
-                if (hideReceipt || hideSeen) {
+                if (ReceiptPolicy.recordHidden(hideSeen, hideReceipt, receiptType)) {
                     MessageHistory.getInstance().insertHideSeenMessage(
                             fmessageKey.remoteJid.getPhoneRawString(),
                             fmessageKey.messageID,

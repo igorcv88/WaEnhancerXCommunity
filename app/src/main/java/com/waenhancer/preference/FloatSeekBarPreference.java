@@ -122,8 +122,8 @@ public class FloatSeekBarPreference extends Preference {
     }
 
     public void setValue(float value) {
-        newValue = value;
-        persistFloat(value);
+        newValue = normalizeValue(value);
+        persistFloat(newValue);
         notifyChanged();
     }
 
@@ -192,6 +192,7 @@ public class FloatSeekBarPreference extends Preference {
     private float normalizeValue(float value) {
         float clamped = Math.max(minValue, Math.min(maxValue, value));
         if (valueSpacing <= 0F) return clamped;
-        return minValue + (Math.round((clamped - minValue) / valueSpacing) * valueSpacing);
+        return Math.max(minValue, Math.min(maxValue,
+                minValue + (Math.round((clamped - minValue) / valueSpacing) * valueSpacing)));
     }
 }
