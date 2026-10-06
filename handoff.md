@@ -6,7 +6,7 @@ This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent
 
 Repository: https://github.com/igorcv88/WaEnhancerXCommunity
 
-Unified base: `master` at `a951ab07b9ad0a74258c69bbe4dcd0a5a02a848a`. PR #65 merged as `d93e907133a4b753395cd01839ebf87b836c41be`; PR #64 merged as `a951ab07`. Their receipt/compatibility/glass changes are all carried by the current base. Current working branch: `fix/unified-runtime-review`; publication is pending at this checkpoint. The original #65 implementation was `47ba889050551df0f1128be0b2d70cb9b0e5410c`, followed by `b4bfe43d`.
+Unified base: `master` at `a951ab07b9ad0a74258c69bbe4dcd0a5a02a848a`. PR #65 merged as `d93e907133a4b753395cd01839ebf87b836c41be`; PR #64 merged as `a951ab07`. Their receipt/compatibility/glass changes are all carried by the current base. Current working branch: `fix/unified-runtime-review`; published as ready-for-review PR #66. The original #65 implementation was `47ba889050551df0f1128be0b2d70cb9b0e5410c`, followed by `b4bfe43d`.
 
 The user now authorizes the staged upstream migrations and asked to review the unified default branch first, including both merged PRs' review comments. The required full build baseline is currently blocked at the Gradle distribution download and missing JDK 21. Implemented stabilization is documented below; framework migrations have not been represented as complete.
 
@@ -89,7 +89,9 @@ Full build attempt: `./gradlew :app:assembleWhatsappDebug :app:testWhatsappDebug
 
 Refreshed `Dev4Mod/WaEnhancer/master`: still `749c3cae4a1f1cffc2572a4a2365517ba6ce0322`, zero newer commits. The X-lineage source remains unavailable as previously recorded. Original installed evidence remains Community v0.0.8 / WhatsApp 2.26.33.76; no new installed build evidence was supplied.
 
-Next: publish this ready-for-review stabilization PR without merging; establish the full baseline; start the first Kotlin UI slice with Java-compatible signatures, then advance through the dependency order below. Preference transport's eager editor IPC, unacknowledged commit and dropped trailing hydration notifications require correction in that stage. Translation, system emoji, public recording storage, contact-picker and remaining compatibility ports remain separate.
+Published ready-for-review [PR #66](https://github.com/igorcv88/WaEnhancerXCommunity/pull/66), without merging. Its implementation commit is `be90f84475be867b722fc8aaca16850ea6d14bfe`; the remote implementation tree matches the locally validated tree `a8e757797f2ddcb02afdadc71f8262e81c1983fe`. #64's already-fixed opacity thread is resolved; #65's routing thread remains open until its corrective PR is merged.
+
+Next: establish the full baseline; start the first Kotlin UI slice with Java-compatible signatures, then advance through the dependency order below. Preference transport's eager editor IPC, unacknowledged commit and dropped trailing hydration notifications require correction in that stage. Translation, system emoji, public recording storage, contact-picker and remaining compatibility ports remain separate.
 
 ## Pending migration program for a new instance
 
@@ -120,4 +122,4 @@ The user requested a new-instance migration prompt. The foundation migrations be
 
 - 2026-10-06, Codex: fetched current Community and original-upstream histories; recorded the X API block. User supplied installed versions and corrected Hide Delivered to enabled. User selected compatible fixes now, new features/migrations separately, then explicitly requested migration state and a startup prompt for a new instance. Implemented the fixes and validation above. Published PR #65, ready for review. The remote implementation tree was verified to match the locally validated tree (`dac5266ed21bfeec25a36c1f769f35005cb49dc6`).
 
-- 2026-10-06, Codex: user merged #64/#65 and requested immediate unified-runtime review before migration. Implemented the findings above and refreshed upstream. The framework migration gate remains blocked by the full build environment; no APK or physical validation is claimed.
+- 2026-10-06, Codex: user merged #64/#65 and requested immediate unified-runtime review before migration. Implemented the findings above, refreshed upstream and published ready-for-review PR #66 without merging. The framework migration gate remains blocked by the full build environment; no APK or physical validation is claimed.
