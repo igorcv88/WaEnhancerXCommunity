@@ -27,4 +27,35 @@ public class StatusReplyRoutingTest {
         assertFalse(StatusReplyRouting.matches(true, "status@broadcast", "status@broadcast",
                 "123@s.whatsapp.net", "789@lid"));
     }
+    private record Item(String id, boolean incomingStatus) { }
+
+    @Test public void delayedReplyReleasesQuotedAEvenWhenViewerHasAdvancedToB() {
+        var a = new Item("A", true);
+        var b = new Item("B", true);
+        var selected = StatusReplyRouting.selectQuoted("A", a, Item::id, Item::incomingStatus);
+        assertEquals(java.util.List.of(a), selected);
+        assertFalse(selected.contains(b));
+        assertTrue(StatusReplyRouting.selectQuoted("A", b, Item::id, Item::incomingStatus).isEmpty());
+    }
+    @Test public void unresolvedQuoteNeverFallsBackToVisibleItem() {
+        assertTrue(StatusReplyRouting.selectQuoted("A", null, Item::id, Item::incomingStatus).isEmpty());
+        assertTrue(StatusReplyRouting.selectQuoted(null, new Item("B", true),
+                Item::id, Item::incomingStatus).isEmpty());
+        assertTrue(StatusReplyRouting.selectQuoted("", new Item("", true),
+                Item::id, Item::incomingStatus).isEmpty());
+    }
+    @Test public void ownStatusOrChatQuoteCannotAuthorizeStatusRelease() {
+        assertTrue(StatusReplyRouting.selectQuoted("A", new Item("A", false),
+                Item::id, Item::incomingStatus).isEmpty());
+    }
+    @Test public void queuedSelectionIsImmutableAndIndependentOfViewer() {
+        var a = new Item("A", true);
+        var viewer = new java.util.ArrayList<>(java.util.List.of(a));
+        var selected = StatusReplyRouting.selectQuoted("A", viewer.get(0), Item::id, Item::incomingStatus);
+        viewer.clear();
+        viewer.add(new Item("B", true));
+        assertEquals(java.util.List.of(a), selected);
+        try { selected.add(viewer.get(0)); fail("selection must be immutable"); }
+        catch (UnsupportedOperationException expected) { }
+    }
 }
