@@ -1,56 +1,48 @@
 package com.waenhancer.theme;
 
 import android.content.res.ColorStateList;
-import android.graphics.Bitmap;
-import android.graphics.BitmapShader;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
-import android.graphics.Matrix;
-import android.graphics.Paint;
 import android.graphics.Outline;
+import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
-import android.graphics.RuntimeShader;
-import android.os.SystemClock;
-import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
 import android.view.View;
 
 import java.lang.ref.WeakReference;
 import java.util.function.Supplier;
 
-/** Glass in an existing background slot: no reparenting, layout changes or filtering of text. */
+/**
+ * Static glass material in an existing background slot: no reparenting, layout changes or
+ * filtering of text.
+ *
+ * <p>It paints {@link GlassSpec#withoutOptics()} in the view's own shape and samples nothing behind
+ * it. Live transmission belongs to {@link GlassPane}, which records only the region behind a pane
+ * from a source that cannot contain it. Sampling from inside a view's own background cannot meet
+ * that rule: the window recording reaches the view's cached background node, which draws the
+ * recording again (a native RenderThread crash), and a software snapshot instead is stale and
+ * slow.</p>
+ */
 public final class GlassMaterialDrawable extends Drawable implements Drawable.Callback {
     private final Drawable original;
     private final WeakReference<View> owner;
-    private Supplier<SharedGlassBackdrop> backdrop;
     private Supplier<GlassSpec> spec;
     private final float radiusDp;
     private final boolean nativeMask;
-    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint maskPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Matrix matrix = new Matrix();
-    private final int[] position = new int[2];
-    private Bitmap sampledBitmap;
-    private BitmapShader input;
-    private RuntimeShader lens;
     private Drawable fallback;
     private GlassSpec appliedMaterial;
     private int materialWidth, materialHeight;
     private float materialRadius, materialDensity;
-    private boolean compilationFailed;
-    private final GlassRenderPolicy.Retry samplingRetry = new GlassRenderPolicy.Retry();
     private int alpha = 255;
 
-    public GlassMaterialDrawable(View owner, Drawable original,
-                                 Supplier<SharedGlassBackdrop> backdrop,
-                                 Supplier<GlassSpec> spec, float radiusDp, boolean nativeMask) {
+    public GlassMaterialDrawable(View owner, Drawable original, Supplier<GlassSpec> spec,
+                                 float radiusDp, boolean nativeMask) {
         this.owner = new WeakReference<>(owner);
         this.original = original;
-        this.backdrop = backdrop;
         this.spec = spec;
         this.radiusDp = radiusDp;
         this.nativeMask = nativeMask;
@@ -66,38 +58,16 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     @Override public void draw(Canvas canvas) {
         View view = owner.get();
         if (view == null && getCallback() instanceof View) view = (View) getCallback();
-        if (view == null) { drawOriginal(canvas); return; }
-        SharedGlassBackdrop provider = backdrop.get();
-        if (!SharedGlassBackdrop.canDrawCapturedMaterial(provider)) return;
         GlassSpec material = spec.get();
         Rect b = getBounds();
-        if (provider == null || material == null || b.isEmpty()) { drawOriginal(canvas); return; }
-        provider.request();
+        if (view == null || material == null || b.isEmpty()) { drawOriginal(canvas); return; }
         float density = view.getResources().getDisplayMetrics().density;
         float radius = Math.min(radiusDp * density, Math.min(b.width(), b.height()) / 2f);
-        boolean changed = appliedMaterial != material || materialWidth != b.width()
-                || materialHeight != b.height() || materialRadius != radius || materialDensity != density;
-        if (changed) {
+        if (fallback == null || appliedMaterial != material || materialWidth != b.width()
+                || materialHeight != b.height() || materialRadius != radius || materialDensity != density) {
             appliedMaterial = material; materialWidth = b.width(); materialHeight = b.height();
             materialRadius = radius; materialDensity = density;
-            // This drawable never uses the BlurView/RenderScript backend modeled by resolveFor.
             fallback = GlassRenderer.background(material.withoutOptics(), radius, density);
-        }
-        if (Build.VERSION.SDK_INT >= 33 && !compilationFailed && (material.lensStrength > 0f && Build.VERSION.SDK_INT >= 33)
-                && samplingRetry.ready(SystemClock.uptimeMillis())) {
-            if (lens == null) {
-                try { lens = LiquidLens.newMaterialShader(); changed = true; }
-                catch (IllegalArgumentException invalidProgram) {
-                    compilationFailed = true;
-                    android.util.Log.w("WaEnhancerX/Glass", "AGSL compilation failed", invalidProgram);
-                } catch (RuntimeException | LinkageError transientError) { samplingRetry.failure(SystemClock.uptimeMillis()); }
-            }
-            if (lens != null && changed) {
-                try { LiquidLens.updateMaterialUniforms(lens, material, b.width(), b.height(), radius, density); }
-                catch (RuntimeException | LinkageError transientError) {
-                    lens = null; samplingRetry.failure(SystemClock.uptimeMillis());
-                }
-            }
         }
         int save = canvas.save();
         canvas.translate(b.left, b.top);
@@ -106,40 +76,9 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
             layer = canvas.saveLayer(0, 0, b.width(), b.height(), null);
         }
         try {
-            Bitmap bitmap = provider.bitmap();
-            boolean optical = lens != null && (material.lensStrength > 0f && Build.VERSION.SDK_INT >= 33) && canvas.isHardwareAccelerated()
-                    && bitmap != null
-                    && samplingRetry.ready(SystemClock.uptimeMillis())
-                    && provider.allowShader(this, b.width(), b.height(), material, nativeMask);
-            if (optical) {
-                try {
-                    view.getLocationOnScreen(position);
-                    // Sample the backdrop's pixel copy. Never draw its recording here: see
-                    // SharedGlassBackdrop for the display list cycle that would create.
-                    if (sampledBitmap != bitmap) {
-                        sampledBitmap = bitmap;
-                        input = new BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
-                    }
-                    matrix.setScale(provider.scaleX(), provider.scaleY());
-                    matrix.postTranslate(provider.screenX() - position[0] - b.left,
-                            provider.screenY() - position[1] - b.top);
-                    input.setLocalMatrix(matrix);
-                    lens.setInputShader("content", input);
-                    paint.setShader(lens); paint.setAlpha(alpha);
-                    canvas.drawRect(0, 0, b.width(), b.height(), paint);
-                    samplingRetry.success();
-                } catch (RuntimeException | LinkageError error) {
-                    // Input/matrix/sampling errors are recoverable; the program may still be valid.
-                    samplingRetry.failure(SystemClock.uptimeMillis());
-                    sampledBitmap = null; input = null;
-                    optical = false;
-                }
-            }
-            if (!optical && fallback != null) {
-                fallback.setBounds(0, 0, b.width(), b.height());
-                fallback.setAlpha(alpha);
-                fallback.draw(canvas);
-            }
+            fallback.setBounds(0, 0, b.width(), b.height());
+            fallback.setAlpha(alpha);
+            fallback.draw(canvas);
             if (layer >= 0) {
                 // Isolate the native silhouette before DST_IN; drawing a sparse mask directly
                 // would leave the parts it never touched intact, including square corners.
@@ -158,8 +97,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         if (original != null) { original.setBounds(getBounds()); original.draw(canvas); }
     }
 
-    public void attachBackdrop(Supplier<SharedGlassBackdrop> source, Supplier<GlassSpec> material) { backdrop = source; spec = material; }
-    public boolean belongsTo(SharedGlassBackdrop provider) { return backdrop.get() == provider; }
+    public void attachMaterial(Supplier<GlassSpec> material) { spec = material; }
     public Drawable original() { return original; }
     public void restoreCallback() { if (original != null) original.setCallback(getCallback()); }
     @Override public boolean getPadding(Rect padding) {

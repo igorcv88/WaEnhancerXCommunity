@@ -181,3 +181,27 @@ Trade-offs: the backdrop updates at most every 100 ms (a throttled frame schedul
 Validation: `:app:testWhatsappDebugUnitTest` 338 tests, 0 failures; `:app:assembleWhatsappDebug` succeeded. No device test; the cycle hypothesis is unconfirmed until a crash log or a passing device run.
 
 Next: user builds via the manual workflow and installs over the current build. If WhatsApp is still unreachable, turn the surfaces off in the module app (or disable the module for WhatsApp in LSPosed) and collect `adb logcat -b crash` / the LSPosed log. Then repeat the narrow test (Toolbars + Composer only), then the remaining surfaces one at a time. Consider a crash-loop guard that disables app-surface glass after repeated early process deaths.
+
+## Liquid Glass rebuilt on WaThemer's pane model — 2026-10-08
+
+PR #69 merged as `eaccbfd`. Branch `ccr-dd7125c8-r29snt` restarted from that master.
+
+User device report after #69 (screenshots): no crash, but the glass sampled the wrong content (the composer showed a sticker that had been above it before a scroll), refreshed at roughly 5–10 FPS and was pixelated; the header and search showed nothing behind them. Causes: #69's fallback was a full-window software snapshot at 0.35 scale and at most 10 Hz, so the composer showed a stale snapshot; and in WhatsApp's native layout nothing passes behind the header, because the list starts below it and the bar has an opaque fill.
+
+Upstream review (user request): the port's primary source is WaThemer, `ayane-04/wathemer@d39b293` (GPL-3.0), per `docs/LIQUID_GLASS_PORT_AND_HEADSUP_2026-10-01.md`. WaThemer never samples from a view's own background. Each surface gets a `GlassView` pane added beneath it (index 0, no reparenting). `BackdropCapture` records only the pane's region on the GPU, from a named source subtree (the message list host or coordinator) over the wallpaper underlay. It refuses any source that contains the pane, directly or through another pane (`safeToCapture`), and falls back to underlay only. It refracts and then blurs, recapturing every frame while moving and every 250 ms when idle. `GlassConversation.kt` floats the header holder and footer with negative margins, pads the list with `clipToPadding=false` so rows scroll behind the chrome, and clears WhatsApp's bar fills.
+
+User decisions: port WaThemer's model; messages may scroll behind the header and composer.
+
+Implemented in this PR:
+- `theme/GlassPane`: a port of `GlassView`/`BackdropCapture`, with `LiquidLens` (the floating bar's proven shader) as the optics. It does a 1/4-resolution GPU region capture of the source over the underlay, applies the lens as a `RenderEffect` on a full-size node, and draws the static material below Android 13 or when the lens fails.
+- `theme/GlassPaneGraph`: the pure-logic loop guard, with 6 JVM tests (sibling allowed; ancestor, self and direct/indirect reach-back refused; underlay-only safe).
+- `ConversationGlassPanes`: a header band (wallpaper only, as in WaThemer), a header capsule (source: coordinator) and a composer pane (source: the list host). The holder and footer float, the list is padded and kept at its end, and WhatsApp's fills are cleared. Every change is recorded and restored when TOOLBARS/COMPOSER is switched off. The send button keeps the static material path.
+- `AppLiquidGlass`: the drawChild software capture and its sampling were removed. It now has ripple and `AbsListView.drawSelector` guards that apply while a pane records, and it skips views that panes own. `GlassMaterialDrawable` is now static material only.
+- Removed the dead live-sampling code: `SharedGlassBackdrop`, `WindowStackBackdrop`, `GlassWindowOrder`, `GlassFrameClock`, `GlassRenderPolicy`, and their 14 tests.
+- Settings copy and `ARCHITECTURE.md` updated.
+
+Not ported yet (they use the static material, with no live sampling): the home header and search (WaThemer `GlassToolbars.kt`/`GlassSearch.kt`), bubbles, cards, panels, quotes and FAB. The header band and pill have no underlay if `conversation_background` does not exist in this WhatsApp version; the pane then shows the source or static material. The idle heartbeat recaptures each pane every 250 ms while a chat is open (WaThemer behaviour).
+
+Validation: `:app:testWhatsappDebugUnitTest` 330 tests, 0 failures (338 − 14 removed + 6 new); `:app:assembleWhatsappDebug` succeeded; `git diff --check` clean. No device test. WaThemer's view IDs (`search_fragment_and_toolbar_holder`, `coordinator`, `footer`, `input_layout`, `whatsapp_toolbar_home`, `conversation_background`) and FrameLayout parents come from its source for its WhatsApp build, not from 2.26.33.76 evidence. A mismatch is logged (`[LiquidGlass/App]`) and that pane is skipped.
+
+Next device checks: open a chat with Headers and Message input enabled. Scroll and verify the messages pass behind and are refracted live (not a stale copy), that the first and last messages rest clear of the chrome, and that the keyboard, reply preview, voice recording, selection mode and search in chat all work. Then switch both off and confirm the native layout returns without reopening the chat. Collect the `[LiquidGlass/App]` and `WaEnhancerX/GlassPane` logs.
