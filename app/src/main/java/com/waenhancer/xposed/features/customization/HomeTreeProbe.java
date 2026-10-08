@@ -61,8 +61,14 @@ final class HomeTreeProbe {
         return id == 0 ? null : root.findViewById(id);
     }
 
+    /** By hierarchy, not the leaf name: WhatsApp's lists are subclasses (WDSList and others). */
     private static boolean isList(View view) {
-        return view instanceof AbsListView || view.getClass().getName().contains("RecyclerView");
+        if (view instanceof AbsListView) return true;
+        for (Class<?> c = view.getClass(); c != null && c != View.class; c = c.getSuperclass()) {
+            String name = c.getName();
+            if (name.contains("RecyclerView") || name.contains("WDSList")) return true;
+        }
+        return false;
     }
 
     private static int countLists(View view, int depth) {
