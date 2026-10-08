@@ -53,6 +53,20 @@ public class LiveBudgetStickyTest {
         assertTrue(budget.holdsDrawable(old) && budget.holdsDrawable(mid));
     }
 
+    /** The count a caller limits new admissions with tracks holders, not traversal order. */
+    @Test
+    public void drawableCountTracksHolders() {
+        LiveBudget budget = new LiveBudget(1000);
+        Object a = new Object(), b = new Object();
+        budget.admitDrawable(a, 100);
+        budget.admitDrawable(b, 100);
+        assertEquals(2, budget.drawableCount());
+        budget.admitDrawable(a, 100);
+        assertEquals(2, budget.drawableCount());
+        budget.releaseDrawable(b);
+        assertEquals(1, budget.drawableCount());
+    }
+
     /** Panes and drawables share one capacity. */
     @Test
     public void panesLeaveLessForDrawables() {

@@ -470,8 +470,16 @@ public final class AppLiquidGlass extends Feature {
                     if (binding.liveFailed) continue;
                     // Sticky with the ledger: a live surface keeps its slot while visible, so a
                     // layout change cannot flip surfaces between glass and fallback.
-                    boolean admitted = live < MAX_LIVE_PER_WINDOW
-                            && (ledger != null ? ledger.admitDrawable(binding.glass, area) : used + area <= budget);
+                    // The count limit, like the area one, applies only to new admissions: a holder
+                    // keeps priority whatever order this frame visits surfaces in.
+                    boolean admitted;
+                    if (ledger != null) {
+                        admitted = (ledger.holdsDrawable(binding.glass)
+                                || panes + ledger.drawableCount() < MAX_LIVE_PER_WINDOW)
+                                && ledger.admitDrawable(binding.glass, area);
+                    } else {
+                        admitted = live < MAX_LIVE_PER_WINDOW && used + area <= budget;
+                    }
                     if (!admitted) {
                         binding.glass.releaseLive();
                         if (ledger != null) ledger.releaseDrawable(binding.glass);

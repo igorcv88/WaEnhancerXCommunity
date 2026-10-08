@@ -146,6 +146,11 @@ public final class LiveBudget {
         return drawables.containsKey(surface);
     }
 
+    /** How many drawables hold a slot. */
+    public int drawableCount() {
+        return drawables.size();
+    }
+
     /** What the admitted drawables spend. */
     public long drawableSpend() {
         long total = 0;
