@@ -31,6 +31,7 @@ import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -277,7 +278,18 @@ public final class AppLiquidGlass extends Feature {
         return id == 0 ? null : root.findViewById(id);
     }
 
+    /**
+     * GPU budget per window: live surfaces are taken top to bottom until their area reaches one
+     * window's worth or this count; the rest paint the static material. Top-to-bottom keeps the
+     * choice stable while scrolling, so no surface flickers between live and static.
+     */
+    private static final int MAX_LIVE_PER_WINDOW = 32;
+    private static final float MAX_LIVE_AREA_FRACTION = 1f;
+    private static final long ACTIVE_WINDOW_MS = 350L;
+    private static final long IDLE_INTERVAL_MS = 250L;
+
     private final class Session implements ViewTreeObserver.OnGlobalLayoutListener,
+            ViewTreeObserver.OnPreDrawListener, ViewTreeObserver.OnScrollChangedListener,
             View.OnAttachStateChangeListener {
         private final WeakReference<View> root;
         private final WeakHashMap<View, Binding> bindings = new WeakHashMap<>();
@@ -289,6 +301,9 @@ public final class AppLiquidGlass extends Feature {
         private boolean closed;
         private GlassSpec cachedMaterial;
         private long materialAt;
+        private long lastActivityMs;
+        private long lastCaptureMs;
+        private boolean loggedCaptureFailure;
 
         Session(View root) {
             this.root = new WeakReference<>(root);
@@ -311,11 +326,97 @@ public final class AppLiquidGlass extends Feature {
             View view = root.get();
             if (view == null) return;
             view.getViewTreeObserver().addOnGlobalLayoutListener(this);
+            view.getViewTreeObserver().addOnPreDrawListener(this);
+            view.getViewTreeObserver().addOnScrollChangedListener(this);
             view.addOnAttachStateChangeListener(this);
         }
 
         @Override public void onGlobalLayout() {
+            lastActivityMs = SystemClock.uptimeMillis();
             scan(); // Reconcile known candidates; no periodic full-tree discovery.
+        }
+
+        @Override public void onScrollChanged() {
+            lastActivityMs = SystemClock.uptimeMillis();
+        }
+
+        /**
+         * Records every live surface of this window in one pass, before the frame draws: every
+         * frame while something moves, at a slow heartbeat at rest. One pass per frame keeps all
+         * recordings on the same draw order, which is what keeps them from recording each other.
+         */
+        @Override public boolean onPreDraw() {
+            try {
+                if (closed || bindings.isEmpty() || GlassPane.isCapturing()) return true;
+                long now = SystemClock.uptimeMillis();
+                boolean fresh = false;
+                for (Binding binding : bindings.values()) {
+                    if (binding.glass.needsFreshCapture()) { fresh = true; break; }
+                }
+                if (fresh) lastActivityMs = now;
+                boolean moving = now - lastActivityMs < ACTIVE_WINDOW_MS;
+                if (now - lastCaptureMs < (moving ? 0L : IDLE_INTERVAL_MS)) return true;
+                lastCaptureMs = now;
+                View view = root.get();
+                if (view == null) return true;
+                List<View> visible = new ArrayList<>();
+                List<int[]> rects = new ArrayList<>();
+                android.graphics.Rect r = new android.graphics.Rect();
+                for (Map.Entry<View, Binding> entry : new ArrayList<>(bindings.entrySet())) {
+                    View target = entry.getKey();
+                    if (target == null) continue;
+                    // Off screen or hidden: nothing to show, so no recording either.
+                    if (!target.isShown() || !target.getGlobalVisibleRect(r)) {
+                        entry.getValue().glass.releaseLive();
+                        continue;
+                    }
+                    visible.add(target);
+                    rects.add(new int[]{r.top, r.left, r.width() * r.height()});
+                }
+                Integer[] order = new Integer[visible.size()];
+                for (int i = 0; i < order.length; i++) order[i] = i;
+                java.util.Arrays.sort(order, (a, b) -> rects.get(a)[0] != rects.get(b)[0]
+                        ? Integer.compare(rects.get(a)[0], rects.get(b)[0])
+                        : Integer.compare(rects.get(a)[1], rects.get(b)[1]));
+                long budget = (long) (MAX_LIVE_AREA_FRACTION * view.getWidth() * view.getHeight());
+                long used = 0;
+                int live = 0;
+                for (Integer i : order) {
+                    View target = visible.get(i);
+                    Binding binding = bindings.get(target);
+                    if (binding == null) continue;
+                    long area = rects.get(i)[2];
+                    if (live >= MAX_LIVE_PER_WINDOW || used + area > budget) {
+                        binding.glass.releaseLive();
+                        continue;
+                    }
+                    if (binding.liveFailed) continue;
+                    boolean captured;
+                    try {
+                        captured = binding.glass.captureBehind(target);
+                    } catch (Throwable error) {
+                        // One surface WhatsApp cannot draw into a recording must not stop the
+                        // others: this one keeps the static material from now on.
+                        binding.liveFailed = true;
+                        binding.glass.releaseLive();
+                        report("live-capture-" + binding.surface, binding.surface
+                                + " live capture disabled; static material: " + error);
+                        continue;
+                    }
+                    if (captured) {
+                        live++;
+                        used += area;
+                        if (moving) target.invalidate();
+                    }
+                }
+                if (live > 0 && !moving) view.postInvalidateDelayed(IDLE_INTERVAL_MS);
+            } catch (Throwable error) {
+                if (!loggedCaptureFailure) {
+                    loggedCaptureFailure = true;
+                    report("live-capture-error", "live surface capture skipped: " + error);
+                }
+            }
+            return true; // never cancel the host's frame
         }
 
         void scan() {
@@ -437,6 +538,8 @@ public final class AppLiquidGlass extends Feature {
                 ViewTreeObserver observer = view.getViewTreeObserver();
                 if (observer.isAlive()) {
                     observer.removeOnGlobalLayoutListener(this);
+                    observer.removeOnPreDrawListener(this);
+                    observer.removeOnScrollChangedListener(this);
                 }
                 view.removeOnAttachStateChangeListener(this);
                 sessions.remove(view);
@@ -468,6 +571,8 @@ public final class AppLiquidGlass extends Feature {
         final int left, top, right, bottom;
         GlassMaterialDrawable glass;
         boolean tintChanged;
+        /** Set after a capture threw; this surface keeps the static material. */
+        boolean liveFailed;
         Binding(View view, Drawable original, Surface surface, boolean nativeMask) {
             this.original = original;
             this.surface = surface;
@@ -477,6 +582,7 @@ public final class AppLiquidGlass extends Feature {
             right = view.getPaddingRight(); bottom = view.getPaddingBottom();
         }
         void restore(View view) {
+            glass.releaseLive();
             if (view.getBackground() == glass) {
                 glass.restoreCallback();
                 // Preserve native padding/tint updates made while glass was active.

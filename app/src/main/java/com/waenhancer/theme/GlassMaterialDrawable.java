@@ -16,15 +16,16 @@ import java.lang.ref.WeakReference;
 import java.util.function.Supplier;
 
 /**
- * Static glass material in an existing background slot: no reparenting, layout changes or
- * filtering of text.
+ * Glass in an existing background slot: no reparenting, layout changes or filtering of text.
  *
- * <p>It paints {@link GlassSpec#withoutOptics()} in the view's own shape and samples nothing behind
- * it. Live transmission belongs to {@link GlassPane}, which records only the region behind a pane
- * from a source that cannot contain it. Sampling from inside a view's own background cannot meet
- * that rule: the window recording reaches the view's cached background node, which draws the
- * recording again (a native RenderThread crash), and a software snapshot instead is stale and
- * slow.</p>
+ * <p>Live when {@link #captureBehind} has run: a {@link LiveBackdrop} records only what the window
+ * draws <em>beneath</em> the host view ({@link BehindRecorder}: ancestors' backgrounds and the
+ * siblings drawn before it), never the host or anything after it, so the recording cannot reach
+ * this drawable again. An earlier design recorded the whole window, including the host's own
+ * cached background node, and that display-list cycle crashed the RenderThread natively.</p>
+ *
+ * <p>Otherwise, and whenever the lens is unavailable, it paints {@link GlassSpec#withoutOptics()}
+ * in the view's own shape.</p>
  */
 public final class GlassMaterialDrawable extends Drawable implements Drawable.Callback {
     private final Drawable original;
@@ -38,6 +39,8 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     private int materialWidth, materialHeight;
     private float materialRadius, materialDensity;
     private int alpha = 255;
+    private LiveBackdrop live;
+    private final int[] location = new int[2];
 
     public GlassMaterialDrawable(View owner, Drawable original, Supplier<GlassSpec> spec,
                                  float radiusDp, boolean nativeMask) {
@@ -76,9 +79,16 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
             layer = canvas.saveLayer(0, 0, b.width(), b.height(), null);
         }
         try {
-            fallback.setBounds(0, 0, b.width(), b.height());
-            fallback.setAlpha(alpha);
-            fallback.draw(canvas);
+            int fade = alpha < 255 && live != null
+                    ? canvas.saveLayerAlpha(0, 0, b.width(), b.height(), alpha) : -1;
+            boolean drewLive = live != null && LiveBackdrop.wantsLive(material)
+                    && live.draw(canvas, b.width(), b.height());
+            if (fade >= 0) canvas.restoreToCount(fade);
+            if (!drewLive) {
+                fallback.setBounds(0, 0, b.width(), b.height());
+                fallback.setAlpha(alpha);
+                fallback.draw(canvas);
+            }
             if (layer >= 0) {
                 // Isolate the native silhouette before DST_IN; drawing a sparse mask directly
                 // would leave the parts it never touched intact, including square corners.
@@ -98,6 +108,39 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     }
 
     public void attachMaterial(Supplier<GlassSpec> material) { spec = material; }
+
+    /**
+     * Records what lies beneath {@code host}, whose background this is, for the next draw.
+     * Main thread, from a pre-draw pass. False leaves the static material in place.
+     */
+    public boolean captureBehind(View host) {
+        if (host == null || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return false;
+        GlassSpec material = spec.get();
+        Rect b = getBounds();
+        if (material == null || b.isEmpty() || !host.isAttachedToWindow() || !host.isShown()) return false;
+        if (live == null) live = new LiveBackdrop();
+        if (!live.available()) return false;
+        float density = host.getResources().getDisplayMetrics().density;
+        float radius = Math.min(radiusDp * density, Math.min(b.width(), b.height()) / 2f);
+        host.getLocationOnScreen(location);
+        int x = location[0] + b.left, y = location[1] + b.top;
+        int w = b.width(), h = b.height();
+        return live.capture(w, h, radius, density, material,
+                canvas -> BehindRecorder.paint(canvas, host, x, y, w, h));
+    }
+
+    /**
+     * True when the system dropped a live recording and a capture is due now. An intentional
+     * {@link #releaseLive} (off screen, over budget) is not a drop and does not ask for one.
+     */
+    public boolean needsFreshCapture() {
+        return live != null && live.wasDropped();
+    }
+
+    /** Drops the live recording; the static material is painted until the next capture. */
+    public void releaseLive() {
+        if (live != null) live.release();
+    }
     public Drawable original() { return original; }
     public void restoreCallback() { if (original != null) original.setCallback(getCallback()); }
     @Override public boolean getPadding(Rect padding) {

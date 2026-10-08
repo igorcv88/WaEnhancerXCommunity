@@ -73,9 +73,10 @@ public class LiquidGlassActivity extends AppCompatActivity {
         }
 
         addCaption("New surface switches take effect when you return to WhatsApp. If a surface "
-                + "is missing in your WhatsApp version, it is left unchanged. In a chat, the header "
-                + "and the message input are live glass on Android 13+: messages scroll behind them "
-                + "and are refracted. Other surfaces use a static translucent material for now.");
+                + "is missing in your WhatsApp version, it is left unchanged. On Android 13+ every surface "
+                + "is live glass that refracts what is behind it; in a chat, messages scroll behind the "
+                + "header and the message input. In power saving, or where the lens is unavailable, "
+                + "surfaces become a plain translucent pane with no GPU effect.");
 
         root.addView(controls, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -88,7 +89,7 @@ public class LiquidGlassActivity extends AppCompatActivity {
 
     private String surfaceSummary(LiquidGlassSettings.Surface surface) {
         return switch (surface) {
-            case TOOLBARS -> "Chat header as live glass, with messages scrolling behind it. Other page headers use the static material.";
+            case TOOLBARS -> "Chat header with messages scrolling behind it, and the other page headers.";
             case SEARCH -> "Search capsules and conversation filter controls.";
             case FAB -> "New chat, new broadcast and other named floating buttons.";
             case COMPOSER -> "The message input as live glass, with messages scrolling behind it. The keyboard stays native.";

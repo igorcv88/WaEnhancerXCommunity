@@ -72,7 +72,7 @@ public class GlassSpecTest {
         GlassSpec fallback = resolve(GlassSpec.Variant.ADVANCED, true, false);
 
         assertTrue(alphaOf(fallback.fillColor) > alphaOf(blurred.fillColor));
-        assertTrue(alphaOf(fallback.fillColor) >= Math.round(0.72f * 255f));
+        assertTrue(alphaOf(fallback.fillColor) >= Math.round(GlassSpec.NO_BLUR_MIN_OPACITY * 255f));
     }
 
     @Test
@@ -93,7 +93,7 @@ public class GlassSpecTest {
     @Test
     public void theClearestVariantStillSurvivesTheFallback() {
         GlassSpec clear = GlassSpec.resolve(GlassSpec.Variant.CLEAR, true, 0, 0, 5f, false, false);
-        assertTrue(alphaOf(clear.fillColor) >= Math.round(0.72f * 255f));
+        assertTrue(alphaOf(clear.fillColor) >= Math.round(GlassSpec.NO_BLUR_MIN_OPACITY * 255f));
     }
 
     // ---- accessibility ----------------------------------------------------------------------
@@ -406,7 +406,7 @@ public class GlassSpecTest {
         GlassSpec optical = GlassSpec.resolve(GlassSpec.Variant.LIQUID, true, 0, 0, 10, true, false);
         GlassSpec fallback = optical.withoutOptics();
         assertTrue(alphaOf(optical.fillColor) < 10);
-        assertTrue(alphaOf(fallback.fillColor) >= Math.round(.72f * 255));
+        assertTrue(alphaOf(fallback.fillColor) >= Math.round(GlassSpec.NO_BLUR_MIN_OPACITY * 255));
         assertEquals(optical.fillColor & 0xFFFFFF, fallback.fillColor & 0xFFFFFF);
         assertEquals(0f, fallback.blurRadius, 0f);
         assertEquals(0f, fallback.lensStrength, 0f);
@@ -418,4 +418,14 @@ public class GlassSpecTest {
         assertEquals(dense.fillColor, dense.withoutOptics().fillColor);
     }
 
+
+    /** Power saving must not turn every surface into an accent-coloured slab. */
+    @Test public void fallbackCarriesNoAccentGlow() {
+        int accent = 0xFF25D366;
+        GlassSpec noBlur = GlassSpec.resolve(GlassSpec.Variant.LIQUID, true, 0, accent, 40f, false, false);
+        assertEquals(0, noBlur.refractionColor);
+        GlassSpec optical = GlassSpec.resolve(GlassSpec.Variant.ADVANCED, true, 0, accent, 40f, true, false);
+        assertEquals(0, optical.withoutOptics().refractionColor);
+        assertTrue(alphaOf(noBlur.fillColor) < Math.round(0.72f * 255f));
+    }
 }

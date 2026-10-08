@@ -207,3 +207,36 @@ Codex review (3× P2, all confirmed and fixed): screens are released on window c
 Validation: `:app:testWhatsappDebugUnitTest` 330 tests, 0 failures (338 − 14 removed + 6 new); `:app:assembleWhatsappDebug` succeeded; `git diff --check` clean. No device test. WaThemer's view IDs (`search_fragment_and_toolbar_holder`, `coordinator`, `footer`, `input_layout`, `whatsapp_toolbar_home`, `conversation_background`) and FrameLayout parents come from its source for its WhatsApp build, not from 2.26.33.76 evidence. A mismatch is logged (`[LiquidGlass/App]`) and that pane is skipped.
 
 Next device checks: open a chat with Headers and Message input enabled. Scroll and verify the messages pass behind and are refracted live (not a stale copy), that the first and last messages rest clear of the chrome, and that the keyboard, reply preview, voice recording, selection mode and search in chat all work. Then switch both off and confirm the native layout returns without reopening the chat. Collect the `[LiquidGlass/App]` and `WaEnhancerX/GlassPane` logs.
+
+## Live glass on every surface; neutral fallback — 2026-10-08
+
+PR #70 merged as `2bafc9a`. Branch `ccr-dd7125c8-r29snt` was restarted from that master.
+
+Device feedback on #70 (screenshots): the conversation header and composer look right ("perfect"), with messages passing behind them without lag. The user asked for all surfaces to get the same treatment. Two more reports: (1) the fallback seen in power saving, and briefly on the composer while taking a screenshot, is a flat green slab; they want it transparent or minimal, with no GPU effect. (2) The look is "not exactly iOS": too colourful, less like a pane of glass. They like the colour and could not say what to change. Not changed in this PR; see below.
+
+Root causes:
+- The fallback came from `GlassSpec.resolve(..., blurSupported=false)`, which applied a 72% fill floor plus an accent `refractionColor` gradient (WhatsApp green). It is used by the floating bar in power saving (`GlassRenderer.blurSupported` is false) and by `withoutOptics()`.
+- The composer flash is most likely a dropped display list during the screenshot overlay. The pane drew the fallback until its next capture.
+
+Implemented:
+- `theme/LiveBackdrop`: the GPU recording and lens engine extracted from `GlassPane`, shared by panes and drawables.
+- `theme/BehindRecorder`: records what the window draws beneath a view: each ancestor's background, plus the overlapping siblings drawn before the branch (ordered by Z, then index). Ordering makes the relation antisymmetric, so two surfaces never record each other. Siblings containing a live `GlassPane` whose explicit source holds the target are skipped. Pure ordering and overlap logic has 5 JVM tests.
+- `GlassMaterialDrawable`: a live mode (`captureBehind`), with the static material when the lens is unavailable. It is used for every non-pane surface: other headers, search, FAB, quotes, bubbles, cards, panels.
+- `AppLiquidGlass.Session`: one pre-draw pass per window records all live surfaces on the same draw order. It captures every frame while there is motion (scroll or layout) and every 250 ms at rest. Budget: on-screen surfaces only, top to bottom, until their area reaches one window, at most 32.
+- `GlassPane`: uses `LiveBackdrop`, and recaptures immediately when its display list was dropped. It may draw its live glass inside another surface's recording, which ordering makes safe.
+- Fallback: no accent glow without blur or optics, and a 58% fill floor (was 72%). This applies to the floating bar's layered path too.
+- Settings copy and `ARCHITECTURE.md` updated.
+
+Not in this PR:
+- Home header and search have live glass, but nothing scrolls behind them yet. Porting WaThemer's home layout (`GlassToolbars.kt`/`GlassSearch.kt`: list extension, lifts, list card, search overlay) is the next PR.
+- iOS-likeness is a tuning question for the user. Candidate levers: lower saturation boost and accent tint, a thinner rim and bevel, less displacement, and more transparency.
+
+Codex review (2× P1, 1× P2, all confirmed and fixed): fallback specs now bypass the live pipeline entirely (`LiveBackdrop.wantsLive`); an intentional release no longer counts as a dropped recording, so idle cadence returns after scrolling; a binding whose capture throws keeps the static material without stopping the others.
+
+Validation: 338 JVM tests, 0 failures. `:app:assembleWhatsappDebug` succeeded. `git diff --check` is clean. No device test. GPU cost with many live bubbles is unmeasured; the area budget bounds it to roughly one window of lens per frame while scrolling.
+
+Next device checks:
+- In a chat with bubbles, quotes and the composer enabled, scroll fast and check frame smoothness and that no bubble flickers between live and static.
+- Check contact info cards, menus and dialogs, and the FAB on home.
+- Turn on power saving and confirm a neutral translucent look on the floating bar and all surfaces.
+- Take a screenshot and confirm no green flash.
