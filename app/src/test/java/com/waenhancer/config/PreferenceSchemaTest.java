@@ -175,6 +175,110 @@ public class PreferenceSchemaTest {
         assertEquals("aliases point at keys that do not exist: " + broken, 0, broken.size());
     }
 
+    /**
+     * Hook-side reads written as {@code prefs.getX("key", default)}. One-argument
+     * {@code getString("key")} calls are JSON lookups and are deliberately not matched.
+     */
+    private static final Pattern HOOK_PREF_READ = Pattern.compile(
+            "\\b(?:prefs|pref|mPrefs|activePrefs)\\s*\\.\\s*"
+                    + "(?:get(?:Boolean|String|StringSet|Int|Long|Float)\\(\\s*\"([^\"]+)\"\\s*,"
+                    + "|contains\\(\\s*\"([^\"]+)\"\\s*\\))");
+
+    /**
+     * Keys a hook reads that are intentionally absent from the bridge. Each one has no module
+     * writer, so the hook always falls back to its default; adding a key here needs a reason.
+     */
+    private static final Set<String> HOOK_ONLY_DEFAULTS = new LinkedHashSet<>(java.util.Arrays.asList(
+            // Legacy key read only as a fallback for upgraded installs; BackupCodec aliases it.
+            "floating_bottom_bar_scroll_hide",
+            // Legacy key name for admin_grp, read only for installs that predate the rename.
+            "show_admin_group_icon",
+            // No settings UI; hooks use the default.
+            "lazy_feature_loading",
+            "wa_enhancer_button",
+            // No writer exists for a bundled default spoofer XML; see handoff.md.
+            "bootloader_spoofer_default_xml"));
+
+    private static Path javaDir() {
+        Path fromModule = Paths.get("src", "main", "java");
+        if (Files.isDirectory(fromModule)) return fromModule;
+        return Paths.get("app", "src", "main", "java");
+    }
+
+    /**
+     * Every key a hook reads through the provider bridge must be schema-known and PUBLIC.
+     *
+     * <p>HookProvider drops every other key from {@code get_all_preferences}, so a missing entry
+     * silently pins the setting to its default inside WhatsApp while the module UI shows it on.
+     * That is how the eight Liquid Glass surfaces, Ghost/DND mode and root call recording broke.
+     */
+    @Test
+    public void everyHookReadKeyCrossesTheBridge() throws IOException {
+        Path hooks = javaDir().resolve(Paths.get("com", "waenhancer", "xposed"));
+        assertTrue("hook sources not found under " + hooks.toAbsolutePath(), Files.isDirectory(hooks));
+        List<String> broken = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        try (java.util.stream.Stream<Path> files = Files.walk(hooks)) {
+            for (Path file : (Iterable<Path>) files.filter(f -> f.toString().endsWith(".java"))::iterator) {
+                String text = stripLineComments(
+                        new String(Files.readAllBytes(file), StandardCharsets.UTF_8));
+                Matcher matcher = HOOK_PREF_READ.matcher(text);
+                while (matcher.find()) {
+                    String key = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
+                    seen.add(key);
+                    if (HOOK_ONLY_DEFAULTS.contains(key)) continue;
+                    PreferenceSchema.Entry entry = PreferenceSchema.entry(key);
+                    if (entry == null || entry.store != PreferenceSchema.Store.PUBLIC) {
+                        broken.add(key + " (" + file.getFileName() + ")");
+                    }
+                }
+            }
+        }
+        assertTrue("the scan should find the hooks' preference reads", seen.size() > 50);
+        assertEquals("hooks read keys HookProvider will never serve: " + broken, 0, broken.size());
+    }
+
+    /** Quick-settings tiles must toggle a key the schema knows, or they toggle nothing. */
+    @Test
+    public void everyTileKeyIsInTheSchema() throws IOException {
+        Path services = javaDir().resolve(Paths.get("com", "waenhancer", "services"));
+        Pattern tileKey = Pattern.compile(
+                "getPreferenceKey\\(\\)\\s*\\{\\s*return\\s*\"([^\"]+)\"");
+        List<String> broken = new ArrayList<>();
+        int tiles = 0;
+        File[] files = services.toFile().listFiles((dir, name) -> name.endsWith("TileService.java"));
+        assertTrue("tile services not found under " + services.toAbsolutePath(),
+                files != null && files.length > 0);
+        for (File file : files) {
+            Matcher matcher = tileKey.matcher(
+                    new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+            if (!matcher.find()) continue;
+            tiles++;
+            if (!PreferenceSchema.isKnown(matcher.group(1))) {
+                broken.add(matcher.group(1) + " (" + file.getName() + ")");
+            }
+        }
+        assertTrue("expected to find tile keys", tiles > 5);
+        assertEquals("tiles toggle keys the schema does not define: " + broken, 0, broken.size());
+    }
+
+    /** Device-local or hook-read state that must reach WhatsApp. */
+    @Test
+    public void hookStateKeysArePublic() {
+        for (String key : java.util.Arrays.asList("ghostmode_actual", "dndmode_actual",
+                "call_recording_use_root", "custom_versions_wpp", "custom_versions_business")) {
+            PreferenceSchema.Entry entry = PreferenceSchema.entry(key);
+            assertTrue(key + " must be registered", entry != null);
+            assertEquals(key, PreferenceSchema.Store.PUBLIC, entry.store);
+        }
+        assertFalse("a root grant is device-local and must not be restored elsewhere",
+                PreferenceSchema.isExportable("call_recording_use_root"));
+    }
+
+    private static String stripLineComments(String text) {
+        return text.replaceAll("(?m)^\\s*//.*$", "");
+    }
+
     private static List<String> splitElements(String text) {
         List<String> elements = new ArrayList<>();
         Matcher matcher = Pattern.compile("<[^>]+>", Pattern.DOTALL).matcher(text);

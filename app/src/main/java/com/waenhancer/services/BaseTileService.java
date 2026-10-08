@@ -6,9 +6,8 @@ import android.net.Uri;
 import android.service.quicksettings.Tile;
 import android.service.quicksettings.TileService;
 
-import androidx.preference.PreferenceManager;
-
 import com.waenhancer.BuildConfig;
+import com.waenhancer.config.PreferenceStores;
 
 public abstract class BaseTileService extends TileService {
 
@@ -24,8 +23,8 @@ public abstract class BaseTileService extends TileService {
     @Override
     public void onClick() {
         super.onClick();
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         String key = getPreferenceKey();
+        SharedPreferences prefs = store();
 
         if (isCustomToggle()) {
             performCustomToggle(prefs, key);
@@ -36,6 +35,14 @@ public abstract class BaseTileService extends TileService {
 
         syncAndRestart();
         updateTileState();
+    }
+
+    /**
+     * The file the schema assigns this tile's key to. A tile must toggle the same copy the
+     * settings screen edits and, for hook-read keys, the copy HookProvider serves to WhatsApp.
+     */
+    private SharedPreferences store() {
+        return PreferenceStores.storeFor(this, getPreferenceKey());
     }
 
     protected boolean isCustomToggle() {
@@ -76,7 +83,7 @@ public abstract class BaseTileService extends TileService {
         Tile tile = getQsTile();
         if (tile == null) return;
 
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        SharedPreferences prefs = store();
         tile.setState(isTileActive(prefs) ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
         tile.updateTile();
     }

@@ -186,4 +186,31 @@ public class LiquidGlassSettingsTest {
         LiquidGlassSettings.setBarLiquid(null, true);
         LiquidGlassSettings.rememberBarVariant(null, "liquid");
     }
+
+    /**
+     * Every themed surface is read by AppLiquidGlass inside WhatsApp, which only sees keys
+     * HookProvider serves: schema-known and Store.PUBLIC. A surface missing here stays false in
+     * the hooked process whatever the settings page shows.
+     */
+    @Test
+    public void everySurfaceKeyCrossesTheHookBridge() {
+        java.util.List<String> broken = new java.util.ArrayList<>();
+        for (LiquidGlassSettings.Surface surface : LiquidGlassSettings.Surface.values()) {
+            PreferenceSchema.Entry entry = PreferenceSchema.entry(surface.key);
+            if (entry == null
+                    || entry.type != PreferenceSchema.Type.BOOLEAN
+                    || entry.sensitivity != PreferenceSchema.Sensitivity.PUBLIC_SETTING
+                    || entry.store != PreferenceSchema.Store.PUBLIC) {
+                broken.add(surface.key);
+            }
+        }
+        for (String key : new String[]{LiquidGlassSettings.BAR_GLASS, LiquidGlassSettings.BAR_VARIANT,
+                LiquidGlassSettings.BAR_OPACITY, LiquidGlassSettings.BAR_PREVIOUS_VARIANT,
+                LiquidGlassSettings.SCROLL_BUTTON}) {
+            PreferenceSchema.Entry entry = PreferenceSchema.entry(key);
+            if (entry == null || entry.store != PreferenceSchema.Store.PUBLIC) broken.add(key);
+        }
+        assertEquals("Liquid Glass keys the hooked process cannot read: " + broken,
+                0, broken.size());
+    }
 }

@@ -535,11 +535,11 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
             App.setThemeMode(mode);
         }
 
-        var colorMode = mPrefs.getString("waex_color_mode", "preset");
+        var colorMode = mPrefs.getString("wae_color_mode", "preset");
         var useMonet = Objects.equals(colorMode, "monet") && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S;
-        setPreferenceState("waex_color_preset", !useMonet);
+        setPreferenceState("wae_color_preset", !useMonet);
 
-        if (Objects.equals(key, "waex_color_mode") || Objects.equals(key, "waex_color_preset")) {
+        if (Objects.equals(key, "wae_color_mode") || Objects.equals(key, "wae_color_preset")) {
             if (getActivity() != null) {
                 getActivity().recreate();
             }

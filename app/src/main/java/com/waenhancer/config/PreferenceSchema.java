@@ -115,6 +115,8 @@ public final class PreferenceSchema {
         add(entries, "call_recording_mode", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "call_recording_path", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "call_recording_toast", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        // Written by CallRecordingSettingsActivity only after a successful su check; read by CallRecording.
+        add(entries, "call_recording_use_root", Type.BOOLEAN, Sensitivity.RUNTIME, Store.PUBLIC);
         add(entries, "call_recording_whitelist", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "call_type", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "call_white_contacts", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
@@ -139,6 +141,8 @@ public final class PreferenceSchema {
         add(entries, "custom_privacy_type", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "customforwardlimit", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "customize_supported_versions", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "custom_versions_business", Type.STRING_SET, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "custom_versions_wpp", Type.STRING_SET, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "deleted_message_color", Type.INT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "disable_ads", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "disable_defemojis", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
@@ -146,6 +150,8 @@ public final class PreferenceSchema {
         add(entries, "disable_profile_status", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "disable_sensor_proximity", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "disable_swipe_up_in_group", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        // Actual DND/Ghost state toggled by the quick-settings tiles and the WhatsApp home menu.
+        add(entries, "dndmode_actual", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "dont_ask_optimize_db", Type.BOOLEAN, Sensitivity.RUNTIME, Store.PUBLIC);
         add(entries, "dotonline", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "doubletap2like", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
@@ -169,6 +175,16 @@ public final class PreferenceSchema {
         add(entries, "floating_bottom_bar_glass_variant", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_scroll_button", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_bar_previous_variant", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        // LiquidGlassSettings.Surface keys. AppLiquidGlass reads them inside WhatsApp, so they must
+        // cross the HookProvider bridge; LiquidGlassSettingsTest enforces this for every Surface.
+        add(entries, "liquid_glass_toolbars", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "liquid_glass_search", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "liquid_glass_fab", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "liquid_glass_composer", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "liquid_glass_quotes", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "liquid_glass_bubbles", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "liquid_glass_cards", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "liquid_glass_panels", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "glass_dialogs", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "glass_dialogs_variant", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "floating_bottom_bar_height_mode", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
@@ -192,6 +208,7 @@ public final class PreferenceSchema {
         add(entries, "force_restore_backup_feature", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "freezelastseen", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "ghostmode", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "ghostmode_actual", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "ghostmode_r", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "ghostmode_t", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "go_to_first_message", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
