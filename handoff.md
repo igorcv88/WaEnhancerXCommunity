@@ -451,4 +451,6 @@ Fix: `WallpaperUnderlay.onMeasure` takes size only under EXACTLY, otherwise 0, l
 
 Validation: `./gradlew :app:testWhatsappDebugUnitTest :app:assembleWhatsappDebug` with JDK 21 and Android SDK 36 installed in-session: 425 tests, 58 suites, 0 failures; debug APK built. `git diff --check` clean. No device run; no workflow dispatch.
 
+Device evidence (user logcat via Termux, 2026-10-08 18:07, build without this fix): `requestLayout() ... MeasuringFrameLayout{... 0,0-1440,3160 #app:id/search_fragment_and_toolbar_holder}` — the header holder measured 3160 px, the full window, while the capsule pane sat at 18,0-1422,174. This confirms the root cause. The conversation capsule pane logged `captureContent=SOURCE_UNAVAILABLE` / `required-source-unavailable` with `sourceId=none` throughout: `listHost()` only accepts children with height > 0, and the squeezed list host had none. The fix should resolve both. No crash, no `WaEnhancerX/GlassPane` warning.
+
 Next: install over the current build, enable Headers, open a chat and the home screen; confirm the list renders, the first message rests below the capsule and the band shows the wallpaper. If home still shows no rows, collect `[LiquidGlass/App]` / `WaEnhancerX/GlassState` logs; the home holder is then a separate path.
