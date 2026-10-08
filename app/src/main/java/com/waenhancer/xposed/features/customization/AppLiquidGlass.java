@@ -305,6 +305,14 @@ public final class AppLiquidGlass extends Feature {
         if (reported.add(key)) XposedBridge.log("[LiquidGlass/App] " + message);
     }
 
+    /** Whether {@code ancestor} contains {@code view}, strictly. */
+    static boolean isAncestorOf(View ancestor, View view) {
+        for (android.view.ViewParent p = view.getParent(); p instanceof View; p = p.getParent()) {
+            if (p == ancestor) return true;
+        }
+        return false;
+    }
+
     private static View findByName(View root, String name, String pkg) {
         int id = root.getResources().getIdentifier(name, "id", pkg);
         return id == 0 ? null : root.findViewById(id);
@@ -417,12 +425,15 @@ public final class AppLiquidGlass extends Feature {
                     areas = new long[targets.size() * 2];
                 }
                 visible.clear();
+                // Temporal group: one sticky ledger per window (see LiveBudget).
+                LiveBudget ledger = temporal ? LiveBudget.forWindow(view) : null;
                 for (View target : targets) {
                     Binding binding = bindings.get(target);
                     if (binding == null) continue;
                     // Off screen or hidden: nothing to show, so no recording either.
                     if (!target.isShown() || !target.getGlobalVisibleRect(visibleRect)) {
                         binding.glass.releaseLive();
+                        if (ledger != null) ledger.releaseDrawable(binding.glass);
                         continue;
                     }
                     // Top to bottom, then left to right; the index rides in the low bits.
@@ -440,10 +451,9 @@ public final class AppLiquidGlass extends Feature {
                 int panes = 0;
                 float density = view.getResources().getDisplayMetrics().density;
                 GlassSpec material = temporal ? resolvedMaterial() : null;
-                if (temporal) {
+                if (ledger != null) {
                     // One budget per window for all live glass (LG-12), in effective pixel-passes:
                     // panes are admitted first in their own pre-draw, the drawables get the rest.
-                    LiveBudget ledger = LiveBudget.forWindow(view);
                     budget = ledger.capacity();
                     used = ledger.paneSpend();
                     panes = ledger.paneCount();
@@ -457,11 +467,24 @@ public final class AppLiquidGlass extends Feature {
                     long area = temporal && material != null
                             ? LiveBudget.cost(target.getWidth(), target.getHeight(), material, density, optics)
                             : areas[i];
-                    if (live >= MAX_LIVE_PER_WINDOW || used + area > budget) {
+                    if (binding.liveFailed) continue;
+                    // Sticky with the ledger: a live surface keeps its slot while visible, so a
+                    // layout change cannot flip surfaces between glass and fallback.
+                    // The count limit, like the area one, applies only to new admissions: a holder
+                    // keeps priority whatever order this frame visits surfaces in.
+                    boolean admitted;
+                    if (ledger != null) {
+                        admitted = (ledger.holdsDrawable(binding.glass)
+                                || panes + ledger.drawableCount() < MAX_LIVE_PER_WINDOW)
+                                && ledger.admitDrawable(binding.glass, area);
+                    } else {
+                        admitted = live < MAX_LIVE_PER_WINDOW && used + area <= budget;
+                    }
+                    if (!admitted) {
                         binding.glass.releaseLive();
+                        if (ledger != null) ledger.releaseDrawable(binding.glass);
                         continue;
                     }
-                    if (binding.liveFailed) continue;
                     boolean captured;
                     try {
                         captured = binding.glass.captureBehind(target);
@@ -470,6 +493,7 @@ public final class AppLiquidGlass extends Feature {
                         // others: this one keeps the static material from now on.
                         binding.liveFailed = true;
                         binding.glass.releaseLive();
+                        if (ledger != null) ledger.releaseDrawable(binding.glass);
                         report("live-capture-" + binding.surface, binding.surface
                                 + " live capture disabled; static material: " + error);
                         continue;
@@ -514,15 +538,18 @@ public final class AppLiquidGlass extends Feature {
                     if (target == null) continue;
                     Binding binding = entry.getValue();
                     if (target.getRootView() != view) {
+                        releaseBudget(binding);
                         binding.restore(target);
                         bindings.remove(target);
                     } else if (!LiquidGlassSettings.isEnabled(prefs, binding.surface) || !target.isAttachedToWindow()
                             || conversation.owns(target)) {
+                        releaseBudget(binding);
                         binding.restore(target);
                         bindings.remove(target);
                     } else if (target.getBackground() != binding.glass) {
                         // A native rebind wins. Capture its new background rather than restoring
                         // an old drawable over whatever WhatsApp just changed.
+                        releaseBudget(binding);
                         binding.restore(target);
                         bindings.remove(target);
                         if (target.getBackground() instanceof GlassMaterialDrawable) adopt(target, (GlassMaterialDrawable) target.getBackground());
@@ -589,10 +616,28 @@ public final class AppLiquidGlass extends Feature {
             glass.attachMaterial(() -> LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES) ? resolvedMaterial() : null);
         }
 
+        /** A binding going away gives its slot back at once rather than when the GC notices. */
+        private void releaseBudget(Binding binding) {
+            View view = root.get();
+            if (view != null && binding.glass != null) LiveBudget.forWindow(view).releaseDrawable(binding.glass);
+        }
+
         void bind(View view, Surface surface, boolean nativeMask) {
             if (view == null || bindings.containsKey(view) || view.getWidth() < 1 || view.getHeight() < 1
                     || view == root.get() || GlassSurface.isGlassHost(view) || view instanceof GlassPane
                     || conversation.owns(view)) return;
+            // One pane per surface, innermost wins: WhatsApp nests ids of one surface (my_search_bar
+            // holds search_bar), and binding both drew a glass pill inside a second glass pill.
+            for (Map.Entry<View, Binding> entry : new ArrayList<>(bindings.entrySet())) {
+                View other = entry.getKey();
+                if (other == null || entry.getValue().surface != surface) continue;
+                if (isAncestorOf(view, other)) return;          // a bound descendant already shows it
+                if (isAncestorOf(other, view)) {                 // the bound one is the outer container
+                    releaseBudget(entry.getValue());
+                    entry.getValue().restore(other);
+                    bindings.remove(other);
+                }
+            }
             try {
                 Binding binding = new Binding(view, view.getBackground(), surface, nativeMask);
                 binding.glass = new GlassMaterialDrawable(view, binding.original,
@@ -630,6 +675,7 @@ public final class AppLiquidGlass extends Feature {
             for (Map.Entry<View, Binding> entry : new ArrayList<>(bindings.entrySet())) {
                 View target = entry.getKey();
                 if (target == null) continue;
+                releaseBudget(entry.getValue());
                 entry.getValue().restore(target);
             }
             bindings.clear(); candidates.clear(); pendingDiscovery.clear();
