@@ -122,9 +122,15 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         if (!live.available()) return false;
         float density = host.getResources().getDisplayMetrics().density;
         float radius = Math.min(radiusDp * density, Math.min(b.width(), b.height()) / 2f);
+        int w = b.width(), h = b.height();
+        GlassOptics optics = GlassOptics.current();
+        if (optics.corrected && optics.geometry) {
+            int left = b.left, top = b.top;
+            return live.capture(w, h, radius, density, material,
+                    canvas -> BehindRecorder.paintExact(canvas, host, left, top, w, h));
+        }
         host.getLocationOnScreen(location);
         int x = location[0] + b.left, y = location[1] + b.top;
-        int w = b.width(), h = b.height();
         return live.capture(w, h, radius, density, material,
                 canvas -> BehindRecorder.paint(canvas, host, x, y, w, h));
     }

@@ -2,6 +2,7 @@ package com.waenhancer.theme;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Matrix;
 import android.graphics.Outline;
 import android.graphics.RecordingCanvas;
 import android.graphics.drawable.Drawable;
@@ -40,9 +41,9 @@ public final class GlassPane extends FrameLayout {
     private static final String TAG = "WaEnhancerX/GlassPane";
 
     /** Recapture every frame for this long after motion; scrolling is what the glass is for. */
-    static final long ACTIVE_WINDOW_MS = 350L;
-    /** At rest the content behind rarely changes; slow down, never stop, so late changes show. */
-    static final long IDLE_INTERVAL_MS = 250L;
+    static final long ACTIVE_WINDOW_MS = CaptureScheduler.ACTIVE_WINDOW_MS;
+    /** Legacy: at rest, slow down, never stop, so late changes show. */
+    static final long IDLE_INTERVAL_MS = CaptureScheduler.IDLE_INTERVAL_MS;
 
     private static final List<GlassPane> LIVE = new ArrayList<>();
     private static final GlassPaneGraph.Tree<View> TREE = view -> {
@@ -54,8 +55,12 @@ public final class GlassPane extends FrameLayout {
     private final int[] hostLocation = new int[2];
     private final int[] otherLocation = new int[2];
     private final ViewTreeObserver.OnPreDrawListener preDraw = this::onPreDrawCapture;
+    private final CaptureScheduler scheduler = new CaptureScheduler();
     private final ViewTreeObserver.OnScrollChangedListener scrolled =
-            () -> lastActivityMs = SystemClock.uptimeMillis();
+            () -> scheduler.activity(SystemClock.uptimeMillis());
+    private final Matrix paneMatrix = new Matrix();
+    private final Matrix inverse = new Matrix();
+    private final Matrix other = new Matrix();
 
     private View source;
     private List<View> underlay = Collections.emptyList();
@@ -67,8 +72,6 @@ public final class GlassPane extends FrameLayout {
     private int fallbackWidth = -1, fallbackHeight = -1;
     private float fallbackRadius = -1f;
 
-    private long lastActivityMs;
-    private long lastCaptureMs;
     private int lastScreenX = Integer.MIN_VALUE, lastScreenY = Integer.MIN_VALUE;
     private View refusedFor;
     private boolean loggedFailure;
@@ -104,7 +107,7 @@ public final class GlassPane extends FrameLayout {
         if (source == view) return;
         source = view;
         refusedFor = null;
-        lastActivityMs = SystemClock.uptimeMillis();
+        scheduler.activity(SystemClock.uptimeMillis());
         invalidate();
     }
 
@@ -115,7 +118,7 @@ public final class GlassPane extends FrameLayout {
     /** Views drawn beneath the source at their own screen positions: the wallpaper. */
     public void setUnderlay(List<View> views) {
         underlay = views == null ? Collections.emptyList() : new ArrayList<>(views);
-        lastActivityMs = SystemClock.uptimeMillis();
+        scheduler.activity(SystemClock.uptimeMillis());
         invalidate();
     }
 
@@ -141,7 +144,7 @@ public final class GlassPane extends FrameLayout {
         if (!LIVE.contains(this)) LIVE.add(this);
         getViewTreeObserver().addOnPreDrawListener(preDraw);
         getViewTreeObserver().addOnScrollChangedListener(scrolled);
-        lastActivityMs = SystemClock.uptimeMillis();
+        scheduler.activity(SystemClock.uptimeMillis());
     }
 
     @Override protected void onDetachedFromWindow() {
@@ -152,7 +155,11 @@ public final class GlassPane extends FrameLayout {
         super.onDetachedFromWindow();
     }
 
-    /** Capture in pre-draw, before this frame's draw; the invalidate keeps moving glass live. */
+    /**
+     * Capture in pre-draw, before this frame's draw. Legacy: the invalidate keeps moving glass
+     * live and a heartbeat keeps it fresh. Temporal group: only frames the window draws anyway are
+     * captured; see {@link CaptureScheduler}.
+     */
     private boolean onPreDrawCapture() {
         // Guarded whole: capture draws WhatsApp's own views, and an escape here would crash the UI
         // thread on every frame.
@@ -165,21 +172,26 @@ public final class GlassPane extends FrameLayout {
             if (hostLocation[0] != lastScreenX || hostLocation[1] != lastScreenY) {
                 lastScreenX = hostLocation[0];
                 lastScreenY = hostLocation[1];
-                lastActivityMs = now;
+                scheduler.activity(now);
             }
+            GlassOptics optics = GlassOptics.current();
+            boolean damageDriven = optics.corrected && optics.temporal;
             // A dropped recording (an Activity stop, a screenshot overlay) is captured again at
             // once rather than showing the fallback until the next heartbeat.
-            if (backdrop.wasDropped()) lastActivityMs = now;
-            boolean moving = now - lastActivityMs < ACTIVE_WINDOW_MS;
-            long minGap = moving ? 0L : IDLE_INTERVAL_MS;
-            if (now - lastCaptureMs < minGap) return true;
-            lastCaptureMs = now;
+            int decision = scheduler.decide(now, damageDriven, backdrop.wasDropped());
+            if ((decision & CaptureScheduler.CAPTURE) == 0) {
+                if ((decision & CaptureScheduler.INVALIDATE_LATER) != 0) postInvalidateDelayed(scheduler.delayMs());
+                return true;
+            }
             View src = safeSource();
             if (src == null && underlay.isEmpty()) return true;
+            boolean exact = optics.corrected && optics.geometry;
             boolean captured = backdrop.capture(getWidth(), getHeight(), radius(),
-                    getResources().getDisplayMetrics().density, material, canvas -> paint(canvas, src));
+                    getResources().getDisplayMetrics().density, material,
+                    canvas -> exact ? paintExact(canvas, src) : paint(canvas, src));
             if (captured) {
-                if (moving) invalidate(); else postInvalidateDelayed(IDLE_INTERVAL_MS);
+                if ((decision & CaptureScheduler.INVALIDATE_NOW) != 0) invalidate();
+                else if ((decision & CaptureScheduler.INVALIDATE_LATER) != 0) postInvalidateDelayed(scheduler.delayMs());
             }
         } catch (Throwable error) {
             if (!loggedFailure) {
@@ -188,6 +200,26 @@ public final class GlassPane extends FrameLayout {
             }
         }
         return true; // never cancel the host's frame
+    }
+
+    /** Area of the live panes recording in {@code root}'s window, in px; the drawables' budget excludes it. */
+    public static long liveAreaIn(View root) {
+        long area = 0;
+        for (GlassPane pane : LIVE) {
+            if (pane.getRootView() == root && pane.isShown() && pane.backdrop.hasRecording()) {
+                area += (long) pane.getWidth() * pane.getHeight();
+            }
+        }
+        return area;
+    }
+
+    /** How many live panes are recording in {@code root}'s window. */
+    public static int liveCountIn(View root) {
+        int count = 0;
+        for (GlassPane pane : LIVE) {
+            if (pane.getRootView() == root && pane.isShown() && pane.backdrop.hasRecording()) count++;
+        }
+        return count;
     }
 
     private View safeSource() {
@@ -239,6 +271,42 @@ public final class GlassPane extends FrameLayout {
             drew = true;
         }
         return drew;
+    }
+
+    /**
+     * The underlay, then the source, each placed by its exact transform into this pane:
+     * {@code inverse(G_pane) · G_view}, with {@code G} from {@link View#transformMatrixToGlobal}.
+     * Rotation, scale and translation of either side, and the source's own scroll, are all
+     * honoured; the legacy path handles translation and ancestor scale only (LG-08).
+     */
+    private boolean paintExact(RecordingCanvas canvas, View src) {
+        paneMatrix.reset();
+        transformMatrixToGlobal(paneMatrix);
+        if (!paneMatrix.invert(inverse)) return false;
+        boolean drew = false;
+        for (View u : underlay) {
+            if (u == null || u.getWidth() <= 0 || u.getHeight() <= 0
+                    || u.getVisibility() != View.VISIBLE || !u.isAttachedToWindow()) continue;
+            if (src != null && GlassPaneGraph.isAncestor(TREE, src, u)) continue; // drawn by the source
+            drew |= drawPlaced(canvas, u);
+        }
+        if (src != null) drew |= drawPlaced(canvas, src);
+        return drew;
+    }
+
+    private boolean drawPlaced(RecordingCanvas canvas, View view) {
+        other.reset();
+        view.transformMatrixToGlobal(other);
+        other.postConcat(inverse);
+        float alpha = Math.max(0f, Math.min(1f, view.getAlpha()));
+        int save = alpha < 1f
+                ? canvas.saveLayerAlpha(null, Math.round(alpha * 255))
+                : canvas.save();
+        canvas.concat(other);
+        canvas.translate(-view.getScrollX(), -view.getScrollY());
+        view.draw(canvas);
+        canvas.restoreToCount(save);
+        return true;
     }
 
     @Override protected void onDraw(Canvas canvas) {
