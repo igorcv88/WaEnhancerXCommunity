@@ -291,7 +291,7 @@ Device evidence the user can provide on request:
 
 ## Liquid Glass optical corrections, all groups (LG-01..LG-13) — 2026-10-08
 
-Branch `claude/new-session-l41wpa`, restarted from master `7b86573` (PR #72 merged). One integrated PR, as the user asked; this supersedes the plan above for one PR per step. Focused commits, in order: lens model and Jacobian tests; corrected shader; stored switches; capture, timing and budget; settings UI; calibration image; docs.
+Branch `claude/new-session-l41wpa`, restarted from master `7b86573` (PR #72 merged); published as ready-for-review PR #73 (not merged). One integrated PR, as the user asked; this supersedes the plan above for one PR per step. Focused commits, in order: lens model and Jacobian tests; corrected shader; stored switches; capture, timing and budget; settings UI; calibration image; docs.
 
 **What ships.** There is a second renderer behind experimental switches. It is off by default, and off is the original renderer, unchanged: same shader, quarter-scale capture, transforms and 250 ms heartbeat. To use it: Liquid Glass page → *Optical corrections (experimental)*. The master switch turns it on, and every group defaults to on. The *All improvements* and *Original* presets set the master switch. `AppLiquidGlass` publishes the switches on every WhatsApp resume, so no restart is needed. Dependencies are enforced in `GlassOptics.resolve`: adaptive needs filtering, and Clear needs adaptive.
 
