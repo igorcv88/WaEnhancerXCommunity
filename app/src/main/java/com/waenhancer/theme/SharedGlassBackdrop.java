@@ -3,7 +3,6 @@ package com.waenhancer.theme;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.RenderNode;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -19,7 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.WeakHashMap;
 
-/** One GPU recording per window/frame, shared by all its background drawables. */
+/** One software backdrop snapshot per window, shared by all its background drawables. */
 public final class SharedGlassBackdrop {
     public static final long FRAME_INTERVAL_MS = 100; // Software fallback only.
     private static final GlassFrameClock FRAME_CLOCK = new GlassFrameClock();
@@ -32,19 +31,18 @@ public final class SharedGlassBackdrop {
     private final WeakReference<View> root;
     private View currentLayer;
     private final GlassRenderPolicy policy = new GlassRenderPolicy();
-    private final GlassRenderPolicy.Retry gpuRetry = new GlassRenderPolicy.Retry();
     private final GlassRenderPolicy.Retry softwareRetry = new GlassRenderPolicy.Retry();
     private final int[] position = new int[2];
     private Bitmap bitmap;
     private Canvas recordingCanvas;
-    private RenderNode gpu;
-    private boolean gpuValid;
     private long lastCapture;
-    private long gpuFrame = Long.MIN_VALUE;
+    private long capturedFrame = Long.MIN_VALUE;
     private long motionUntil;
     private long powerChecked;
     private boolean conserving;
     private boolean pending;
+    private boolean trailingScheduled;
+    private boolean trailingFrame;
     private boolean released;
     private int screenX, screenY, width, height;
     private WeakReference<Window> measuredWindow = new WeakReference<>(null);
@@ -87,8 +85,8 @@ public final class SharedGlassBackdrop {
         GlassRenderPolicy.Tier tier = conserving ? GlassRenderPolicy.Tier.CONSERVING
                 : now < motionUntil ? GlassRenderPolicy.Tier.MOTION : GlassRenderPolicy.Tier.NORMAL;
         policy.beginFrame(token, (long) view.getWidth() * view.getHeight(), tier);
-        if (gpuFrame == token) return;
-        gpuFrame = token;
+        if (capturedFrame == token) return;
+        capturedFrame = token;
         capture();
     }
     public boolean allowShader(Object holder, int width, int height, GlassSpec spec, boolean nativeMask) {
@@ -117,12 +115,12 @@ public final class SharedGlassBackdrop {
         try { window.addOnFrameMetricsAvailableListener(metricsListener, new Handler(Looper.getMainLooper())); }
         catch (RuntimeException unavailable) { metricsListener = null; }
     }
-    /** Only schedules bootstrap/fallback; primary GPU capture runs in pre-draw for this frame. */
+    /** Only schedules bootstrap/fallback; regular capture runs in pre-draw for this frame. */
     public void request() {
         View view = root.get();
         if (!captureAvailable || view == null || pending || released || isCapturing() || !view.isAttachedToWindow()) return;
-        if (gpuValid || (bitmap != null && SystemClock.uptimeMillis() - lastCapture < FRAME_INTERVAL_MS)) return;
-        if (!gpuRetry.ready(SystemClock.uptimeMillis()) && !softwareRetry.ready(SystemClock.uptimeMillis())) return;
+        if (bitmap != null && SystemClock.uptimeMillis() - lastCapture < FRAME_INTERVAL_MS) return;
+        if (!softwareRetry.ready(SystemClock.uptimeMillis())) return;
         pending = true;
         view.post(() -> { pending = false; if (!released) { capture(); view.invalidate(); } });
     }
@@ -144,27 +142,19 @@ public final class SharedGlassBackdrop {
             SharedGlassBackdrop provider = reference == null ? null : reference.get();
             if (provider != null && provider != this) provider.prepareFrame();
         }
+        // Software only. A RenderNode recording of the window references live view nodes, such as
+        // each bound view's cached background node, which in turn draws this backdrop: a display
+        // list cycle that crashes HWUI's RenderThread natively, beyond any Java catch. A bitmap is
+        // a pixel copy with no references, so the material cannot reach itself.
         long now = SystemClock.uptimeMillis();
-        if (Build.VERSION.SDK_INT >= 33 && view.isHardwareAccelerated() && gpuRetry.ready(now)) {
-            try {
-                if (gpu == null) { gpu = new RenderNode("WA shared glass backdrop"); gpu.setClipToBounds(true); }
-                gpu.setPosition(0, 0, w, h);
-                Canvas canvas = gpu.beginRecording(w, h);
-                CAPTURING.set(this);
-                try { drawLayers(canvas, layers); }
-                finally { CAPTURING.remove(); gpu.endRecording(); }
-                gpuValid = true; gpuRetry.success();
-                bitmap = null; recordingCanvas = null;
-                return;
-            } catch (RuntimeException | LinkageError | OutOfMemoryError error) {
-                gpuValid = false; gpuRetry.failure(now);
-                if (gpu != null) gpu.discardDisplayList();
-                gpu = null;
-                if (gpuRetry.failures() == 1) android.util.Log.w("WaEnhancerX/Backdrop", "GPU capture cooling down", error);
-            } finally { CAPTURING.remove(); }
+        // Never increase the frequency of whole-tree software draw to match the display. A frame
+        // inside the interval still owes the glass one later snapshot, or an idle UI keeps
+        // sampling content that changed just after the last capture.
+        if (!softwareRetry.ready(now)) return;
+        if (now - lastCapture < FRAME_INTERVAL_MS) {
+            scheduleTrailing(view, FRAME_INTERVAL_MS - (now - lastCapture));
+            return;
         }
-        // Never increase the frequency of whole-tree software draw to match the display.
-        if (!softwareRetry.ready(now) || now - lastCapture < FRAME_INTERVAL_MS) return;
         float scale = Math.min(.35f, (float) Math.sqrt(MAX_PIXELS / ((double) w * h)));
         int bw = Math.max(1, Math.round(w * scale)), bh = Math.max(1, Math.round(h * scale));
         try {
@@ -183,6 +173,23 @@ public final class SharedGlassBackdrop {
             if (softwareRetry.failures() == 1) android.util.Log.w("WaEnhancerX/Backdrop", "Software capture cooling down", error);
         } finally { CAPTURING.remove(); }
     }
+    /**
+     * One deferred capture per throttled interval. The frame it invalidates is not allowed to
+     * schedule another, so an idle window settles after one extra snapshot instead of capturing
+     * every interval forever.
+     */
+    private void scheduleTrailing(View view, long delayMs) {
+        if (trailingFrame) { trailingFrame = false; return; }
+        if (trailingScheduled || released) return;
+        trailingScheduled = true;
+        view.postDelayed(() -> {
+            trailingScheduled = false;
+            if (released || !view.isAttachedToWindow()) return;
+            capture();
+            trailingFrame = true;
+            view.invalidate();
+        }, Math.max(1, delayMs));
+    }
     private void drawLayers(Canvas canvas, List<View> layers) {
         try {
             for (View layer : layers) {
@@ -191,7 +198,6 @@ public final class SharedGlassBackdrop {
             }
         } finally { currentLayer = null; }
     }
-    public RenderNode gpu() { return gpuValid ? gpu : null; }
     public Bitmap bitmap() { return bitmap; }
     public int screenX() { return screenX; }
     public int screenY() { return screenY; }
@@ -203,7 +209,6 @@ public final class SharedGlassBackdrop {
         if (window != null && metricsListener != null) window.removeOnFrameMetricsAvailableListener(metricsListener);
         metricsListener = null; policy.clear();
         View view = root.get(); if (view != null) PROVIDERS.remove(view);
-        if (Build.VERSION.SDK_INT >= 29 && gpu != null) gpu.discardDisplayList();
-        gpu = null; gpuValid = false; bitmap = null; recordingCanvas = null;
+        bitmap = null; recordingCanvas = null;
     }
 }
