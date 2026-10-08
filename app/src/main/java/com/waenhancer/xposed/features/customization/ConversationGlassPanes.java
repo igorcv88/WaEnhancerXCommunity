@@ -109,6 +109,21 @@ final class ConversationGlassPanes {
         return false;
     }
 
+    /**
+     * The window is going away: undo everything and drop its entry. The entry's panes reach the
+     * window's root through their parents, so a weak key alone would never let it be collected.
+     */
+    void release(View root) {
+        Screen screen = root == null ? null : screens.remove(root);
+        if (screen == null) return;
+        try {
+            if (screen.headerOn) disableHeader(screen);
+            if (screen.footerOn) disableFooter(screen);
+        } catch (Throwable error) {
+            host.report("conv-release-error", "conversation panes release failed: " + error);
+        }
+    }
+
     /** Called on every global layout of a window; cheap when nothing changed. */
     void sync(View root) {
         if (root == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
@@ -127,18 +142,13 @@ final class ConversationGlassPanes {
             View wallpaper = findById(root, "conversation_background");
             screen.wallpaper = new WeakReference<>(wallpaper);
 
-            if (footer != null && footer.getParent() instanceof ViewGroup) {
-                ViewGroup listHost = listHost((ViewGroup) footer.getParent());
-                if (listHost != null) {
-                    screen.listHost = new WeakReference<>(listHost);
-                    screen.list = new WeakReference<>(firstList(listHost));
-                }
-            }
+            ViewGroup listHost = footer != null && footer.getParent() instanceof ViewGroup
+                    ? listHost((ViewGroup) footer.getParent()) : null;
 
             boolean wantHeader = host.toolbarsEnabled() && holder instanceof FrameLayout
                     && screen.coordinator.get() != null;
             boolean wantFooter = host.composerEnabled() && footer instanceof FrameLayout
-                    && screen.listHost.get() != null;
+                    && listHost != null;
             if (holder != null && !(holder instanceof FrameLayout)) {
                 host.report("conv-holder-type", "conversation header is " + holder.getClass().getName()
                         + ", not a FrameLayout; header panes skipped");
@@ -149,7 +159,7 @@ final class ConversationGlassPanes {
             }
 
             if (wantHeader) enableHeader(screen, holder); else if (screen.headerOn) disableHeader(screen);
-            if (wantFooter) enableFooter(screen, footer); else if (screen.footerOn) disableFooter(screen);
+            if (wantFooter) enableFooter(screen, footer, listHost); else if (screen.footerOn) disableFooter(screen);
             syncListPadding(screen);
             if (!screen.headerOn && !screen.footerOn) screens.remove(root);
         } catch (Throwable error) {
@@ -192,28 +202,38 @@ final class ConversationGlassPanes {
     private void syncHeader(Screen screen) {
         ViewGroup holder = screen.holder.get();
         if (holder == null || holder.getWidth() <= 0 || holder.getHeight() <= 0) return;
-        floatHeader(screen, holder);
         float d = holder.getResources().getDisplayMetrics().density;
-        clearBackground(screen, holder);
 
-        // Wallpaper-only band behind the capsule: rows scrolling under it would flicker.
-        if (screen.band == null || screen.band.getParent() != holder) {
-            screen.band = newPane(holder, null, wallpaperOf(screen));
-            holder.addView(screen.band, 0, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        }
-
-        // In search WhatsApp swaps the toolbar for the search bar in this holder.
+        // Resolve every required view and the capsule geometry first: a WhatsApp build that
+        // renamed the toolbar or Back button must leave the header untouched, not half-floated.
         View searchBar = findById(holder, "search_view_toolbar");
+        ViewGroup toolbar = null;
         int inset = Math.round(PILL_INSET_DP * d);
         int l = inset, r = holder.getWidth() - inset, t, b;
         if (searchBar != null && searchBar.isShown() && searchBar.getWidth() > 0) {
-            clearBackground(screen, searchBar);
             t = 0;
             b = holder.getHeight();
         } else {
-            ViewGroup toolbar = toolbarOf(holder);
+            searchBar = null;
+            toolbar = toolbarOf(holder);
             if (toolbar == null || !toolbar.isShown()) return;
+            // The band comes from the Back button, not the bar: the elements do not share a height.
+            View back = findById(toolbar, "whatsapp_toolbar_home");
+            if (back == null || back.getWidth() <= 0 || !rectIn(holder, back)) {
+                host.report("conv-header-geometry", "conversation Back button not found; header left native");
+                return;
+            }
+            int trim = Math.round(PILL_TRIM_DP * d), grow = Math.round(CAPSULE_GROW_DP * d);
+            t = Math.max(0, rect.top + trim / 2 - grow);
+            b = Math.min(holder.getHeight(), rect.bottom - trim / 2 + grow);
+        }
+        if (r <= l || b <= t) return;
+
+        floatHeader(screen, holder);
+        clearBackground(screen, holder);
+        if (searchBar != null) {
+            clearBackground(screen, searchBar);
+        } else {
             clearBackground(screen, toolbar);
             if (toolbar.getForeground() != null) {
                 if (!screen.clearedForegrounds.containsKey(toolbar)) {
@@ -221,14 +241,13 @@ final class ConversationGlassPanes {
                 }
                 toolbar.setForeground(null);
             }
-            // The band comes from the Back button, not the bar: the elements do not share a height.
-            View back = findById(toolbar, "whatsapp_toolbar_home");
-            if (back == null || back.getWidth() <= 0 || !rectIn(holder, back)) return;
-            int trim = Math.round(PILL_TRIM_DP * d), grow = Math.round(CAPSULE_GROW_DP * d);
-            t = Math.max(0, rect.top + trim / 2 - grow);
-            b = Math.min(holder.getHeight(), rect.bottom - trim / 2 + grow);
         }
-        if (r <= l || b <= t) return;
+        // Wallpaper-only band behind the capsule: rows scrolling under it would flicker.
+        if (screen.band == null || screen.band.getParent() != holder) {
+            screen.band = newPane(holder, null, wallpaperOf(screen));
+            holder.addView(screen.band, 0, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        }
         if (screen.capsule == null || screen.capsule.getParent() != holder) {
             screen.capsule = newPane(holder, screen.coordinator.get(), wallpaperOf(screen));
             holder.addView(screen.capsule, 1, new FrameLayout.LayoutParams(0, 0));
@@ -261,10 +280,16 @@ final class ConversationGlassPanes {
 
     // ── Footer ────────────────────────────────────────────────────────────────────
 
-    private void enableFooter(Screen screen, ViewGroup footer) {
-        if (screen.footer.get() != footer) {
+    private void enableFooter(Screen screen, ViewGroup footer, ViewGroup listHost) {
+        if (screen.footer.get() != footer || screen.listHost.get() != listHost) {
+            // WhatsApp replaced the footer or its list: restore the old views with their own
+            // recorded values before recording the new ones.
             if (screen.footerOn) disableFooter(screen);
+            AbsListView list = firstList(listHost);
+            if (screen.list.get() != list) restoreListPadding(screen);
             screen.footer = new WeakReference<>(footer);
+            screen.listHost = new WeakReference<>(listHost);
+            screen.list = new WeakReference<>(list);
         }
         screen.footerOn = true;
         if (screen.footerListener == null) {
@@ -350,6 +375,7 @@ final class ConversationGlassPanes {
         screen.listHostBottomMargin = null;
         screen.footerTranslationY = null;
         restoreUnder(screen, footer);
+        syncListPadding(screen);
     }
 
     // ── List ──────────────────────────────────────────────────────────────────────
@@ -361,13 +387,7 @@ final class ConversationGlassPanes {
         boolean header = screen.headerOn && screen.holderBottomMargin != null;
         boolean footer = screen.footerOn && screen.listHostBottomMargin != null;
         if (!header && !footer) {
-            if (screen.listPadding != null) {
-                int[] p = screen.listPadding;
-                list.setPadding(p[0], p[1], p[2], p[3]);
-                if (screen.listClipToPadding != null) list.setClipToPadding(screen.listClipToPadding);
-                screen.listPadding = null;
-                screen.listClipToPadding = null;
-            }
+            restoreListPadding(screen);
             return;
         }
         if (screen.listPadding == null) {
@@ -388,6 +408,18 @@ final class ConversationGlassPanes {
             list.setPadding(list.getPaddingLeft(), top, list.getPaddingRight(), bottom);
             if (atEnd) keepAtEnd(list);
         }
+    }
+
+    /** Puts the recorded padding back on the list it was recorded from and forgets the baseline. */
+    private static void restoreListPadding(Screen screen) {
+        AbsListView list = screen.list.get();
+        if (list != null && screen.listPadding != null) {
+            int[] p = screen.listPadding;
+            list.setPadding(p[0], p[1], p[2], p[3]);
+            if (screen.listClipToPadding != null) list.setClipToPadding(screen.listClipToPadding);
+        }
+        screen.listPadding = null;
+        screen.listClipToPadding = null;
     }
 
     /** The last row is on screen and ends inside the content edge; an empty list never rests. */

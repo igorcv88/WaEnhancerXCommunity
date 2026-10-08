@@ -440,6 +440,7 @@ public final class AppLiquidGlass extends Feature {
                 }
                 view.removeOnAttachStateChangeListener(this);
                 sessions.remove(view);
+                conversation.release(view);
             }
             for (Map.Entry<View, Binding> entry : new ArrayList<>(bindings.entrySet())) {
                 View target = entry.getKey();
