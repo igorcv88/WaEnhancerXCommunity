@@ -395,3 +395,26 @@ PR #73 merged as `b471a25`. Branch `claude/new-session-l41wpa` restarted from th
 - `assembleWhatsappDebug` OK.
 - `agsl_check` OK.
 - No device run.
+
+
+## Consolidated report correction — 2026-10-08
+
+Base: `master@cd198492fe23feae3f4fa670ea915d6a1a6e7662`, incorporating #73/#74. Working branch: `fix/glass-session-recovery`. The user supplied the consolidated technical report including its final navigation-trace addendum and instructed execution. No new log collection was requested. No related open glass PR was found in the latest PR inventory.
+
+Implemented:
+- `ENDED` remains stop-compatible for existing features; a new `DESTROYED` callback disposes the app-glass session and removes the Activity registry entry. Stop suspends capture/discovery callbacks and observers, retains bindings/layout, and discards captured pixels. Resume revalidates/recaptures in the same session; destroy/detach restores native ownership and cleans up. Deferred discovery collected during suspension is reconciled on return.
+- Window-local pane material resolution replaces global foreground/last-material borrowing. Source, underlay, size, radius, material, readiness and visibility changes invalidate recordings. No old-frame image cache is used across chats or resumed visibility epochs.
+- Three bounded capture attempts per epoch replace permanent `liveFailed`. Retries occur after 16/64 ms; exhausted transient failures await relevant events. Capability/linkage failures stay disabled. Incomplete recording/effect installation cannot publish live content.
+- Header band becomes plain wallpaper continuity with no optics/budget; capsule prefers the resolved list subtree and retains acyclicity guards. Underlays are guarded as well. Composer terminates before the native action disc with a 2 dp minimum gap, in LTR/RTL, without changing touch targets or native foreground controls.
+- Battery Saver no longer disables intra-window optics. Temporary capture fallback is explicitly achromatic; V2/legacy shader programs and optics defaults are unchanged.
+- Transition/presentation/budget logs (`WaEnhancerX/GlassState`) include timestamps, PID, Activity/root/surface/source identities, reason, optics/material keys, epoch/capture generations, retry count, node/content/capability status, budget status, power-save status and effect rebuild count. No frame-by-frame successful-capture logging. Source dirty flags trigger capture on an already requested frame; identical underlay assignments no longer invalidate panes.
+
+Validation:
+- 107 focused JVM tests passed in 12 classes, including 13 new recovery/geometry/neutral-fallback cases. The local harness uses compiled JUnit source and minimal Android class placeholders only for loading graphics-dependent helper classes; these are CPU policy/arithmetic/source checks, not rendered pixels or Android lifecycle instrumentation.
+- Partial Java 17/API type check passed for the changed glass pipeline, conversation/session adapters, configuration dependencies, and actual lifecycle callback/registry classes against cached Android API 36 and DexKit. Unavailable app/framework dependencies use signature stubs; the WppCore enum is extracted from the actual source for the lifecycle check. This is not a full app compilation.
+- Full Gradle unit-test/APK command attempted; distribution download blocked (`Network is unreachable`, then proxy `Connection refused`). This environment has JDK 17, not the project's required JDK 21. No APK was produced. AGSL programs unchanged; no new GPU acceptance claim.
+- `git diff --check` clean. Workflows remain manual-only and none was dispatched.
+
+Acceptance and limits: [docs/GLASS_RECOVERY_ACCEPTANCE.md](docs/GLASS_RECOVERY_ACCEPTANCE.md). A neutral frame is permitted during a genuine unavailable-source/capture failure; persistent fallback after a successful same-root resume is a defect. No retained stale-image workaround, complete source ROI damage tracking, native backdrop experiment, SurfaceFlinger work, or measured energy reduction is claimed. Native geometry, same-process navigation, keyboard/recording transitions, visibility-epoch cleanup, screenshot recovery, and Battery Saver optics still require device verification. Build/test the branch with JDK 21 and a configured SDK before merging. Never merge or dispatch Actions without user instruction.
+
+Publication status: code and validation are complete locally. The automatic approval reviewer rejected the push to `https://github.com/igorcv88/WaEnhancerXCommunity.git` twice. The second review acknowledged the verified authenticated owner (`igorcv88`) and repository admin/push permissions, but requires trusted user-authored approval explicitly naming this publication destination. No remote branch or PR has been created. Obtain that explicit publication approval before retrying; do not switch transport to bypass the rejection. The exported git patch contains the implementation, tests and acceptance guide.

@@ -40,6 +40,8 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     private float materialRadius, materialDensity;
     private int alpha = 255;
     private LiveBackdrop live;
+    private Boolean presentedLive;
+    private String budgetStatus = "unassigned";
     private final int[] location = new int[2];
 
     public GlassMaterialDrawable(View owner, Drawable original, Supplier<GlassSpec> spec,
@@ -70,7 +72,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
                 || materialHeight != b.height() || materialRadius != radius || materialDensity != density) {
             appliedMaterial = material; materialWidth = b.width(); materialHeight = b.height();
             materialRadius = radius; materialDensity = density;
-            fallback = GlassRenderer.background(material.withoutOptics(), radius, density);
+            fallback = GlassRenderer.background(material.neutralFallback(), radius, density);
         }
         int save = canvas.save();
         canvas.translate(b.left, b.top);
@@ -83,6 +85,12 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
                     ? canvas.saveLayerAlpha(0, 0, b.width(), b.height(), alpha) : -1;
             boolean drewLive = live != null && LiveBackdrop.wantsLive(material)
                     && live.draw(canvas, b.width(), b.height());
+            if (!LiveBackdrop.isCapturing() && (presentedLive == null || presentedLive != drewLive)) {
+                presentedLive = drewLive;
+                GlassTrace.event(view.getRootView(), this, view.getRootView(),
+                        drewLive ? "PRESENTING_LIVE" : "PRESENTING_FALLBACK", "draw-result",
+                        "specKey=" + Integer.toHexString(material.hashCode()) + " " + captureStatus());
+            }
             if (fade >= 0) canvas.restoreToCount(fade);
             if (!drewLive) {
                 fallback.setBounds(0, 0, b.width(), b.height());
@@ -139,8 +147,15 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
      * True when the system dropped a live recording and a capture is due now. An intentional
      * {@link #releaseLive} (off screen, over budget) is not a drop and does not ask for one.
      */
+    public void setBudgetStatus(String status) { budgetStatus = status; }
+    public String captureStatus() {
+        return "budgetStatus=" + budgetStatus + " "
+                + (live == null ? "captureAvailable=false hasContent=false hasDisplayList=false shaderStatus=waiting" : live.status());
+    }
+    public boolean capturePermanentlyUnavailable() { return live != null && !live.available(); }
+
     public boolean needsFreshCapture() {
-        return live != null && live.wasDropped();
+        return live == null || !live.hasRecording() || live.wasDropped();
     }
 
     /** Drops the live recording; the static material is painted until the next capture. */

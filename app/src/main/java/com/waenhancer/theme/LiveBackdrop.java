@@ -62,6 +62,7 @@ final class LiveBackdrop {
     /** Which path installed {@code glassNode}'s effect, so a switch rebuilds it. */
     private boolean correctedInstalled;
     private String loggedStatus;
+    private long captureGeneration, effectRebuilds;
 
     /**
      * The geometry of one recording: input size (surface plus margin), node size, and the
@@ -122,7 +123,7 @@ final class LiveBackdrop {
 
     /** Whether a live recording is ready to draw. */
     boolean hasRecording() {
-        return hasContent && glassNode.hasDisplayList();
+        return hasContent && glassNode.hasDisplayList() && node.hasDisplayList();
     }
 
     /** True when a recording existed and the system dropped it (an Activity stop drops them all). */
@@ -146,6 +147,8 @@ final class LiveBackdrop {
             return false;
         }
         if (!available() || width <= 0 || height <= 0 || capturing) return false;
+        // Publish only after both display lists and the effect are complete.
+        hasContent = false;
         GlassOptics optics = GlassOptics.current();
         if (optics.corrected && !LensEffect.isBroken()) {
             return captureCorrected(width, height, radiusPx, density, spec, painter, optics);
@@ -191,6 +194,7 @@ final class LiveBackdrop {
         contentWidth = width;
         contentHeight = height;
         hasContent = true;
+        captureGeneration++;
         return true;
     }
 
@@ -236,6 +240,7 @@ final class LiveBackdrop {
         }
         if (changed || !correctedInstalled) {
             glassNode.setRenderEffect(corrected.effect());
+            effectRebuilds++;
             correctedInstalled = true;
             effectSpec = null;
             String status = corrected.status();
@@ -248,6 +253,7 @@ final class LiveBackdrop {
         contentHeight = height;
         contentPadding = padding;
         hasContent = true;
+        captureGeneration++;
         return true;
     }
 
@@ -261,6 +267,7 @@ final class LiveBackdrop {
             if (lens == null) lens = LiquidLens.newMaterialShader();
             LiquidLens.updateMaterialUniforms(lens, spec, width, height, radius, density);
             glassNode.setRenderEffect(RenderEffect.createRuntimeShaderEffect(lens, "content"));
+            effectRebuilds++;
         } catch (RuntimeException | LinkageError error) {
             lensFailed = true;
             lens = null;
@@ -283,6 +290,15 @@ final class LiveBackdrop {
         }
         ((RecordingCanvas) canvas).drawRenderNode(glassNode);
         return true;
+    }
+
+    String status() {
+        return "captureAvailable=" + available() + " hasContent=" + hasContent
+                + " hasDisplayList=" + (node.hasDisplayList() && glassNode.hasDisplayList())
+                + " shaderStatus=" + (lensFailed ? "disabled" : correctedInstalled ? "v2" : "legacy")
+                + " captureGeneration=" + captureGeneration + " rebuilds=" + effectRebuilds
+                + " materialRevision=" + GlassOptics.revision()
+                + " captureSize=" + contentWidth + "x" + contentHeight;
     }
 
     void release() {

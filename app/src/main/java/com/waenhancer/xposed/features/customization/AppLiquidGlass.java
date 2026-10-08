@@ -19,6 +19,8 @@ import com.waenhancer.config.LiquidGlassOptics;
 import com.waenhancer.config.LiquidGlassSettings;
 import com.waenhancer.config.LiquidGlassSettings.Surface;
 import com.waenhancer.theme.CaptureScheduler;
+import com.waenhancer.theme.SurfaceRecovery;
+import com.waenhancer.theme.GlassTrace;
 import com.waenhancer.theme.GlassMaterialDrawable;
 import com.waenhancer.theme.GlassOptics;
 import com.waenhancer.theme.LiveBudget;
@@ -53,16 +55,12 @@ public final class AppLiquidGlass extends Feature {
     private final Set<Integer> unknownResources = new HashSet<>();
     private final Set<String> reported = new HashSet<>();
     private WeakReference<Session> foreground = new WeakReference<>(null);
-    /** Last material resolved, so a pane never paints nothing between two activities. */
-    private GlassSpec lastMaterial;
     private final ConversationGlassPanes conversation = new ConversationGlassPanes(new ConversationGlassPanes.Host() {
         @Override public boolean toolbarsEnabled() { return LiquidGlassSettings.isEnabled(prefs, Surface.TOOLBARS); }
         @Override public boolean composerEnabled() { return LiquidGlassSettings.isEnabled(prefs, Surface.COMPOSER); }
-        @Override public GlassSpec material() {
-            Session session = foreground.get();
-            GlassSpec spec = session == null ? null : session.resolvedMaterial();
-            if (spec != null) lastMaterial = spec;
-            return lastMaterial;
+        @Override public GlassSpec material(View root) {
+            Session session = sessionFor(root);
+            return session == null || session.closed ? null : session.resolvedMaterial();
         }
         @Override public void report(String key, String message) { AppLiquidGlass.this.report(key, message); }
     });
@@ -78,6 +76,10 @@ public final class AppLiquidGlass extends Feature {
             View decor = activity.getWindow().getDecorView();
             if (state == WppCore.ActivityChangeState.ChangeType.ENDED) {
                 Session session = sessionFor(decor);
+                if (session != null) session.suspend();
+                if (foreground.get() == session) foreground.clear();
+            } else if (state == WppCore.ActivityChangeState.ChangeType.DESTROYED) {
+                Session session = sessionFor(decor);
                 if (session != null) session.close();
             } else if (state == WppCore.ActivityChangeState.ChangeType.RESUMED) {
                 reloadPrefs();
@@ -86,7 +88,9 @@ public final class AppLiquidGlass extends Feature {
                 foreground = new WeakReference<>(session);
                 if (session != null) {
                     session.cachedMaterial = null;
-                    decor.post(session::scan);
+                    session.resume();
+                    session.scan();
+                    decor.invalidate();
                 }
             }
         });
@@ -154,10 +158,13 @@ public final class AppLiquidGlass extends Feature {
                 Session session = reference == null ? null : reference.get();
                 if (session == null) continue;
                 session.cachedMaterial = null;
+                for (Binding binding : session.bindings.values()) {
+                    binding.recovery.revalidate();
+                    binding.glass.releaseLive();
+                }
                 View root = session.root.get();
                 if (root != null) root.invalidate();
             }
-            lastMaterial = null;
         }
     }
 
@@ -337,6 +344,8 @@ public final class AppLiquidGlass extends Feature {
         private boolean discovered;
         private boolean installing;
         private boolean closed;
+        private boolean suspended;
+        private boolean observing;
         private GlassSpec cachedMaterial;
         private long materialAt;
         private final CaptureScheduler scheduler = new CaptureScheduler();
@@ -347,6 +356,32 @@ public final class AppLiquidGlass extends Feature {
         private final android.graphics.Rect visibleRect = new android.graphics.Rect();
         private long[] order = new long[16];
         private long[] areas = new long[16];
+        private long pendingFrameAt = Long.MAX_VALUE;
+        private final Runnable frame = this::invalidateFrame;
+        private void invalidateFrame() {
+            pendingFrameAt = Long.MAX_VALUE;
+            View view = root.get();
+            if (!closed && !suspended && view != null && view.isAttachedToWindow()) view.invalidate();
+        }
+        private final Runnable discovery = this::runDiscovery;
+
+        private void scheduleFrame(long delay) {
+            View view = root.get();
+            if (closed || suspended || view == null) return;
+            long at = SystemClock.uptimeMillis() + Math.max(1L, delay);
+            if (at >= pendingFrameAt) return;
+            view.removeCallbacks(frame);
+            pendingFrameAt = at;
+            view.postDelayed(frame, Math.max(1L, delay));
+        }
+
+        private void cancelPending() {
+            View view = root.get();
+            if (view != null) { view.removeCallbacks(frame); view.removeCallbacks(discovery); }
+            pendingFrameAt = Long.MAX_VALUE;
+            discoveryPosted = false;
+        }
+
 
         Session(View root) {
             this.root = new WeakReference<>(root);
@@ -375,10 +410,63 @@ public final class AppLiquidGlass extends Feature {
         void attach() {
             View view = root.get();
             if (view == null) return;
-            view.getViewTreeObserver().addOnGlobalLayoutListener(this);
-            view.getViewTreeObserver().addOnPreDrawListener(this);
-            view.getViewTreeObserver().addOnScrollChangedListener(this);
+            observe(true);
             view.addOnAttachStateChangeListener(this);
+            GlassTrace.event(view, this, view, "BOUND", "attach", "");
+        }
+
+        private void observe(boolean enable) {
+            View view = root.get();
+            if (view == null || observing == enable) return;
+            ViewTreeObserver observer = view.getViewTreeObserver();
+            if (!observer.isAlive()) return;
+            if (enable) {
+                observer.addOnGlobalLayoutListener(this);
+                observer.addOnPreDrawListener(this);
+                observer.addOnScrollChangedListener(this);
+            } else {
+                observer.removeOnGlobalLayoutListener(this);
+                observer.removeOnPreDrawListener(this);
+                observer.removeOnScrollChangedListener(this);
+            }
+            observing = enable;
+        }
+
+        void suspend() {
+            if (closed || suspended) return;
+            suspended = true;
+            cancelPending();
+            observe(false);
+            conversation.setSuspended(root.get(), true);
+            for (Binding binding : bindings.values()) {
+                binding.recovery.suspend();
+                // Retain UI ownership, never keep chat pixels across a visibility epoch.
+                binding.glass.releaseLive();
+            }
+            GlassTrace.event(root.get(), this, root.get(), "SUSPENDED", "activity-stop", "bindings=" + bindings.size());
+        }
+
+        void resume() {
+            if (closed) return;
+            boolean returning = suspended;
+            suspended = false;
+            observe(true);
+            conversation.setSuspended(root.get(), false);
+            if (returning) for (Binding binding : bindings.values()) {
+                binding.recovery.revalidate();
+                binding.glass.releaseLive();
+            }
+            scheduler.activity(SystemClock.uptimeMillis());
+            if (!pendingDiscovery.isEmpty()) runDiscovery();
+            GlassTrace.event(root.get(), this, root.get(), "REVALIDATING", "activity-resume", "bindings=" + bindings.size());
+        }
+
+        private void trace(Binding binding, SurfaceRecovery.State before, String reason) {
+            if (before == binding.recovery.state()) return;
+            GlassTrace.transition(root.get(), binding.glass, root.get(), before, binding.recovery, reason,
+                    "role=" + binding.surface + " specKey=" + GlassOptics.current().key()
+                    + ":" + (cachedMaterial == null ? "none" : Integer.toHexString(cachedMaterial.hashCode()))
+                    + " " + binding.glass.captureStatus());
         }
 
         @Override public void onGlobalLayout() {
@@ -397,7 +485,7 @@ public final class AppLiquidGlass extends Feature {
          */
         @Override public boolean onPreDraw() {
             try {
-                if (closed || bindings.isEmpty() || GlassPane.isCapturing()) return true;
+                if (closed || suspended || bindings.isEmpty() || GlassPane.isCapturing()) return true;
                 long now = SystemClock.uptimeMillis();
                 boolean fresh = false;
                 for (Binding binding : bindings.values()) {
@@ -410,7 +498,7 @@ public final class AppLiquidGlass extends Feature {
                 if (view == null) return true;
                 if ((decision & CaptureScheduler.CAPTURE) == 0) {
                     if ((decision & CaptureScheduler.INVALIDATE_LATER) != 0) {
-                        view.postInvalidateDelayed(scheduler.delayMs());
+                        scheduleFrame(scheduler.delayMs());
                     }
                     return true;
                 }
@@ -432,9 +520,15 @@ public final class AppLiquidGlass extends Feature {
                     if (binding == null) continue;
                     // Off screen or hidden: nothing to show, so no recording either.
                     if (!target.isShown() || !target.getGlobalVisibleRect(visibleRect)) {
+                        binding.visible = false;
                         binding.glass.releaseLive();
                         if (ledger != null) ledger.releaseDrawable(binding.glass);
                         continue;
+                    }
+                    if (!binding.visible) {
+                        binding.visible = true;
+                        binding.recovery.revalidate();
+                        binding.glass.releaseLive();
                     }
                     // Top to bottom, then left to right; the index rides in the low bits.
                     long top = Math.max(-(1L << 19), Math.min((1L << 19) - 1, visibleRect.top)) + (1L << 19);
@@ -467,7 +561,12 @@ public final class AppLiquidGlass extends Feature {
                     long area = temporal && material != null
                             ? LiveBudget.cost(target.getWidth(), target.getHeight(), material, density, optics)
                             : areas[i];
-                    if (binding.liveFailed) continue;
+                    if (binding.width != target.getWidth() || binding.height != target.getHeight()) {
+                        binding.width = target.getWidth(); binding.height = target.getHeight();
+                        binding.recovery.revalidate();
+                        binding.glass.releaseLive();
+                    }
+                    if (!binding.recovery.mayCapture(now)) continue;
                     // Sticky with the ledger: a live surface keeps its slot while visible, so a
                     // layout change cannot flip surfaces between glass and fallback.
                     // The count limit, like the area one, applies only to new admissions: a holder
@@ -480,6 +579,7 @@ public final class AppLiquidGlass extends Feature {
                     } else {
                         admitted = live < MAX_LIVE_PER_WINDOW && used + area <= budget;
                     }
+                    binding.glass.setBudgetStatus(admitted ? "admitted" : "refused");
                     if (!admitted) {
                         binding.glass.releaseLive();
                         if (ledger != null) ledger.releaseDrawable(binding.glass);
@@ -489,24 +589,34 @@ public final class AppLiquidGlass extends Feature {
                     try {
                         captured = binding.glass.captureBehind(target);
                     } catch (Throwable error) {
-                        // One surface WhatsApp cannot draw into a recording must not stop the
-                        // others: this one keeps the static material from now on.
-                        binding.liveFailed = true;
+                        SurfaceRecovery.State before = binding.recovery.state();
+                        binding.recovery.failed(now, error instanceof LinkageError);
                         binding.glass.releaseLive();
                         if (ledger != null) ledger.releaseDrawable(binding.glass);
-                        report("live-capture-" + binding.surface, binding.surface
-                                + " live capture disabled; static material: " + error);
+                        trace(binding, before, "capture-exception");
+                        if (binding.recovery.failures() == 1) XposedBridge.log(error);
+                        long delay = binding.recovery.retryDelay(now);
+                        if (delay > 0) scheduleFrame(delay);
                         continue;
                     }
+                    SurfaceRecovery.State before = binding.recovery.state();
                     if (captured) {
+                        binding.recovery.ready();
+                        trace(binding, before, "capture-published");
                         live++;
                         used += area;
                         if (invalidateNow) target.invalidate();
+                    } else {
+                        binding.recovery.failed(now, binding.glass.capturePermanentlyUnavailable());
+                        binding.glass.releaseLive();
+                        trace(binding, before, "capture-not-ready");
+                        long delay = binding.recovery.retryDelay(now);
+                        if (delay > 0) scheduleFrame(delay);
                     }
                 }
                 visible.clear();
                 targets.clear();
-                if (live > 0 && invalidateLater) view.postInvalidateDelayed(scheduler.delayMs());
+                if (live > 0 && invalidateLater) scheduleFrame(scheduler.delayMs());
                 if (temporal) {
                     String budgetLine = panes + " panes, " + (live - panes) + " drawables live";
                     if (!budgetLine.equals(loggedBudget)) {
@@ -526,7 +636,7 @@ public final class AppLiquidGlass extends Feature {
         }
 
         void scan() {
-            if (closed || GlassPane.isCapturing()) return;
+            if (closed || suspended || GlassPane.isCapturing()) return;
             View view = root.get();
             if (view == null) return;
 
@@ -572,20 +682,24 @@ public final class AppLiquidGlass extends Feature {
         void discoverLater(View view) {
             if (closed || GlassPane.isCapturing()) return;
             pendingDiscovery.add(view);
+            if (suspended) return;
             if (discoveryPosted) return;
             View decor = root.get();
             if (decor == null) return;
             discoveryPosted = true;
-            decor.post(() -> {
-                discoveryPosted = false;
-                if (closed) return;
-                for (View candidate : new ArrayList<>(pendingDiscovery)) {
-                    if (candidate != null && candidate.isAttachedToWindow() && candidate.getRootView() == root.get()) walk(candidate, 0);
-                }
-                pendingDiscovery.clear();
-                scan();
-            });
+            decor.post(discovery);
         }
+
+        private void runDiscovery() {
+            discoveryPosted = false;
+            if (closed || suspended) return;
+            for (View candidate : new ArrayList<>(pendingDiscovery)) {
+                if (candidate != null && candidate.isAttachedToWindow() && candidate.getRootView() == root.get()) walk(candidate, 0);
+            }
+            pendingDiscovery.clear();
+            scan();
+        }
+
 
         private void walk(View view, int depth) {
             if (depth > 24 || view == null || GlassSurface.isGlassHost(view) || view instanceof GlassPane) return;
@@ -660,6 +774,10 @@ public final class AppLiquidGlass extends Feature {
         void close() {
             if (closed) return;
             closed = true;
+            cancelPending();
+            observe(false);
+            if (foreground.get() == this) foreground.clear();
+            GlassTrace.event(root.get(), this, root.get(), "RELEASED", "destroy-or-detach", "");
             View view = root.get();
             if (view != null) {
                 ViewTreeObserver observer = view.getViewTreeObserver();
@@ -699,8 +817,9 @@ public final class AppLiquidGlass extends Feature {
         final int left, top, right, bottom;
         GlassMaterialDrawable glass;
         boolean tintChanged;
-        /** Set after a capture threw; this surface keeps the static material. */
-        boolean liveFailed;
+        int width, height;
+        boolean visible;
+        final SurfaceRecovery recovery = new SurfaceRecovery();
         Binding(View view, Drawable original, Surface surface, boolean nativeMask) {
             this.original = original;
             this.surface = surface;
@@ -710,6 +829,7 @@ public final class AppLiquidGlass extends Feature {
             right = view.getPaddingRight(); bottom = view.getPaddingBottom();
         }
         void restore(View view) {
+            recovery.release();
             glass.releaseLive();
             if (view.getBackground() == glass) {
                 glass.restoreCallback();

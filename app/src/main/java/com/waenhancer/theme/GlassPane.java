@@ -33,7 +33,7 @@ import java.util.function.Supplier;
  * pane, and the pane then transmits its underlay only. Without that guard HWUI recurses on the
  * RenderThread and the host process dies natively.</p>
  *
- * <p>Below Android 13, in power saving or when the lens fails, the pane paints the static
+ * <p>Below Android 13 or when the lens fails, the pane paints the static
  * material and records nothing.</p>
  */
 public final class GlassPane extends FrameLayout {
@@ -61,6 +61,7 @@ public final class GlassPane extends FrameLayout {
     private final Matrix paneMatrix = new Matrix();
     private final Matrix inverse = new Matrix();
     private final Matrix other = new Matrix();
+    private final List<GlassPaneGraph.Pane<View>> graph = new ArrayList<>();
 
     private View source;
     private List<View> underlay = Collections.emptyList();
@@ -74,7 +75,15 @@ public final class GlassPane extends FrameLayout {
 
     private int lastScreenX = Integer.MIN_VALUE, lastScreenY = Integer.MIN_VALUE;
     private View refusedFor;
-    private boolean loggedFailure;
+    private final SurfaceRecovery recovery = new SurfaceRecovery();
+    private boolean suspended;
+    private boolean observing;
+    private int captureWidth, captureHeight;
+    private boolean lastSourceReady, lastUnderlayReady;
+    private long opticsRevision = -1;
+    private GlassSpec captureMaterial;
+    private String budgetStatus = "unassigned";
+    private final Runnable retryFrame = () -> { if (!suspended && isAttachedToWindow()) invalidate(); };
 
     public GlassPane(Context context) {
         super(context);
@@ -106,6 +115,7 @@ public final class GlassPane extends FrameLayout {
     public void setSource(View view) {
         if (source == view) return;
         source = view;
+        revalidate("source-changed");
         refusedFor = null;
         scheduler.activity(SystemClock.uptimeMillis());
         invalidate();
@@ -117,7 +127,10 @@ public final class GlassPane extends FrameLayout {
 
     /** Views drawn beneath the source at their own screen positions: the wallpaper. */
     public void setUnderlay(List<View> views) {
-        underlay = views == null ? Collections.emptyList() : new ArrayList<>(views);
+        List<View> next = views == null ? Collections.emptyList() : views;
+        if (underlay.equals(next)) return;
+        underlay = new ArrayList<>(next);
+        revalidate("underlay-changed");
         scheduler.activity(SystemClock.uptimeMillis());
         invalidate();
     }
@@ -131,6 +144,7 @@ public final class GlassPane extends FrameLayout {
     public void setCornerRadius(float px) {
         if (cornerRadiusPx == px) return;
         cornerRadiusPx = px;
+        revalidate("radius-changed");
         invalidateOutline();
         invalidate();
     }
@@ -142,18 +156,79 @@ public final class GlassPane extends FrameLayout {
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         if (!LIVE.contains(this)) LIVE.add(this);
-        getViewTreeObserver().addOnPreDrawListener(preDraw);
-        getViewTreeObserver().addOnScrollChangedListener(scrolled);
+        observe(!suspended);
         scheduler.activity(SystemClock.uptimeMillis());
     }
 
     @Override protected void onDetachedFromWindow() {
         LiveBudget.forWindow(getRootView()).releasePane(this);
-        getViewTreeObserver().removeOnPreDrawListener(preDraw);
-        getViewTreeObserver().removeOnScrollChangedListener(scrolled);
+        observe(false);
+        removeCallbacks(retryFrame);
         LIVE.remove(this);
         backdrop.release();
+        recovery.revalidate();
         super.onDetachedFromWindow();
+    }
+
+    private void observe(boolean enable) {
+        if (observing == enable) return;
+        ViewTreeObserver observer = getViewTreeObserver();
+        if (!observer.isAlive()) { if (!enable) observing = false; return; }
+        if (enable) {
+            observer.addOnPreDrawListener(preDraw);
+            observer.addOnScrollChangedListener(scrolled);
+        } else {
+            observer.removeOnPreDrawListener(preDraw);
+            observer.removeOnScrollChangedListener(scrolled);
+        }
+        observing = enable;
+    }
+
+    public void setSuspended(boolean value) {
+        if (suspended == value) return;
+        SurfaceRecovery.State before = recovery.state();
+        suspended = value;
+        if (value) {
+            recovery.suspend();
+            observe(false);
+            removeCallbacks(retryFrame);
+            backdrop.release();
+        } else {
+            revalidate("resume");
+            if (isAttachedToWindow()) observe(true);
+            scheduler.activity(SystemClock.uptimeMillis());
+            invalidate();
+        }
+        trace(before, value ? "stop" : "resume");
+    }
+
+    private void revalidate(String reason) {
+        SurfaceRecovery.State before = recovery.state();
+        backdrop.release();
+        if (!suspended) recovery.revalidate();
+        trace(before, reason);
+    }
+
+    private void trace(SurfaceRecovery.State before, String reason) {
+        if (before == recovery.state()) return;
+        GlassTrace.transition(getRootView(), this, source, before, recovery, reason,
+                "paneId=" + GlassTrace.id(this) + " specKey=" + GlassOptics.current().key() + ":"
+                + (captureMaterial == null ? "none" : Integer.toHexString(captureMaterial.hashCode()))
+                + " budgetStatus=" + budgetStatus + " " + backdrop.status());
+    }
+
+    private void scheduleFrame(long delay) {
+        removeCallbacks(retryFrame);
+        if (!suspended) postDelayed(retryFrame, Math.max(1L, delay));
+    }
+
+    private void failed(long now, boolean fatal, String reason) {
+        SurfaceRecovery.State before = recovery.state();
+        recovery.failed(now, fatal);
+        backdrop.release();
+        trace(before, reason);
+        long delay = recovery.retryDelay(now);
+        if (delay > 0) scheduleFrame(delay);
     }
 
     /**
@@ -165,10 +240,28 @@ public final class GlassPane extends FrameLayout {
         // Guarded whole: capture draws WhatsApp's own views, and an escape here would crash the UI
         // thread on every frame.
         try {
-            if (!isAttachedToWindow() || getWidth() <= 0 || getHeight() <= 0 || isCapturing()) return true;
+            if (suspended || !isShown() || !isAttachedToWindow() || getWidth() <= 0 || getHeight() <= 0 || isCapturing()) return true;
             GlassSpec material = spec.get();
-            if (!backdrop.available() || material == null) return true;
+            if (material == null || !LiveBackdrop.wantsLive(material)) return true;
             long now = SystemClock.uptimeMillis();
+            boolean sourceReady = source != null && source.isAttachedToWindow() && source.isLaidOut();
+            boolean underlayReady = false;
+            for (View view : underlay) if (view != null && view.isAttachedToWindow() && view.isLaidOut()) {
+                underlayReady = true; break;
+            }
+            if (sourceReady != lastSourceReady || underlayReady != lastUnderlayReady) {
+                lastSourceReady = sourceReady; lastUnderlayReady = underlayReady;
+                revalidate("source-readiness-changed");
+            }
+            if (opticsRevision != GlassOptics.revision() || !material.equals(captureMaterial)) {
+                opticsRevision = GlassOptics.revision(); captureMaterial = material;
+                revalidate("material-changed");
+            }
+            if (captureWidth != getWidth() || captureHeight != getHeight()) {
+                captureWidth = getWidth(); captureHeight = getHeight(); revalidate("size-changed");
+            }
+            if (!recovery.mayCapture(now)) return true;
+            if (!backdrop.available()) { failed(now, true, "capability-unavailable"); return true; }
             getLocationOnScreen(hostLocation);
             if (hostLocation[0] != lastScreenX || hostLocation[1] != lastScreenY) {
                 lastScreenX = hostLocation[0];
@@ -179,18 +272,28 @@ public final class GlassPane extends FrameLayout {
             boolean damageDriven = optics.corrected && optics.temporal;
             // A dropped recording (an Activity stop, a screenshot overlay) is captured again at
             // once rather than showing the fallback until the next heartbeat.
-            int decision = scheduler.decide(now, damageDriven, backdrop.wasDropped());
+            View src = safeSource();
+            boolean sourceDamage = src != null && src.isDirty();
+            for (View view : underlay) if (view != null && view.isDirty()) sourceDamage = true;
+            if (sourceDamage) scheduler.activity(now);
+            int decision = scheduler.decide(now, damageDriven, !backdrop.hasRecording());
             if ((decision & CaptureScheduler.CAPTURE) == 0) {
-                if ((decision & CaptureScheduler.INVALIDATE_LATER) != 0) postInvalidateDelayed(scheduler.delayMs());
+                if ((decision & CaptureScheduler.INVALIDATE_LATER) != 0) scheduleFrame(scheduler.delayMs());
                 return true;
             }
-            View src = safeSource();
-            if (src == null && underlay.isEmpty()) return true;
+            if (src == null && underlay.isEmpty()) { failed(now, false, "source-not-ready"); return true; }
             float density = getResources().getDisplayMetrics().density;
             if (damageDriven) {
                 // One budget per window (LG-12): a pane is admitted like any other live surface.
                 LiveBudget budget = LiveBudget.forWindow(getRootView());
-                if (!budget.admitPane(this, LiveBudget.cost(getWidth(), getHeight(), material, density, optics))) {
+                boolean admitted = budget.admitPane(this, LiveBudget.cost(getWidth(), getHeight(), material, density, optics));
+                String status = admitted ? "admitted" : "refused";
+                if (!status.equals(budgetStatus)) {
+                    budgetStatus = status;
+                    GlassTrace.event(getRootView(), this, source, "BUDGET", status,
+                            "budgetStatus=" + status + " capacity=" + budget.capacity());
+                }
+                if (!admitted) {
                     if (backdrop.hasRecording()) {
                         backdrop.release();
                         invalidate();
@@ -202,24 +305,27 @@ public final class GlassPane extends FrameLayout {
             boolean captured = backdrop.capture(getWidth(), getHeight(), radius(), density, material,
                     (canvas, padding) -> exact ? paintExact(canvas, src) : paint(canvas, src));
             if (captured) {
+                SurfaceRecovery.State before = recovery.state();
+                recovery.ready();
+                trace(before, "capture-published");
                 if ((decision & CaptureScheduler.INVALIDATE_NOW) != 0) invalidate();
-                else if ((decision & CaptureScheduler.INVALIDATE_LATER) != 0) postInvalidateDelayed(scheduler.delayMs());
+                else if ((decision & CaptureScheduler.INVALIDATE_LATER) != 0) scheduleFrame(scheduler.delayMs());
+            } else {
+                failed(now, !backdrop.available(), "capture-not-ready");
             }
         } catch (Throwable error) {
-            if (!loggedFailure) {
-                loggedFailure = true;
-                Log.w(TAG, "pre-draw capture failed; frame skipped", error);
-            }
+            failed(SystemClock.uptimeMillis(), error instanceof LinkageError, "capture-exception");
+            if (recovery.failures() == 1) Log.w(TAG, "pre-draw capture failed; bounded recovery", error);
         }
         return true; // never cancel the host's frame
     }
 
     private View safeSource() {
+        graph.clear();
+        for (GlassPane pane : LIVE) graph.add(new GlassPaneGraph.Pane<>(pane, pane.source));
         View src = source;
         if (src == null || !src.isAttachedToWindow() || !src.isLaidOut()) return null;
-        List<GlassPaneGraph.Pane<View>> live = new ArrayList<>(LIVE.size());
-        for (GlassPane pane : LIVE) live.add(new GlassPaneGraph.Pane<>(pane, pane.source));
-        String reason = GlassPaneGraph.refusal(TREE, this, src, live);
+        String reason = GlassPaneGraph.refusal(TREE, this, src, graph);
         if (reason == null) {
             refusedFor = null;
             return src;
@@ -229,6 +335,10 @@ public final class GlassPane extends FrameLayout {
             Log.w(TAG, "source " + src.getClass().getName() + " refused: " + reason + "; underlay only");
         }
         return null;
+    }
+
+    private boolean safeUnderlay(View view) {
+        return GlassPaneGraph.refusal(TREE, this, view, graph) == null;
     }
 
     /** The underlay, then the source, each at its own screen position relative to this pane. */
@@ -245,6 +355,7 @@ public final class GlassPane extends FrameLayout {
         for (View u : underlay) {
             if (u == null || u.getWidth() <= 0 || u.getHeight() <= 0
                     || u.getVisibility() != View.VISIBLE || !u.isAttachedToWindow()) continue;
+            if (!safeUnderlay(u)) continue;
             if (src != null && GlassPaneGraph.isAncestor(TREE, src, u)) continue; // drawn by the source
             u.getLocationOnScreen(otherLocation);
             int save = u.getAlpha() < 1f
@@ -279,6 +390,7 @@ public final class GlassPane extends FrameLayout {
         for (View u : underlay) {
             if (u == null || u.getWidth() <= 0 || u.getHeight() <= 0
                     || u.getVisibility() != View.VISIBLE || !u.isAttachedToWindow()) continue;
+            if (!safeUnderlay(u)) continue;
             if (src != null && GlassPaneGraph.isAncestor(TREE, src, u)) continue; // drawn by the source
             drew |= drawPlaced(canvas, u);
         }
@@ -307,6 +419,9 @@ public final class GlassPane extends FrameLayout {
         // Drawn inside another surface's recording too: what this pane records is behind it, so
         // nothing that records this pane can be inside its own recording.
         if (LiveBackdrop.wantsLive(material) && backdrop.draw(canvas, getWidth(), getHeight())) return;
+        if (!suspended && recovery.state() == SurfaceRecovery.State.LIVE && backdrop.wasDropped()) {
+            failed(SystemClock.uptimeMillis(), false, "display-list-lost");
+        }
         drawFallback(canvas, material);
     }
 
@@ -314,7 +429,7 @@ public final class GlassPane extends FrameLayout {
         float radius = radius();
         if (fallback == null || fallbackSpec != material || fallbackWidth != getWidth()
                 || fallbackHeight != getHeight() || fallbackRadius != radius) {
-            fallback = GlassRenderer.background(material.withoutOptics(), radius,
+            fallback = GlassRenderer.background(material.neutralFallback(), radius,
                     getResources().getDisplayMetrics().density);
             fallbackSpec = material;
             fallbackWidth = getWidth();

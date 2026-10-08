@@ -419,7 +419,21 @@ public class GlassSpecTest {
     }
 
 
-    /** Power saving must not turn every surface into an accent-coloured slab. */
+    @Test public void captureFallbackIsAchromaticEvenWithAnExplicitGreenTint() {
+        for (boolean dark : new boolean[]{false, true}) {
+            GlassSpec optical = GlassSpec.resolve(GlassSpec.Variant.LIQUID, dark,
+                    0xFF25D366, 0xFF25D366, 40f, true, false);
+            GlassSpec fallback = optical.neutralFallback();
+            int rgb = fallback.fillColor;
+            assertEquals((rgb >> 16) & 255, (rgb >> 8) & 255);
+            assertEquals((rgb >> 8) & 255, rgb & 255);
+            assertEquals(0, fallback.refractionColor);
+            assertTrue(fallback.usingFallback);
+            assertTrue(alphaOf(fallback.fillColor) >= Math.round(GlassSpec.NO_BLUR_MIN_OPACITY * 255f));
+        }
+    }
+
+    /** A capability fallback must not turn every surface into an accent-coloured slab. */
     @Test public void fallbackCarriesNoAccentGlow() {
         int accent = 0xFF25D366;
         GlassSpec noBlur = GlassSpec.resolve(GlassSpec.Variant.LIQUID, true, 0, accent, 40f, false, false);

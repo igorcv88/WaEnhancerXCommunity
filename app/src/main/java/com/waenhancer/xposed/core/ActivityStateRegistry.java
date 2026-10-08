@@ -70,6 +70,13 @@ public class ActivityStateRegistry {
         return result;
     }
 
+    public static void remove(Activity activity) {
+        activityStates.remove(activity);
+        synchronized (activityBySimpleName) {
+            activityBySimpleName.entrySet().removeIf(entry -> entry.getValue().get() == activity);
+        }
+    }
+
     public static void cleanup() {
         synchronized (activityBySimpleName) {
             activityBySimpleName.entrySet().removeIf(entry -> entry.getValue().get() == null);
