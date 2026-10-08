@@ -162,20 +162,19 @@ public class LiquidGlassActivity extends AppCompatActivity {
         controls.addView(presets);
 
         addOpticsRow(LiquidGlassOptics.MASTER, false, "Corrected renderer",
-                "Master switch. Off is the original renderer, exactly as before.");
-        addOpticsRow(LiquidGlassOptics.GEOMETRY, true, "1. Stable refraction",
-                "Bounded warp with no fold at the rounded ends, corners or selected tab; 1:1 capture "
-                        + "and exact placement. Off: the original warp, for comparison only.");
-        addOpticsRow(LiquidGlassOptics.FILTERING, true, "2. Optical blur",
+                "Master switch. Off is the original renderer. On always includes stable refraction: "
+                        + "a bounded warp with no fold at the rounded ends, corners or selected tab, "
+                        + "1:1 capture and exact placement.");
+        addOpticsRow(LiquidGlassOptics.FILTERING, true, "1. Optical blur",
                 "A real Gaussian blur under the controls, sharp only at the rim. Background text stops "
                         + "competing with the input field.");
-        addOpticsRow(LiquidGlassOptics.ADAPTIVE, true, "3. Adaptive contrast",
+        addOpticsRow(LiquidGlassOptics.ADAPTIVE, true, "2. Adaptive contrast",
                 "Darkens or lightens the glass only where the content behind would make icons and "
                         + "text hard to read, and tints toward the backdrop. Needs Optical blur.");
-        addOpticsRow(LiquidGlassOptics.COLOR, true, "4. Colour and highlights",
+        addOpticsRow(LiquidGlassOptics.COLOR, true, "3. Colour and highlights",
                 "Linear-light colour, saturation 1.10 instead of 1.55, at most 1.5px colour fringe, "
                         + "quieter rim light.");
-        addOpticsRow(LiquidGlassOptics.TEMPORAL, true, "5. Capture timing and budget",
+        addOpticsRow(LiquidGlassOptics.TEMPORAL, true, "4. Capture timing and budget",
                 "Captures only when the screen redraws, keeps the selected tab across colour changes, "
                         + "and counts every live surface in one budget.");
         addOpticsRow(LiquidGlassOptics.CLEAR, false, "Clear profile (iOS-inspired)",
@@ -238,6 +237,7 @@ public class LiquidGlassActivity extends AppCompatActivity {
             case JACOBIAN -> "warp stability (green ok, yellow weak, red fold)";
             case GRID -> "synthetic grid";
             case PROTECTION -> "contrast protection (red) / blur share (green)";
+            case LEGACY_WARP -> "original warp (diagnostic only: folds and duplicates at the edges)";
         };
     }
 

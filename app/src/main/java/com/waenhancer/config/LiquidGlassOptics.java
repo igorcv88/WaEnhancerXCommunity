@@ -22,7 +22,6 @@ import com.waenhancer.theme.LensModel;
 public final class LiquidGlassOptics {
 
     public static final String MASTER = "liquid_glass_optics";
-    public static final String GEOMETRY = "liquid_glass_optics_geometry";
     public static final String FILTERING = "liquid_glass_optics_filtering";
     public static final String ADAPTIVE = "liquid_glass_optics_adaptive";
     public static final String COLOR = "liquid_glass_optics_color";
@@ -33,8 +32,11 @@ public final class LiquidGlassOptics {
     /** Developer: displacement as a fraction of the bevel, before the hard cap. */
     public static final String DISPLACEMENT = "liquid_glass_optics_displacement";
 
-    /** Group switches, in the order the comparison is meant to be made. */
-    public static final String[] GROUPS = {GEOMETRY, FILTERING, ADAPTIVE, COLOR, TEMPORAL};
+    /**
+     * Group switches, in the order the comparison is meant to be made. Stable geometry is not a
+     * group: it is always on in the corrected renderer (the legacy warp is a diagnostic view).
+     */
+    public static final String[] GROUPS = {FILTERING, ADAPTIVE, COLOR, TEMPORAL};
 
     private LiquidGlassOptics() { }
 
@@ -43,7 +45,6 @@ public final class LiquidGlassOptics {
         if (prefs == null) return GlassOptics.LEGACY;
         return GlassOptics.resolve(
                 bool(prefs, MASTER, false),
-                bool(prefs, GEOMETRY, true),
                 bool(prefs, FILTERING, true),
                 bool(prefs, ADAPTIVE, true),
                 bool(prefs, COLOR, true),

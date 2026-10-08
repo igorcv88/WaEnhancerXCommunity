@@ -52,7 +52,7 @@ public class LiquidGlassOpticsTest {
     /** Every stored combination resolves; dependencies hold in all of them. */
     @Test
     public void everyCombinationRespectsItsDependencies() {
-        String[] keys = {LiquidGlassOptics.MASTER, LiquidGlassOptics.GEOMETRY, LiquidGlassOptics.FILTERING,
+        String[] keys = {LiquidGlassOptics.MASTER, LiquidGlassOptics.FILTERING,
                 LiquidGlassOptics.ADAPTIVE, LiquidGlassOptics.COLOR, LiquidGlassOptics.TEMPORAL,
                 LiquidGlassOptics.CLEAR};
         for (int mask = 0; mask < (1 << keys.length); mask++) {
@@ -65,13 +65,15 @@ public class LiquidGlassOpticsTest {
                 continue;
             }
             assertTrue(o.corrected);
-            assertEquals((mask & 2) != 0, o.geometry);
-            assertEquals((mask & 4) != 0, o.filtering);
-            assertEquals((mask & 16) != 0, o.color);
-            assertEquals((mask & 32) != 0, o.temporal);
+            // Stable geometry is an invariant of the corrected renderer, never a switch.
+            assertTrue(o.geometry);
+            assertFalse(o.legacyWarp);
+            assertEquals((mask & 2) != 0, o.filtering);
+            assertEquals((mask & 8) != 0, o.color);
+            assertEquals((mask & 16) != 0, o.temporal);
             // Adaptive contrast measures the filtered backdrop; Clear relies on the protection.
-            assertEquals((mask & 8) != 0 && o.filtering, o.adaptive);
-            assertEquals((mask & 64) != 0 && o.adaptive, o.clearProfile);
+            assertEquals((mask & 4) != 0 && o.filtering, o.adaptive);
+            assertEquals((mask & 32) != 0 && o.adaptive, o.clearProfile);
             if (o.adaptive) assertTrue(o.filtering);
             if (o.clearProfile) assertTrue(o.adaptive);
         }
@@ -95,12 +97,12 @@ public class LiquidGlassOpticsTest {
     @Test
     public void malformedValuesFallBackToDefaults() {
         prefs.edit().putString(LiquidGlassOptics.MASTER, "true")
-                .putInt(LiquidGlassOptics.GEOMETRY, 7)
+                .putInt(LiquidGlassOptics.FILTERING, 7)
                 .putString(LiquidGlassOptics.DISPLACEMENT, "not a number")
                 .putString(LiquidGlassOptics.DEBUG, "nonsense").apply();
         GlassOptics o = LiquidGlassOptics.read(prefs);
         assertTrue(o.corrected);
-        assertTrue(o.geometry);
+        assertTrue(o.filtering);
         assertEquals(LensModel.DEFAULT_DISPLACEMENT, o.displacement, 0f);
         assertEquals(GlassOptics.Debug.NONE, o.debug);
     }
@@ -123,12 +125,35 @@ public class LiquidGlassOpticsTest {
         assertEquals(GlassOptics.Debug.NONE, GlassOptics.Debug.from(null));
     }
 
-    /** Publishing reports a change only when the switches differ, so surfaces rebuild once. */
+    /** The folding warp is reachable only as a diagnostic view, never with the master switch alone. */
+    @Test
+    public void legacyWarpIsOnlyADiagnosticView() {
+        prefs.edit().putBoolean(LiquidGlassOptics.MASTER, true).apply();
+        assertFalse(LiquidGlassOptics.read(prefs).legacyWarp);
+        prefs.edit().putString(LiquidGlassOptics.DEBUG, GlassOptics.Debug.LEGACY_WARP.key()).apply();
+        GlassOptics o = LiquidGlassOptics.read(prefs);
+        assertTrue(o.legacyWarp);
+        assertTrue(o.geometry);
+        LiquidGlassOptics.applyAllImprovements(prefs);
+        assertFalse(LiquidGlassOptics.read(prefs).legacyWarp);
+        // With the master switch off nothing diagnostic applies.
+        prefs.edit().putBoolean(LiquidGlassOptics.MASTER, false)
+                .putString(LiquidGlassOptics.DEBUG, GlassOptics.Debug.LEGACY_WARP.key()).apply();
+        assertFalse(LiquidGlassOptics.read(prefs).legacyWarp);
+    }
+
+    /**
+     * Publishing reports a change only when the switches differ, and bumps the revision every
+     * provider (the floating bar included) compares to rebuild its installed effect.
+     */
     @Test
     public void publishReportsChangesOnce() {
         GlassOptics.publish(GlassOptics.LEGACY);
+        int before = GlassOptics.revision();
         assertTrue(GlassOptics.publish(GlassOptics.ALL));
+        assertEquals(before + 1, GlassOptics.revision());
         assertFalse(GlassOptics.publish(GlassOptics.ALL));
+        assertEquals(before + 1, GlassOptics.revision());
         assertEquals(GlassOptics.ALL, GlassOptics.current());
         assertTrue(GlassOptics.publish(null));
         assertSame(GlassOptics.LEGACY, GlassOptics.current());
@@ -137,7 +162,7 @@ public class LiquidGlassOpticsTest {
     /** The hook reads these inside WhatsApp, so they must be public schema entries. */
     @Test
     public void everyKeyCrossesTheBridge() {
-        String[] keys = {LiquidGlassOptics.MASTER, LiquidGlassOptics.GEOMETRY, LiquidGlassOptics.FILTERING,
+        String[] keys = {LiquidGlassOptics.MASTER, LiquidGlassOptics.FILTERING,
                 LiquidGlassOptics.ADAPTIVE, LiquidGlassOptics.COLOR, LiquidGlassOptics.TEMPORAL,
                 LiquidGlassOptics.CLEAR, LiquidGlassOptics.DEBUG, LiquidGlassOptics.DISPLACEMENT};
         for (String key : keys) {

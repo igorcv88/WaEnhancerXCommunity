@@ -5,11 +5,12 @@ import java.util.Locale;
 /**
  * Which of the optical corrections are switched on, after their dependencies are enforced.
  *
- * <p>The correction plan (geometry, filtering, adaptive contrast, colour, temporal) is shipped as
- * independently switchable groups so each can be compared against the renderer that preceded it on
- * a device. {@link #LEGACY} is that renderer, untouched: its shader, its capture scale and its
- * scheduling. Every other value runs the corrected renderer ({@link LiquidLens}'s second program)
- * with the chosen groups; a group that is off reproduces the legacy behaviour for that group only.</p>
+ * <p>{@link #LEGACY} is the renderer that preceded the corrections: its shader, its capture scale
+ * and its scheduling logic (now in shared classes; the logic is the same, the code paths are not
+ * literally identical). Every other value runs the corrected renderer ({@link LensEffect}) with
+ * stable geometry always on, plus four independently switchable groups (filtering, adaptive
+ * contrast, colour, temporal); a group that is off reproduces the legacy behaviour for that group
+ * only. The folding legacy warp is not a group: it is only a diagnostic view.</p>
  *
  * <p>Nothing here can select unsafe capture. Both renderers record only acyclic sources
  * ({@link GlassPaneGraph}, {@link BehindRecorder}); the groups change optics and scheduling, never
@@ -34,7 +35,12 @@ public final class GlassOptics {
         /** A procedural grid replaces the backdrop, so the warp can be judged on known lines. */
         GRID(4),
         /** Red is contrast protection, green is the soft (filtered) share of the backdrop. */
-        PROTECTION(5);
+        PROTECTION(5),
+        /**
+         * Diagnostic comparison only: the material with the legacy warp, which folds at the rounded
+         * ends, corners and selected tab. Never a production setting.
+         */
+        LEGACY_WARP(6);
 
         public final int code;
 
@@ -62,14 +68,22 @@ public final class GlassOptics {
 
     /** Every correction on. What the "all improvements" preset selects. */
     public static final GlassOptics ALL =
-            resolve(true, true, true, true, true, true, false, Debug.NONE, LensModel.DEFAULT_DISPLACEMENT);
+            resolve(true, true, true, true, true, false, Debug.NONE, LensModel.DEFAULT_DISPLACEMENT);
 
     private static volatile GlassOptics current = LEGACY;
+    /** Bumped on every change of {@link #current}; providers compare it to rebuild their effect. */
+    private static volatile int revision;
 
     /** Whether the corrected renderer runs at all. False is {@link #LEGACY}. */
     public final boolean corrected;
-    /** Bounded 2D warp, smooth corners, 1:1 capture, exact transforms (LG-01/06/08). */
+    /**
+     * Bounded 2D warp, smooth corners, 1:1 capture and exact transforms (LG-01/06/08). Not a
+     * switch: it is an invariant of the corrected renderer, so a correction can never be combined
+     * with the folding warp. The legacy warp is reachable only as {@link Debug#LEGACY_WARP}.
+     */
     public final boolean geometry;
+    /** The diagnostic legacy-warp view is selected. */
+    public final boolean legacyWarp;
     /** Gaussian low-pass input mixed with the sharp one by depth (LG-02/07). */
     public final boolean filtering;
     /** In-shader contrast protection and backdrop-adaptive tint (LG-03). Needs filtering. */
@@ -89,6 +103,7 @@ public final class GlassOptics {
                         float displacement) {
         this.corrected = corrected;
         this.geometry = geometry;
+        this.legacyWarp = corrected && debug == Debug.LEGACY_WARP;
         this.filtering = filtering;
         this.adaptive = adaptive;
         this.color = color;
@@ -105,7 +120,7 @@ public final class GlassOptics {
      * for legibility, so it needs adaptive contrast. With the master switch off every group is off
      * and the result is {@link #LEGACY}.
      */
-    public static GlassOptics resolve(boolean master, boolean geometry, boolean filtering,
+    public static GlassOptics resolve(boolean master, boolean filtering,
                                       boolean adaptive, boolean color, boolean temporal,
                                       boolean clearProfile, Debug debug, float displacement) {
         if (!master) return LEGACY;
@@ -113,7 +128,7 @@ public final class GlassOptics {
         boolean effectiveClear = clearProfile && effectiveAdaptive;
         float a = Float.isNaN(displacement) ? LensModel.DEFAULT_DISPLACEMENT
                 : Math.max(LensModel.MIN_DISPLACEMENT, Math.min(LensModel.MAX_EFFECTIVE, displacement));
-        return new GlassOptics(true, geometry, filtering, effectiveAdaptive, color, temporal,
+        return new GlassOptics(true, true, filtering, effectiveAdaptive, color, temporal,
                 effectiveClear, debug, a);
     }
 
@@ -130,13 +145,20 @@ public final class GlassOptics {
         GlassOptics next = optics == null ? LEGACY : optics;
         GlassOptics previous = current;
         current = next;
-        return !next.equals(previous);
+        if (next.equals(previous)) return false;
+        revision++;
+        return true;
+    }
+
+    /** Changes every time {@link #publish} changes the switches. */
+    public static int revision() {
+        return revision;
     }
 
     /** A short stable key for effect caches and logs. */
     public String key() {
         if (!corrected) return "legacy";
-        return "v2:" + (geometry ? "G" : "g") + (filtering ? "F" : "f") + (adaptive ? "A" : "a")
+        return "v2:" + (filtering ? "F" : "f") + (adaptive ? "A" : "a")
                 + (color ? "C" : "c") + (temporal ? "T" : "t") + (clearProfile ? "K" : "k")
                 + ":" + debug.code + ":" + displacement;
     }
