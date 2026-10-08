@@ -443,7 +443,7 @@ Remaining acceptance: install the appropriate signed test build on the S25 Ultra
 
 ## Conversation blank with Headers on (post-#75) — 2026-10-08
 
-Branch: `ccr-0fefe1d4-wo0f7v`, based on `master@8f11ac5` (PR #75 merged). User device report with screenshots: flicker is gone, but with Liquid Glass *Headers* (TOOLBARS) on, the conversation shows only the header capsule over an empty dark screen (no messages, no composer); the user reports the same "conversations don't load" on home. Headers off: normal and near-correct.
+Branch: `ccr-0fefe1d4-wo0f7v` (ready-for-review PR #76), based on `master@8f11ac5` (PR #75 merged). User device report with screenshots: flicker is gone, but with Liquid Glass *Headers* (TOOLBARS) on, the conversation shows only the header capsule over an empty dark screen (no messages, no composer); the user reports the same "conversations don't load" on home. Headers off: normal and near-correct.
 
 Root cause (code reading, high confidence; no device log): #75 replaced the header band — previously a `GlassPane`, i.e. a childless `FrameLayout` — with `WallpaperUnderlay extends View`, added to `search_fragment_and_toolbar_holder` as MATCH_PARENT. A wrap-content `FrameLayout` measures children under AT_MOST and includes MATCH_PARENT children in its own size. `View.onMeasure` returns the full AT_MOST offer (a childless `FrameLayout` returns 0), so the holder grew to the whole remaining window. With `translationZ = 1` it covered the coordinator, and `syncListPadding` set the list's top padding to that height, pushing every message off-screen. Any screen whose holder `ConversationGlassPanes.sync` picks up (it requires `coordinator`, not the footer) is affected, which matches the home report.
 
