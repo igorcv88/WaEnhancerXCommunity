@@ -336,3 +336,28 @@ LG-04 (provider contract): both providers (BlurView bar, recorded panes/drawable
 6. Clear profile.
 
 Collect `[LiquidGlass/App]`, `WaEnhancerX/LiveGlass` and `WaEnhancerX/LensV2` logs, real PNG screenshots, and the module SHA and WhatsApp version.
+
+### Review round on PR #73 (user's independent review, 2026-10-08)
+
+The user reviewed `65e6a09` and found it not mergeable yet. Each finding was checked against the code; all were confirmed except #12. Fixes are on the same branch:
+
+| # | Finding | Fix | Regression test |
+|---|---|---|---|
+| 1 | Two passes composited `SRC_OVER`, each with coverage: alpha 0.7125 instead of 0.5 at γ = 0.5, β = 0.15 | Each pass carries its own share including coverage (soft γβ, sharp γ(1−β)) and the graph adds them (`BlendMode.PLUS`). The fallback returns are weighted too. | `compositionAppliesCoverageOnce`, `effectGraphAddsThePasses` |
+| 2 | Geometry off combined the folding warp with the other corrections | Stable geometry is now an invariant of the corrected renderer (no switch, pref key removed). The legacy warp is only the `LEGACY_WARP` diagnostic view, labelled as folding. | `everyCombinationRespectsItsDependencies`, `legacyWarpIsOnlyADiagnosticView` |
+| 3, 9 | Protection only in the soft pass, before lighting, partly in encoded RGB | Protection runs last, after lighting, in linear light whatever the colour group, in both passes. Composite luminance is the linear (1−β, β) mix, so it holds whenever both passes do. Cap raised to 0.85 (white over white needs 0.82). | `perPassProtectionHoldsAfterComposition`, `protectionCoverageByForeground` |
+| 4 | `paintExact` culled siblings against the unpadded rect; the addendum adds that siblings were drawn by index, not Z | Culling uses the rect padded by the blur margin (`Painter` now receives the padding). Eligible siblings are sorted by (Z, index). Custom `getChildDrawingOrder` is not visible and falls back to that order. | `marginOnlySiblingsAreRecorded`, `siblingsAreOrderedByZThenIndex` |
+| 5 | Budget counted visible area; panes were never refused | `LiveBudget`: one ledger per window in pixel-passes, `(w+2p)(h+2p)×passes` (3 with filtering), capacity 3 × window area. Panes are admitted in their pre-draw and refused past capacity; drawables get the rest. | `costCountsMarginAndPasses`, `panesAreAdmittedAgainstCapacity` |
+| 6 | The bar might keep its old effect after a toggle | `GlassOptics.revision()`. `GlassSurface`'s pre-draw compares it and posts `refresh()`. Panes and drawables key on the optics anyway. | `publishReportsChangesOnce` (revision) |
+| 7 | Effect key used a partial hash, which ignored `innerShadow` and others | Rebuild decided by full `GlassSpec.equals` (`LensEffect.sameMaterial`). Identity with the temporal group off. | `everyMaterialFieldTakesPartInEquality` (each field perturbed by reflection) |
+| 8 | Docs claimed no timed invalidation; per-frame allocations | Docs corrected: one trailing invalidation at rest, no heartbeat. `Session.onPreDraw` reuses its lists, `Rect` and primitive sort keys. Morph still rebuilds the `RenderEffect` wrapper per animation frame (unmeasured). | — |
+| 10 | Optical vs visual corner radius | Not changed. The sweep includes 24×24 and 56×56 surfaces at radius 0 and 4. Whether the rounder optical corner is visible is a device check. | sweep |
+| 11 | Jacobian margin 0.0006 | Cap lowered from 0.35 to 0.33 of the bevel. Measured min σ = 0.3347 (was 0.3006). Default 0.28 × selected-tab gain 1.18 reaches it exactly. | `LensJacobianTest` |
+| 12 | Codex scroll comment | Kept as answered on the thread. Pixel comparison with a scrolled `ScrollView` is a device test. | — |
+| 13 | Global `broken` flag | Compilation failure is permanent; any other failure is retried and becomes permanent after 3. Native RenderThread failures are not catchable and are documented as such. Legacy-equivalence wording corrected (same logic, shared code paths). | — |
+
+Contrast reach, by foreground, within the 0.85 cap (JVM arithmetic, not pixels):
+- White content (dark theme) and black content (light theme) reach 4.5:1 over any backdrop.
+- The dark-theme hint `#8696A0` falls to about 1.5:1 where the glass is at the white-content limit. WhatsApp's own opaque bar gives it about 4.6:1. Protecting the hint would need near-opaque glass, so it is recorded, not guaranteed.
+
+**Validation.** 387 JVM tests, 0 failures. `tools/agsl_check.py` passes both shaders. `assembleWhatsappDebug` succeeded. Still no device run: first check that the V2 shader compiles on the device and that every surface captures the correct texture without displacement, then calibrate.
