@@ -7,6 +7,19 @@ import org.junit.Test;
 
 /** When live glass records, and when it asks for frames, in both scheduling modes. */
 public class CaptureSchedulerTest {
+    @Test public void dueRetryBypassesRestGapWithoutDrivingAnIdleRedrawLoop() {
+        CaptureScheduler scheduler = new CaptureScheduler();
+        assertEquals(CaptureScheduler.CAPTURE, scheduler.decide(1000, true, false));
+        assertEquals(CaptureScheduler.INVALIDATE_LATER, scheduler.decide(1001, true, false));
+        assertEquals(CaptureScheduler.CAPTURE, scheduler.decide(1016, true, false, true));
+    }
+    @Test public void dueLegacyRetryBypassesHeartbeatGapAndRestoresHeartbeat() {
+        CaptureScheduler scheduler = new CaptureScheduler();
+        scheduler.decide(1000, false, false);
+        assertEquals(CaptureScheduler.CAPTURE | CaptureScheduler.INVALIDATE_LATER,
+                scheduler.decide(1016, false, false, true));
+        assertEquals(CaptureScheduler.IDLE_INTERVAL_MS, scheduler.delayMs());
+    }
 
     private static boolean has(int decision, int flag) {
         return (decision & flag) != 0;

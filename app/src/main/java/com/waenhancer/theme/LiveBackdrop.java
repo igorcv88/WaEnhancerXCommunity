@@ -56,6 +56,7 @@ final class LiveBackdrop {
     private int effectWidth = -1, effectHeight = -1;
     private float effectRadius = -1f;
     private boolean hasContent;
+    private RecordingState recordingState = RecordingState.UNINITIALIZED;
     private int contentWidth, contentHeight;
     /** Corrected lens, built when {@link GlassOptics#corrected} is on. */
     private LensEffect corrected;
@@ -131,6 +132,10 @@ final class LiveBackdrop {
         return hasContent && (!glassNode.hasDisplayList() || !node.hasDisplayList());
     }
 
+    RecordingState recordingState() {
+        return wasDropped() ? RecordingState.DROPPED : recordingState;
+    }
+
     private boolean needsFreshCapture() {
         return !hasContent || !glassNode.hasDisplayList() || !node.hasDisplayList();
     }
@@ -149,6 +154,7 @@ final class LiveBackdrop {
         if (!available() || width <= 0 || height <= 0 || capturing) return false;
         // Publish only after both display lists and the effect are complete.
         hasContent = false;
+        recordingState = RecordingState.TEMPORARILY_UNAVAILABLE;
         GlassOptics optics = GlassOptics.current();
         if (optics.corrected && !LensEffect.isBroken()) {
             return captureCorrected(width, height, radiusPx, density, spec, painter, optics);
@@ -194,6 +200,7 @@ final class LiveBackdrop {
         contentWidth = width;
         contentHeight = height;
         hasContent = true;
+        recordingState = RecordingState.RECORDED;
         captureGeneration++;
         return true;
     }
@@ -253,6 +260,7 @@ final class LiveBackdrop {
         contentHeight = height;
         contentPadding = padding;
         hasContent = true;
+        recordingState = RecordingState.RECORDED;
         captureGeneration++;
         return true;
     }
@@ -293,7 +301,7 @@ final class LiveBackdrop {
     }
 
     String status() {
-        return "captureAvailable=" + available() + " hasContent=" + hasContent
+        return "recordingState=" + recordingState() + " captureAvailable=" + available() + " hasContent=" + hasContent
                 + " hasDisplayList=" + (node.hasDisplayList() && glassNode.hasDisplayList())
                 + " shaderStatus=" + (lensFailed ? "disabled" : correctedInstalled ? "v2" : "legacy")
                 + " captureGeneration=" + captureGeneration + " rebuilds=" + effectRebuilds
@@ -302,8 +310,13 @@ final class LiveBackdrop {
     }
 
     void release() {
+        release(RecordingState.INTENTIONALLY_RELEASED);
+    }
+
+    void release(RecordingState reason) {
         node.discardDisplayList();
         glassNode.discardDisplayList();
         hasContent = false;
+        recordingState = reason;
     }
 }

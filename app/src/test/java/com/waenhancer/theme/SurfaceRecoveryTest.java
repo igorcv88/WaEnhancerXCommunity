@@ -4,6 +4,17 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class SurfaceRecoveryTest {
+    @Test public void staggeredSurfacesRetainLaterRetryAfterEarlierOneCompletes() {
+        SurfaceRecovery first = new SurfaceRecovery(), second = new SurfaceRecovery();
+        first.failed(0, false); second.failed(8, false);
+        assertTrue(first.retryDue(16));
+        first.ready();
+        assertFalse(second.retryDue(16));
+        assertEquals(8, second.retryDelay(16));
+        assertTrue(second.retryDue(24));
+        second.ready();
+        assertEquals(SurfaceRecovery.State.LIVE, second.state());
+    }
     @Test public void stopRetainsLifetimeButBlocksCaptureUntilResume() {
         SurfaceRecovery recovery = new SurfaceRecovery();
         for (int cycle = 0; cycle < 10; cycle++) {
@@ -27,7 +38,7 @@ public class SurfaceRecoveryTest {
         assertEquals(SurfaceRecovery.State.LIVE, recovery.state());
         assertEquals(0, recovery.failures());
     }
-    @Test public void persistentTransientErrorStopsRetryingUntilNewEpoch() {
+    @Test public void threeTransientFailuresRecoverWithoutAnotherEpoch() {
         SurfaceRecovery recovery = new SurfaceRecovery();
         recovery.failed(0, false);
         assertTrue(recovery.mayCapture(16));
@@ -35,11 +46,39 @@ public class SurfaceRecoveryTest {
         assertFalse(recovery.mayCapture(79));
         assertTrue(recovery.mayCapture(80));
         recovery.failed(80, false);
-        assertFalse(recovery.mayCapture(Long.MAX_VALUE));
-        assertEquals(0, recovery.retryDelay(1000));
-        recovery.revalidate();
-        assertTrue(recovery.mayCapture(1000));
+        assertEquals(SurfaceRecovery.State.BACKOFF, recovery.state());
+        assertFalse(recovery.mayCapture(1079));
+        assertEquals(80, recovery.retryDelay(1000));
+        assertTrue(recovery.mayCapture(1080));
+        recovery.ready();
+        assertEquals(SurfaceRecovery.State.LIVE, recovery.state());
+        assertEquals(0, recovery.generation());
         assertEquals(0, recovery.failures());
+    }
+    @Test public void repeatedTransientFailuresKeepABoundedAutonomousRetryRate() {
+        SurfaceRecovery recovery = new SurfaceRecovery();
+        long now = 0;
+        for (int attempt = 0; attempt < 100; attempt++) {
+            assertTrue(recovery.mayCapture(now));
+            recovery.failed(now, false);
+            long delay = recovery.retryDelay(now);
+            assertTrue(delay > 0 && delay <= SurfaceRecovery.MAX_RETRY_MS);
+            if (attempt >= 5) assertEquals(SurfaceRecovery.MAX_RETRY_MS, delay);
+            assertFalse(recovery.mayCapture(now + delay - 1));
+            now += delay;
+        }
+        assertTrue(recovery.mayCapture(now));
+        recovery.ready();
+        assertEquals(SurfaceRecovery.State.LIVE, recovery.state());
+    }
+    @Test public void stopCancelsBackoffAndResumeCanCaptureImmediately() {
+        SurfaceRecovery recovery = new SurfaceRecovery();
+        recovery.failed(0, false); recovery.failed(16, false); recovery.failed(80, false);
+        recovery.suspend();
+        assertEquals(0, recovery.retryDelay(100));
+        assertFalse(recovery.mayCapture(10000));
+        recovery.revalidate();
+        assertTrue(recovery.mayCapture(100));
     }
     @Test public void sourceEpochDoesNotAuthorizePreviousLiveState() {
         SurfaceRecovery recovery = new SurfaceRecovery();

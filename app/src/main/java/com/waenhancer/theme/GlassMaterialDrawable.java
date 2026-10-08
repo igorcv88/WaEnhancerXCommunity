@@ -37,9 +37,12 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     private Drawable fallback;
     private GlassSpec appliedMaterial;
     private int materialWidth, materialHeight;
+    private boolean fallbackPermanent;
+    private boolean captureDisabled;
     private float materialRadius, materialDensity;
     private int alpha = 255;
     private LiveBackdrop live;
+    private RecordingState recordingState = RecordingState.UNINITIALIZED;
     private Boolean presentedLive;
     private String budgetStatus = "unassigned";
     private final int[] location = new int[2];
@@ -68,11 +71,14 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         if (view == null || material == null || b.isEmpty()) { drawOriginal(canvas); return; }
         float density = view.getResources().getDisplayMetrics().density;
         float radius = Math.min(radiusDp * density, Math.min(b.width(), b.height()) / 2f);
+        boolean permanent = material.usingFallback || capturePermanentlyUnavailable();
         if (fallback == null || appliedMaterial != material || materialWidth != b.width()
-                || materialHeight != b.height() || materialRadius != radius || materialDensity != density) {
+                || materialHeight != b.height() || materialRadius != radius || materialDensity != density
+                || fallbackPermanent != permanent) {
+            fallbackPermanent = permanent;
             appliedMaterial = material; materialWidth = b.width(); materialHeight = b.height();
             materialRadius = radius; materialDensity = density;
-            fallback = GlassRenderer.background(material.neutralFallback(), radius, density);
+            fallback = GlassRenderer.background(material.neutralFallback(permanent), radius, density);
         }
         int save = canvas.save();
         canvas.translate(b.left, b.top);
@@ -85,6 +91,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
                     ? canvas.saveLayerAlpha(0, 0, b.width(), b.height(), alpha) : -1;
             boolean drewLive = live != null && LiveBackdrop.wantsLive(material)
                     && live.draw(canvas, b.width(), b.height());
+            if (!LiveBackdrop.isCapturing()) GlassTrace.presented(view.getRootView(), this, view.getRootView(), drewLive);
             if (!LiveBackdrop.isCapturing() && (presentedLive == null || presentedLive != drewLive)) {
                 presentedLive = drewLive;
                 GlassTrace.event(view.getRootView(), this, view.getRootView(),
@@ -143,24 +150,37 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
                 (canvas, padding) -> BehindRecorder.paint(canvas, host, x, y, w, h));
     }
 
-    /**
-     * True when the system dropped a live recording and a capture is due now. An intentional
-     * {@link #releaseLive} (off screen, over budget) is not a drop and does not ask for one.
-     */
     public void setBudgetStatus(String status) { budgetStatus = status; }
     public String captureStatus() {
         return "budgetStatus=" + budgetStatus + " "
-                + (live == null ? "captureAvailable=false hasContent=false hasDisplayList=false shaderStatus=waiting" : live.status());
+                + (live == null ? "recordingState=" + recordingState
+                    + " captureAvailable=false hasContent=false hasDisplayList=false shaderStatus=waiting" : live.status());
     }
-    public boolean capturePermanentlyUnavailable() { return live != null && !live.available(); }
+    public void setCaptureDisabled(boolean disabled) { captureDisabled = disabled; }
+    public boolean capturePermanentlyUnavailable() {
+        return android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU
+                || captureDisabled || live != null && !live.available();
+    }
+    public boolean wantsLiveCapture() {
+        return !captureDisabled && LiveBackdrop.wantsLive(spec.get());
+    }
 
-    public boolean needsFreshCapture() {
-        return live == null || !live.hasRecording() || live.wasDropped();
+    /** Only an eligible surface that unexpectedly lost valid pixels asks for immediate recovery. */
+    public boolean needsFreshCapture(boolean eligible) {
+        return recordingState().requestsImmediateRecovery(eligible);
+    }
+
+    public RecordingState recordingState() {
+        return live == null ? recordingState : live.recordingState();
     }
 
     /** Drops the live recording; the static material is painted until the next capture. */
     public void releaseLive() {
-        if (live != null) live.release();
+        releaseLive(RecordingState.INTENTIONALLY_RELEASED);
+    }
+    public void releaseLive(RecordingState reason) {
+        recordingState = reason;
+        if (live != null) live.release(reason);
     }
     public Drawable original() { return original; }
     public void restoreCallback() { if (original != null) original.setCallback(getCallback()); }

@@ -1,9 +1,10 @@
 package com.waenhancer.theme;
 
-/** Bounded recovery per source epoch. No Android dependencies; never authorizes stale pixels. */
+/** Bounded retry rate per source epoch. Never authorizes stale pixels or exhausts transient recovery. */
 public final class SurfaceRecovery {
-    public enum State { WAITING, LIVE, SUSPENDED, REVALIDATING, DEGRADED, DISABLED, RELEASED }
-    public static final int MAX_FAILURES = 3;
+    public enum State { WAITING, LIVE, SUSPENDED, REVALIDATING, DEGRADED, BACKOFF, DISABLED, RELEASED }
+    public static final int FAST_FAILURES = 3;
+    public static final long MAX_RETRY_MS = 5000L;
     private State state = State.WAITING;
     private int failures;
     private long retryAt;
@@ -14,10 +15,13 @@ public final class SurfaceRecovery {
     public long generation() { return generation; }
     public boolean mayCapture(long now) {
         return state != State.SUSPENDED && state != State.DISABLED && state != State.RELEASED
-                && failures < MAX_FAILURES && now >= retryAt;
+                && now >= retryAt;
     }
     public long retryDelay(long now) {
-        return state == State.DEGRADED && failures > 0 && failures < MAX_FAILURES ? Math.max(1L, retryAt - now) : 0L;
+        return state == State.DEGRADED || state == State.BACKOFF ? Math.max(1L, retryAt - now) : 0L;
+    }
+    public boolean retryDue(long now) {
+        return (state == State.DEGRADED || state == State.BACKOFF) && mayCapture(now);
     }
     public void ready() {
         if (state == State.DISABLED || state == State.RELEASED || state == State.SUSPENDED) return;
@@ -27,9 +31,11 @@ public final class SurfaceRecovery {
     }
     public void failed(long now, boolean fatal) {
         if (state == State.RELEASED || state == State.SUSPENDED || state == State.DISABLED) return;
-        failures++;
-        retryAt = now + (16L << (2 * Math.min(failures - 1, 2)));
-        state = fatal ? State.DISABLED : State.DEGRADED;
+        if (failures < Integer.MAX_VALUE) failures++;
+        long delay = failures < FAST_FAILURES ? (16L << (2 * (failures - 1)))
+                : Math.min(MAX_RETRY_MS, 1000L << Math.min(failures - FAST_FAILURES, 3));
+        retryAt = now + delay;
+        state = fatal ? State.DISABLED : failures >= FAST_FAILURES ? State.BACKOFF : State.DEGRADED;
     }
     public void suspend() {
         if (state != State.RELEASED && state != State.DISABLED) state = State.SUSPENDED;

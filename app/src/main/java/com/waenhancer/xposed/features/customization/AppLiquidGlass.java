@@ -20,6 +20,7 @@ import com.waenhancer.config.LiquidGlassSettings;
 import com.waenhancer.config.LiquidGlassSettings.Surface;
 import com.waenhancer.theme.CaptureScheduler;
 import com.waenhancer.theme.SurfaceRecovery;
+import com.waenhancer.theme.RecordingState;
 import com.waenhancer.theme.GlassTrace;
 import com.waenhancer.theme.GlassMaterialDrawable;
 import com.waenhancer.theme.GlassOptics;
@@ -87,6 +88,7 @@ public final class AppLiquidGlass extends Feature {
                 Session session = watch(decor);
                 foreground = new WeakReference<>(session);
                 if (session != null) {
+                    GlassTrace.resumed(decor);
                     session.cachedMaterial = null;
                     session.resume();
                     session.scan();
@@ -435,6 +437,7 @@ public final class AppLiquidGlass extends Feature {
         void suspend() {
             if (closed || suspended) return;
             suspended = true;
+            GlassTrace.suspended(root.get());
             cancelPending();
             observe(false);
             conversation.setSuspended(root.get(), true);
@@ -462,6 +465,7 @@ public final class AppLiquidGlass extends Feature {
         }
 
         private void trace(Binding binding, SurfaceRecovery.State before, String reason) {
+            binding.glass.setCaptureDisabled(binding.recovery.state() == SurfaceRecovery.State.DISABLED);
             if (before == binding.recovery.state()) return;
             GlassTrace.transition(root.get(), binding.glass, root.get(), before, binding.recovery, reason,
                     "role=" + binding.surface + " specKey=" + GlassOptics.current().key()
@@ -485,15 +489,29 @@ public final class AppLiquidGlass extends Feature {
          */
         @Override public boolean onPreDraw() {
             try {
-                if (closed || suspended || bindings.isEmpty() || GlassPane.isCapturing()) return true;
+                if (closed || suspended || GlassPane.isCapturing()) return true;
+                GlassTrace.frame(root.get());
+                if (bindings.isEmpty()) return true;
                 long now = SystemClock.uptimeMillis();
                 boolean fresh = false;
-                for (Binding binding : bindings.values()) {
-                    if (binding.glass.needsFreshCapture()) { fresh = true; break; }
+                boolean retryDue = false;
+                for (Map.Entry<View, Binding> entry : bindings.entrySet()) {
+                    View target = entry.getKey();
+                    Binding binding = entry.getValue();
+                    boolean eligible = target != null && target.isAttachedToWindow() && target.isShown()
+                            && target.getWidth() > 0 && target.getHeight() > 0
+                            && target.getGlobalVisibleRect(visibleRect) && binding.glass.wantsLiveCapture();
+                    boolean mayCapture = binding.recovery.mayCapture(now);
+                    if (eligible && !mayCapture) {
+                        long delay = binding.recovery.retryDelay(now);
+                        if (delay > 0) scheduleFrame(delay);
+                    }
+                    retryDue |= eligible && binding.recovery.retryDue(now);
+                    fresh |= binding.glass.needsFreshCapture(eligible && mayCapture);
                 }
                 GlassOptics optics = GlassOptics.current();
                 boolean temporal = optics.corrected && optics.temporal;
-                int decision = scheduler.decide(now, temporal, fresh);
+                int decision = scheduler.decide(now, temporal, fresh, retryDue);
                 View view = root.get();
                 if (view == null) return true;
                 if ((decision & CaptureScheduler.CAPTURE) == 0) {
@@ -558,6 +576,11 @@ public final class AppLiquidGlass extends Feature {
                     View target = visible.get(i);
                     Binding binding = bindings.get(target);
                     if (binding == null) continue;
+                    if (!binding.glass.wantsLiveCapture()) {
+                        binding.glass.releaseLive();
+                        if (ledger != null) ledger.releaseDrawable(binding.glass);
+                        continue;
+                    }
                     long area = temporal && material != null
                             ? LiveBudget.cost(target.getWidth(), target.getHeight(), material, density, optics)
                             : areas[i];
@@ -581,7 +604,7 @@ public final class AppLiquidGlass extends Feature {
                     }
                     binding.glass.setBudgetStatus(admitted ? "admitted" : "refused");
                     if (!admitted) {
-                        binding.glass.releaseLive();
+                        binding.glass.releaseLive(RecordingState.BUDGET_REFUSED);
                         if (ledger != null) ledger.releaseDrawable(binding.glass);
                         continue;
                     }
@@ -591,7 +614,7 @@ public final class AppLiquidGlass extends Feature {
                     } catch (Throwable error) {
                         SurfaceRecovery.State before = binding.recovery.state();
                         binding.recovery.failed(now, error instanceof LinkageError);
-                        binding.glass.releaseLive();
+                        binding.glass.releaseLive(RecordingState.TEMPORARILY_UNAVAILABLE);
                         if (ledger != null) ledger.releaseDrawable(binding.glass);
                         trace(binding, before, "capture-exception");
                         if (binding.recovery.failures() == 1) XposedBridge.log(error);
@@ -602,13 +625,15 @@ public final class AppLiquidGlass extends Feature {
                     SurfaceRecovery.State before = binding.recovery.state();
                     if (captured) {
                         binding.recovery.ready();
+                        GlassTrace.captured(view, binding.glass, view);
                         trace(binding, before, "capture-published");
                         live++;
                         used += area;
                         if (invalidateNow) target.invalidate();
                     } else {
                         binding.recovery.failed(now, binding.glass.capturePermanentlyUnavailable());
-                        binding.glass.releaseLive();
+                        binding.glass.releaseLive(RecordingState.TEMPORARILY_UNAVAILABLE);
+                        if (ledger != null) ledger.releaseDrawable(binding.glass);
                         trace(binding, before, "capture-not-ready");
                         long delay = binding.recovery.retryDelay(now);
                         if (delay > 0) scheduleFrame(delay);
@@ -772,6 +797,7 @@ public final class AppLiquidGlass extends Feature {
         }
 
         void close() {
+            GlassTrace.suspended(root.get());
             if (closed) return;
             closed = true;
             cancelPending();

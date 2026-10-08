@@ -429,7 +429,14 @@ public class GlassSpecTest {
             assertEquals((rgb >> 8) & 255, rgb & 255);
             assertEquals(0, fallback.refractionColor);
             assertTrue(fallback.usingFallback);
-            assertTrue(alphaOf(fallback.fillColor) >= Math.round(GlassSpec.NO_BLUR_MIN_OPACITY * 255f));
+            assertTrue(alphaOf(fallback.fillColor) <= Math.round(0.32f * 255f));
+            assertEquals(optical.strokeColor, fallback.strokeColor);
+            assertEquals(optical.strokeWidthDp, fallback.strokeWidthDp, 0f);
+            assertEquals(optical.contentColor, fallback.contentColor);
+            GlassSpec permanent = optical.neutralFallback(true);
+            assertTrue(alphaOf(permanent.fillColor) >= Math.round(GlassSpec.NO_BLUR_MIN_OPACITY * 255f));
+            assertTrue(alphaOf(permanent.fillColor) > alphaOf(fallback.fillColor));
+            assertEquals(permanent.fillColor & 0xFFFFFF, fallback.fillColor & 0xFFFFFF);
         }
     }
 

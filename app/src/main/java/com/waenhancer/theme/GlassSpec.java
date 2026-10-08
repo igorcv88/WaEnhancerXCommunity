@@ -343,9 +343,15 @@ public final class GlassSpec {
 
     /** Temporary capture fallback: neutral fill, independent of the sampled/accent hue. */
     public GlassSpec neutralFallback() {
-        GlassSpec fallback = withoutOptics();
+        return neutralFallback(false);
+    }
+
+    /** Permanent capability loss keeps the existing opacity floor; transient gaps use lighter tint. */
+    public GlassSpec neutralFallback(boolean permanent) {
+        int opacity = permanent ? withoutOptics().fillColor >>> 24
+                : Math.max(Math.round(0.18f * 255f), Math.min(fillColor >>> 24, Math.round(0.32f * 255f)));
         int rgb = SemanticTheme.relativeLuminance(contentColor) > 0.5d ? 0x202020 : 0xFFFFFF;
-        return new GlassSpec((fallback.fillColor & 0xFF000000) | rgb, 0f,
+        return new GlassSpec((opacity << 24) | rgb, 0f,
                 strokeColor, strokeWidthDp, highlightColor, 0, contentColor,
                 animate, true, 0f, 0f, 0f, 0f, 0f, false, false);
     }

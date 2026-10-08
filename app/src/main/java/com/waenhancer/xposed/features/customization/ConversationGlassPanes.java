@@ -162,7 +162,7 @@ final class ConversationGlassPanes {
             ViewGroup listHost = footer != null && footer.getParent() instanceof ViewGroup
                     ? listHost((ViewGroup) footer.getParent()) : null;
 
-            screen.headerSource = new WeakReference<>(listHost != null ? listHost : screen.coordinator.get());
+            screen.headerSource = new WeakReference<>(listHost);
             if (screen.listHost.get() == null && listHost != null) {
                 screen.listHost = new WeakReference<>(listHost);
                 screen.list = new WeakReference<>(firstList(listHost));
@@ -275,6 +275,12 @@ final class ConversationGlassPanes {
         View source = screen.headerSource.get();
         if (screen.capsule == null || screen.capsule.getParent() != holder) {
             screen.capsule = newPane(screen, holder, source, wallpaperOf(screen));
+            screen.capsule.setSourceResolver(() -> {
+                View root = screen.root.get();
+                ViewGroup footer = root == null ? null : find(root, "footer");
+                return footer != null && footer.getParent() instanceof ViewGroup
+                        ? listHost((ViewGroup) footer.getParent()) : null;
+            });
             holder.addView(screen.capsule, 1, new FrameLayout.LayoutParams(0, 0));
         }
         screen.capsule.setSource(source);
@@ -492,6 +498,7 @@ final class ConversationGlassPanes {
 
     private GlassPane newPane(Screen screen, ViewGroup parent, View source, List<View> underlay) {
         GlassPane pane = new GlassPane(parent.getContext());
+        pane.setRequiresLiveContent(true);
         pane.setSource(source);
         pane.setUnderlay(underlay);
         Supplier<GlassSpec> material = () -> host.material(screen.root.get());

@@ -21,7 +21,14 @@ public class ActivityStateRegistry {
     public static void updateState(Activity activity, WppCore.ActivityChangeState.ChangeType type) {
         if (activity == null) return;
         activityStates.put(activity, type);
-        activityBySimpleName.put(activity.getClass().getSimpleName(), new WeakReference<>(activity));
+        // Destruction is an identity event, never a new owner of the class-name slot.
+        if (type != WppCore.ActivityChangeState.ChangeType.DESTROYED) {
+            activityBySimpleName.put(activity.getClass().getSimpleName(), new WeakReference<>(activity));
+        }
+    }
+
+    public static void markDestroyed(Activity activity) {
+        if (activity != null) activityStates.put(activity, WppCore.ActivityChangeState.ChangeType.DESTROYED);
     }
 
     public static WppCore.ActivityChangeState.ChangeType getState(Activity activity) {
