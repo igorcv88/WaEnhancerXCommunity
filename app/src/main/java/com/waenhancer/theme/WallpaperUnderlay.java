@@ -20,6 +20,20 @@ public final class WallpaperUnderlay extends View {
         wallpaper = new WeakReference<>(view);
         invalidate();
     }
+    /**
+     * A plain {@link View} under an AT_MOST spec claims the whole offer, so MATCH_PARENT inside
+     * the wrap-content header holder grew the holder to the full window and hid the conversation.
+     * Like a childless FrameLayout, take space only when it is given exactly; the holder then
+     * re-measures this match-parent child to its own final size.
+     */
+    @Override protected void onMeasure(int widthSpec, int heightSpec) {
+        setMeasuredDimension(
+                measuredSize(MeasureSpec.getMode(widthSpec), MeasureSpec.getSize(widthSpec)),
+                measuredSize(MeasureSpec.getMode(heightSpec), MeasureSpec.getSize(heightSpec)));
+    }
+    static int measuredSize(int mode, int size) {
+        return mode == MeasureSpec.EXACTLY ? size : 0;
+    }
     @Override protected void onDraw(Canvas canvas) {
         View view = wallpaper.get();
         if (view == null || !view.isAttachedToWindow() || view.getVisibility() != VISIBLE) return;
