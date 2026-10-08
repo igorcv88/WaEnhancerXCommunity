@@ -169,7 +169,7 @@ public final class GlassPane extends FrameLayout {
             }
             // A dropped recording (an Activity stop, a screenshot overlay) is captured again at
             // once rather than showing the fallback until the next heartbeat.
-            if (backdrop.needsFreshCapture()) lastActivityMs = now;
+            if (backdrop.wasDropped()) lastActivityMs = now;
             boolean moving = now - lastActivityMs < ACTIVE_WINDOW_MS;
             long minGap = moving ? 0L : IDLE_INTERVAL_MS;
             if (now - lastCaptureMs < minGap) return true;
@@ -246,7 +246,7 @@ public final class GlassPane extends FrameLayout {
         if (material == null) return;
         // Drawn inside another surface's recording too: what this pane records is behind it, so
         // nothing that records this pane can be inside its own recording.
-        if (backdrop.draw(canvas, getWidth(), getHeight())) return;
+        if (LiveBackdrop.wantsLive(material) && backdrop.draw(canvas, getWidth(), getHeight())) return;
         drawFallback(canvas, material);
     }
 

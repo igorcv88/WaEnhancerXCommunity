@@ -60,8 +60,20 @@ final class LiveBackdrop {
                 && LiquidLens.isSupported();
     }
 
-    /** True when the system dropped the recording (an Activity stop drops every display list). */
-    boolean needsFreshCapture() {
+    /**
+     * Whether {@code spec} asks for live optics at all. A fallback spec (power saving, no blur)
+     * or one without a lens must take the static material and record nothing.
+     */
+    static boolean wantsLive(GlassSpec spec) {
+        return spec != null && !spec.usingFallback && spec.lensStrength > 0f;
+    }
+
+    /** True when a recording existed and the system dropped it (an Activity stop drops them all). */
+    boolean wasDropped() {
+        return hasContent && (!glassNode.hasDisplayList() || !node.hasDisplayList());
+    }
+
+    private boolean needsFreshCapture() {
         return !hasContent || !glassNode.hasDisplayList() || !node.hasDisplayList();
     }
 
@@ -71,7 +83,12 @@ final class LiveBackdrop {
      * @return true when a drawable recording was produced
      */
     boolean capture(int width, int height, float radiusPx, float density, GlassSpec spec, Painter painter) {
-        if (!available() || spec == null || width <= 0 || height <= 0 || capturing) return false;
+        if (!wantsLive(spec)) {
+            // Power saving and friends: no recording, no shader, and nothing stale left to draw.
+            release();
+            return false;
+        }
+        if (!available() || width <= 0 || height <= 0 || capturing) return false;
         int w = (int) Math.ceil(width / DOWNSAMPLE);
         int h = (int) Math.ceil(height / DOWNSAMPLE);
         node.setPosition(0, 0, w, h);

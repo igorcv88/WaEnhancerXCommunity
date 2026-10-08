@@ -231,7 +231,9 @@ Not in this PR:
 - Home header and search have live glass, but nothing scrolls behind them yet. Porting WaThemer's home layout (`GlassToolbars.kt`/`GlassSearch.kt`: list extension, lifts, list card, search overlay) is the next PR.
 - iOS-likeness is a tuning question for the user. Candidate levers: lower saturation boost and accent tint, a thinner rim and bevel, less displacement, and more transparency.
 
-Validation: 336 JVM tests, 0 failures. `:app:assembleWhatsappDebug` succeeded. `git diff --check` is clean. No device test. GPU cost with many live bubbles is unmeasured; the area budget bounds it to roughly one window of lens per frame while scrolling.
+Codex review (2× P1, 1× P2, all confirmed and fixed): fallback specs now bypass the live pipeline entirely (`LiveBackdrop.wantsLive`); an intentional release no longer counts as a dropped recording, so idle cadence returns after scrolling; a binding whose capture throws keeps the static material without stopping the others.
+
+Validation: 338 JVM tests, 0 failures. `:app:assembleWhatsappDebug` succeeded. `git diff --check` is clean. No device test. GPU cost with many live bubbles is unmeasured; the area budget bounds it to roughly one window of lens per frame while scrolling.
 
 Next device checks:
 - In a chat with bubbles, quotes and the composer enabled, scroll fast and check frame smoothness and that no bubble flickers between live and static.

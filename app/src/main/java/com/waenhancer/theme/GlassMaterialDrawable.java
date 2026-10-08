@@ -81,7 +81,8 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         try {
             int fade = alpha < 255 && live != null
                     ? canvas.saveLayerAlpha(0, 0, b.width(), b.height(), alpha) : -1;
-            boolean drewLive = live != null && live.draw(canvas, b.width(), b.height());
+            boolean drewLive = live != null && LiveBackdrop.wantsLive(material)
+                    && live.draw(canvas, b.width(), b.height());
             if (fade >= 0) canvas.restoreToCount(fade);
             if (!drewLive) {
                 fallback.setBounds(0, 0, b.width(), b.height());
@@ -128,9 +129,12 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
                 canvas -> BehindRecorder.paint(canvas, host, x, y, w, h));
     }
 
-    /** True when the system dropped the live recording and a capture is due now. */
+    /**
+     * True when the system dropped a live recording and a capture is due now. An intentional
+     * {@link #releaseLive} (off screen, over budget) is not a drop and does not ask for one.
+     */
     public boolean needsFreshCapture() {
-        return live != null && live.needsFreshCapture();
+        return live != null && live.wasDropped();
     }
 
     /** Drops the live recording; the static material is painted until the next capture. */

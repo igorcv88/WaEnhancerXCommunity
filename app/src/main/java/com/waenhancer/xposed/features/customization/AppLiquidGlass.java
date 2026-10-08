@@ -390,7 +390,20 @@ public final class AppLiquidGlass extends Feature {
                         binding.glass.releaseLive();
                         continue;
                     }
-                    if (binding.glass.captureBehind(target)) {
+                    if (binding.liveFailed) continue;
+                    boolean captured;
+                    try {
+                        captured = binding.glass.captureBehind(target);
+                    } catch (Throwable error) {
+                        // One surface WhatsApp cannot draw into a recording must not stop the
+                        // others: this one keeps the static material from now on.
+                        binding.liveFailed = true;
+                        binding.glass.releaseLive();
+                        report("live-capture-" + binding.surface, binding.surface
+                                + " live capture disabled; static material: " + error);
+                        continue;
+                    }
+                    if (captured) {
                         live++;
                         used += area;
                         if (moving) target.invalidate();
@@ -558,6 +571,8 @@ public final class AppLiquidGlass extends Feature {
         final int left, top, right, bottom;
         GlassMaterialDrawable glass;
         boolean tintChanged;
+        /** Set after a capture threw; this surface keeps the static material. */
+        boolean liveFailed;
         Binding(View view, Drawable original, Surface surface, boolean nativeMask) {
             this.original = original;
             this.surface = surface;
