@@ -243,7 +243,7 @@ Next device checks:
 
 ## Optical report review (user's "Laudo técnico Liquid Glass", 2026-10-08)
 
-PR #71 merged as `224e88c`. The user supplied a technical report. It audits `2bafc9a`, which is PR #70, before #71. It keeps the report outside the repo; the user re-attaches it. This entry records the assessment and the agreed starting point for the next session.
+PR #71 merged as `224e88c`. Branch `ccr-dd7125c8-r29snt`, restarted from that master; this entry is published as ready-for-review PR #72 (docs only, not merged). The next implementation PR should restart this branch from master once #72 merges, or reuse #72 if it is still open. The user supplied a technical report. It audits `2bafc9a`, which is PR #70, before #71. It keeps the report outside the repo; the user re-attaches it. This entry records the assessment and the agreed starting point for the next session.
 
 Verified against current code (`224e88c`):
 - **LG-01 warp fold.** The shader samples `u = s + A(1−s/b)²` with `A = 0.62·b·c` (`MAX_DISPLACEMENT = 0.62`, `MAX_BEVEL_FRACTION = 0.32`). `du/ds` at the rim is 0.008 on flat edges (c = 0.8) and −0.24 at the ends (c = 1). The ends fold back over the first ~19% of the bevel. This explains the stretched or duplicated text at the composer top and the header edge in the user's screenshots. Confirmed.
