@@ -240,3 +240,51 @@ Next device checks:
 - Check contact info cards, menus and dialogs, and the FAB on home.
 - Turn on power saving and confirm a neutral translucent look on the floating bar and all surfaces.
 - Take a screenshot and confirm no green flash.
+
+## Optical report review (user's "Laudo técnico Liquid Glass", 2026-10-08)
+
+PR #71 merged as `224e88c`. Branch `ccr-dd7125c8-r29snt`, restarted from that master; this entry is published as ready-for-review PR #72 (docs only, not merged). The next implementation PR should restart this branch from master once #72 merges, or reuse #72 if it is still open. The user supplied a technical report. It audits `2bafc9a`, which is PR #70, before #71. It keeps the report outside the repo; the user re-attaches it. This entry records the assessment and the agreed starting point for the next session.
+
+Verified against current code (`224e88c`):
+- **LG-01 warp fold.** The shader samples `u = s + A(1−s/b)²` with `A = 0.62·b·c` (`MAX_DISPLACEMENT = 0.62`, `MAX_BEVEL_FRACTION = 0.32`). `du/ds` at the rim is 0.008 on flat edges (c = 0.8) and −0.24 at the ends (c = 1). The ends fold back over the first ~19% of the bevel. This explains the stretched or duplicated text at the composer top and the header edge in the user's screenshots. Confirmed.
+- **LG-02 / LG-07 input is effectively full resolution.** `LiveBackdrop` records with `scale(1/4)`, then `scale(W/w)` into a `RenderNode`. That is a display list, not a raster, so HWUI rasterises text at full resolution and nothing is downsampled. The "quarter-size recording" wording in `LiveBackdrop`/`GlassPane`/`ARCHITECTURE.md` is therefore wrong. The lens's own blur is `t·uBlur` (zero at the rim, a sparse 9-tap), so text behind the composer stays sharp and readable, and gets stretched at the rim. Confirmed.
+- **LG-06 scale rounding.** Net scale `W/(4·ceil(W/4)) ≠ 1` when W is not a multiple of 4. Confirmed; now in `LiveBackdrop.capture`.
+- **LG-03 no adaptation for panes and drawables.** `GlassSpec.adaptTo()` is used only by `GlassSurface`. Confirmed.
+- **LG-05 colour.** `uSat` reaches 1.55 for LIQUID, plus dispersion of 0.55 (R–B up to 2·uSpread) and a specular gain. This matches the user's "too colourful". Confirmed.
+- **Tint.** LIQUID fillScale 0.26 × recommended 10% is about 2.75% tint. Confirmed.
+- **LG-11 shader recreated on tint change.** `LiquidLens.apply` keys on `fillColor` and resets the active/press uniforms (floating bar). Code confirmed; the symptom is not reproduced.
+- **LG-12 budget.** `GlassBudget` counts only `GlassSurface`. #71 added a per-window area budget for drawables; panes are still uncounted.
+
+Outdated by #71 (the report predates it):
+- Non-pane surfaces are no longer static; they are live via `BehindRecorder`.
+- The fallback is now neutral, with a 58% floor and no accent glow.
+- `LiveBackdrop` now holds the capture engine.
+- `wantsLive` skips the GPU path in power saving.
+
+Assessment: the report's diagnosis is correct and its priorities are right (geometry, then filtering and contrast, then colour and finish). Its heavy instrumentation (full telemetry schema, 2D Jacobian tooling, linear-colour pipeline) is sound but should follow the visible fixes, not block them.
+
+Agreed next steps (A/B, one variable at a time; each a focused PR):
+1. **Geometry.**
+   - Cap the effective `A/b ≤ 0.35` after all multipliers, with a starting range of 0.22–0.32.
+   - Fix the scale pair: record with `w/W`, `h/H`.
+   - Add a JVM test of `du/ds ≥ 0.30` over the profile.
+   - Correct the "quarter-size" docs.
+2. **Filtering and legibility.**
+   - Give the lens a real low-pass input: a separable Gaussian via a chained `RenderEffect.createBlurEffect`, or a real raster downsample, mixed with the sharp input by depth (β).
+   - Make tint and contrast protection independent of the aesthetic slider.
+   - Adapt panes and drawables to backdrop luminance (`adaptTo` or local stats, τ 80–160 ms).
+3. **Colour.**
+   - Saturation at 1.0–1.15.
+   - Dispersion off, then R–B at 0.5–1.5 px.
+   - `layout(color)` uniforms.
+   - Offer "Clear (iOS)" as a separate variant if the user still wants it.
+4. **Temporal and budget.**
+   - Damage-driven capture instead of the 250 ms heartbeat.
+   - Count panes in a budget.
+   - Preserve interaction uniforms across tint changes.
+
+Device evidence the user can provide on request:
+- Native PNG screenshots (the report notes the earlier ones were JPEG bytes with a `.png` name).
+- Screen recordings of the scenarios in report §13.3.
+- Optionally `adb shell dumpsys gfxinfo com.whatsapp framestats` or a Perfetto trace while scrolling.
+- The installed module build/SHA and WhatsApp version.
