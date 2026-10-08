@@ -4,11 +4,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Outline;
 import android.graphics.RecordingCanvas;
-import android.graphics.RenderEffect;
-import android.graphics.RenderNode;
-import android.graphics.RuntimeShader;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
@@ -36,32 +32,25 @@ import java.util.function.Supplier;
  * pane, and the pane then transmits its underlay only. Without that guard HWUI recurses on the
  * RenderThread and the host process dies natively.</p>
  *
- * <p>Below Android 13 there is no runtime shader, so the pane paints the static layered material
- * and records nothing.</p>
+ * <p>Below Android 13, in power saving or when the lens fails, the pane paints the static
+ * material and records nothing.</p>
  */
 public final class GlassPane extends FrameLayout {
 
     private static final String TAG = "WaEnhancerX/GlassPane";
 
-    /** Recording resolution divisor. The lens blurs on its own, so a quarter keeps enough to bend. */
-    private static final float DOWNSAMPLE = 4f;
     /** Recapture every frame for this long after motion; scrolling is what the glass is for. */
-    private static final long ACTIVE_WINDOW_MS = 350L;
+    static final long ACTIVE_WINDOW_MS = 350L;
     /** At rest the content behind rarely changes; slow down, never stop, so late changes show. */
-    private static final long IDLE_INTERVAL_MS = 250L;
+    static final long IDLE_INTERVAL_MS = 250L;
 
-    /** Main thread only. True while any pane is drawing WhatsApp's views into its own recording. */
-    private static boolean capturing;
-    /** Off when the touch-feedback guards could not be installed: recording would crash on ripples. */
-    private static boolean captureAllowed = true;
     private static final List<GlassPane> LIVE = new ArrayList<>();
     private static final GlassPaneGraph.Tree<View> TREE = view -> {
         ViewParent parent = view.getParent();
         return parent instanceof View ? (View) parent : null;
     };
 
-    private final RenderNode node = new RenderNode("WAEX glass pane backdrop");
-    private final RenderNode glassNode = new RenderNode("WAEX glass pane");
+    private final LiveBackdrop backdrop = new LiveBackdrop();
     private final int[] hostLocation = new int[2];
     private final int[] otherLocation = new int[2];
     private final ViewTreeObserver.OnPreDrawListener preDraw = this::onPreDrawCapture;
@@ -72,14 +61,6 @@ public final class GlassPane extends FrameLayout {
     private List<View> underlay = Collections.emptyList();
     private Supplier<GlassSpec> spec = () -> null;
     private float cornerRadiusPx;
-
-    private boolean hasContent;
-    private int nodeWidth, nodeHeight;
-    private RuntimeShader lens;
-    private boolean lensFailed;
-    private GlassSpec effectSpec;
-    private int effectWidth = -1, effectHeight = -1;
-    private float effectRadius = -1f;
 
     private Drawable fallback;
     private GlassSpec fallbackSpec;
@@ -103,14 +84,19 @@ public final class GlassPane extends FrameLayout {
         });
     }
 
-    /** Main thread only: whether a pane is recording right now. Guards must hold back touch feedback. */
+    /** Main thread only: whether any live glass is recording right now. Guards hold back touch feedback. */
     public static boolean isCapturing() {
-        return capturing;
+        return LiveBackdrop.isCapturing();
     }
 
-    /** Every pane falls back to the static material; see {@link #captureAllowed}. */
+    /** Panes currently attached; read by {@link BehindRecorder} to avoid recording a loop. */
+    static List<GlassPane> live() {
+        return LIVE;
+    }
+
+    /** Every live surface falls back to the static material. */
     public static void disableCapture() {
-        captureAllowed = false;
+        LiveBackdrop.disableCapture();
     }
 
     /** The subtree transmitted through this pane, or null for an underlay-only pane. */
@@ -162,9 +148,7 @@ public final class GlassPane extends FrameLayout {
         getViewTreeObserver().removeOnPreDrawListener(preDraw);
         getViewTreeObserver().removeOnScrollChangedListener(scrolled);
         LIVE.remove(this);
-        node.discardDisplayList();
-        glassNode.discardDisplayList();
-        hasContent = false;
+        backdrop.release();
         super.onDetachedFromWindow();
     }
 
@@ -173,8 +157,9 @@ public final class GlassPane extends FrameLayout {
         // Guarded whole: capture draws WhatsApp's own views, and an escape here would crash the UI
         // thread on every frame.
         try {
-            if (!isAttachedToWindow() || getWidth() <= 0 || getHeight() <= 0 || capturing) return true;
-            if (!lensAvailable() || spec.get() == null) return true;
+            if (!isAttachedToWindow() || getWidth() <= 0 || getHeight() <= 0 || isCapturing()) return true;
+            GlassSpec material = spec.get();
+            if (!backdrop.available() || material == null) return true;
             long now = SystemClock.uptimeMillis();
             getLocationOnScreen(hostLocation);
             if (hostLocation[0] != lastScreenX || hostLocation[1] != lastScreenY) {
@@ -182,11 +167,18 @@ public final class GlassPane extends FrameLayout {
                 lastScreenY = hostLocation[1];
                 lastActivityMs = now;
             }
+            // A dropped recording (an Activity stop, a screenshot overlay) is captured again at
+            // once rather than showing the fallback until the next heartbeat.
+            if (backdrop.needsFreshCapture()) lastActivityMs = now;
             boolean moving = now - lastActivityMs < ACTIVE_WINDOW_MS;
             long minGap = moving ? 0L : IDLE_INTERVAL_MS;
             if (now - lastCaptureMs < minGap) return true;
             lastCaptureMs = now;
-            if (capture()) {
+            View src = safeSource();
+            if (src == null && underlay.isEmpty()) return true;
+            boolean captured = backdrop.capture(getWidth(), getHeight(), radius(),
+                    getResources().getDisplayMetrics().density, material, canvas -> paint(canvas, src));
+            if (captured) {
                 if (moving) invalidate(); else postInvalidateDelayed(IDLE_INTERVAL_MS);
             }
         } catch (Throwable error) {
@@ -196,11 +188,6 @@ public final class GlassPane extends FrameLayout {
             }
         }
         return true; // never cancel the host's frame
-    }
-
-    private boolean lensAvailable() {
-        return captureAllowed && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                && LiquidLens.isSupported() && !lensFailed;
     }
 
     private View safeSource() {
@@ -220,17 +207,8 @@ public final class GlassPane extends FrameLayout {
         return null;
     }
 
-    /** Records the region behind this pane at 1/DOWNSAMPLE, then the full-size lensed node. */
-    private boolean capture() {
-        View src = safeSource();
-        if (src == null && underlay.isEmpty()) {
-            hasContent = false;
-            return false;
-        }
-        int w = (int) Math.ceil(getWidth() / DOWNSAMPLE);
-        int h = (int) Math.ceil(getHeight() / DOWNSAMPLE);
-        if (w < 1 || h < 1) return false;
-
+    /** The underlay, then the source, each at its own screen position relative to this pane. */
+    private boolean paint(RecordingCanvas canvas, View src) {
         // A scaled ancestor shrinks the pane on screen; the span behind it shrinks with it.
         float sx = 1f, sy = 1f;
         for (View v = this; v != null; v = v.getParent() instanceof View ? (View) v.getParent() : null) {
@@ -238,91 +216,37 @@ public final class GlassPane extends FrameLayout {
             sy *= v.getScaleY();
         }
         if (sx < 0.01f || sy < 0.01f) return false;
-
-        node.setPosition(0, 0, w, h);
-        RecordingCanvas canvas = node.beginRecording(w, h);
-        capturing = true;
-        try {
-            canvas.scale(1f / DOWNSAMPLE, 1f / DOWNSAMPLE);
-            canvas.scale(1f / sx, 1f / sy);
-            for (View u : underlay) {
-                if (u == null || u.getWidth() <= 0 || u.getHeight() <= 0
-                        || u.getVisibility() != View.VISIBLE || !u.isAttachedToWindow()) continue;
-                if (src != null && GlassPaneGraph.isAncestor(TREE, src, u)) continue; // drawn by the source
-                u.getLocationOnScreen(otherLocation);
-                int save = u.getAlpha() < 1f
-                        ? canvas.saveLayerAlpha(0f, 0f, getWidth() * sx, getHeight() * sy,
-                                Math.round(Math.max(0f, Math.min(1f, u.getAlpha())) * 255))
-                        : canvas.save();
-                canvas.translate(otherLocation[0] - hostLocation[0], otherLocation[1] - hostLocation[1]);
-                u.draw(canvas);
-                canvas.restoreToCount(save);
-            }
-            if (src != null) {
-                src.getLocationOnScreen(otherLocation);
-                canvas.translate(otherLocation[0] - hostLocation[0], otherLocation[1] - hostLocation[1]);
-                src.draw(canvas);
-            }
-        } finally {
-            capturing = false;
-            // endRecording must run even if draw() throws, or every later beginRecording throws.
-            node.endRecording();
+        canvas.scale(1f / sx, 1f / sy);
+        boolean drew = false;
+        for (View u : underlay) {
+            if (u == null || u.getWidth() <= 0 || u.getHeight() <= 0
+                    || u.getVisibility() != View.VISIBLE || !u.isAttachedToWindow()) continue;
+            if (src != null && GlassPaneGraph.isAncestor(TREE, src, u)) continue; // drawn by the source
+            u.getLocationOnScreen(otherLocation);
+            int save = u.getAlpha() < 1f
+                    ? canvas.saveLayerAlpha(0f, 0f, getWidth() * sx, getHeight() * sy,
+                            Math.round(Math.max(0f, Math.min(1f, u.getAlpha())) * 255))
+                    : canvas.save();
+            canvas.translate(otherLocation[0] - hostLocation[0], otherLocation[1] - hostLocation[1]);
+            u.draw(canvas);
+            canvas.restoreToCount(save);
+            drew = true;
         }
-
-        int fw = getWidth(), fh = getHeight();
-        glassNode.setPosition(0, 0, fw, fh);
-        RecordingCanvas glass = glassNode.beginRecording(fw, fh);
-        try {
-            glass.scale(fw / (float) w, fh / (float) h);
-            glass.drawRenderNode(node);
-        } finally {
-            glassNode.endRecording();
+        if (src != null) {
+            src.getLocationOnScreen(otherLocation);
+            canvas.translate(otherLocation[0] - hostLocation[0], otherLocation[1] - hostLocation[1]);
+            src.draw(canvas);
+            drew = true;
         }
-        nodeWidth = fw;
-        nodeHeight = fh;
-        if (!applyLens(fw, fh)) return false;
-        hasContent = true;
-        return true;
-    }
-
-    /** Rebuilds the lens only when the material or geometry changed; per-frame effects allocate. */
-    private boolean applyLens(int width, int height) {
-        GlassSpec material = spec.get();
-        if (material == null) return false;
-        float radius = radius();
-        if (lens != null && material == effectSpec && width == effectWidth && height == effectHeight
-                && radius == effectRadius) {
-            return true;
-        }
-        try {
-            if (lens == null) lens = LiquidLens.newMaterialShader();
-            LiquidLens.updateMaterialUniforms(lens, material, width, height, radius,
-                    getResources().getDisplayMetrics().density);
-            glassNode.setRenderEffect(RenderEffect.createRuntimeShaderEffect(lens, "content"));
-        } catch (RuntimeException | LinkageError error) {
-            lensFailed = true;
-            lens = null;
-            glassNode.setRenderEffect(null);
-            Log.w(TAG, "lens unavailable; static material from now on", error);
-            return false;
-        }
-        effectSpec = material;
-        effectWidth = width;
-        effectHeight = height;
-        effectRadius = radius;
-        return true;
+        return drew;
     }
 
     @Override protected void onDraw(Canvas canvas) {
         GlassSpec material = spec.get();
         if (material == null) return;
-        // Another pane's recording draws this one through its display list; drawing here then
-        // would be recorded into that pane, so only the static material may be painted.
-        if (!capturing && hasContent && canvas instanceof RecordingCanvas && canvas.isHardwareAccelerated()
-                && nodeWidth == getWidth() && nodeHeight == getHeight() && lensAvailable()) {
-            ((RecordingCanvas) canvas).drawRenderNode(glassNode);
-            return;
-        }
+        // Drawn inside another surface's recording too: what this pane records is behind it, so
+        // nothing that records this pane can be inside its own recording.
+        if (backdrop.draw(canvas, getWidth(), getHeight())) return;
         drawFallback(canvas, material);
     }
 

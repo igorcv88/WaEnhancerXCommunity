@@ -117,8 +117,14 @@ public final class GlassSpec {
      */
     public static final double MIN_CONTENT_CONTRAST = 3.0d;
 
-    /** Opacity floor applied when the device cannot blur; see {@link #resolve}. */
-    private static final float NO_BLUR_MIN_OPACITY = 0.72f;
+    /**
+     * Opacity floor when there is no blur or lens (power saving, an old device, a failed shader).
+     *
+     * <p>Enough that labels stay readable over the content passing behind, low enough that the
+     * surface still reads as a pane rather than a solid bar. It was 0.72 with the accent glow on
+     * top, which in practice read as a flat green slab.</p>
+     */
+    static final float NO_BLUR_MIN_OPACITY = 0.58f;
 
     /** How far an adaptive fill is pulled toward its backdrop's colour. See {@link #adaptTo}. */
     private static final float ADAPTIVE_TINT_WEIGHT = 0.55f;
@@ -244,7 +250,9 @@ public final class GlassSpec {
                 : SemanticTheme.withAlpha(WHITE, resolved.highlightStrength * (dark ? 0.22f : 0.55f));
 
         int refraction;
-        if (resolved.refractionStrength <= 0f) {
+        // The glow is the refraction's colour; with nothing refracted it only tints the slab with
+        // the accent, so the fallback stays neutral.
+        if (resolved.refractionStrength <= 0f || !blurSupported) {
             refraction = 0;
         } else {
             int glow = accentColor != 0 ? accentColor : (dark ? WHITE : BLACK);
@@ -322,12 +330,15 @@ public final class GlassSpec {
                 lensStrength, rimWidthDp, dispersion, specular, innerShadow, adaptive, morphing);
     }
 
-    /** This renderer has no BlurView fallback: preserve legibility when optics are unavailable. */
+    /**
+     * The neutral fallback when no optics run: a translucent pane with its rim and top light, and
+     * no accent glow, since without refraction the glow only tints the slab.
+     */
     public GlassSpec withoutOptics() {
         int fill = (Math.max(fillColor >>> 24, Math.round(NO_BLUR_MIN_OPACITY * 255f)) << 24)
                 | (fillColor & 0x00FFFFFF);
         return new GlassSpec(fill, 0f, strokeColor, strokeWidthDp, highlightColor,
-                refractionColor, contentColor, animate, true, 0f, 0f, 0f, 0f, 0f, false, false);
+                0, contentColor, animate, true, 0f, 0f, 0f, 0f, 0f, false, false);
     }
 
     private float baseEdgeAlpha() {
