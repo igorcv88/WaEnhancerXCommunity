@@ -1,6 +1,8 @@
 package com.waenhancer.theme;
 
+import android.graphics.Matrix;
 import android.graphics.RecordingCanvas;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.view.View;
 import android.view.ViewGroup;
@@ -94,6 +96,110 @@ final class BehindRecorder {
             }
         }
         return drew;
+    }
+
+    // Main-thread scratch for paintExact: captures run every frame while scrolling.
+    private static final Matrix TARGET = new Matrix();
+    private static final Matrix BASE = new Matrix();
+    private static final Matrix PLACED = new Matrix();
+    private static final RectF CHILD_RECT = new RectF();
+    private static final List<View> PATH = new ArrayList<>();
+    private static final List<View> ELIGIBLE = new ArrayList<>();
+
+    /**
+     * Order in which a ViewGroup draws two children with default drawing order: by Z, then by
+     * index (a stable sort). Negative when {@code (z1, i1)} draws first.
+     */
+    static int compareDrawOrder(float z1, int i1, float z2, int i2) {
+        if (z1 != z2) return Float.compare(z1, z2);
+        return Integer.compare(i1, i2);
+    }
+
+    /** Whether a child's rect, in drawable pixels, reaches the recording including its margin. */
+    static boolean reachesRecording(float left, float top, float right, float bottom,
+                                    int width, int height, int padding) {
+        return left < width + padding && right > -padding && top < height + padding && bottom > -padding;
+    }
+
+    /**
+     * {@link #paint} with exact transforms (the corrected renderer): every view is placed by
+     * {@code T(-offset) · inverse(G_target) · G_view}, so a rotated or scaled ancestor or sibling,
+     * and a scrolled sibling's content, land where the window draws them. Siblings are culled
+     * against the recording including its blur margin, so content just outside the surface still
+     * feeds the Gaussian at the rim, and are drawn in the window's order (Z, then index) — the
+     * legacy path draws them by index, which puts a high-Z earlier sibling under a lower one.
+     * Custom child drawing orders ({@code getChildDrawingOrder}) are not visible to this code and
+     * fall back to that default order. The acyclicity argument is the same as {@link #paint}'s.
+     *
+     * @param offsetX the drawable's left inside {@code target}
+     * @param offsetY the drawable's top inside {@code target}
+     * @param padding the recording's margin around the drawable, in px
+     */
+    static boolean paintExact(RecordingCanvas canvas, View target, int offsetX, int offsetY,
+                              int width, int height, int padding) {
+        TARGET.reset();
+        target.transformMatrixToGlobal(TARGET);
+        if (!TARGET.invert(BASE)) return false;
+        BASE.postTranslate(-offsetX, -offsetY);
+        PATH.clear();
+        for (View v = target; v != null; v = parentOf(v)) PATH.add(0, v);
+        List<View> forbidden = panesRecording(target);
+        boolean drew = false;
+        for (int i = 0; i < PATH.size() - 1; i++) {
+            View ancestor = PATH.get(i);
+            View branch = PATH.get(i + 1);
+            if (ancestor.getVisibility() != View.VISIBLE) break;
+            Drawable background = ancestor.getBackground();
+            if (background != null) {
+                place(ancestor);
+                int save = canvas.save();
+                canvas.concat(PLACED);
+                background.draw(canvas);
+                canvas.restoreToCount(save);
+                drew = true;
+            }
+            if (!(ancestor instanceof ViewGroup)) continue;
+            ViewGroup group = (ViewGroup) ancestor;
+            int branchIndex = group.indexOfChild(branch);
+            float branchZ = branch.getZ();
+            ELIGIBLE.clear();
+            for (int c = 0; c < group.getChildCount(); c++) {
+                View child = group.getChildAt(c);
+                if (child == null || child == branch || child.getVisibility() != View.VISIBLE
+                        || child.getAlpha() <= 0f || child.getWidth() <= 0 || child.getHeight() <= 0) continue;
+                if (!drawnBefore(child.getZ(), c, branchZ, branchIndex)) continue;
+                place(child);
+                CHILD_RECT.set(0, 0, child.getWidth(), child.getHeight());
+                PLACED.mapRect(CHILD_RECT);
+                if (!reachesRecording(CHILD_RECT.left, CHILD_RECT.top, CHILD_RECT.right,
+                        CHILD_RECT.bottom, width, height, padding)) continue;
+                if (containsAny(child, forbidden)) continue;
+                ELIGIBLE.add(child);
+            }
+            ELIGIBLE.sort((a, b) -> compareDrawOrder(a.getZ(), group.indexOfChild(a),
+                    b.getZ(), group.indexOfChild(b)));
+            for (View child : ELIGIBLE) {
+                place(child);
+                int save = child.getAlpha() < 1f
+                        ? canvas.saveLayerAlpha(null, Math.round(child.getAlpha() * 255))
+                        : canvas.save();
+                canvas.concat(PLACED);
+                canvas.translate(-child.getScrollX(), -child.getScrollY());
+                child.draw(canvas);
+                canvas.restoreToCount(save);
+                drew = true;
+            }
+        }
+        ELIGIBLE.clear();
+        PATH.clear();
+        return drew;
+    }
+
+    /** Sets {@link #PLACED} to {@code view}'s local space mapped into the drawable's. */
+    private static void place(View view) {
+        PLACED.reset();
+        view.transformMatrixToGlobal(PLACED);
+        PLACED.postConcat(BASE);
     }
 
     /** Live panes whose explicit source holds the target: recording them would close a loop. */

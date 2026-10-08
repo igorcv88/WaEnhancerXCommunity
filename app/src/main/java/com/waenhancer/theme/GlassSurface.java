@@ -185,6 +185,8 @@ public final class GlassSurface {
 
     private BackdropSampler sampler;
     private int backdropColor;
+    /** {@link GlassOptics#revision()} the installed lens was built under. */
+    private int opticsRevision = GlassOptics.revision();
     private Float captureRadius;
     private String paintKey;
     private boolean lensed;
@@ -411,6 +413,13 @@ public final class GlassSurface {
                 int wanted = target.getVisibility();
                 if (host.getVisibility() != wanted) host.setVisibility(wanted);
                 if (host.getAlpha() != target.getAlpha()) host.setAlpha(target.getAlpha());
+                // The optics switches changed (published on resume): rebuild the installed lens now
+                // rather than at the next layout or backdrop sample, so an A/B switch reaches the
+                // bar on the first frame like every other surface.
+                if (opticsRevision != GlassOptics.revision()) {
+                    opticsRevision = GlassOptics.revision();
+                    host.post(this::refresh);
+                }
             }
             return true;
         };
@@ -633,9 +642,42 @@ public final class GlassSurface {
             if (sampler == null) sampler = new BackdropSampler();
             View root = blurRoot != null ? blurRoot : host.getRootView();
             int sampled = sampler.sample(root, host, SystemClock.uptimeMillis());
-            if (sampled == 0 || sampled == backdropColor) return;
+            if (sampled == 0) return;
+            GlassOptics optics = GlassOptics.current();
+            if (optics.corrected && optics.adaptive) {
+                // Smoothed toward the sample rather than stepped to it (τ = 120 ms).
+                adaptTarget = sampled;
+                stepAdaptation();
+                return;
+            }
+            if (sampled == backdropColor) return;
             backdropColor = sampled;
+            applyAdaptedSpec();
+        } catch (Throwable ignored) {
+        }
+    }
 
+    private final ColorSmoother smoother = new ColorSmoother();
+    private int adaptTarget;
+    private final Runnable adaptationStep = this::stepAdaptation;
+
+    /** One step of the smoothed adaptation; schedules the next frame until it has arrived. */
+    private void stepAdaptation() {
+        if (detached || adaptTarget == 0) return;
+        try {
+            int next = smoother.step(adaptTarget, SystemClock.uptimeMillis());
+            if (next != backdropColor) {
+                backdropColor = next;
+                applyAdaptedSpec();
+            }
+            host.removeCallbacks(adaptationStep);
+            if (!smoother.converged(adaptTarget)) host.postOnAnimation(adaptationStep);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void applyAdaptedSpec() {
+        try {
             GlassSpec spec = currentSpec();
             if (spec == null) return;
             // The adapted tint reaches a lensed surface through the shader's uniform, and

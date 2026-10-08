@@ -341,6 +341,57 @@ public final class GlassSpec {
                 0, contentColor, animate, true, 0f, 0f, 0f, 0f, 0f, false, false);
     }
 
+    /**
+     * The experimental iOS-inspired Clear profile of this surface: the same renderer with more of
+     * the backdrop transmitted. Very little tint, a lighter blur, no dispersion and a quieter rim;
+     * legibility is left to the corrected renderer's contrast protection, which is why
+     * {@link GlassOptics} only allows it with adaptive contrast on. A spec without a lens, or the
+     * fallback, is returned unchanged.
+     */
+    public GlassSpec clearProfile() {
+        if (usingFallback || lensStrength <= 0f) return this;
+        int alpha = Math.min((fillColor >>> 24) & 0xFF, Math.round(CLEAR_PROFILE_TINT * 255f));
+        int fill = (alpha << 24) | (fillColor & 0x00FFFFFF);
+        return new GlassSpec(fill, Math.min(blurRadius, CLEAR_PROFILE_BLUR), strokeColor,
+                strokeWidthDp, highlightColor, refractionColor, contentColor, animate, usingFallback,
+                lensStrength, rimWidthDp, 0f, Math.min(specular, CLEAR_PROFILE_SPECULAR),
+                innerShadow * 0.5f, adaptive, morphing);
+    }
+
+    /** Clear profile: tint ceiling (fraction), blur ceiling (library units) and rim strength. */
+    static final float CLEAR_PROFILE_TINT = 0.03f;
+    static final float CLEAR_PROFILE_BLUR = 3f;
+    static final float CLEAR_PROFILE_SPECULAR = 0.45f;
+
+    /** Value equality: a re-resolved, identical material must not rebuild an effect. */
+    @Override public boolean equals(Object other) {
+        if (this == other) return true;
+        if (!(other instanceof GlassSpec)) return false;
+        GlassSpec o = (GlassSpec) other;
+        return fillColor == o.fillColor && Float.compare(blurRadius, o.blurRadius) == 0
+                && strokeColor == o.strokeColor && Float.compare(strokeWidthDp, o.strokeWidthDp) == 0
+                && highlightColor == o.highlightColor && refractionColor == o.refractionColor
+                && contentColor == o.contentColor && animate == o.animate
+                && usingFallback == o.usingFallback && Float.compare(lensStrength, o.lensStrength) == 0
+                && Float.compare(rimWidthDp, o.rimWidthDp) == 0
+                && Float.compare(dispersion, o.dispersion) == 0
+                && Float.compare(specular, o.specular) == 0
+                && Float.compare(innerShadow, o.innerShadow) == 0
+                && adaptive == o.adaptive && morphing == o.morphing;
+    }
+
+    @Override public int hashCode() {
+        int h = fillColor;
+        h = 31 * h + Float.floatToIntBits(blurRadius);
+        h = 31 * h + strokeColor;
+        h = 31 * h + contentColor;
+        h = 31 * h + Float.floatToIntBits(lensStrength);
+        h = 31 * h + Float.floatToIntBits(rimWidthDp);
+        h = 31 * h + Float.floatToIntBits(dispersion);
+        h = 31 * h + Float.floatToIntBits(specular);
+        return 31 * h + (usingFallback ? 1 : 0);
+    }
+
     private float baseEdgeAlpha() {
         return ((strokeColor >>> 24) & 0xFF) / 255f;
     }

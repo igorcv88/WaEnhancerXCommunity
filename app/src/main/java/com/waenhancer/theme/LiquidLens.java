@@ -86,7 +86,7 @@ public final class LiquidLens {
      * shape: negative inside, zero on the outline. Nearly every term below is a function of it,
      * which is what keeps them consistent with each other and with the actual corner radius.</p>
      */
-    private static final String SHADER = ""
+    static final String SHADER = ""
             + "uniform shader content;\n"
             + "uniform float2 uSize;\n"
             + "uniform float uRadius;\n"
@@ -713,6 +713,14 @@ public final class LiquidLens {
             status = "no view";
             return false;
         }
+        GlassOptics optics = GlassOptics.current();
+        if (optics.corrected && !LensEffect.isBroken() && isActiveFor(spec)) {
+            Boolean result = applyCorrected(view, spec, cornerRadiusPx, density, optics);
+            if (result != null) return result;
+        } else if (corrected.remove(view) != null) {
+            // Switched back to the legacy lens: drop the corrected effect so it is rebuilt below.
+            installed.remove(view);
+        }
         if (!isActiveFor(spec)) {
             status = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
                     ? "declined: needs Android 13, device is API " + Build.VERSION.SDK_INT
@@ -778,6 +786,40 @@ public final class LiquidLens {
         }
     }
 
+    /**
+     * The corrected lens on {@code view}. Null when it could not be built, so the caller carries
+     * on with the legacy lens; otherwise whether a lens is installed.
+     */
+    private static Boolean applyCorrected(View view, GlassSpec spec, float cornerRadiusPx,
+                                          float density, GlassOptics optics) {
+        int width = view.getWidth();
+        int height = view.getHeight();
+        if (width <= 0 || height <= 0) {
+            status = "deferred: surface not measured yet (" + width + "x" + height + ")";
+            return false;
+        }
+        LensEffect lens = corrected.get(view);
+        if (lens == null) {
+            lens = new LensEffect();
+            corrected.put(view, lens);
+        }
+        boolean changed = lens.update(spec, width, height, cornerRadiusPx, density, optics, 0,
+                optics.temporal);
+        if (lens.effect() == null) {
+            corrected.remove(view);
+            return null;
+        }
+        if (changed) {
+            installed.remove(view);
+            view.setRenderEffect(lens.effect());
+        }
+        status = "active: " + lens.status();
+        return true;
+    }
+
+    /** Corrected-lens state per view; see {@link LensEffect}. */
+    private static final java.util.WeakHashMap<View, LensEffect> corrected = new java.util.WeakHashMap<>();
+
     /** Same optical pass for a background drawable; foreground text is never filtered. */
     static RuntimeShader materialShader(GlassSpec spec, int width, int height,
                                        float cornerRadiusPx, float density) {
@@ -829,6 +871,13 @@ public final class LiquidLens {
     /** Updates the selected-tab lens without reallocating the shader or render effect. */
     public static void updateActive(View view, float centerX, float centerY, float width,
                                     float height, float radius, int tintColor, boolean enabled) {
+        LensEffect lens = corrected.get(view);
+        if (lens != null) {
+            android.graphics.RenderEffect effect = lens.setActive(centerX, centerY, width / 2f,
+                    height / 2f, radius, tintColor, enabled);
+            if (effect != null) view.setRenderEffect(effect);
+            return;
+        }
         ShaderState state = installed.get(view);
         if (state == null) return;
         try {
@@ -850,6 +899,27 @@ public final class LiquidLens {
 
     /** Gives the lens a short, restrained response to a tab press. */
     public static void pulse(View view, boolean animate) {
+        LensEffect lens = corrected.get(view);
+        if (lens != null) {
+            ValueAnimator previous = pressAnimators.remove(view);
+            if (previous != null) previous.cancel();
+            if (!animate) {
+                android.graphics.RenderEffect effect = lens.setPress(0f);
+                if (effect != null) view.setRenderEffect(effect);
+                return;
+            }
+            ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f, 0f);
+            animator.setDuration(220L);
+            animator.addUpdateListener(value -> {
+                LensEffect live = corrected.get(view);
+                if (live == null) return;
+                android.graphics.RenderEffect effect = live.setPress((float) value.getAnimatedValue());
+                if (effect != null) view.setRenderEffect(effect);
+            });
+            animator.start();
+            pressAnimators.put(view, animator);
+            return;
+        }
         ShaderState state = installed.get(view);
         if (state == null) return;
         ValueAnimator previous = pressAnimators.remove(view);
@@ -876,6 +946,7 @@ public final class LiquidLens {
         try {
             view.setRenderEffect(null);
             installed.remove(view);
+            corrected.remove(view);
             ValueAnimator animator = pressAnimators.remove(view);
             if (animator != null) animator.cancel();
         } catch (Throwable ignored) {

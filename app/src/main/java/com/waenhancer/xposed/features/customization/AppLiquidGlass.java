@@ -15,9 +15,13 @@ import android.widget.PopupWindow;
 import androidx.annotation.NonNull;
 
 import com.waenhancer.config.GlassSurfaceCatalog;
+import com.waenhancer.config.LiquidGlassOptics;
 import com.waenhancer.config.LiquidGlassSettings;
 import com.waenhancer.config.LiquidGlassSettings.Surface;
+import com.waenhancer.theme.CaptureScheduler;
 import com.waenhancer.theme.GlassMaterialDrawable;
+import com.waenhancer.theme.GlassOptics;
+import com.waenhancer.theme.LiveBudget;
 import com.waenhancer.theme.GlassRenderer;
 import com.waenhancer.theme.GlassSpec;
 import com.waenhancer.theme.GlassSurface;
@@ -77,6 +81,7 @@ public final class AppLiquidGlass extends Feature {
                 if (session != null) session.close();
             } else if (state == WppCore.ActivityChangeState.ChangeType.RESUMED) {
                 reloadPrefs();
+                publishOptics();
                 Session session = watch(decor);
                 foreground = new WeakReference<>(session);
                 if (session != null) {
@@ -127,6 +132,33 @@ public final class AppLiquidGlass extends Feature {
         };
         XposedBridge.hookAllMethods(PopupWindow.class, "showAtLocation", popupHook);
         XposedBridge.hookAllMethods(PopupWindow.class, "showAsDropDown", popupHook);
+    }
+
+    /**
+     * Publishes the optical-correction switches to every glass surface in this process, the
+     * floating bar included. Read on every resume, so a change made in the module app applies
+     * when WhatsApp comes back, without a restart; surfaces rebuild their effect on the next
+     * capture because the switches are part of every effect's key.
+     */
+    private void publishOptics() {
+        GlassOptics optics;
+        try {
+            optics = LiquidGlassOptics.read(prefs);
+        } catch (Throwable error) {
+            optics = GlassOptics.LEGACY;
+            report("optics-read", "optics switches unreadable; original renderer: " + error);
+        }
+        if (GlassOptics.publish(optics)) {
+            XposedBridge.log("[LiquidGlass/App] optics " + optics.key());
+            for (WeakReference<Session> reference : new ArrayList<>(sessions.values())) {
+                Session session = reference == null ? null : reference.get();
+                if (session == null) continue;
+                session.cachedMaterial = null;
+                View root = session.root.get();
+                if (root != null) root.invalidate();
+            }
+            lastMaterial = null;
+        }
     }
 
     private void installBubbleHook() {
@@ -285,8 +317,6 @@ public final class AppLiquidGlass extends Feature {
      */
     private static final int MAX_LIVE_PER_WINDOW = 32;
     private static final float MAX_LIVE_AREA_FRACTION = 1f;
-    private static final long ACTIVE_WINDOW_MS = 350L;
-    private static final long IDLE_INTERVAL_MS = 250L;
 
     private final class Session implements ViewTreeObserver.OnGlobalLayoutListener,
             ViewTreeObserver.OnPreDrawListener, ViewTreeObserver.OnScrollChangedListener,
@@ -301,9 +331,14 @@ public final class AppLiquidGlass extends Feature {
         private boolean closed;
         private GlassSpec cachedMaterial;
         private long materialAt;
-        private long lastActivityMs;
-        private long lastCaptureMs;
+        private final CaptureScheduler scheduler = new CaptureScheduler();
         private boolean loggedCaptureFailure;
+        private String loggedBudget;
+        private final ArrayList<View> targets = new ArrayList<>();
+        private final ArrayList<View> visible = new ArrayList<>();
+        private final android.graphics.Rect visibleRect = new android.graphics.Rect();
+        private long[] order = new long[16];
+        private long[] areas = new long[16];
 
         Session(View root) {
             this.root = new WeakReference<>(root);
@@ -314,9 +349,16 @@ public final class AppLiquidGlass extends Feature {
             if (view == null) return null;
             long now = SystemClock.uptimeMillis();
             if (cachedMaterial == null || now - materialAt >= 1000) {
-                cachedMaterial = GlassRenderer.resolveFor(view.getContext(),
+                GlassSpec resolved = GlassRenderer.resolveFor(view.getContext(),
                         LiquidGlassSettings.MATERIAL.key(), DesignUtils.isNightMode(view.getContext()),
                         0, DesignUtils.getPrimaryColor(), LiquidGlassSettings.opacityPercent(prefs));
+                GlassOptics optics = GlassOptics.current();
+                if (optics.clearProfile) resolved = resolved.clearProfile();
+                // Temporal group: keep the previous object when nothing changed, so effects keyed
+                // on it stay put. Legacy re-resolves a new object every second, as before.
+                if (!(optics.corrected && optics.temporal) || !resolved.equals(cachedMaterial)) {
+                    cachedMaterial = resolved;
+                }
                 materialAt = now;
             }
             return cachedMaterial;
@@ -332,12 +374,12 @@ public final class AppLiquidGlass extends Feature {
         }
 
         @Override public void onGlobalLayout() {
-            lastActivityMs = SystemClock.uptimeMillis();
+            scheduler.activity(SystemClock.uptimeMillis());
             scan(); // Reconcile known candidates; no periodic full-tree discovery.
         }
 
         @Override public void onScrollChanged() {
-            lastActivityMs = SystemClock.uptimeMillis();
+            scheduler.activity(SystemClock.uptimeMillis());
         }
 
         /**
@@ -353,39 +395,68 @@ public final class AppLiquidGlass extends Feature {
                 for (Binding binding : bindings.values()) {
                     if (binding.glass.needsFreshCapture()) { fresh = true; break; }
                 }
-                if (fresh) lastActivityMs = now;
-                boolean moving = now - lastActivityMs < ACTIVE_WINDOW_MS;
-                if (now - lastCaptureMs < (moving ? 0L : IDLE_INTERVAL_MS)) return true;
-                lastCaptureMs = now;
+                GlassOptics optics = GlassOptics.current();
+                boolean temporal = optics.corrected && optics.temporal;
+                int decision = scheduler.decide(now, temporal, fresh);
                 View view = root.get();
                 if (view == null) return true;
-                List<View> visible = new ArrayList<>();
-                List<int[]> rects = new ArrayList<>();
-                android.graphics.Rect r = new android.graphics.Rect();
-                for (Map.Entry<View, Binding> entry : new ArrayList<>(bindings.entrySet())) {
-                    View target = entry.getKey();
-                    if (target == null) continue;
+                if ((decision & CaptureScheduler.CAPTURE) == 0) {
+                    if ((decision & CaptureScheduler.INVALIDATE_LATER) != 0) {
+                        view.postInvalidateDelayed(scheduler.delayMs());
+                    }
+                    return true;
+                }
+                boolean invalidateNow = (decision & CaptureScheduler.INVALIDATE_NOW) != 0;
+                boolean invalidateLater = (decision & CaptureScheduler.INVALIDATE_LATER) != 0;
+                // Scratch storage reused across frames: this runs on every frame while scrolling.
+                targets.clear();
+                for (View target : bindings.keySet()) if (target != null) targets.add(target);
+                int count = 0;
+                if (order.length < targets.size()) {
+                    order = new long[targets.size() * 2];
+                    areas = new long[targets.size() * 2];
+                }
+                visible.clear();
+                for (View target : targets) {
+                    Binding binding = bindings.get(target);
+                    if (binding == null) continue;
                     // Off screen or hidden: nothing to show, so no recording either.
-                    if (!target.isShown() || !target.getGlobalVisibleRect(r)) {
-                        entry.getValue().glass.releaseLive();
+                    if (!target.isShown() || !target.getGlobalVisibleRect(visibleRect)) {
+                        binding.glass.releaseLive();
                         continue;
                     }
+                    // Top to bottom, then left to right; the index rides in the low bits.
+                    long top = Math.max(-(1L << 19), Math.min((1L << 19) - 1, visibleRect.top)) + (1L << 19);
+                    long left = Math.max(0L, Math.min((1L << 20) - 1, visibleRect.left));
+                    areas[count] = (long) visibleRect.width() * visibleRect.height();
+                    order[count] = (top << 40) | (left << 20) | count;
                     visible.add(target);
-                    rects.add(new int[]{r.top, r.left, r.width() * r.height()});
+                    count++;
                 }
-                Integer[] order = new Integer[visible.size()];
-                for (int i = 0; i < order.length; i++) order[i] = i;
-                java.util.Arrays.sort(order, (a, b) -> rects.get(a)[0] != rects.get(b)[0]
-                        ? Integer.compare(rects.get(a)[0], rects.get(b)[0])
-                        : Integer.compare(rects.get(a)[1], rects.get(b)[1]));
+                java.util.Arrays.sort(order, 0, count);
                 long budget = (long) (MAX_LIVE_AREA_FRACTION * view.getWidth() * view.getHeight());
                 long used = 0;
                 int live = 0;
-                for (Integer i : order) {
+                int panes = 0;
+                float density = view.getResources().getDisplayMetrics().density;
+                GlassSpec material = temporal ? resolvedMaterial() : null;
+                if (temporal) {
+                    // One budget per window for all live glass (LG-12), in effective pixel-passes:
+                    // panes are admitted first in their own pre-draw, the drawables get the rest.
+                    LiveBudget ledger = LiveBudget.forWindow(view);
+                    budget = ledger.capacity();
+                    used = ledger.paneSpend();
+                    panes = ledger.paneCount();
+                    live = panes;
+                }
+                for (int k = 0; k < count; k++) {
+                    int i = (int) (order[k] & 0xFFFFF);
                     View target = visible.get(i);
                     Binding binding = bindings.get(target);
                     if (binding == null) continue;
-                    long area = rects.get(i)[2];
+                    long area = temporal && material != null
+                            ? LiveBudget.cost(target.getWidth(), target.getHeight(), material, density, optics)
+                            : areas[i];
                     if (live >= MAX_LIVE_PER_WINDOW || used + area > budget) {
                         binding.glass.releaseLive();
                         continue;
@@ -406,10 +477,21 @@ public final class AppLiquidGlass extends Feature {
                     if (captured) {
                         live++;
                         used += area;
-                        if (moving) target.invalidate();
+                        if (invalidateNow) target.invalidate();
                     }
                 }
-                if (live > 0 && !moving) view.postInvalidateDelayed(IDLE_INTERVAL_MS);
+                visible.clear();
+                targets.clear();
+                if (live > 0 && invalidateLater) view.postInvalidateDelayed(scheduler.delayMs());
+                if (temporal) {
+                    String budgetLine = panes + " panes, " + (live - panes) + " drawables live";
+                    if (!budgetLine.equals(loggedBudget)) {
+                        loggedBudget = budgetLine;
+                        report("budget-" + budgetLine, "live glass budget: " + budgetLine
+                                + " of " + MAX_LIVE_PER_WINDOW + ", cost " + used + "/" + budget
+                                + " px-passes");
+                    }
+                }
             } catch (Throwable error) {
                 if (!loggedCaptureFailure) {
                     loggedCaptureFailure = true;
