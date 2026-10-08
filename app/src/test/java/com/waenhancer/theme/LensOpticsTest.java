@@ -207,8 +207,9 @@ public class LensOpticsTest {
     /** Capped: the protection never covers more than its maximum, however bright the backdrop. */
     @Test
     public void protectionIsCapped() {
+        // Grey content (L 0.3) over white needs ~0.97 of a black protection colour: capped.
         assertEquals(LensModel.PROTECTION_MAX,
-                LensModel.protection(1d, 1d, 0d, 4.5d, LensModel.PROTECTION_MAX), 1e-9);
+                LensModel.protection(1d, 0.3d, 0d, 4.5d, LensModel.PROTECTION_MAX), 1e-6);
         assertEquals(0f, LensModel.protectionWeight(0f), 0f);
         assertEquals(1f, LensModel.protectionWeight(1f), 0f);
     }

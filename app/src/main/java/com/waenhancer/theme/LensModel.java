@@ -25,7 +25,7 @@ package com.waenhancer.theme;
  * outline of the <em>geometry shape</em>: the same rectangle with its corner radius raised to at
  * least the bevel. Its offset is zero before the medial axis is reached, so it is continuous
  * everywhere. Along the normal its derivative is {@code 1 - 2A/b (1 - s/b)}, bounded below by
- * {@code 1 - 2 * CAP} with the amplitude capped at {@link #MAX_EFFECTIVE} of the bevel after every
+ * {@code 1 - 2 * CAP} = 0.34 with the amplitude capped at {@link #MAX_EFFECTIVE} of the bevel after every
  * multiplier. Along the tangent, in a corner of radius {@code ρ}, it is {@code 1 - g/ρ}, which the
  * raised radius keeps above {@code 1 - CAP}. The smooth curvature bias and the smooth selected-tab
  * band add a bounded shear. Red and blue are the same profile at amplitudes {@code A ∓ Δ}, capped the
@@ -41,9 +41,12 @@ public final class LensModel {
     public static final float MIN_DISPLACEMENT = 0.10f;
     /**
      * Hard ceiling on the effective amplitude after every multiplier and per channel, as a
-     * fraction of the bevel. Gives a normal derivative of at least {@code 1 - 2 * 0.35 = 0.30}.
+     * fraction of the bevel. Gives a normal derivative of at least {@code 1 - 2 * 0.33 = 0.34}:
+     * inside the report's 0.35 bound with margin over the 0.30 acceptance target, so the measured
+     * worst case is not sitting on the threshold. The default amplitude times the selected-tab
+     * gain (0.28 × 1.18) reaches it exactly.
      */
-    public static final float MAX_EFFECTIVE = 0.35f;
+    public static final float MAX_EFFECTIVE = 0.33f;
     /** Widest the bevel may be, as a fraction of the surface's shorter side. */
     public static final float MAX_BEVEL_FRACTION = 0.32f;
     /** Extra amplitude on the selected tab's outline. Legacy and corrected use the same gain. */
@@ -74,8 +77,14 @@ public final class LensModel {
     /** Contrast the protection aims for between the content colour and the glass under it. */
     public static final float CONTRAST_TARGET = 4.5f;
     public static final float CONTRAST_TARGET_CLEAR = 3.0f;
-    /** Most the protection may cover the backdrop. Legibility past this belongs to the tint. */
-    public static final float PROTECTION_MAX = 0.70f;
+    /**
+     * Most the protection may cover the backdrop. 0.85 is what white content needs over a white
+     * backdrop to reach 4.5:1 against the dark protection colour (0.82), and black content over
+     * black needs far less, so both polarities of the theme's content colour can reach
+     * {@link #CONTRAST_TARGET} anywhere. Grey hint text cannot within this cap; see
+     * {@code LensOpticsTest.protectionCoverageByForeground}.
+     */
+    public static final float PROTECTION_MAX = 0.85f;
     public static final float PROTECTION_MAX_CLEAR = 0.85f;
     /** Where in the bevel protection starts and is complete: the body, where the controls are. */
     public static final float PROTECTION_FROM = 0.30f;
@@ -320,6 +329,26 @@ public final class LensModel {
     /** sharp/soft mix: {@code (1-β)·sharp + β·soft}, which is how the two passes composite. */
     public static float mix(float sharp, float soft, float beta) {
         return sharp * (1f - beta) + soft * beta;
+    }
+
+    /**
+     * The two-pass output exactly as the effect graph forms it, premultiplied: each pass returns
+     * {@code (colour·γ·w, γ·w)} with its own weight w (soft β, sharp 1-β) and the passes are added
+     * ({@code BlendMode.PLUS}). Returns {@code {r, a}} for one channel.
+     */
+    public static float[] composite(float coverage, float beta, float sharp, float soft) {
+        float wSharp = 1f - beta, wSoft = beta;
+        if (wSharp < 0.0001f) wSharp = 0f;
+        float a = coverage * wSharp + coverage * wSoft;
+        float c = sharp * coverage * wSharp + soft * coverage * wSoft;
+        return new float[]{c, a};
+    }
+
+    /** The same passes composited source-over, as the first version of this graph did. */
+    public static float[] compositeSourceOver(float coverage, float beta, float sharp, float soft) {
+        float as = coverage * (1f - beta), cs = sharp * as;
+        float af = coverage, cf = soft * af;
+        return new float[]{cs + cf * (1f - as), as + af * (1f - as)};
     }
 
     // ---- colour and contrast -----------------------------------------------------------------

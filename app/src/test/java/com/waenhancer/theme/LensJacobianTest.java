@@ -173,7 +173,9 @@ public class LensJacobianTest {
     public void normalDerivativeMatchesTheDerivation() {
         assertEquals(0.008d, 1d - 2d * LensModel.LEGACY_DISPLACEMENT * 0.8d, 1e-6);
         assertEquals(-0.24d, 1d - 2d * LensModel.LEGACY_DISPLACEMENT, 1e-6);
-        assertEquals(0.30d, 1d - 2d * LensModel.MAX_EFFECTIVE, 1e-6);
+        // The cap leaves margin over the 0.30 acceptance target.
+        assertEquals(0.34d, 1d - 2d * LensModel.MAX_EFFECTIVE, 1e-6);
+        assertTrue(LensModel.MAX_EFFECTIVE <= 0.35f);
     }
 
     /** The cap holds after every multiplier, per channel. */
