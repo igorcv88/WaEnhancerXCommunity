@@ -341,6 +341,21 @@ public final class GlassSpec {
                 0, contentColor, animate, true, 0f, 0f, 0f, 0f, 0f, false, false);
     }
 
+    /** Temporary capture fallback: neutral fill, independent of the sampled/accent hue. */
+    public GlassSpec neutralFallback() {
+        return neutralFallback(false);
+    }
+
+    /** Permanent capability loss keeps the existing opacity floor; transient gaps use lighter tint. */
+    public GlassSpec neutralFallback(boolean permanent) {
+        int opacity = permanent ? withoutOptics().fillColor >>> 24
+                : Math.max(Math.round(0.18f * 255f), Math.min(fillColor >>> 24, Math.round(0.32f * 255f)));
+        int rgb = SemanticTheme.relativeLuminance(contentColor) > 0.5d ? 0x202020 : 0xFFFFFF;
+        return new GlassSpec((opacity << 24) | rgb, 0f,
+                strokeColor, strokeWidthDp, highlightColor, 0, contentColor,
+                animate, true, 0f, 0f, 0f, 0f, 0f, false, false);
+    }
+
     /**
      * The experimental iOS-inspired Clear profile of this surface: the same renderer with more of
      * the backdrop transmitted. Very little tint, a lighter blur, no dispersion and a quieter rim;

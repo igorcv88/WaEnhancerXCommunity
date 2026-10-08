@@ -5,7 +5,6 @@ import android.content.Context;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
-import android.os.PowerManager;
 import android.provider.Settings;
 
 /**
@@ -110,22 +109,13 @@ public final class GlassRenderer {
         view.setBackground(background(spec, cornerRadiusDp * density, density));
     }
 
-    /**
-     * Whether this device should get real blur.
-     *
-     * <p>Blur is a per-frame readback of everything behind the surface. Low-RAM devices and
-     * devices in power-save pay for that in dropped frames, so they get the opaque fallback
-     * instead — {@link GlassSpec} already raises the fill opacity to compensate.</p>
-     */
+    /** Intra-window optics capability. Battery Saver is not an API availability signal. */
     public static boolean blurSupported(Context context) {
         if (context == null) return false;
         try {
             ActivityManager activity =
                     (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
             if (activity != null && activity.isLowRamDevice()) return false;
-
-            PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-            if (power != null && power.isPowerSaveMode()) return false;
         } catch (Throwable ignored) {
             // A host that denies these services is not a reason to refuse blur outright.
         }

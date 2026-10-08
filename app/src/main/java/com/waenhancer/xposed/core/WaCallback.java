@@ -57,6 +57,10 @@ public class WaCallback implements Application.ActivityLifecycleCallbacks {
 
     @Override
     public void onActivityDestroyed(@NonNull Activity activity) {
+        ActivityStateRegistry.markDestroyed(activity);
+        triggerActivityState(activity, WppCore.ActivityChangeState.ChangeType.DESTROYED);
+        ActivityStateRegistry.remove(activity);
+        if (WppCore.mCurrentActivity == activity) WppCore.mCurrentActivity = null;
         ActivityStateRegistry.cleanup();
     }
 }

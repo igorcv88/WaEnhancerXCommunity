@@ -16,6 +16,9 @@ import android.widget.FrameLayout;
 import com.waenhancer.theme.GlassMaterialDrawable;
 import com.waenhancer.theme.GlassPane;
 import com.waenhancer.theme.GlassSpec;
+import com.waenhancer.theme.WallpaperUnderlay;
+import com.waenhancer.theme.ComposerGeometry;
+import com.waenhancer.theme.GlassTrace;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
@@ -58,20 +61,25 @@ final class ConversationGlassPanes {
         boolean toolbarsEnabled();
         boolean composerEnabled();
         /** The material for an enabled surface; the panes ask on every draw. */
-        GlassSpec material();
+        GlassSpec material(View root);
         void report(String key, String message);
     }
 
     /** One conversation window: what was changed and what to put back. */
     private static final class Screen {
         WeakReference<ViewGroup> holder = new WeakReference<>(null);
+        WeakReference<ViewGroup> headerSource = new WeakReference<>(null);
         WeakReference<ViewGroup> coordinator = new WeakReference<>(null);
         WeakReference<ViewGroup> footer = new WeakReference<>(null);
         WeakReference<ViewGroup> listHost = new WeakReference<>(null);
         WeakReference<AbsListView> list = new WeakReference<>(null);
         WeakReference<View> wallpaper = new WeakReference<>(null);
 
-        GlassPane band, capsule, composer;
+        WallpaperUnderlay band;
+        GlassPane capsule, composer;
+        WeakReference<View> root = new WeakReference<>(null);
+        boolean suspended;
+        String geometryKey;
         View.OnLayoutChangeListener holderListener, footerListener;
 
         // Originals, recorded once when first changed.
@@ -124,6 +132,14 @@ final class ConversationGlassPanes {
         }
     }
 
+    void setSuspended(View root, boolean suspended) {
+        Screen screen = screens.get(root);
+        if (screen == null) return;
+        screen.suspended = suspended;
+        if (screen.capsule != null) screen.capsule.setSuspended(suspended);
+        if (screen.composer != null) screen.composer.setSuspended(suspended);
+    }
+
     /** Called on every global layout of a window; cheap when nothing changed. */
     void sync(View root) {
         if (root == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
@@ -136,6 +152,7 @@ final class ConversationGlassPanes {
             if (screen == null) {
                 if (holder == null && footer == null) return;
                 screen = new Screen();
+                screen.root = new WeakReference<>(root);
                 screens.put(root, screen);
             }
             screen.coordinator = new WeakReference<>(find(root, "coordinator"));
@@ -144,6 +161,12 @@ final class ConversationGlassPanes {
 
             ViewGroup listHost = footer != null && footer.getParent() instanceof ViewGroup
                     ? listHost((ViewGroup) footer.getParent()) : null;
+
+            screen.headerSource = new WeakReference<>(listHost);
+            if (screen.listHost.get() == null && listHost != null) {
+                screen.listHost = new WeakReference<>(listHost);
+                screen.list = new WeakReference<>(firstList(listHost));
+            }
 
             boolean wantHeader = host.toolbarsEnabled() && holder instanceof FrameLayout
                     && screen.coordinator.get() != null;
@@ -242,17 +265,26 @@ final class ConversationGlassPanes {
                 toolbar.setForeground(null);
             }
         }
-        // Wallpaper-only band behind the capsule: rows scrolling under it would flicker.
+        // Plain wallpaper continuity; only the capsule owns an optical contour.
         if (screen.band == null || screen.band.getParent() != holder) {
-            screen.band = newPane(holder, null, wallpaperOf(screen));
+            screen.band = new WallpaperUnderlay(holder.getContext());
             holder.addView(screen.band, 0, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         }
+        screen.band.setWallpaper(screen.wallpaper.get());
+        View source = screen.headerSource.get();
         if (screen.capsule == null || screen.capsule.getParent() != holder) {
-            screen.capsule = newPane(holder, screen.coordinator.get(), wallpaperOf(screen));
+            screen.capsule = newPane(screen, holder, source, wallpaperOf(screen));
+            screen.capsule.setSourceResolver(() -> {
+                View root = screen.root.get();
+                ViewGroup footer = root == null ? null : find(root, "footer");
+                return footer != null && footer.getParent() instanceof ViewGroup
+                        ? listHost((ViewGroup) footer.getParent()) : null;
+            });
             holder.addView(screen.capsule, 1, new FrameLayout.LayoutParams(0, 0));
         }
-        screen.capsule.setSource(screen.coordinator.get());
+        screen.capsule.setSource(source);
+        screen.capsule.setUnderlay(wallpaperOf(screen));
         place(screen.capsule, l, t, r, b, (b - t) / 2f);
     }
 
@@ -261,7 +293,8 @@ final class ConversationGlassPanes {
         ViewGroup holder = screen.holder.get();
         removePane(screen.band);
         removePane(screen.capsule);
-        screen.band = screen.capsule = null;
+        screen.band = null;
+        screen.capsule = null;
         if (holder != null) {
             if (screen.holderListener != null) holder.removeOnLayoutChangeListener(screen.holderListener);
             if (screen.holderBottomMargin != null
@@ -336,22 +369,37 @@ final class ConversationGlassPanes {
         int pad = Math.round(COMPOSE_PAD_DP * d);
         // The send disc's own screen margin; the pill's left edge mirrors it or the corner clips.
         int sideFloor = 0;
+        Rect actionRect = null;
         View send = findById(footer, "conversation_entry_action_button");
         Rect inputRect = new Rect(rect);
         if (send != null && send.getWidth() > 0 && rectIn(footer, send)) {
-            sideFloor = Math.max(0, footer.getWidth() - rect.right);
+            actionRect = new Rect(rect);
+            sideFloor = Math.max(0, Math.min(rect.left, footer.getWidth() - rect.right));
         }
         int l = Math.max(sideFloor, inputRect.left - pad);
         int t = Math.max(0, inputRect.top - pad);
         int r = Math.min(footer.getWidth(), inputRect.right + pad);
         int b = Math.min(footer.getHeight(), inputRect.bottom + pad);
+        if (actionRect != null && send.isShown()) {
+            int[] edges = ComposerGeometry.separate(l, r, t, b, actionRect.left, actionRect.right,
+                    actionRect.top, actionRect.bottom, Math.max(1, Math.round(2f * d)));
+            l = edges[0]; r = edges[1];
+        }
         if (r <= l || b <= t) return;
+        String geometryKey = l + ":" + t + ":" + r + ":" + b + ":" + actionRect;
+        if (!geometryKey.equals(screen.geometryKey)) {
+            screen.geometryKey = geometryKey;
+            GlassTrace.event(screen.root.get(), screen.composer, screen.listHost.get(), "GEOMETRY",
+                    "composer-action-gap", "capsule=" + l + "," + t + "," + r + "," + b
+                    + " action=" + actionRect);
+        }
         if (screen.composer == null || screen.composer.getParent() != footer) {
-            screen.composer = newPane(footer, screen.listHost.get(), wallpaperOf(screen));
+            screen.composer = newPane(screen, footer, screen.listHost.get(), wallpaperOf(screen));
             // Index 0: WhatsApp's icons and the text field keep painting on top.
             footer.addView(screen.composer, 0, new FrameLayout.LayoutParams(0, 0));
         }
         screen.composer.setSource(screen.listHost.get());
+        screen.composer.setUnderlay(wallpaperOf(screen));
         place(screen.composer, l, t, r, b, Math.min((b - t) / 2f, COMPOSE_MAX_RADIUS_DP * d));
     }
 
@@ -448,12 +496,14 @@ final class ConversationGlassPanes {
 
     // ── Helpers ───────────────────────────────────────────────────────────────────
 
-    private GlassPane newPane(ViewGroup parent, View source, List<View> underlay) {
+    private GlassPane newPane(Screen screen, ViewGroup parent, View source, List<View> underlay) {
         GlassPane pane = new GlassPane(parent.getContext());
+        pane.setRequiresLiveContent(true);
         pane.setSource(source);
         pane.setUnderlay(underlay);
-        Supplier<GlassSpec> material = host::material;
+        Supplier<GlassSpec> material = () -> host.material(screen.root.get());
         pane.setSpec(material);
+        pane.setSuspended(screen.suspended);
         // Decoration only; TalkBack must keep reading WhatsApp's own controls.
         pane.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         return pane;
@@ -473,7 +523,7 @@ final class ConversationGlassPanes {
         pane.setLayoutParams(lp);
     }
 
-    private static void removePane(GlassPane pane) {
+    private static void removePane(View pane) {
         if (pane != null && pane.getParent() instanceof ViewGroup) ((ViewGroup) pane.getParent()).removeView(pane);
     }
 

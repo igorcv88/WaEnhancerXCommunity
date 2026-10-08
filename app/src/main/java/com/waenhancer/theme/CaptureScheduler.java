@@ -61,6 +61,18 @@ public final class CaptureScheduler {
      * @param dropped      the system dropped the last recording
      */
     public int decide(long nowMs, boolean damageDriven, boolean dropped) {
+        return decide(nowMs, damageDriven, dropped, false);
+    }
+
+    /** A permitted retry may bypass the rest gap, without declaring lost pixels or requesting a redraw. */
+    public int decide(long nowMs, boolean damageDriven, boolean dropped, boolean retryDue) {
+        if (retryDue && !dropped) {
+            lastCaptureMs = nowMs;
+            trailingPending = false;
+            if (damageDriven) return CAPTURE;
+            delayMs = IDLE_INTERVAL_MS;
+            return CAPTURE | INVALIDATE_LATER;
+        }
         if (!damageDriven) {
             if (dropped) lastActivityMs = nowMs;
             boolean moving = moving(nowMs);

@@ -56,12 +56,14 @@ final class LiveBackdrop {
     private int effectWidth = -1, effectHeight = -1;
     private float effectRadius = -1f;
     private boolean hasContent;
+    private RecordingState recordingState = RecordingState.UNINITIALIZED;
     private int contentWidth, contentHeight;
     /** Corrected lens, built when {@link GlassOptics#corrected} is on. */
     private LensEffect corrected;
     /** Which path installed {@code glassNode}'s effect, so a switch rebuilds it. */
     private boolean correctedInstalled;
     private String loggedStatus;
+    private long captureGeneration, effectRebuilds;
 
     /**
      * The geometry of one recording: input size (surface plus margin), node size, and the
@@ -122,12 +124,16 @@ final class LiveBackdrop {
 
     /** Whether a live recording is ready to draw. */
     boolean hasRecording() {
-        return hasContent && glassNode.hasDisplayList();
+        return hasContent && glassNode.hasDisplayList() && node.hasDisplayList();
     }
 
     /** True when a recording existed and the system dropped it (an Activity stop drops them all). */
     boolean wasDropped() {
         return hasContent && (!glassNode.hasDisplayList() || !node.hasDisplayList());
+    }
+
+    RecordingState recordingState() {
+        return wasDropped() ? RecordingState.DROPPED : recordingState;
     }
 
     private boolean needsFreshCapture() {
@@ -146,6 +152,9 @@ final class LiveBackdrop {
             return false;
         }
         if (!available() || width <= 0 || height <= 0 || capturing) return false;
+        // Publish only after both display lists and the effect are complete.
+        hasContent = false;
+        recordingState = RecordingState.TEMPORARILY_UNAVAILABLE;
         GlassOptics optics = GlassOptics.current();
         if (optics.corrected && !LensEffect.isBroken()) {
             return captureCorrected(width, height, radiusPx, density, spec, painter, optics);
@@ -191,6 +200,8 @@ final class LiveBackdrop {
         contentWidth = width;
         contentHeight = height;
         hasContent = true;
+        recordingState = RecordingState.RECORDED;
+        captureGeneration++;
         return true;
     }
 
@@ -236,6 +247,7 @@ final class LiveBackdrop {
         }
         if (changed || !correctedInstalled) {
             glassNode.setRenderEffect(corrected.effect());
+            effectRebuilds++;
             correctedInstalled = true;
             effectSpec = null;
             String status = corrected.status();
@@ -248,6 +260,8 @@ final class LiveBackdrop {
         contentHeight = height;
         contentPadding = padding;
         hasContent = true;
+        recordingState = RecordingState.RECORDED;
+        captureGeneration++;
         return true;
     }
 
@@ -261,6 +275,7 @@ final class LiveBackdrop {
             if (lens == null) lens = LiquidLens.newMaterialShader();
             LiquidLens.updateMaterialUniforms(lens, spec, width, height, radius, density);
             glassNode.setRenderEffect(RenderEffect.createRuntimeShaderEffect(lens, "content"));
+            effectRebuilds++;
         } catch (RuntimeException | LinkageError error) {
             lensFailed = true;
             lens = null;
@@ -285,9 +300,23 @@ final class LiveBackdrop {
         return true;
     }
 
+    String status() {
+        return "recordingState=" + recordingState() + " captureAvailable=" + available() + " hasContent=" + hasContent
+                + " hasDisplayList=" + (node.hasDisplayList() && glassNode.hasDisplayList())
+                + " shaderStatus=" + (lensFailed ? "disabled" : correctedInstalled ? "v2" : "legacy")
+                + " captureGeneration=" + captureGeneration + " rebuilds=" + effectRebuilds
+                + " materialRevision=" + GlassOptics.revision()
+                + " captureSize=" + contentWidth + "x" + contentHeight;
+    }
+
     void release() {
+        release(RecordingState.INTENTIONALLY_RELEASED);
+    }
+
+    void release(RecordingState reason) {
         node.discardDisplayList();
         glassNode.discardDisplayList();
         hasContent = false;
+        recordingState = reason;
     }
 }
