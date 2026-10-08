@@ -73,9 +73,9 @@ public class LiquidGlassActivity extends AppCompatActivity {
         }
 
         addCaption("New surface switches take effect when you return to WhatsApp. If a surface "
-                + "is missing in your WhatsApp version, it is left unchanged. Android 13+ supports "
-                + "refraction; older devices use a translucent rim. Menus use the last background "
-                + "snapshot from the screen beneath them.");
+                + "is missing in your WhatsApp version, it is left unchanged. In a chat, the header "
+                + "and the message input are live glass on Android 13+: messages scroll behind them "
+                + "and are refracted. Other surfaces use a static translucent material for now.");
 
         root.addView(controls, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -88,10 +88,10 @@ public class LiquidGlassActivity extends AppCompatActivity {
 
     private String surfaceSummary(LiquidGlassSettings.Surface surface) {
         return switch (surface) {
-            case TOOLBARS -> "Chat and page headers, including the toolbar shown when selecting messages.";
+            case TOOLBARS -> "Chat header as live glass, with messages scrolling behind it. Other page headers use the static material.";
             case SEARCH -> "Search capsules and conversation filter controls.";
             case FAB -> "New chat, new broadcast and other named floating buttons.";
-            case COMPOSER -> "The input capsule and send/record control. Keyboard and message layout stay native.";
+            case COMPOSER -> "The message input as live glass, with messages scrolling behind it. The keyboard stays native.";
             case QUOTES -> "Reply previews, quoted message frames and voice-note drafts.";
             case BUBBLES -> "Keeps native bubble shape and padding. Requires a compatible bubble resolver; use a wallpaper for visible detail.";
             case CARDS -> "Named information and action cards. Lists keep their native scrolling and row layout.";
