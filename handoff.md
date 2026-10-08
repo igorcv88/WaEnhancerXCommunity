@@ -361,3 +361,37 @@ Contrast reach, by foreground, within the 0.85 cap (JVM arithmetic, not pixels):
 - The dark-theme hint `#8696A0` falls to about 1.5:1 where the glass is at the white-content limit. WhatsApp's own opaque bar gives it about 4.6:1. Protecting the hint would need near-opaque glass, so it is recorded, not guaranteed.
 
 **Validation.** 387 JVM tests, 0 failures. `tools/agsl_check.py` passes both shaders. `assembleWhatsappDebug` succeeded. Still no device run: first check that the V2 shader compiles on the device and that every surface captures the correct texture without displacement, then calibrate.
+
+## Device feedback after PR #73: flicker, double search rim — 2026-10-08
+
+PR #73 merged as `b471a25`. Branch `claude/new-session-l41wpa` restarted from that master.
+
+**User report (S25 Ultra, all improvements and Clear profile on).**
+- The glass switches between live and fallback on every page change, tap and scroll. It never settles.
+- The look is "meia boca" (mediocre).
+- The home header and search are static pills with nothing passing behind them.
+- The Element Inspector records nothing.
+- The first report (no change at all) was taken with the corrected renderer still off.
+
+**Cause of the flicker (code reading; not confirmed by a log).** #73's `LiveBudget` charged `(w+2p)(h+2p)×3` per surface against 3 × window area, far less room than the old visible-area budget: an image bubble costs ~1.7M of ~7.6M at FHD+. The session also re-admitted every surface top to bottom on each capture, so any layout change moved the cut-off. Surfaces near it alternated between the live glass and the 58% fallback.
+
+**Fix.**
+- Admission is sticky (`admitDrawable`): a live surface keeps its slot while visible, and only new surfaces are refused. Past 1.25 × capacity (a growing pane), only the newest admission is evicted.
+- Slots are released when a surface leaves the screen or its binding is restored (weak keys as a backstop).
+- Capacity raised to 4 × window area.
+- Tests: `LiveBudgetStickyTest`.
+
+**Double rim on the home search field.** `my_search_bar` contains `search_bar`, and both map to SEARCH, so two glass pills were nested. `Session.bind` now keeps one pane per surface, and the innermost view wins.
+
+**Home list under the header/search: not implemented, and design input needed.** WaThemer (`d39b293`, `GlassCards.syncListCard`/`syncListExtension`) does not scroll home rows behind its header either. It puts the list in a glass card below the header and clips the rows to that card. Making rows pass behind the home chrome is new work that needs the home view hierarchy. The Inspector arms only when WhatsApp starts after it is enabled (`InspectorFeature.doHook`), so the likely fix for "nothing happens" is: enable it, then restart WhatsApp (the module's own "Restart WhatsApp" menu entry), then tap.
+
+**Assessment of the screenshots (device, no measurement).**
+- Clear profile on: the conversation header carries almost no tint and a light blur, so message text stays readable through it. That is what the profile does, and it looks more like no glass than iOS. Compare with Clear off.
+- Home header and search: with nothing behind them, any material reads as a flat dark capsule.
+- The floating bar and popup menus look as intended.
+
+**Validation.**
+- 390 JVM tests, 0 failures.
+- `assembleWhatsappDebug` OK.
+- `agsl_check` OK.
+- No device run.
