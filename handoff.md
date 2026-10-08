@@ -440,3 +440,17 @@ Validation:
 - Partial changed-pipeline/API checks also passed; `git diff --check` is clean. Shader source comparison against `da95e7a` is unchanged. No workflow dispatch or merge.
 
 Remaining acceptance: install the appropriate signed test build on the S25 Ultra and run the focused navigation, keyboard/recording, Battery Saver, dropped-recording, late-source and mixed-budget scenarios in [docs/GLASS_RECOVERY_ACCEPTANCE.md](docs/GLASS_RECOVERY_ACCEPTANCE.md). Measure fallback frames and physical GPU/frame time rather than infer them from logical pass counts. Do not expand the architecture without new device evidence.
+
+## Conversation blank with Headers on (post-#75) — 2026-10-08
+
+Branch: `ccr-0fefe1d4-wo0f7v` (ready-for-review PR #76), based on `master@8f11ac5` (PR #75 merged). User device report with screenshots: flicker is gone, but with Liquid Glass *Headers* (TOOLBARS) on, the conversation shows only the header capsule over an empty dark screen (no messages, no composer); the user reports the same "conversations don't load" on home. Headers off: normal and near-correct.
+
+Root cause (code reading, high confidence; no device log): #75 replaced the header band — previously a `GlassPane`, i.e. a childless `FrameLayout` — with `WallpaperUnderlay extends View`, added to `search_fragment_and_toolbar_holder` as MATCH_PARENT. A wrap-content `FrameLayout` measures children under AT_MOST and includes MATCH_PARENT children in its own size. `View.onMeasure` returns the full AT_MOST offer (a childless `FrameLayout` returns 0), so the holder grew to the whole remaining window. With `translationZ = 1` it covered the coordinator, and `syncListPadding` set the list's top padding to that height, pushing every message off-screen. Any screen whose holder `ConversationGlassPanes.sync` picks up (it requires `coordinator`, not the footer) is affected, which matches the home report.
+
+Fix: `WallpaperUnderlay.onMeasure` takes size only under EXACTLY, otherwise 0, like the old band. The holder's second pass measures its MATCH_PARENT children exactly to its final size, so the band still fills the header. Test: `WallpaperUnderlayMeasureTest`.
+
+Validation: `./gradlew :app:testWhatsappDebugUnitTest :app:assembleWhatsappDebug` with JDK 21 and Android SDK 36 installed in-session: 425 tests, 58 suites, 0 failures; debug APK built. `git diff --check` clean. No device run; no workflow dispatch.
+
+Device evidence (user logcat via Termux, 2026-10-08 18:07, build without this fix): `requestLayout() ... MeasuringFrameLayout{... 0,0-1440,3160 #app:id/search_fragment_and_toolbar_holder}` — the header holder measured 3160 px, the full window, while the capsule pane sat at 18,0-1422,174. This confirms the root cause. The conversation capsule pane logged `captureContent=SOURCE_UNAVAILABLE` / `required-source-unavailable` with `sourceId=none` throughout: `listHost()` only accepts children with height > 0, and the squeezed list host had none. The fix should resolve both. No crash, no `WaEnhancerX/GlassPane` warning.
+
+Next: install over the current build, enable Headers, open a chat and the home screen; confirm the list renders, the first message rests below the capsule and the band shows the wallpaper. If home still shows no rows, collect `[LiquidGlass/App]` / `WaEnhancerX/GlassState` logs; the home holder is then a separate path.
