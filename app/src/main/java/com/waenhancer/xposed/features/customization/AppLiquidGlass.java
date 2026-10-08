@@ -21,6 +21,7 @@ import com.waenhancer.config.LiquidGlassSettings.Surface;
 import com.waenhancer.theme.CaptureScheduler;
 import com.waenhancer.theme.GlassMaterialDrawable;
 import com.waenhancer.theme.GlassOptics;
+import com.waenhancer.theme.LiveBudget;
 import com.waenhancer.theme.GlassRenderer;
 import com.waenhancer.theme.GlassSpec;
 import com.waenhancer.theme.GlassSurface;
@@ -333,6 +334,11 @@ public final class AppLiquidGlass extends Feature {
         private final CaptureScheduler scheduler = new CaptureScheduler();
         private boolean loggedCaptureFailure;
         private String loggedBudget;
+        private final ArrayList<View> targets = new ArrayList<>();
+        private final ArrayList<View> visible = new ArrayList<>();
+        private final android.graphics.Rect visibleRect = new android.graphics.Rect();
+        private long[] order = new long[16];
+        private long[] areas = new long[16];
 
         Session(View root) {
             this.root = new WeakReference<>(root);
@@ -402,40 +408,55 @@ public final class AppLiquidGlass extends Feature {
                 }
                 boolean invalidateNow = (decision & CaptureScheduler.INVALIDATE_NOW) != 0;
                 boolean invalidateLater = (decision & CaptureScheduler.INVALIDATE_LATER) != 0;
-                List<View> visible = new ArrayList<>();
-                List<int[]> rects = new ArrayList<>();
-                android.graphics.Rect r = new android.graphics.Rect();
-                for (Map.Entry<View, Binding> entry : new ArrayList<>(bindings.entrySet())) {
-                    View target = entry.getKey();
-                    if (target == null) continue;
+                // Scratch storage reused across frames: this runs on every frame while scrolling.
+                targets.clear();
+                for (View target : bindings.keySet()) if (target != null) targets.add(target);
+                int count = 0;
+                if (order.length < targets.size()) {
+                    order = new long[targets.size() * 2];
+                    areas = new long[targets.size() * 2];
+                }
+                visible.clear();
+                for (View target : targets) {
+                    Binding binding = bindings.get(target);
+                    if (binding == null) continue;
                     // Off screen or hidden: nothing to show, so no recording either.
-                    if (!target.isShown() || !target.getGlobalVisibleRect(r)) {
-                        entry.getValue().glass.releaseLive();
+                    if (!target.isShown() || !target.getGlobalVisibleRect(visibleRect)) {
+                        binding.glass.releaseLive();
                         continue;
                     }
+                    // Top to bottom, then left to right; the index rides in the low bits.
+                    long top = Math.max(-(1L << 19), Math.min((1L << 19) - 1, visibleRect.top)) + (1L << 19);
+                    long left = Math.max(0L, Math.min((1L << 20) - 1, visibleRect.left));
+                    areas[count] = (long) visibleRect.width() * visibleRect.height();
+                    order[count] = (top << 40) | (left << 20) | count;
                     visible.add(target);
-                    rects.add(new int[]{r.top, r.left, r.width() * r.height()});
+                    count++;
                 }
-                Integer[] order = new Integer[visible.size()];
-                for (int i = 0; i < order.length; i++) order[i] = i;
-                java.util.Arrays.sort(order, (a, b) -> rects.get(a)[0] != rects.get(b)[0]
-                        ? Integer.compare(rects.get(a)[0], rects.get(b)[0])
-                        : Integer.compare(rects.get(a)[1], rects.get(b)[1]));
+                java.util.Arrays.sort(order, 0, count);
                 long budget = (long) (MAX_LIVE_AREA_FRACTION * view.getWidth() * view.getHeight());
                 long used = 0;
                 int live = 0;
+                int panes = 0;
+                float density = view.getResources().getDisplayMetrics().density;
+                GlassSpec material = temporal ? resolvedMaterial() : null;
                 if (temporal) {
-                    // One budget per window for all live glass (LG-12): panes record first, every
-                    // frame, so the drawables get what they leave.
-                    used = GlassPane.liveAreaIn(view);
-                    live = GlassPane.liveCountIn(view);
+                    // One budget per window for all live glass (LG-12), in effective pixel-passes:
+                    // panes are admitted first in their own pre-draw, the drawables get the rest.
+                    LiveBudget ledger = LiveBudget.forWindow(view);
+                    budget = ledger.capacity();
+                    used = ledger.paneSpend();
+                    panes = ledger.paneCount();
+                    live = panes;
                 }
-                int panes = live;
-                for (Integer i : order) {
+                for (int k = 0; k < count; k++) {
+                    int i = (int) (order[k] & 0xFFFFF);
                     View target = visible.get(i);
                     Binding binding = bindings.get(target);
                     if (binding == null) continue;
-                    long area = rects.get(i)[2];
+                    long area = temporal && material != null
+                            ? LiveBudget.cost(target.getWidth(), target.getHeight(), material, density, optics)
+                            : areas[i];
                     if (live >= MAX_LIVE_PER_WINDOW || used + area > budget) {
                         binding.glass.releaseLive();
                         continue;
@@ -459,13 +480,16 @@ public final class AppLiquidGlass extends Feature {
                         if (invalidateNow) target.invalidate();
                     }
                 }
+                visible.clear();
+                targets.clear();
                 if (live > 0 && invalidateLater) view.postInvalidateDelayed(scheduler.delayMs());
                 if (temporal) {
                     String budgetLine = panes + " panes, " + (live - panes) + " drawables live";
                     if (!budgetLine.equals(loggedBudget)) {
                         loggedBudget = budgetLine;
                         report("budget-" + budgetLine, "live glass budget: " + budgetLine
-                                + " of " + MAX_LIVE_PER_WINDOW + ", area " + used + "/" + budget + "px");
+                                + " of " + MAX_LIVE_PER_WINDOW + ", cost " + used + "/" + budget
+                                + " px-passes");
                     }
                 }
             } catch (Throwable error) {

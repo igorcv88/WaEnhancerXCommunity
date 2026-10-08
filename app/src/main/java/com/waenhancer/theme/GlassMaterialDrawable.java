@@ -127,12 +127,12 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         if (optics.corrected && optics.geometry) {
             int left = b.left, top = b.top;
             return live.capture(w, h, radius, density, material,
-                    canvas -> BehindRecorder.paintExact(canvas, host, left, top, w, h));
+                    (canvas, padding) -> BehindRecorder.paintExact(canvas, host, left, top, w, h, padding));
         }
         host.getLocationOnScreen(location);
         int x = location[0] + b.left, y = location[1] + b.top;
         return live.capture(w, h, radius, density, material,
-                canvas -> BehindRecorder.paint(canvas, host, x, y, w, h));
+                (canvas, padding) -> BehindRecorder.paint(canvas, host, x, y, w, h));
     }
 
     /**

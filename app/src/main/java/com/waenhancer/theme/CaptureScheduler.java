@@ -10,10 +10,10 @@ package com.waenhancer.theme;
  *
  * <p>Damage-driven (the temporal group on): the decision runs in the window's pre-draw, which only
  * happens when something in the window was invalidated. Every such frame is a capture while there
- * is motion. At rest, frames are captured at most every {@link #REST_MIN_GAP_MS}, and a skipped
- * one leaves a single trailing frame, so the last change is never missed. The scheduler never
- * invalidates on a timer, so a still screen draws nothing and costs nothing. A recording the
- * system dropped is captured at once and redrawn.</p>
+ * is motion. At rest, frames are captured at most every {@link #REST_MIN_GAP_MS}; a frame skipped
+ * for that schedules one trailing invalidation (at most one pending), so the last change is never
+ * missed. There is no periodic heartbeat: after that trailing frame a still screen draws nothing
+ * and costs nothing. A recording the system dropped is captured at once and redrawn.</p>
  *
  * <p>Pure logic, driven by the caller's clock, so it is testable without a device.</p>
  */

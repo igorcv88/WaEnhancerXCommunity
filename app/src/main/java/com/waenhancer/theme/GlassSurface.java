@@ -185,6 +185,8 @@ public final class GlassSurface {
 
     private BackdropSampler sampler;
     private int backdropColor;
+    /** {@link GlassOptics#revision()} the installed lens was built under. */
+    private int opticsRevision = GlassOptics.revision();
     private Float captureRadius;
     private String paintKey;
     private boolean lensed;
@@ -411,6 +413,13 @@ public final class GlassSurface {
                 int wanted = target.getVisibility();
                 if (host.getVisibility() != wanted) host.setVisibility(wanted);
                 if (host.getAlpha() != target.getAlpha()) host.setAlpha(target.getAlpha());
+                // The optics switches changed (published on resume): rebuild the installed lens now
+                // rather than at the next layout or backdrop sample, so an A/B switch reaches the
+                // bar on the first frame like every other surface.
+                if (opticsRevision != GlassOptics.revision()) {
+                    opticsRevision = GlassOptics.revision();
+                    host.post(this::refresh);
+                }
             }
             return true;
         };

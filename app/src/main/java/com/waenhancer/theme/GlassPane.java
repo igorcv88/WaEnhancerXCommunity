@@ -148,6 +148,7 @@ public final class GlassPane extends FrameLayout {
     }
 
     @Override protected void onDetachedFromWindow() {
+        LiveBudget.forWindow(getRootView()).releasePane(this);
         getViewTreeObserver().removeOnPreDrawListener(preDraw);
         getViewTreeObserver().removeOnScrollChangedListener(scrolled);
         LIVE.remove(this);
@@ -185,10 +186,21 @@ public final class GlassPane extends FrameLayout {
             }
             View src = safeSource();
             if (src == null && underlay.isEmpty()) return true;
+            float density = getResources().getDisplayMetrics().density;
+            if (damageDriven) {
+                // One budget per window (LG-12): a pane is admitted like any other live surface.
+                LiveBudget budget = LiveBudget.forWindow(getRootView());
+                if (!budget.admitPane(this, LiveBudget.cost(getWidth(), getHeight(), material, density, optics))) {
+                    if (backdrop.hasRecording()) {
+                        backdrop.release();
+                        invalidate();
+                    }
+                    return true;
+                }
+            }
             boolean exact = optics.corrected && optics.geometry;
-            boolean captured = backdrop.capture(getWidth(), getHeight(), radius(),
-                    getResources().getDisplayMetrics().density, material,
-                    canvas -> exact ? paintExact(canvas, src) : paint(canvas, src));
+            boolean captured = backdrop.capture(getWidth(), getHeight(), radius(), density, material,
+                    (canvas, padding) -> exact ? paintExact(canvas, src) : paint(canvas, src));
             if (captured) {
                 if ((decision & CaptureScheduler.INVALIDATE_NOW) != 0) invalidate();
                 else if ((decision & CaptureScheduler.INVALIDATE_LATER) != 0) postInvalidateDelayed(scheduler.delayMs());
@@ -200,26 +212,6 @@ public final class GlassPane extends FrameLayout {
             }
         }
         return true; // never cancel the host's frame
-    }
-
-    /** Area of the live panes recording in {@code root}'s window, in px; the drawables' budget excludes it. */
-    public static long liveAreaIn(View root) {
-        long area = 0;
-        for (GlassPane pane : LIVE) {
-            if (pane.getRootView() == root && pane.isShown() && pane.backdrop.hasRecording()) {
-                area += (long) pane.getWidth() * pane.getHeight();
-            }
-        }
-        return area;
-    }
-
-    /** How many live panes are recording in {@code root}'s window. */
-    public static int liveCountIn(View root) {
-        int count = 0;
-        for (GlassPane pane : LIVE) {
-            if (pane.getRootView() == root && pane.isShown() && pane.backdrop.hasRecording()) count++;
-        }
-        return count;
     }
 
     private View safeSource() {

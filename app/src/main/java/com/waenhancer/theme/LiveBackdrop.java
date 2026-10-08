@@ -40,8 +40,12 @@ final class LiveBackdrop {
 
     /** Draws the backdrop in host-local pixels, origin at the host's top-left. */
     interface Painter {
-        /** @return false when there was nothing to draw */
-        boolean paint(RecordingCanvas canvas);
+        /**
+         * @param padding the recording's margin around the host, in px: content that far outside
+         *                the host is part of the recording (the blur reads it at the rim)
+         * @return false when there was nothing to draw
+         */
+        boolean paint(RecordingCanvas canvas, int padding);
     }
 
     private final RenderNode node = new RenderNode("WAEX live backdrop");
@@ -162,7 +166,7 @@ final class LiveBackdrop {
         try {
             canvas.scale(1f / DOWNSAMPLE, 1f / DOWNSAMPLE);
             canvas.clipRect(0, 0, width, height);
-            painted = painter.paint(canvas);
+            painted = painter.paint(canvas, 0);
         } finally {
             capturing = false;
             // endRecording must run even if draw() throws, or every later beginRecording throws.
@@ -205,7 +209,7 @@ final class LiveBackdrop {
             canvas.scale(layout.recordScale, layout.recordScale);
             canvas.translate(padding, padding);
             canvas.clipRect(-padding, -padding, width + padding, height + padding);
-            painted = painter.paint(canvas);
+            painted = painter.paint(canvas, padding);
         } finally {
             capturing = false;
             node.endRecording();
