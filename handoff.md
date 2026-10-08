@@ -165,3 +165,19 @@ Reported, not fixed (need product decisions):
 - The source scan only sees literal keys; constant/variable keys are covered by targeted tests (Glass, bottom bar, custom versions).
 
 Next device check: install over the current build without clearing data; enable only Toolbars and Composer, force-stop WhatsApp, reopen. If both render glass, the bridge was the global blocker; then evaluate per-surface discovery (Bubbles DexKit resolver, Panels Dialog/PopupWindow hooks, GlassSurfaceCatalog IDs on 2.26.33.76). Also verify Ghost/DND tiles and home-menu toggles now affect behavior, the contact-online tile toggles `showonline`, and root call recording uses root.
+
+## Liquid Glass startup crash — 2026-10-08
+
+PR #68 merged as `7d62edc`. Branch `ccr-dd7125c8-r29snt` was restarted from that master for this follow-up.
+
+User report (device, after updating to a build containing #68): WhatsApp opens on the last conversation, header/quotes/bubbles show the no-optics fallback material for about one second, then the process dies. The user's screenshot confirms the fallback drawing on toolbar, quotes and bubbles before the crash. No logcat/tombstone was supplied yet.
+
+Diagnosis (from code, not yet confirmed by a log): #68 made the surfaces reach the hook for the first time, so #64's app-surface optics path ran on a device for the first time. `SharedGlassBackdrop` recorded the window into a `RenderNode`; `GlassMaterialDrawable` drew that node inside each bound view's background. On a hardware canvas `View.drawBackground` records the background into the view's cached `mBackgroundRenderNode`, so the window recording references a node that draws the material, which draws the recording: a display-list cycle. HWUI recurses on the RenderThread and crashes natively. The drawChild capture hook cannot prevent this (background nodes do not go through drawChild), and Java try/catch cannot contain it. Timing matches: fallback before the first capture, crash when the first optical frame closes the cycle. The floating bar uses `GlassSurface`, a separate pipeline, which is why it never crashed.
+
+Fix: remove the GPU `RenderNode` capture and its optical branch. App-surface glass now samples the existing software bitmap snapshot (≤400k px, ≤0.35 scale, ≥100 ms between captures), which holds pixels, not references, so no cycle can form. A child that throws during capture (for example a hardware bitmap that a software canvas cannot draw) is now skipped and logged instead of aborting the whole capture. Invariant added to `ARCHITECTURE.md`.
+
+Trade-offs: the backdrop updates at most every 100 ms and at reduced resolution, so glass can lag behind fast scrolling; software capture runs on the UI thread (cost not measured on a device). The ripple capture guard now never triggers (hardware canvases only) and is retained as harmless.
+
+Validation: `:app:testWhatsappDebugUnitTest` 338 tests, 0 failures; `:app:assembleWhatsappDebug` succeeded. No device test; the cycle hypothesis is unconfirmed until a crash log or a passing device run.
+
+Next: user builds via the manual workflow and installs over the current build. If WhatsApp is still unreachable, turn the surfaces off in the module app (or disable the module for WhatsApp in LSPosed) and collect `adb logcat -b crash` / the LSPosed log. Then repeat the narrow test (Toolbars + Composer only), then the remaining surfaces one at a time. Consider a crash-loop guard that disables app-surface glass after repeated early process deaths.

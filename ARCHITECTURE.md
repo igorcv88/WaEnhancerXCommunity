@@ -55,6 +55,8 @@ The visual stack has three separate responsibilities:
 - `CssSafetyManager` validates user CSS, limits size/image references, provides temporary testing, last-known-good rollback, and safe mode;
 - `GlassSpec`/`GlassRenderer`/`GlassSurface` implement open glass materials. Liquid Glass is applied selectively to surfaces whose backdrop and performance justify it rather than as a global effect.
 
+App-surface glass (`AppLiquidGlass`) samples a software bitmap snapshot of its window (`SharedGlassBackdrop`). It must never draw a `RenderNode` recording of the window inside a bound view's background: the recording references live view nodes, including that view's cached background node, and the resulting display-list cycle crashes HWUI's RenderThread natively, outside any Java error handling.
+
 The floating bottom bar has its own editor and preview but resolves shared glass material through the same rendering model. Bottom sheets can opt into glass through the shared dialog helper.
 
 ## Deleted data and backups

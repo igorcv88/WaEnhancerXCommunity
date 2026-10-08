@@ -202,10 +202,12 @@ public final class AppLiquidGlass extends Feature {
                         canvas.translate(-child.getScrollX(), -child.getScrollY());
                         child.draw(canvas);
                     } catch (RuntimeException | LinkageError error) {
-                        // Xposed otherwise swallows callback exceptions and executes the native
-                        // cached drawChild, which would reintroduce recursive display lists.
-                        param.setThrowable(error);
-                        return;
+                        // Capture is software-only, so dropping one child (for example a hardware
+                        // bitmap a Canvas(Bitmap) cannot draw) only leaves a gap in a blurred
+                        // backdrop. setResult below keeps the native drawChild from running.
+                        skippedChildren++;
+                        report("capture-child-" + child.getClass().getName(),
+                                "capture skipped " + child.getClass().getName() + ": " + error);
                     } finally {
                         canvas.restoreToCount(save);
                         captureNanos += System.nanoTime() - start;

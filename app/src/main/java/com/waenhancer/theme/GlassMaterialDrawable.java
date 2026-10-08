@@ -13,8 +13,6 @@ import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
 import android.graphics.RuntimeShader;
-import android.graphics.RenderNode;
-import android.graphics.RenderEffect;
 import android.os.SystemClock;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
@@ -45,8 +43,6 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     private float materialRadius, materialDensity;
     private boolean compilationFailed;
     private final GlassRenderPolicy.Retry samplingRetry = new GlassRenderPolicy.Retry();
-    private RenderNode opticalNode;
-    private RenderEffect opticalEffect;
     private int alpha = 255;
 
     public GlassMaterialDrawable(View owner, Drawable original,
@@ -86,7 +82,6 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
             materialRadius = radius; materialDensity = density;
             // This drawable never uses the BlurView/RenderScript backend modeled by resolveFor.
             fallback = GlassRenderer.background(material.withoutOptics(), radius, density);
-            opticalEffect = null;
         }
         if (Build.VERSION.SDK_INT >= 33 && !compilationFailed && (material.lensStrength > 0f && Build.VERSION.SDK_INT >= 33)
                 && samplingRetry.ready(SystemClock.uptimeMillis())) {
@@ -100,7 +95,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
             if (lens != null && changed) {
                 try { LiquidLens.updateMaterialUniforms(lens, material, b.width(), b.height(), radius, density); }
                 catch (RuntimeException | LinkageError transientError) {
-                    lens = null; opticalEffect = null; samplingRetry.failure(SystemClock.uptimeMillis());
+                    lens = null; samplingRetry.failure(SystemClock.uptimeMillis());
                 }
             }
         }
@@ -113,48 +108,30 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         try {
             Bitmap bitmap = provider.bitmap();
             boolean optical = lens != null && (material.lensStrength > 0f && Build.VERSION.SDK_INT >= 33) && canvas.isHardwareAccelerated()
-                    && (provider.gpu() != null || bitmap != null)
+                    && bitmap != null
                     && samplingRetry.ready(SystemClock.uptimeMillis())
                     && provider.allowShader(this, b.width(), b.height(), material, nativeMask);
             if (optical) {
                 try {
                     view.getLocationOnScreen(position);
-                    if (provider.gpu() != null && Build.VERSION.SDK_INT >= 33) {
-                        if (opticalNode == null) {
-                            opticalNode = new RenderNode("WA glass material");
-                            opticalNode.setClipToBounds(true);
-                        }
-                        opticalNode.setPosition(0, 0, b.width(), b.height());
-                        Canvas recording = opticalNode.beginRecording(b.width(), b.height());
-                        try {
-                            recording.translate(provider.screenX() - position[0] - b.left,
-                                    provider.screenY() - position[1] - b.top);
-                            recording.drawRenderNode(provider.gpu());
-                        } finally { opticalNode.endRecording(); }
-                        if (opticalEffect == null) opticalEffect = RenderEffect.createRuntimeShaderEffect(lens, "content");
-                        opticalNode.setRenderEffect(opticalEffect);
-                        opticalNode.setAlpha(alpha / 255f);
-                        canvas.drawRenderNode(opticalNode);
-                    } else {
-                        if (sampledBitmap != bitmap) {
-                            sampledBitmap = bitmap;
-                            input = new BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
-                        }
-                        matrix.setScale(provider.scaleX(), provider.scaleY());
-                        matrix.postTranslate(provider.screenX() - position[0] - b.left,
-                                provider.screenY() - position[1] - b.top);
-                        input.setLocalMatrix(matrix);
-                        lens.setInputShader("content", input);
-                        opticalEffect = null;
-                        paint.setShader(lens); paint.setAlpha(alpha);
-                        canvas.drawRect(0, 0, b.width(), b.height(), paint);
+                    // Sample the backdrop's pixel copy. Never draw its recording here: see
+                    // SharedGlassBackdrop for the display list cycle that would create.
+                    if (sampledBitmap != bitmap) {
+                        sampledBitmap = bitmap;
+                        input = new BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
                     }
+                    matrix.setScale(provider.scaleX(), provider.scaleY());
+                    matrix.postTranslate(provider.screenX() - position[0] - b.left,
+                            provider.screenY() - position[1] - b.top);
+                    input.setLocalMatrix(matrix);
+                    lens.setInputShader("content", input);
+                    paint.setShader(lens); paint.setAlpha(alpha);
+                    canvas.drawRect(0, 0, b.width(), b.height(), paint);
                     samplingRetry.success();
                 } catch (RuntimeException | LinkageError error) {
-                    // Input/matrix/recording errors are recoverable; the program may still be valid.
+                    // Input/matrix/sampling errors are recoverable; the program may still be valid.
                     samplingRetry.failure(SystemClock.uptimeMillis());
-                    sampledBitmap = null; input = null; opticalEffect = null;
-                    if (opticalNode != null) opticalNode.discardDisplayList();
+                    sampledBitmap = null; input = null;
                     optical = false;
                 }
             }
