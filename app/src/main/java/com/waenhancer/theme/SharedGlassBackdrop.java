@@ -41,6 +41,8 @@ public final class SharedGlassBackdrop {
     private long powerChecked;
     private boolean conserving;
     private boolean pending;
+    private boolean trailingScheduled;
+    private boolean trailingFrame;
     private boolean released;
     private int screenX, screenY, width, height;
     private WeakReference<Window> measuredWindow = new WeakReference<>(null);
@@ -113,7 +115,7 @@ public final class SharedGlassBackdrop {
         try { window.addOnFrameMetricsAvailableListener(metricsListener, new Handler(Looper.getMainLooper())); }
         catch (RuntimeException unavailable) { metricsListener = null; }
     }
-    /** Only schedules bootstrap/fallback; primary GPU capture runs in pre-draw for this frame. */
+    /** Only schedules bootstrap/fallback; regular capture runs in pre-draw for this frame. */
     public void request() {
         View view = root.get();
         if (!captureAvailable || view == null || pending || released || isCapturing() || !view.isAttachedToWindow()) return;
@@ -145,8 +147,14 @@ public final class SharedGlassBackdrop {
         // list cycle that crashes HWUI's RenderThread natively, beyond any Java catch. A bitmap is
         // a pixel copy with no references, so the material cannot reach itself.
         long now = SystemClock.uptimeMillis();
-        // Never increase the frequency of whole-tree software draw to match the display.
-        if (!softwareRetry.ready(now) || now - lastCapture < FRAME_INTERVAL_MS) return;
+        // Never increase the frequency of whole-tree software draw to match the display. A frame
+        // inside the interval still owes the glass one later snapshot, or an idle UI keeps
+        // sampling content that changed just after the last capture.
+        if (!softwareRetry.ready(now)) return;
+        if (now - lastCapture < FRAME_INTERVAL_MS) {
+            scheduleTrailing(view, FRAME_INTERVAL_MS - (now - lastCapture));
+            return;
+        }
         float scale = Math.min(.35f, (float) Math.sqrt(MAX_PIXELS / ((double) w * h)));
         int bw = Math.max(1, Math.round(w * scale)), bh = Math.max(1, Math.round(h * scale));
         try {
@@ -164,6 +172,23 @@ public final class SharedGlassBackdrop {
             bitmap = null; recordingCanvas = null; softwareRetry.failure(now);
             if (softwareRetry.failures() == 1) android.util.Log.w("WaEnhancerX/Backdrop", "Software capture cooling down", error);
         } finally { CAPTURING.remove(); }
+    }
+    /**
+     * One deferred capture per throttled interval. The frame it invalidates is not allowed to
+     * schedule another, so an idle window settles after one extra snapshot instead of capturing
+     * every interval forever.
+     */
+    private void scheduleTrailing(View view, long delayMs) {
+        if (trailingFrame) { trailingFrame = false; return; }
+        if (trailingScheduled || released) return;
+        trailingScheduled = true;
+        view.postDelayed(() -> {
+            trailingScheduled = false;
+            if (released || !view.isAttachedToWindow()) return;
+            capture();
+            trailingFrame = true;
+            view.invalidate();
+        }, Math.max(1, delayMs));
     }
     private void drawLayers(Canvas canvas, List<View> layers) {
         try {
