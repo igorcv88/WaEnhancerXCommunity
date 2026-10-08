@@ -454,3 +454,19 @@ Validation: `./gradlew :app:testWhatsappDebugUnitTest :app:assembleWhatsappDebug
 Device evidence (user logcat via Termux, 2026-10-08 18:07, build without this fix): `requestLayout() ... MeasuringFrameLayout{... 0,0-1440,3160 #app:id/search_fragment_and_toolbar_holder}` — the header holder measured 3160 px, the full window, while the capsule pane sat at 18,0-1422,174. This confirms the root cause. The conversation capsule pane logged `captureContent=SOURCE_UNAVAILABLE` / `required-source-unavailable` with `sourceId=none` throughout: `listHost()` only accepts children with height > 0, and the squeezed list host had none. The fix should resolve both. No crash, no `WaEnhancerX/GlassPane` warning.
 
 Next: install over the current build, enable Headers, open a chat and the home screen; confirm the list renders, the first message rests below the capsule and the band shows the wallpaper. If home still shows no rows, collect `[LiquidGlass/App]` / `WaEnhancerX/GlassState` logs; the home holder is then a separate path.
+
+## Home header and search diagnostics — 2026-10-08
+
+Branch: `ccr-0fefe1d4-wo0f7v`, restarted from `master@5335d80` (PR #76 merged). User device report after #76: the conversation screen and the floating bar are correct and stable, including in Power Saving. Remaining: (1) the home header capsule shows nothing behind it and looks poor; (2) the SEARCH surface appears to apply only on the Groups tab.
+
+User decision: on home, rows should scroll behind the header (the conversation model), not WaThemer's card-below-header.
+
+Why this PR does not move the home layout yet: #75 shows that a blind layout change can blank a screen. WaThemer (`d39b293`, `GlassHook.kt`/`GlassToolbars.kt`/`GlassCards.extendList`) shows that its home layout has `header` and `pager_holder` as siblings, the chat list is `android:id/list` inside a `ConversationsContainer`, and `my_search_bar` is sometimes seated inside the list as a row and sometimes beside it. That last point is a likely explanation for the per-tab SEARCH difference, but none of it is verified on 2.26.33.76. The `GlassState` log from the device shows one live SEARCH drawable at 1440x144 on home, plus a second drawable (`3d1b788`) stuck in fallback with `budgetStatus=unassigned`; neither line names the view.
+
+Changes (diagnostics only, no layout or rendering change):
+- `AppLiquidGlass.bind` logs `BOUND reason=surface-bind role=… name=<resource> size=WxH path=<named ancestors>`, and logs `UNBOUND reason=inner-surface-wins` when the innermost-wins rule drops an outer container.
+- `HomeTreeProbe` (`WaEnhancerX/HomeTree`, info level): on the home window (has `pager_holder`, `conversations_coordinator_layout` or `header`) with TOOLBARS on, dumps class, id, bounds, padding, layout params/margins, background, Z and clipToPadding, at most 400 lines per dump and at most 4 dumps per window (a new dump when a tab first adds a list). Read-only.
+
+Validation: `:app:testWhatsappDebugUnitTest` 425 tests, 0 failures; `:app:assembleWhatsappDebug` succeeded; `git diff --check` clean. No device run.
+
+Next: user installs this build and, with Headers + Search on, opens home, switches Chats → Groups → Communities → Calls, then runs `su -c 'logcat -d -v time -s WaEnhancerX/HomeTree:V WaEnhancerX/GlassState:V > /sdcard/Download/home.txt'`. From that: (a) explain the SEARCH per-tab difference from the `BOUND`/`UNBOUND` lines; (b) implement the home float (pull the pager under the header, pad each page's list with clipToPadding=false, keep non-scrolling page content below the header, clear the header fill, record/restore everything, revert if the pager collapses).

@@ -56,6 +56,7 @@ public final class AppLiquidGlass extends Feature {
     private final Set<Integer> unknownResources = new HashSet<>();
     private final Set<String> reported = new HashSet<>();
     private WeakReference<Session> foreground = new WeakReference<>(null);
+    private final HomeTreeProbe homeTree = new HomeTreeProbe();
     private final ConversationGlassPanes conversation = new ConversationGlassPanes(new ConversationGlassPanes.Host() {
         @Override public boolean toolbarsEnabled() { return LiquidGlassSettings.isEnabled(prefs, Surface.TOOLBARS); }
         @Override public boolean composerEnabled() { return LiquidGlassSettings.isEnabled(prefs, Surface.COMPOSER); }
@@ -320,6 +321,27 @@ public final class AppLiquidGlass extends Feature {
             if (p == ancestor) return true;
         }
         return false;
+    }
+
+    private static String resourceName(View view) {
+        int id = view.getId();
+        if (id == View.NO_ID || id == 0) return view.getClass().getSimpleName();
+        try { return view.getResources().getResourceEntryName(id); }
+        catch (android.content.res.Resources.NotFoundException e) { return Integer.toHexString(id); }
+    }
+
+    /** Resource name, size and the nearest named ancestors (the tab page shows up among them). */
+    private static String describe(View view) {
+        StringBuilder out = new StringBuilder("name=").append(resourceName(view))
+                .append(" size=").append(view.getWidth()).append('x').append(view.getHeight())
+                .append(" path=");
+        int named = 0;
+        for (android.view.ViewParent p = view.getParent(); p instanceof View && named < 6; p = p.getParent()) {
+            View parent = (View) p;
+            if (parent.getId() == View.NO_ID || parent.getId() == 0) continue;
+            out.append(named++ == 0 ? "" : "<").append(resourceName(parent));
+        }
+        return out.toString();
     }
 
     private static View findByName(View root, String name, String pkg) {
@@ -667,6 +689,9 @@ public final class AppLiquidGlass extends Feature {
 
             // Before the early return below: switching the panes off must still restore the screen.
             conversation.sync(view);
+            if (LiquidGlassSettings.isEnabled(prefs, Surface.TOOLBARS)) {
+                try { homeTree.sync(view); } catch (Throwable error) { report("home-tree-error", "home tree probe failed: " + error); }
+            }
             try {
                 for (Map.Entry<View, Binding> entry : new ArrayList<>(bindings.entrySet())) {
                     View target = entry.getKey();
@@ -772,6 +797,8 @@ public final class AppLiquidGlass extends Feature {
                 if (other == null || entry.getValue().surface != surface) continue;
                 if (isAncestorOf(view, other)) return;          // a bound descendant already shows it
                 if (isAncestorOf(other, view)) {                 // the bound one is the outer container
+                    GlassTrace.event(root.get(), entry.getValue().glass, other, "UNBOUND", "inner-surface-wins",
+                            "role=" + surface + " " + describe(other) + " inner=" + resourceName(view));
                     releaseBudget(entry.getValue());
                     entry.getValue().restore(other);
                     bindings.remove(other);
@@ -788,6 +815,9 @@ public final class AppLiquidGlass extends Feature {
                 view.setPadding(binding.left, binding.top, binding.right, binding.bottom);
 
                 report("surface-" + surface, surface + " background installed; native layout retained");
+                // Which view each surface binds, and under which tab: needed to tell home tabs apart.
+                GlassTrace.event(root.get(), binding.glass, view, "BOUND", "surface-bind",
+                        "role=" + surface + " " + describe(view));
                 diagnosticTriggered();
             } catch (Throwable error) {
                 Binding binding = bindings.remove(view);
