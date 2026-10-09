@@ -4,7 +4,7 @@ This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent
 
 ## Current task — optical reconstruction, 2026-10-09
 
-Branch: `feat/glass-optical-reconstruction`, based on latest `master@cbbf20205a6da6ee2bffda2879d1c8245bca1b1e`. Integrated ready-for-review PR publication is authorized; final PR URL is recorded below after publication. No related open glass PR existed; the six open PRs were dependency updates. No merge or workflow dispatch is authorized here.
+Branch: `feat/glass-optical-reconstruction`, based on latest `master@cbbf20205a6da6ee2bffda2879d1c8245bca1b1e`. Published as ready-for-review **PR #84**: https://github.com/igorcv88/WaEnhancerXCommunity/pull/84. Implementation commit: `f4d39686c916b45992aa1d737b69d2b60f83361d`; its tree `8ccb35807e71123254b67f8af55852402de95a44` exactly matches the locally tested/committed implementation tree. A documentation-only follow-up records this publication; no code changed after the final verified APK. No related open glass PR existed; the six open PRs were dependency updates. No merge or workflow dispatch is authorized here.
 
 The user explicitly selected GPT-6.1 Sol High and authorized autonomous implementation, tests, compilation and an integrated review-ready PR using `LAUDO_DEFINITIVO_OTICA_LIQUID_GLASS_WAENHANCERX_2026-10-09.md` as the complete current specification. The older entries below are history. The reported stable capture behavior is preserved; Search was OFF in the relevant videos and remains user-selected.
 
