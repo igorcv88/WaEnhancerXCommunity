@@ -60,6 +60,8 @@ final class HomeGlassChrome {
     private final WeakHashMap<View, ListState> lists = new WeakHashMap<>();
     private final WeakHashMap<View, Float> raised = new WeakHashMap<>();
     private final WeakHashMap<View, Drawable> cleared = new WeakHashMap<>();
+    /** Our transparent replacement per fill; any other background on the fill is native. */
+    private final WeakHashMap<View, Drawable> replacements = new WeakHashMap<>();
     private final java.util.Map<String, Integer> ids = new java.util.HashMap<>();
 
     HomeGlassChrome(Host host) {
@@ -76,10 +78,15 @@ final class HomeGlassChrome {
             }
             View pager = find(root, "pager_holder");
             View header = find(root, "header");
-            if (pager == null || header == null || pager.getParent() != header.getParent()) return;
+            // A window that stops matching (resize, replaced hierarchy) gets its native state back.
+            if (pager == null || header == null || pager.getParent() != header.getParent()) {
+                restore(root);
+                return;
+            }
             // The header must sit over the pager's top, or rows would scroll behind nothing.
             if (header.getTop() > pager.getTop() || header.getHeight() <= 0
                     || header.getHeight() > pager.getHeight() / 3) {
+                restore(root);
                 host.report("home-geometry", "home header/pager geometry unexpected; home left native");
                 return;
             }
@@ -164,10 +171,12 @@ final class HomeGlassChrome {
 
     private void clearFill(View fill) {
         Drawable current = fill.getBackground();
-        if (current == null) return;
-        if (!cleared.containsKey(fill)) cleared.put(fill, current);
-        else if (current instanceof ColorDrawable && ((ColorDrawable) current).getColor() == Color.TRANSPARENT) return;
-        fill.setBackground(new ColorDrawable(Color.TRANSPARENT));
+        if (current == null || current == replacements.get(fill)) return;
+        // Whatever WhatsApp set last is the native fill to restore, not the first one seen.
+        cleared.put(fill, current);
+        Drawable clear = new ColorDrawable(Color.TRANSPARENT);
+        replacements.put(fill, clear);
+        fill.setBackground(clear);
     }
 
     /** Undo everything recorded for this window. */
@@ -196,6 +205,7 @@ final class HomeGlassChrome {
             if (fill == null || fill.getRootView() != root) continue;
             fill.setBackground(entry.getValue());
             cleared.remove(fill);
+            replacements.remove(fill);
         }
     }
 
