@@ -533,7 +533,7 @@ Next: the user installs this head with Headers only, scrolls the home list, and 
 
 ## Receipts: delivery cancelled under Hide Read; reply release blocked by lookup — 2026-10-09
 
-Branch `ccr-9c2dae1b-1qb2s6`, based on `master@b079ae2`. User report (screenshots, WhatsApp 2.26.33.76): Hide Blue Ticks on (forced and greyed by Send Blue Ticks upon Reply), Hide Blue Tick in Groups on, **Hide Delivered off**. Replying does not send blue ticks; only the manual "Send blue tick" menu does. Incoming messages appear to stay on one tick for the sender (the user cannot confirm delivered state from their side).
+Branch `ccr-9c2dae1b-1qb2s6`, based on `master@b079ae2`; ready-for-review PR #82 (not merged). User report (screenshots, WhatsApp 2.26.33.76): Hide Blue Ticks on (forced and greyed by Send Blue Ticks upon Reply), Hide Blue Tick in Groups on, **Hide Delivered off**. Replying does not send blue ticks; only the manual "Send blue tick" menu does. Incoming messages appear to stay on one tick for the sender (the user cannot confirm delivered state from their side).
 
 Causes (code reading, confirmed against upstream `Dev4Mod/WaEnhancer@91ba9fc8`; no device log):
 
