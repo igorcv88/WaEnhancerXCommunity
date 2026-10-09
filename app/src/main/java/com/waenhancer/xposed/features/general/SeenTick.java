@@ -8,6 +8,7 @@ import android.graphics.PorterDuff;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.util.Log;
 import android.util.Pair;
 import android.view.Gravity;
 import android.view.Menu;
@@ -55,6 +56,8 @@ import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 
 public class SeenTick extends Feature {
+
+    private static final String RECEIPT_TAG = "WaEnhancerX/Receipts";
 
     private static java.lang.reflect.Field cachedStatusFMessageField;
     private static java.lang.reflect.Field cachedViewButtonFMessageField;
@@ -430,52 +433,79 @@ public class SeenTick extends Feature {
                 if (userJid.isNull()) return;
                 // Resolve the outgoing message itself; the viewer may have advanced or closed.
                 // Do not use Key(String, ..., true): that legacy constructor hardcodes false.
+                FMessageWpp outgoing = null;
                 FMessageWpp quotedStatus = null;
                 boolean statusQuote = false;
+                String lookup = "ok";
                 try {
                     var outgoingId = (String) XposedHelpers.getObjectField(obj, "id");
-                    if (outgoingId == null || outgoingId.isEmpty()) return;
-                    var outgoingKey = XposedHelpers.newInstance(FMessageWpp.Key.TYPE,
-                            userJid.userJid, outgoingId, true);
-                    var outgoingObject = WppCore.getFMessageFromKey(outgoingKey);
-                    if (outgoingObject == null) return;
-                    var outgoing = new FMessageWpp(outgoingObject);
-                    if (!outgoing.getKey().isFromMe
-                            || !outgoingId.equals(outgoing.getKey().messageID)) return;
-                    var quote = outgoing.getOriginalKey();
-                    statusQuote = quote != null && quote.remoteJid != null
-                            && quote.remoteJid.isStatus();
-                    if (statusQuote && !quote.isFromMe && quote.messageID != null
-                            && !quote.messageID.isEmpty()) {
-                        // getOriginalKey().getFMessage() wraps the outgoing message, so load
-                        // the quoted key explicitly rather than relying on that cached wrapper.
-                        var quotedObject = WppCore.getFMessageFromKey(quote.thisObject);
-                        if (quotedObject != null) {
-                            var candidate = new FMessageWpp(quotedObject);
-                            var selected = StatusReplyRouting.selectQuoted(quote.messageID, candidate,
-                                    item -> item.getKey().messageID,
-                                    item -> !item.getKey().isFromMe && item.getKey().remoteJid != null
-                                            && item.getKey().remoteJid.isStatus());
-                            if (!selected.isEmpty()) quotedStatus = selected.get(0);
+                    outgoing = findOutgoing(userJid, outgoingId);
+                    if (outgoing == null) {
+                        lookup = outgoingId == null || outgoingId.isEmpty() ? "no-id" : "not-found";
+                    } else {
+                        var quote = outgoing.getOriginalKey();
+                        statusQuote = quote != null && quote.remoteJid != null
+                                && quote.remoteJid.isStatus();
+                        if (statusQuote && !quote.isFromMe && quote.messageID != null
+                                && !quote.messageID.isEmpty()) {
+                            // getOriginalKey().getFMessage() wraps the outgoing message, so load
+                            // the quoted key explicitly rather than relying on that cached wrapper.
+                            var quotedObject = WppCore.getFMessageFromKey(quote.thisObject);
+                            if (quotedObject != null) {
+                                var candidate = new FMessageWpp(quotedObject);
+                                var selected = StatusReplyRouting.selectQuoted(quote.messageID, candidate,
+                                        item -> item.getKey().messageID,
+                                        item -> !item.getKey().isFromMe && item.getKey().remoteJid != null
+                                                && item.getKey().remoteJid.isStatus());
+                                if (!selected.isEmpty()) quotedStatus = selected.get(0);
+                            }
                         }
                     }
                 } catch (Throwable failure) {
-                    logDebug("Status reply identity unavailable: " + failure.getClass().getSimpleName());
-                    return;
+                    outgoing = null;
+                    statusQuote = false;
+                    lookup = "error:" + failure.getClass().getSimpleName();
                 }
-                if (statusQuote) {
-                    var author = quotedStatus == null ? null : quotedStatus.getUserJid();
-                    if (author != null && StatusReplyRouting.matches(true,
-                            userJid.getPhoneRawString(), userJid.getUserRawString(),
-                            author.getPhoneRawString(), author.getUserRawString())) {
-                        sendBlueTickStatus(author, List.of(quotedStatus));
-                    }
-                } else if (!userJid.isStatus()) {
+                var author = quotedStatus == null ? null : quotedStatus.getUserJid();
+                boolean quotedMatches = author != null && StatusReplyRouting.matches(true,
+                        userJid.getPhoneRawString(), userJid.getUserRawString(),
+                        author.getPhoneRawString(), author.getUserRawString());
+                var route = StatusReplyRouting.route(userJid.isStatus(), outgoing != null,
+                        statusQuote, quotedMatches);
+                Log.i(RECEIPT_TAG, "reply release route=" + route + " lookup=" + lookup
+                        + " jid=" + jidKind(userJid));
+                if (route == StatusReplyRouting.Route.STATUS) {
+                    sendBlueTickStatus(author, List.of(quotedStatus));
+                } else if (route == StatusReplyRouting.Route.CHAT) {
                     sendBlueTick(userJid);
                 }
                 HideSeenView.updateAllBubbleViews();
             }
         });
+    }
+
+    /** The outgoing key may be stored under the LID or the PN form of the destination. */
+    private static FMessageWpp findOutgoing(FMessageWpp.UserJid destination, String outgoingId) {
+        if (outgoingId == null || outgoingId.isEmpty()) return null;
+        for (Object jid : new Object[]{destination.userJid, destination.phoneJid}) {
+            if (jid == null) continue;
+            var key = XposedHelpers.newInstance(FMessageWpp.Key.TYPE, jid, outgoingId, true);
+            var object = WppCore.getFMessageFromKey(key);
+            if (object == null) continue;
+            var message = new FMessageWpp(object);
+            var messageKey = message.getKey();
+            if (messageKey != null && messageKey.isFromMe && outgoingId.equals(messageKey.messageID)) {
+                return message;
+            }
+        }
+        return null;
+    }
+
+    /** Log the address form only; never the number. */
+    private static String jidKind(FMessageWpp.UserJid jid) {
+        if (jid.isStatus()) return "status";
+        if (jid.isGroup()) return "group";
+        return (jid.userJid != null ? "lid" : "") + (jid.phoneJid != null ? "+pn" : "");
     }
 
     private static void updateMessageStatusView(String rawJid, List<FMessageWpp> messages) {
@@ -491,11 +521,14 @@ public class SeenTick extends Feature {
                 return;
             var messages = new ArrayList<FMessageWpp>();
             var hideSeenMessagesssages = MessageHistory.getInstance().getHideSeenMessages(userJid.getPhoneRawString(), MessageHistory.MessageType.MESSAGE_TYPE, false);
+            if (hideSeenMessagesssages == null) hideSeenMessagesssages = List.of();
             for (var message : hideSeenMessagesssages) {
                 var fmessage = message.getFMessage();
                 if (fmessage == null) continue;
                 messages.add(fmessage);
             }
+            Log.i(RECEIPT_TAG, "chat release pending=" + messages.size()
+                    + " rows=" + hideSeenMessagesssages.size() + " jid=" + jidKind(userJid));
             if (messages.isEmpty())
                 return;
             for (var m : messages) {
