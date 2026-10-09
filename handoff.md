@@ -508,3 +508,25 @@ Why only some surfaces flashed: there are two pipelines. The conversation header
 Performance baseline (user `gfx.txt`, home scrolling, this build's predecessor): 1548 frames, median frame 19 ms, p90 24 ms, p99 65 ms; **GPU median 9 ms, p90 11 ms**. A 120 Hz frame has 8.3 ms, so the GPU alone exceeds the budget; the user's 60–80 Hz impression matches. Not yet attributed per surface. Likely costs, in order to measure: each live drawable re-records the content behind it and runs the blur/lens `RenderEffect` at full resolution every scrolling frame (LG-02: the "quarter-size" recording is a display list, so nothing is actually downsampled); home has several live surfaces at once (header, search pill, floating bar, FAB, filters). Candidate fixes, each to be measured on the device before/after with `dumpsys gfxinfo`: a real low-resolution capture (render the backdrop into a scaled layer before blurring); one shared backdrop per window instead of one per surface; and moving home header/search to the pane model the conversation screen uses, so both screens share one pipeline.
 
 Validation: `:app:testWhatsappDebugUnitTest` 425 tests, 0 failures; `:app:assembleWhatsappDebug` succeeded. No device run.
+
+## Search-only rows; idle frame rate — 2026-10-09
+
+Device report (user, after #80): with only Search on, nothing scrolls behind the search pill or the header; with only Headers on, rows show around the search row but not behind the header capsule; with both on, both work. The floating bar is independent and unaffected.
+
+- Search only: `HomeGlassChrome` ran only when TOOLBARS was on, so with Search alone the list was never extended. Fixed: the list extension runs when Headers or Search is on; the header fill is cleared only with Headers and restored when Headers is off while Search stays on.
+- Headers only, header capsule shows no rows: cause not established. In code, the header capture (`BehindRecorder.paintExact`) draws `pager_holder` as a sibling drawn before `header` regardless of the Search switch. Needs a `GlassState` log and a screenshot with Headers only.
+- Idle measurement (`idle_header.txt`, Headers only, untouched home, includes switching back to WhatsApp during the run): 154 frames in 10.1 s (~15 fps), frame p50 8 ms, GPU p50 3 ms. A glass-off idle baseline (`idle_off.txt`) was not supplied, so the share caused by glass is not attributed yet.
+
+Validation: `:app:testWhatsappDebugUnitTest` 425 tests, 0 failures; `:app:assembleWhatsappDebug` succeeded. No device run.
+
+## Headers-only evidence; idle baseline — 2026-10-09 (PR #81, second commit)
+
+Device evidence (user, build before #81): screenshot with Headers only; `header_only.txt` arrived empty (the logcat capture produced nothing); `idle_off.txt`.
+
+- Screenshot, read from pixels: the native search pill is translucent, about 9.5 % white over the app background ((34,38,43) over (10,16,20)). Rows showing through it means the list extension and the Z raise work with Headers only. The header capsule interior is (10,17,21), the app background, and the scrolled row is cut flat at the header's bottom edge. So with Headers only, something opaque in the app-background colour sits between the rows and the toolbar glass. The prime suspect is the `toolbar_container` fill (or our transparent replacement recoloured in place) set by WhatsApp's lift state on scroll without a layout. `HomeGlassChrome.sync` runs only on global layout, so it never sees that change. Not proven.
+- Change: `HomeGlassChrome.frame(root)` runs from the window pre-draw before captures. With Headers on, it re-clears a natively replaced fill and resets a recoloured replacement. It logs `state=HOME_CHROME reason=header-chain` whenever the header chain changes, covering the header/fill backgrounds, header Z/alpha, the action taken, and both switches. The pre-draw cost is two cached weak references and three getters; logging happens only on change.
+- Idle baseline, glass off (`idle_off.txt`): 526 frames in about 10.1 s (~52 fps), frame p50 11 ms, p90 14 ms, GPU p50 3 ms, 70 % deadline missed. WhatsApp redraws on its own at rest (a "typing…" row was on screen). Idle frames are therefore not caused by the glass, so stopping recaptures at rest is dropped as an optimization. The optimization order is now: (B) one shared backdrop recording per window for the home header and search; (C) real low-resolution blur. Measure each with `dumpsys gfxinfo` before and after.
+
+Validation: `:app:testWhatsappDebugUnitTest` 425 tests, 0 failures; `:app:assembleWhatsappDebug` succeeded. No device run.
+
+Next: the user installs this head with Headers only, scrolls the home list, and sends `logcat -d -v time -s WaEnhancerX/GlassState:V` (captured without `logcat -c` immediately before it) plus a screenshot. If rows now show behind the header and `action=fill-*` lines appear, the cause is confirmed. If not, the `HOME_CHROME` signature shows which header-chain background is opaque.

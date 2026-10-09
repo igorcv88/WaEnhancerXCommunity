@@ -58,6 +58,7 @@ public final class AppLiquidGlass extends Feature {
     private WeakReference<Session> foreground = new WeakReference<>(null);
     private final HomeGlassChrome home = new HomeGlassChrome(new HomeGlassChrome.Host() {
         @Override public boolean toolbarsEnabled() { return LiquidGlassSettings.isEnabled(prefs, Surface.TOOLBARS); }
+        @Override public boolean searchEnabled() { return LiquidGlassSettings.isEnabled(prefs, Surface.SEARCH); }
         @Override public void report(String key, String message) { AppLiquidGlass.this.report(key, message); }
     });
     private final ConversationGlassPanes conversation = new ConversationGlassPanes(new ConversationGlassPanes.Host() {
@@ -518,6 +519,7 @@ public final class AppLiquidGlass extends Feature {
             try {
                 if (closed || suspended || GlassPane.isCapturing()) return true;
                 GlassTrace.frame(root.get());
+                home.frame(root.get());
                 if (bindings.isEmpty()) return true;
                 long now = SystemClock.uptimeMillis();
                 boolean fresh = false;

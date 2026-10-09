@@ -38,6 +38,7 @@ final class HomeGlassChrome {
 
     interface Host {
         boolean toolbarsEnabled();
+        boolean searchEnabled();
         void report(String key, String message);
     }
 
@@ -64,6 +65,10 @@ final class HomeGlassChrome {
     /** Our transparent replacement per fill; any other background on the fill is native. */
     private final WeakHashMap<View, Drawable> replacements = new WeakHashMap<>();
     private final java.util.Map<String, Integer> ids = new java.util.HashMap<>();
+    /** The header and its fill from the last matching sync, for the per-frame check. */
+    private WeakReference<View> headerRef = new WeakReference<>(null);
+    private WeakReference<View> fillRef = new WeakReference<>(null);
+    private String headerSignature;
 
     HomeGlassChrome(Host host) {
         this.host = host;
@@ -73,7 +78,9 @@ final class HomeGlassChrome {
     void sync(View root) {
         if (root == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
         try {
-            if (!host.toolbarsEnabled()) {
+            // Rows run behind the chrome for either surface: the search pill needs them as much
+            // as the header does. Only the header's fill belongs to the Headers switch.
+            if (!host.toolbarsEnabled() && !host.searchEnabled()) {
                 restore(root);
                 return;
             }
@@ -92,11 +99,66 @@ final class HomeGlassChrome {
                 return;
             }
             View fill = find(header, "toolbar_container");
-            if (fill != null) clearFill(fill);
+            headerRef = new WeakReference<>(header);
+            fillRef = new WeakReference<>(fill);
+            if (fill != null) {
+                if (host.toolbarsEnabled()) clearFill(fill);
+                else restoreFill(fill);
+            }
             for (View container : containers((ViewGroup) pager)) extend((ViewGroup) container);
         } catch (Throwable error) {
             host.report("home-sync-error", "home chrome skipped: " + error);
         }
+    }
+
+    /**
+     * Called from the window's pre-draw, before the glass records: keeps the header fill clear
+     * between layouts and logs the header chain whenever its backgrounds change.
+     *
+     * <p>{@link #sync} runs on global layout only. WhatsApp can swap or recolour the fill on
+     * scroll without a layout (its lift state), and an opaque fill under the toolbar glass hides
+     * the rows behind the header in the window and in the toolbar's recording alike.</p>
+     */
+    void frame(View root) {
+        if (root == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+        View header = headerRef.get();
+        if (header == null || header.getRootView() != root || !header.isAttachedToWindow()) return;
+        try {
+            View fill = fillRef.get();
+            String action = "";
+            if (fill != null && host.toolbarsEnabled()) {
+                Drawable ours = replacements.get(fill);
+                Drawable current = fill.getBackground();
+                if (current != null && current != ours) {
+                    clearFill(fill);
+                    action = " action=fill-replaced";
+                } else if (ours instanceof ColorDrawable && ((ColorDrawable) ours).getColor() != Color.TRANSPARENT) {
+                    // Our replacement was recoloured in place (a cast to ColorDrawable and setColor).
+                    action = " action=fill-recoloured:" + Integer.toHexString(((ColorDrawable) ours).getColor());
+                    ((ColorDrawable) ours).setColor(Color.TRANSPARENT);
+                }
+            }
+            String signature = "header=" + describe(header.getBackground())
+                    + " fill=" + (fill == null ? "absent" : describe(fill.getBackground())
+                        + (fill.getBackground() != null && fill.getBackground() == replacements.get(fill) ? "(cleared)" : ""))
+                    + " headerZ=" + header.getZ() + " headerAlpha=" + header.getAlpha();
+            if (!action.isEmpty() || !signature.equals(headerSignature)) {
+                headerSignature = signature;
+                com.waenhancer.theme.GlassTrace.event(root, header, fill, "HOME_CHROME", "header-chain",
+                        signature + action + " toolbars=" + host.toolbarsEnabled() + " search=" + host.searchEnabled());
+            }
+        } catch (Throwable error) {
+            host.report("home-frame-error", "home chrome frame check skipped: " + error);
+        }
+    }
+
+    private static String describe(Drawable drawable) {
+        if (drawable == null) return "none";
+        String name = drawable.getClass().getSimpleName();
+        if (drawable instanceof ColorDrawable) {
+            return name + "#" + Integer.toHexString(((ColorDrawable) drawable).getColor());
+        }
+        return name + "@" + Integer.toHexString(System.identityHashCode(drawable)) + "/a" + drawable.getAlpha();
     }
 
     /** The chats pages: ConversationsContainer, a vertical LinearLayout of search row and list. */
@@ -210,8 +272,20 @@ final class HomeGlassChrome {
         fill.setBackground(clear);
     }
 
+    private void restoreFill(View fill) {
+        Drawable original = cleared.remove(fill);
+        replacements.remove(fill);
+        if (original != null) fill.setBackground(original);
+    }
+
     /** Undo everything recorded for this window. */
     void restore(View root) {
+        View header = headerRef.get();
+        if (header == null || header.getRootView() == root) {
+            headerRef = new WeakReference<>(null);
+            fillRef = new WeakReference<>(null);
+            headerSignature = null;
+        }
         for (java.util.Map.Entry<View, ListState> entry : new ArrayList<>(lists.entrySet())) {
             View list = entry.getKey();
             if (list == null || list.getRootView() != root) continue;
