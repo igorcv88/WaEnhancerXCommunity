@@ -519,6 +519,7 @@ public final class AppLiquidGlass extends Feature {
             try {
                 if (closed || suspended || GlassPane.isCapturing()) return true;
                 GlassTrace.frame(root.get());
+                home.frame(root.get());
                 if (bindings.isEmpty()) return true;
                 long now = SystemClock.uptimeMillis();
                 boolean fresh = false;
