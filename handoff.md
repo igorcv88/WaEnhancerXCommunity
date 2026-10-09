@@ -550,3 +550,31 @@ Changes:
 Validation: 24 JUnit tests (ReceiptPolicy, ReceiptRelease, StatusReplyRouting) compiled with javac and passed under JUnit 4.13.2. `git diff --check` passed. `SeenTick`/`HideSeen` were **not compiled** here: this container has no Android SDK and the wrapper's Gradle 8.14.5 is not cached. No APK, no device run, no workflow dispatched.
 
 Next (device): install this head with the user's current settings. (1) Without opening the chat, have the contact send a message: expect two gray ticks on the sender. (2) Open the chat: still gray. (3) Reply normally (and once with a quote): expect blue on the sender without the manual menu. Capture `logcat -d -v time -s WaEnhancerX/Receipts:V`. If `route=CHAT` and `pending=0 rows=0`, the hidden rows are keyed differently (check `jid=lid` without `+pn`: LID→PN mapping missing). If no `reply release` line appears, `SendE2EMessageJob/onRun` is not the hooked path on this build. Also check a status reply releases only that status.
+
+## Reply release still silent after #82 — 2026-10-09
+
+PR #82 merged as `b718380`. Branch `ccr-9c2dae1b-1qb2s6` restarted from that master; ready-for-review PR #83 (not merged). Device result on #82 (user screenshot, same settings): **delivered now works** (sender sees two gray ticks). Replies (normal and quoted) still do not turn the sender's ticks blue, and the module's own indicator on incoming bubbles stays red. Red means a hidden-read row exists with `viewed=false`. A release through `sendBlueTick` would flip it green, so the reply path never reaches the release with matching rows. No logcat was supplied.
+
+The failure predates #65/#66. The pre-#65 code had no outgoing lookup and the user reported the same symptom, so the lookup removed in #82 was not the only cause. The remaining candidates cannot be told apart by reading the code:
+
+- (a) The method found by the log string `SendE2EMessageJob/onRun` is declared on a helper/lambda class, so `messageSendClass.isInstance(thisObject)` returned false on every send and the hook exited silently.
+- (b) The job's `jid` resolves to a LID without a PN mapping, so the `jid=?` query (rows are keyed by PN) found nothing.
+- (c) The hooked method is not on this build's send path at all.
+
+Changes:
+
+- At install, the hook logs the declaring class/method and whether it is declared on the job class (`declaredOnJob`).
+- `findSendJob` takes the job from `thisObject`, an argument, or an instance field of the hooked object (covers a).
+- `chatReleaseJid` uses the job JID when it has a PN form, then the outgoing message's own key (the form the bubble indicator reads), then the open conversation when it is the destination (covers b).
+- Every skip and failure logs under `WaEnhancerX/Receipts`; hook exceptions are caught.
+
+Validation: `git diff --check` passed. Not compiled (no Android SDK in this container). No device run.
+
+Next: the user installs the head, force-stops and reopens WhatsApp, receives a message, replies, and sends `logcat -d -v time -s WaEnhancerX/Receipts:V` captured after the reply (no `logcat -c` after WhatsApp starts, so the install line is kept). Read it as:
+- No `send hook on` line: the feature did not install.
+- `declaredOnJob=false` plus `skipped: no send job`: case (a) needs another way to find the job.
+- No line at all on reply: case (c); find another send hook.
+- `pending=0 rows=0`: key mismatch; compare with the bubble indicator's key.
+- `pending>0` but the sender still sees no blue: the read job is built or queued wrongly.
+
+Also ask whether the manual "Send blue tick" still turns the dot green on this build.

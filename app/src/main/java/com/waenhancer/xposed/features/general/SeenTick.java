@@ -421,67 +421,135 @@ public class SeenTick extends Feature {
         var messageJobMethod = Unobfuscator.loadBlueOnReplayMessageJobMethod(classLoader);
         var messageSendClass = Unobfuscator.findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "SendE2EMessageJob");
 
+        // The method is found by its log string; on some builds that string sits in a helper or
+        // lambda class rather than in SendE2EMessageJob, so record where the hook actually landed.
+        Log.i(RECEIPT_TAG, "send hook on " + messageJobMethod.getDeclaringClass().getName()
+                + "#" + messageJobMethod.getName() + " jobClass=" + messageSendClass.getName()
+                + " declaredOnJob=" + messageSendClass.isAssignableFrom(messageJobMethod.getDeclaringClass()));
+
         XposedBridge.hookMethod(messageJobMethod, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 if (!prefs.getBoolean("blueonreply", false)) return;
-                if (!messageSendClass.isInstance(param.thisObject)) return;
-                var obj = messageSendClass.cast(param.thisObject);
-                var rawJid = (String) XposedHelpers.getObjectField(obj, "jid");
-                var userJid = new FMessageWpp.UserJid(WppCore.createUserJid(rawJid));
-
-                if (userJid.isNull()) return;
-                // Resolve the outgoing message itself; the viewer may have advanced or closed.
-                // Do not use Key(String, ..., true): that legacy constructor hardcodes false.
-                FMessageWpp outgoing = null;
-                FMessageWpp quotedStatus = null;
-                boolean statusQuote = false;
-                String lookup = "ok";
                 try {
-                    var outgoingId = (String) XposedHelpers.getObjectField(obj, "id");
-                    outgoing = findOutgoing(userJid, outgoingId);
-                    if (outgoing == null) {
-                        lookup = outgoingId == null || outgoingId.isEmpty() ? "no-id" : "not-found";
-                    } else {
-                        var quote = outgoing.getOriginalKey();
-                        statusQuote = quote != null && quote.remoteJid != null
-                                && quote.remoteJid.isStatus();
-                        if (statusQuote && !quote.isFromMe && quote.messageID != null
-                                && !quote.messageID.isEmpty()) {
-                            // getOriginalKey().getFMessage() wraps the outgoing message, so load
-                            // the quoted key explicitly rather than relying on that cached wrapper.
-                            var quotedObject = WppCore.getFMessageFromKey(quote.thisObject);
-                            if (quotedObject != null) {
-                                var candidate = new FMessageWpp(quotedObject);
-                                var selected = StatusReplyRouting.selectQuoted(quote.messageID, candidate,
-                                        item -> item.getKey().messageID,
-                                        item -> !item.getKey().isFromMe && item.getKey().remoteJid != null
-                                                && item.getKey().remoteJid.isStatus());
-                                if (!selected.isEmpty()) quotedStatus = selected.get(0);
-                            }
-                        }
-                    }
+                    releaseOnSend(param, messageSendClass);
                 } catch (Throwable failure) {
-                    outgoing = null;
-                    statusQuote = false;
-                    lookup = "error:" + failure.getClass().getSimpleName();
+                    Log.w(RECEIPT_TAG, "reply release failed: " + failure);
                 }
-                var author = quotedStatus == null ? null : quotedStatus.getUserJid();
-                boolean quotedMatches = author != null && StatusReplyRouting.matches(true,
-                        userJid.getPhoneRawString(), userJid.getUserRawString(),
-                        author.getPhoneRawString(), author.getUserRawString());
-                var route = StatusReplyRouting.route(userJid.isStatus(), outgoing != null,
-                        statusQuote, quotedMatches);
-                Log.i(RECEIPT_TAG, "reply release route=" + route + " lookup=" + lookup
-                        + " jid=" + jidKind(userJid));
-                if (route == StatusReplyRouting.Route.STATUS) {
-                    sendBlueTickStatus(author, List.of(quotedStatus));
-                } else if (route == StatusReplyRouting.Route.CHAT) {
-                    sendBlueTick(userJid);
-                }
-                HideSeenView.updateAllBubbleViews();
             }
         });
+    }
+
+    /** The job is the hooked instance, an argument, or a field of a helper that owns it. */
+    private static Object findSendJob(XC_MethodHook.MethodHookParam param, Class<?> jobClass) {
+        if (jobClass.isInstance(param.thisObject)) return param.thisObject;
+        if (param.args != null) {
+            for (Object arg : param.args) {
+                if (jobClass.isInstance(arg)) return arg;
+            }
+        }
+        if (param.thisObject == null) return null;
+        for (Class<?> c = param.thisObject.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            for (var field : c.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) continue;
+                if (!field.getType().isAssignableFrom(jobClass) && !jobClass.isAssignableFrom(field.getType())) continue;
+                try {
+                    field.setAccessible(true);
+                    Object value = field.get(param.thisObject);
+                    if (jobClass.isInstance(value)) return value;
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        return null;
+    }
+
+    private void releaseOnSend(XC_MethodHook.MethodHookParam param, Class<?> messageSendClass) {
+        var obj = findSendJob(param, messageSendClass);
+        if (obj == null) {
+            Log.i(RECEIPT_TAG, "reply release skipped: no send job in "
+                    + (param.thisObject == null ? "static call" : param.thisObject.getClass().getName()));
+            return;
+        }
+        var rawJid = (String) XposedHelpers.getObjectField(obj, "jid");
+        var userJid = new FMessageWpp.UserJid(WppCore.createUserJid(rawJid));
+
+        if (userJid.isNull()) {
+            Log.i(RECEIPT_TAG, "reply release skipped: unresolved destination");
+            return;
+        }
+        // Resolve the outgoing message itself; the viewer may have advanced or closed.
+        // Do not use Key(String, ..., true): that legacy constructor hardcodes false.
+        FMessageWpp outgoing = null;
+        FMessageWpp quotedStatus = null;
+        boolean statusQuote = false;
+        String lookup = "ok";
+        try {
+            var outgoingId = (String) XposedHelpers.getObjectField(obj, "id");
+            outgoing = findOutgoing(userJid, outgoingId);
+            if (outgoing == null) {
+                lookup = outgoingId == null || outgoingId.isEmpty() ? "no-id" : "not-found";
+            } else {
+                var quote = outgoing.getOriginalKey();
+                statusQuote = quote != null && quote.remoteJid != null
+                        && quote.remoteJid.isStatus();
+                if (statusQuote && !quote.isFromMe && quote.messageID != null
+                        && !quote.messageID.isEmpty()) {
+                    // getOriginalKey().getFMessage() wraps the outgoing message, so load
+                    // the quoted key explicitly rather than relying on that cached wrapper.
+                    var quotedObject = WppCore.getFMessageFromKey(quote.thisObject);
+                    if (quotedObject != null) {
+                        var candidate = new FMessageWpp(quotedObject);
+                        var selected = StatusReplyRouting.selectQuoted(quote.messageID, candidate,
+                                item -> item.getKey().messageID,
+                                item -> !item.getKey().isFromMe && item.getKey().remoteJid != null
+                                        && item.getKey().remoteJid.isStatus());
+                        if (!selected.isEmpty()) quotedStatus = selected.get(0);
+                    }
+                }
+            }
+        } catch (Throwable failure) {
+            outgoing = null;
+            statusQuote = false;
+            lookup = "error:" + failure.getClass().getSimpleName();
+        }
+        var author = quotedStatus == null ? null : quotedStatus.getUserJid();
+        boolean quotedMatches = author != null && StatusReplyRouting.matches(true,
+                userJid.getPhoneRawString(), userJid.getUserRawString(),
+                author.getPhoneRawString(), author.getUserRawString());
+        var route = StatusReplyRouting.route(userJid.isStatus(), outgoing != null,
+                statusQuote, quotedMatches);
+        Log.i(RECEIPT_TAG, "reply release route=" + route + " lookup=" + lookup
+                + " jid=" + jidKind(userJid));
+        if (route == StatusReplyRouting.Route.STATUS) {
+            sendBlueTickStatus(author, List.of(quotedStatus));
+        } else if (route == StatusReplyRouting.Route.CHAT) {
+            sendBlueTick(chatReleaseJid(userJid, outgoing));
+        }
+        HideSeenView.updateAllBubbleViews();
+    }
+
+    /**
+     * Hidden rows are keyed by the PN form of the incoming messages' remote JID (the same form the
+     * bubble indicator reads). Prefer the outgoing message's own key, then the open conversation
+     * when it is the destination, and only then the job's raw JID, which may lack a PN mapping.
+     */
+    private static FMessageWpp.UserJid chatReleaseJid(FMessageWpp.UserJid destination, FMessageWpp outgoing) {
+        if (destination.getPhoneRawString() != null) return destination;
+        try {
+            var key = outgoing == null ? null : outgoing.getKey();
+            if (key != null && key.remoteJid != null && key.remoteJid.getPhoneRawString() != null) {
+                return key.remoteJid;
+            }
+        } catch (Throwable ignored) {
+        }
+        var open = currentJid;
+        if (open != null && !open.isNull() && open.getPhoneRawString() != null
+                && StatusReplyRouting.matches(true, destination.getPhoneRawString(),
+                destination.getUserRawString(), open.getPhoneRawString(), open.getUserRawString())) {
+            return open;
+        }
+        return destination;
     }
 
     /** The outgoing key may be stored under the LID or the PN form of the destination. */
