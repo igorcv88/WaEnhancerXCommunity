@@ -69,9 +69,9 @@ public class HideSeen extends Feature {
     }
 
     /**
-     * Port of upstream's direct read-receipt enforcement. The existing SendReadReceiptJob,
-     * dispatch and ProtocolTree hooks stay in place; this is an extra last line of defence for
-     * hosts that reach the receipt path without going through them.
+     * Port of upstream's direct incoming-receipt enforcement, for Hide Delivered only. The host
+     * method sends the delivery receipt of every incoming message; Hide Read is enforced by the
+     * SendReadReceiptJob and ProtocolTree hooks, which act on read receipts specifically.
      *
      * <p>Fail-open by design: if the host no longer exposes the method, HideSeen keeps working
      * through the other hooks instead of aborting {@link #doHook()}.</p>
@@ -99,9 +99,9 @@ public class HideSeen extends Feature {
                             || key.remoteJid.isNull() || key.remoteJid.isStatus()) {
                         return;
                     }
-                    boolean hideSeen = checkPrivacyAndHideSeen(key);
+                    // This method carries the delivery receipt; Hide Read alone must not cancel it.
                     boolean hideDelivered = checkPrivacyAndHideReceipt(key);
-                    if (!hideSeen && !hideDelivered) return;
+                    if (!hideDelivered) return;
                     MessageHistory.MessageType receiptType = MessageHistory.MessageType.MESSAGE_TYPE;
                     try {
                         if (fMessage.isViewOnce()) receiptType = MessageHistory.MessageType.VIEW_ONCE_TYPE;
@@ -110,7 +110,7 @@ public class HideSeen extends Feature {
                     }
                     MessageHistory.MessageSeenItem previous = MessageHistory.getInstance().getHideSeenMessage(
                             key.remoteJid.getPhoneRawString(), key.messageID, receiptType);
-                    if (!ReceiptPolicy.suppressRead(hideSeen, hideDelivered,
+                    if (!ReceiptPolicy.suppressIncomingReceipt(hideDelivered,
                             previous != null && previous.viewed)) return;
 
                     // Authorization has been checked; preserve hiding for ordinary receipts.

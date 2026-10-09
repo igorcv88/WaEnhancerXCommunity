@@ -530,3 +530,23 @@ Device evidence (user, build before #81): screenshot with Headers only; `header_
 Validation: `:app:testWhatsappDebugUnitTest` 425 tests, 0 failures; `:app:assembleWhatsappDebug` succeeded. No device run.
 
 Next: the user installs this head with Headers only, scrolls the home list, and sends `logcat -d -v time -s WaEnhancerX/GlassState:V` (captured without `logcat -c` immediately before it) plus a screenshot. If rows now show behind the header and `action=fill-*` lines appear, the cause is confirmed. If not, the `HOME_CHROME` signature shows which header-chain background is opaque.
+
+## Receipts: delivery cancelled under Hide Read; reply release blocked by lookup — 2026-10-09
+
+Branch `ccr-9c2dae1b-1qb2s6`, based on `master@b079ae2`; ready-for-review PR #82 (not merged). User report (screenshots, WhatsApp 2.26.33.76): Hide Blue Ticks on (forced and greyed by Send Blue Ticks upon Reply), Hide Blue Tick in Groups on, **Hide Delivered off**. Replying does not send blue ticks; only the manual "Send blue tick" menu does. Incoming messages appear to stay on one tick for the sender (the user cannot confirm delivered state from their side).
+
+Causes (code reading, confirmed against upstream `Dev4Mod/WaEnhancer@91ba9fc8`; no device log):
+
+1. **Delivery cancelled.** `HideSeen.hookEnforceHiding` hooks `ReadReceipts/sendReceiptForIncomingMessage`, the host method that sends the receipt of every incoming message, and set the result to null when Hide Read *or* Hide Delivered was on (`ReceiptPolicy.suppressRead`). With Hide Read on, no delivery receipt left: one tick. Upstream gates this method on Hide Delivered only. Manual release appeared to fix both because a read receipt implies delivery. The old `hiddenReadDoesNotHideDelivery` test asserted the buggy result.
+2. **Reply release blocked.** Since #66, `SeenTick.hookOnSendMessages` returned before releasing anything whenever the outgoing-message lookup failed (missing `id`, key built only from the LID form, lookup miss, or any exception). The chat release therefore depended on the status-quote identity check. The manual path calls the same `sendBlueTick` without that lookup, which matches "manual works, reply doesn't". Which lookup step fails on the device is not proven.
+
+Changes:
+
+- `ReceiptPolicy.suppressIncomingReceipt(hideDelivered, viewed)` replaces `suppressRead`; the direct guard runs only for effective Hide Delivered (custom privacy/ghost included). Hide Read stays enforced by the SendReadReceiptJob hook and the protocol rewrite (`read` → delivery).
+- `StatusReplyRouting.route(...)`: status broadcast → nothing; resolved outgoing quoting a status → that status only if it matches, else nothing; anything else (including an unresolved outgoing message) → chat release. Trade-off: if the lookup fails for a status reply, that contact's pending chat receipts are released (never the status). Status receipts still require a resolved quote.
+- `findOutgoing` tries the LID and then the PN form of the destination key.
+- `WaEnhancerX/Receipts` info logs: one `reply release route=… lookup=… jid=…` line per outgoing job run and one `chat release pending=N rows=M jid=…` line per chat release. Address form only (`lid+pn`, `group`), no numbers or IDs. `getHideSeenMessages` returning null no longer throws.
+
+Validation: 24 JUnit tests (ReceiptPolicy, ReceiptRelease, StatusReplyRouting) compiled with javac and passed under JUnit 4.13.2. `git diff --check` passed. `SeenTick`/`HideSeen` were **not compiled** here: this container has no Android SDK and the wrapper's Gradle 8.14.5 is not cached. No APK, no device run, no workflow dispatched.
+
+Next (device): install this head with the user's current settings. (1) Without opening the chat, have the contact send a message: expect two gray ticks on the sender. (2) Open the chat: still gray. (3) Reply normally (and once with a quote): expect blue on the sender without the manual menu. Capture `logcat -d -v time -s WaEnhancerX/Receipts:V`. If `route=CHAT` and `pending=0 rows=0`, the hidden rows are keyed differently (check `jid=lid` without `+pn`: LID→PN mapping missing). If no `reply release` line appears, `SendE2EMessageJob/onRun` is not the hooked path on this build. Also check a status reply releases only that status.

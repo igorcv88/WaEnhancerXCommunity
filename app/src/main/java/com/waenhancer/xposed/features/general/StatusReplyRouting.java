@@ -23,6 +23,21 @@ public final class StatusReplyRouting {
         return List.of(resolved);
     }
 
+    public enum Route { CHAT, STATUS, NONE }
+
+    /**
+     * Decide what an outgoing message releases. Only a resolved outgoing message that quotes a
+     * status can take the status route, and only for the matching quoted item. Anything else sent
+     * to a contact or group releases that chat: the chat release must not depend on the
+     * status-identity lookup, which can fail on host builds (PN/LID key form, lookup timing).
+     */
+    public static Route route(boolean destinationIsStatus, boolean outgoingResolved,
+                              boolean quotesStatus, boolean quotedStatusMatches) {
+        if (destinationIsStatus) return Route.NONE;
+        if (outgoingResolved && quotesStatus) return quotedStatusMatches ? Route.STATUS : Route.NONE;
+        return Route.CHAT;
+    }
+
     private static boolean same(String left, String right) {
         return left != null && !left.isEmpty() && left.equals(right);
     }

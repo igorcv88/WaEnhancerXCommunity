@@ -58,4 +58,20 @@ public class StatusReplyRoutingTest {
         try { selected.add(viewer.get(0)); fail("selection must be immutable"); }
         catch (UnsupportedOperationException expected) { }
     }
+
+    @Test public void unresolvedOutgoingStillReleasesChat() {
+        // The status-identity lookup failing must not block the ordinary chat release.
+        assertEquals(StatusReplyRouting.Route.CHAT, StatusReplyRouting.route(false, false, false, false));
+    }
+    @Test public void resolvedChatReplyReleasesChat() {
+        assertEquals(StatusReplyRouting.Route.CHAT, StatusReplyRouting.route(false, true, false, false));
+    }
+    @Test public void statusQuoteReleasesOnlyMatchingStatus() {
+        assertEquals(StatusReplyRouting.Route.STATUS, StatusReplyRouting.route(false, true, true, true));
+        assertEquals(StatusReplyRouting.Route.NONE, StatusReplyRouting.route(false, true, true, false));
+    }
+    @Test public void statusBroadcastReleasesNothing() {
+        assertEquals(StatusReplyRouting.Route.NONE, StatusReplyRouting.route(true, true, false, false));
+        assertEquals(StatusReplyRouting.Route.NONE, StatusReplyRouting.route(true, false, false, false));
+    }
 }

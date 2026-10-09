@@ -14,7 +14,7 @@ public class ReceiptReleaseTest {
             for (String id : ids) {
                 assertTrue(viewed.get(id));
                 assertFalse(ReceiptPolicy.suppressDispatch(true, viewed.get(id)));
-                assertFalse(ReceiptPolicy.suppressRead(true, true, viewed.get(id)));
+                assertFalse(ReceiptPolicy.suppressIncomingReceipt(true, viewed.get(id)));
             }
         });
         assertEquals(2, viewed.size());
