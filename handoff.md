@@ -553,7 +553,7 @@ Next (device): install this head with the user's current settings. (1) Without o
 
 ## Reply release still silent after #82 — 2026-10-09
 
-PR #82 merged as `b718380`. Branch `ccr-9c2dae1b-1qb2s6` restarted from that master. Device result on #82 (user screenshot, same settings): **delivered now works** (sender sees two gray ticks). Replies (normal and quoted) still do not turn the sender's ticks blue, and the module's own indicator on incoming bubbles stays red. Red means a hidden-read row exists with `viewed=false`. A release through `sendBlueTick` would flip it green, so the reply path never reaches the release with matching rows. No logcat was supplied.
+PR #82 merged as `b718380`. Branch `ccr-9c2dae1b-1qb2s6` restarted from that master; ready-for-review PR #83 (not merged). Device result on #82 (user screenshot, same settings): **delivered now works** (sender sees two gray ticks). Replies (normal and quoted) still do not turn the sender's ticks blue, and the module's own indicator on incoming bubbles stays red. Red means a hidden-read row exists with `viewed=false`. A release through `sendBlueTick` would flip it green, so the reply path never reaches the release with matching rows. No logcat was supplied.
 
 The failure predates #65/#66. The pre-#65 code had no outgoing lookup and the user reported the same symptom, so the lookup removed in #82 was not the only cause. The remaining candidates cannot be told apart by reading the code:
 
