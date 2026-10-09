@@ -28,7 +28,7 @@ import java.util.function.Supplier;
  * in the view's own shape.</p>
  */
 public final class GlassMaterialDrawable extends Drawable implements Drawable.Callback {
-    private final Drawable original;
+    private Drawable original;
     private final WeakReference<View> owner;
     private Supplier<GlassSpec> spec;
     private final float radiusDp;
@@ -183,6 +183,23 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         if (live != null) live.release(reason);
     }
     public Drawable original() { return original; }
+
+    /**
+     * WhatsApp replaced the view's background while this glass was installed (a toolbar does so
+     * when its lift state changes). Adopt the new native drawable as the one to mask with and
+     * restore, and keep the live recording: a fresh drawable would start without one and show
+     * the fallback for a frame or more on every replacement.
+     */
+    public void replaceOriginal(Drawable replacement) {
+        if (replacement == original || replacement == this) return;
+        original = replacement;
+        if (original != null) {
+            original.setCallback(this);
+            original.setState(getState()); original.setLevel(getLevel());
+            original.setBounds(getBounds());
+        }
+        invalidateSelf();
+    }
     public void restoreCallback() { if (original != null) original.setCallback(getCallback()); }
     @Override public boolean getPadding(Rect padding) {
         if (original != null) return original.getPadding(padding);

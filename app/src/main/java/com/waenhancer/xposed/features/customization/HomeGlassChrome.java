@@ -45,7 +45,8 @@ final class HomeGlassChrome {
 
     private static final class ListState {
         final WeakReference<ViewGroup> container;
-        final int marginTop, paddingTop;
+        final int marginTop;
+        int paddingTop;
         final boolean clipToPadding;
         int shift;
         ListState(View list, ViewGroup container) {
@@ -130,14 +131,27 @@ final class HomeGlassChrome {
         }
         if (list == null || !list.isLaidOut() || !(list.getLayoutParams() instanceof ViewGroup.MarginLayoutParams)) return;
 
+        // A pending layout means getTop() and the margins disagree; the next pass comes back here.
+        if (container.isLayoutRequested() || list.isLayoutRequested()) return;
         ListState state = lists.get(list);
         if (state == null) {
             state = new ListState(list, container);
             lists.put(list, state);
+        } else if (list.getPaddingTop() != state.paddingTop + state.shift) {
+            // WhatsApp reset the padding itself: that value is the new native baseline.
+            host.report("home-list-native-padding", "home list padding changed natively ("
+                    + (state.paddingTop + state.shift) + " -> " + list.getPaddingTop() + "); re-basing");
+            state.paddingTop = list.getPaddingTop();
+            state.shift = 0;
+            ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) list.getLayoutParams();
+            lp.topMargin = state.marginTop;
+            list.setLayoutParams(lp);
+            return;
         }
-        // Where the list would sit without our shift; recomputed every layout, so a search row
-        // that changes height (or disappears) moves the rest position with it.
-        int natural = list.getTop() + state.shift;
+        // Where the list would rest without our shift, from what stacks above it. Unlike getTop()
+        // this never reads a position from before the last change, which made the shift double,
+        // the list oscillate on every layout and the end-of-list pin yank rows back up.
+        int natural = naturalTop(container, list) + state.marginTop;
         if (natural < 0) return;
         if (natural != state.shift) {
             boolean atTop = !list.canScrollVertically(-1);
@@ -146,14 +160,31 @@ final class HomeGlassChrome {
             list.setLayoutParams(lp);
             list.setPadding(list.getPaddingLeft(), state.paddingTop + natural, list.getPaddingRight(), list.getPaddingBottom());
             ((ViewGroup) list).setClipToPadding(false);
+            boolean first = state.shift == 0;
             state.shift = natural;
             host.report("home-list-extended", "home list extended under the chrome (shift=" + natural + ")");
-            if (atTop) keepAtTop(list);
+            if (atTop && first) keepAtTop(list);
         }
         if (search != null && !raised.containsKey(search)) {
             raised.put(search, search.getTranslationZ());
             if (search.getTranslationZ() < SEARCH_Z) search.setTranslationZ(SEARCH_Z);
         }
+    }
+
+    /** Container padding plus every visible sibling stacked above the list, with their margins. */
+    private static int naturalTop(ViewGroup container, View list) {
+        int top = container.getPaddingTop();
+        for (int i = 0; i < container.getChildCount(); i++) {
+            View child = container.getChildAt(i);
+            if (child == list) return top;
+            if (child.getVisibility() == View.GONE) continue;
+            top += child.getMeasuredHeight();
+            if (child.getLayoutParams() instanceof ViewGroup.MarginLayoutParams) {
+                ViewGroup.MarginLayoutParams m = (ViewGroup.MarginLayoutParams) child.getLayoutParams();
+                top += m.topMargin + m.bottomMargin;
+            }
+        }
+        return top;
     }
 
     /** One pre-draw after the padding change: back to the first row, as before the change. */
