@@ -56,7 +56,6 @@ public final class AppLiquidGlass extends Feature {
     private final Set<Integer> unknownResources = new HashSet<>();
     private final Set<String> reported = new HashSet<>();
     private WeakReference<Session> foreground = new WeakReference<>(null);
-    private final HomeTreeProbe homeTree = new HomeTreeProbe();
     private final HomeGlassChrome home = new HomeGlassChrome(new HomeGlassChrome.Host() {
         @Override public boolean toolbarsEnabled() { return LiquidGlassSettings.isEnabled(prefs, Surface.TOOLBARS); }
         @Override public void report(String key, String message) { AppLiquidGlass.this.report(key, message); }
@@ -696,9 +695,6 @@ public final class AppLiquidGlass extends Feature {
             // Before the early return below: switching the panes off must still restore the screen.
             conversation.sync(view);
             home.sync(view);
-            if (LiquidGlassSettings.isEnabled(prefs, Surface.TOOLBARS)) {
-                try { homeTree.sync(view); } catch (Throwable error) { report("home-tree-error", "home tree probe failed: " + error); }
-            }
             try {
                 for (Map.Entry<View, Binding> entry : new ArrayList<>(bindings.entrySet())) {
                     View target = entry.getKey();
@@ -713,6 +709,13 @@ public final class AppLiquidGlass extends Feature {
                         releaseBudget(binding);
                         binding.restore(target);
                         bindings.remove(target);
+                    } else if (target.getBackground() != binding.glass
+                            && !(target.getBackground() instanceof GlassMaterialDrawable)
+                            && keepGlass(target, binding)) {
+                        // WhatsApp swapped the native background under the glass (the home toolbar
+                        // does so on scroll and tab changes): the glass, and its live recording,
+                        // stay; the new drawable becomes the one restored later.
+                        continue;
                     } else if (target.getBackground() != binding.glass) {
                         // A native rebind wins. Capture its new background rather than restoring
                         // an old drawable over whatever WhatsApp just changed.
@@ -778,6 +781,23 @@ public final class AppLiquidGlass extends Feature {
                 ViewGroup group = (ViewGroup) view;
                 for (int i = 0; i < group.getChildCount(); i++) walk(group.getChildAt(i), depth + 1);
             }
+        }
+
+        /** Puts the existing glass back over a replaced native background; false if refused. */
+        private boolean keepGlass(View view, Binding binding) {
+            Drawable replacement = view.getBackground();
+            installing = true;
+            try {
+                binding.original = replacement;
+                binding.glass.replaceOriginal(replacement);
+                if (view.getBackgroundTintList() != null) view.setBackgroundTintList(null);
+                view.setBackground(binding.glass);
+                // setBackground detached the replaced drawable; it draws through the glass now.
+                if (replacement != null) replacement.setCallback(binding.glass);
+                boolean kept = view.getBackground() == binding.glass;
+                if (kept) report("kept-" + binding.surface, binding.surface + " native background replaced under the glass; glass kept");
+                return kept;
+            } finally { installing = false; }
         }
 
         private void adopt(View view, GlassMaterialDrawable glass) {
@@ -887,7 +907,7 @@ public final class AppLiquidGlass extends Feature {
     }
 
     private static final class Binding {
-        final Drawable original;
+        Drawable original;
         final Surface surface;
         final boolean nativeMask;
         final BackgroundState state;
