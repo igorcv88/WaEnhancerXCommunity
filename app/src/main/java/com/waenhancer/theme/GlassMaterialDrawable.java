@@ -131,6 +131,13 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     public boolean captureBehind(View host) {
         if (host == null || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return false;
         GlassSpec material = spec.get();
+        // A background gets its bounds only when the view first draws it, after this pre-draw
+        // pass: every new or re-bound drawable failed its first capture and showed the fallback
+        // for a frame (24 of 27 binds in the device log). A view's background always spans the
+        // view, so take that size now; the view's own draw sets the same bounds.
+        if (getBounds().isEmpty() && host.getWidth() > 0 && host.getHeight() > 0) {
+            setBounds(0, 0, host.getWidth(), host.getHeight());
+        }
         Rect b = getBounds();
         if (material == null || b.isEmpty() || !host.isAttachedToWindow() || !host.isShown()) return false;
         if (live == null) live = new LiveBackdrop();
