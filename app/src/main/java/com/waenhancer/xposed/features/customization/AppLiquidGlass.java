@@ -57,6 +57,10 @@ public final class AppLiquidGlass extends Feature {
     private final Set<String> reported = new HashSet<>();
     private WeakReference<Session> foreground = new WeakReference<>(null);
     private final HomeTreeProbe homeTree = new HomeTreeProbe();
+    private final HomeGlassChrome home = new HomeGlassChrome(new HomeGlassChrome.Host() {
+        @Override public boolean toolbarsEnabled() { return LiquidGlassSettings.isEnabled(prefs, Surface.TOOLBARS); }
+        @Override public void report(String key, String message) { AppLiquidGlass.this.report(key, message); }
+    });
     private final ConversationGlassPanes conversation = new ConversationGlassPanes(new ConversationGlassPanes.Host() {
         @Override public boolean toolbarsEnabled() { return LiquidGlassSettings.isEnabled(prefs, Surface.TOOLBARS); }
         @Override public boolean composerEnabled() { return LiquidGlassSettings.isEnabled(prefs, Surface.COMPOSER); }
@@ -363,6 +367,8 @@ public final class AppLiquidGlass extends Feature {
         private final WeakReference<View> root;
         private final WeakHashMap<View, Binding> bindings = new WeakHashMap<>();
         private final WeakHashMap<View, Surface> candidates = new WeakHashMap<>();
+        /** Views that ignore setBackground (Material FABs); never retried in this window. */
+        private final WeakHashMap<View, Boolean> refused = new WeakHashMap<>();
         private final Set<View> pendingDiscovery = java.util.Collections.newSetFromMap(new WeakHashMap<>());
         private boolean discoveryPosted;
         private boolean discovered;
@@ -689,6 +695,7 @@ public final class AppLiquidGlass extends Feature {
 
             // Before the early return below: switching the panes off must still restore the screen.
             conversation.sync(view);
+            home.sync(view);
             if (LiquidGlassSettings.isEnabled(prefs, Surface.TOOLBARS)) {
                 try { homeTree.sync(view); } catch (Throwable error) { report("home-tree-error", "home tree probe failed: " + error); }
             }
@@ -787,7 +794,8 @@ public final class AppLiquidGlass extends Feature {
         }
 
         void bind(View view, Surface surface, boolean nativeMask) {
-            if (view == null || bindings.containsKey(view) || view.getWidth() < 1 || view.getHeight() < 1
+            if (view == null || bindings.containsKey(view) || refused.containsKey(view)
+                    || view.getWidth() < 1 || view.getHeight() < 1
                     || view == root.get() || GlassSurface.isGlassHost(view) || view instanceof GlassPane
                     || conversation.owns(view)) return;
             // One pane per surface, innermost wins: WhatsApp nests ids of one surface (my_search_bar
@@ -812,6 +820,19 @@ public final class AppLiquidGlass extends Feature {
                 installing = true;
                 view.setBackgroundTintList(null);
                 view.setBackground(binding.glass);
+                if (view.getBackground() != binding.glass) {
+                    // Material's FloatingActionButton ignores setBackground. Without this guard every
+                    // scan saw a "native rebind", restored and bound again: hundreds of binds per
+                    // second on home's fab_second, each one clearing the button's tint.
+                    bindings.remove(view);
+                    view.setBackgroundTintList(binding.state.tint);
+                    refused.put(view, Boolean.TRUE);
+                    GlassTrace.event(root.get(), binding.glass, view, "REFUSED", "background-ignored",
+                            "role=" + surface + " " + describe(view));
+                    report("refused-" + surface, surface + " left native: " + resourceName(view)
+                            + " ignores setBackground");
+                    return;
+                }
                 view.setPadding(binding.left, binding.top, binding.right, binding.bottom);
 
                 report("surface-" + surface, surface + " background installed; native layout retained");

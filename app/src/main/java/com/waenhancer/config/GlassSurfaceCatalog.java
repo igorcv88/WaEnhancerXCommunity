@@ -13,7 +13,10 @@ public final class GlassSurfaceCatalog {
                 "toolbar", "search_view_toolbar", "action_mode_bar", "call_info_collapsing_toolbar",
                 "community_navigation_toolbar");
         put(targets, LiquidGlassSettings.Surface.SEARCH,
-                "my_search_bar", "search_bar", "conversations_filter_pinned_button_container");
+                // search_bar_inner_layout is the visible pill inside home's full-width my_search_bar
+                // (2.26.33.76 HomeTree dump); innermost wins, so the pill, not the row, gets the glass.
+                "my_search_bar", "search_bar", "search_bar_inner_layout",
+                "conversations_filter_pinned_button_container");
         put(targets, LiquidGlassSettings.Surface.FAB,
                 "fab", "extended_mini_fab", "fab_second", "create_new_broadcast_button", "community_navigation_add_group_button",
                 "empty_community_row_button", "community_nux_next_button");
