@@ -31,6 +31,7 @@ public final class LiquidGlassOptics {
     public static final String DEBUG = "liquid_glass_optics_debug";
     /** Developer: displacement as a fraction of the bevel, before the hard cap. */
     public static final String DISPLACEMENT = "liquid_glass_optics_displacement";
+    public static final String PROFILE = "liquid_glass_optics_profile";
 
     /**
      * Group switches, in the order the comparison is meant to be made. Stable geometry is not a
@@ -51,7 +52,8 @@ public final class LiquidGlassOptics {
                 bool(prefs, TEMPORAL, true),
                 bool(prefs, CLEAR, false),
                 GlassOptics.Debug.from(string(prefs, DEBUG)),
-                number(prefs, DISPLACEMENT, LensModel.DEFAULT_DISPLACEMENT));
+                number(prefs, DISPLACEMENT, LensModel.DEFAULT_DISPLACEMENT))
+                .withProfile(GlassOptics.Profile.from(string(prefs, PROFILE)));
     }
 
     /** "All improvements": the master switch and every group on, diagnostics off. */
@@ -65,6 +67,16 @@ public final class LiquidGlassOptics {
     /** "Original": the master switch off. Group choices are kept for the next comparison. */
     public static void applyOriginal(SharedPreferences prefs) {
         prefs.edit().putBoolean(MASTER, false).apply();
+    }
+
+    /** Explicit candidate action reproduces the report's LIQUID/Clear-off comparison. */
+    public static void applyReconstruction(SharedPreferences prefs) {
+        SharedPreferences.Editor editor = prefs.edit().putBoolean(MASTER,true)
+                .putBoolean(CLEAR,false).putString(PROFILE,GlassOptics.Profile.RECONSTRUCT.key())
+                .putString(DEBUG,GlassOptics.Debug.NONE.key())
+                .putFloat(DISPLACEMENT,LensModel.DEFAULT_DISPLACEMENT);
+        for (String group : GROUPS) editor.putBoolean(group,true);
+        editor.apply();
     }
 
     private static boolean bool(SharedPreferences prefs, String key, boolean fallback) {

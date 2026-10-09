@@ -23,6 +23,19 @@ import java.util.Locale;
  */
 public final class GlassOptics {
 
+    /** A/B candidates; only RECONSTRUCT changes the effect graph and material finish. */
+    public enum Profile {
+        BASELINE(0.15f, 0.65f), BALANCED(0.45f, 0.45f), STRONG(0.65f, 0.35f),
+        RECONSTRUCT(0.65f, 0.40f);
+        public final float rim, fullAt;
+        Profile(float rim, float fullAt) { this.rim = rim; this.fullAt = fullAt; }
+        public String key() { return name().toLowerCase(Locale.ROOT); }
+        public static Profile from(String value) {
+            for (Profile p : values()) if (p.key().equalsIgnoreCase(value)) return p;
+            return BASELINE;
+        }
+    }
+
     /** Shader diagnostics. Developer only; {@link #NONE} is the material itself. */
     public enum Debug {
         NONE(0),
@@ -40,7 +53,9 @@ public final class GlassOptics {
          * Diagnostic comparison only: the material with the legacy warp, which folds at the rounded
          * ends, corners and selected tab. Never a production setting.
          */
-        LEGACY_WARP(6);
+        LEGACY_WARP(6),
+        SHARP_ONLY(7), SOFT_ONLY(8), BETA_HEATMAP(9), FOOTPRINT(10),
+        COVERAGE(11), FINAL_NO_LIGHT(12), TIME_GENERATION(13);
 
         public final int code;
 
@@ -84,7 +99,7 @@ public final class GlassOptics {
     public final boolean geometry;
     /** The diagnostic legacy-warp view is selected. */
     public final boolean legacyWarp;
-    /** Gaussian low-pass input mixed with the sharp one by depth (LG-02/07). */
+    /** Platform low-pass input mixed with the sharp one by depth (LG-02/07). */
     public final boolean filtering;
     /** In-shader contrast protection and backdrop-adaptive tint (LG-03). Needs filtering. */
     public final boolean adaptive;
@@ -97,10 +112,18 @@ public final class GlassOptics {
     public final Debug debug;
     /** Base displacement as a fraction of the bevel, before the hard cap. Developer tuning. */
     public final float displacement;
+    public final Profile profile;
 
     private GlassOptics(boolean corrected, boolean geometry, boolean filtering, boolean adaptive,
                         boolean color, boolean temporal, boolean clearProfile, Debug debug,
                         float displacement) {
+        this(corrected, geometry, filtering, adaptive, color, temporal, clearProfile, debug,
+                displacement, Profile.BASELINE);
+    }
+
+    private GlassOptics(boolean corrected, boolean geometry, boolean filtering, boolean adaptive,
+                        boolean color, boolean temporal, boolean clearProfile, Debug debug,
+                        float displacement, Profile profile) {
         this.corrected = corrected;
         this.geometry = geometry;
         this.legacyWarp = corrected && debug == Debug.LEGACY_WARP;
@@ -111,6 +134,27 @@ public final class GlassOptics {
         this.clearProfile = clearProfile;
         this.debug = debug == null ? Debug.NONE : debug;
         this.displacement = displacement;
+        this.profile = profile == null ? Profile.BASELINE : profile;
+    }
+
+    public GlassOptics withProfile(Profile value) {
+        if (!corrected) return LEGACY;
+        return new GlassOptics(corrected, geometry, filtering, adaptive, color, temporal,
+                clearProfile, debug, displacement, value);
+    }
+
+    /** Reconstruction is opt-in and disabled for geometric/input isolation views. */
+    public boolean reconstruct() {
+        return corrected && filtering && profile == Profile.RECONSTRUCT && !legacyWarp
+                && (debug == Debug.NONE || debug == Debug.FINAL_NO_LIGHT
+                || debug == Debug.TIME_GENERATION || debug == Debug.PROTECTION);
+    }
+
+    public boolean needsBlur() {
+        if (debug == Debug.SOFT_ONLY) return corrected;
+        return corrected && filtering && (debug == Debug.NONE || debug == Debug.PROTECTION
+                || debug == Debug.SOFT_ONLY || debug == Debug.FINAL_NO_LIGHT
+                || debug == Debug.TIME_GENERATION);
     }
 
     /**
@@ -160,7 +204,7 @@ public final class GlassOptics {
         if (!corrected) return "legacy";
         return "v2:" + (filtering ? "F" : "f") + (adaptive ? "A" : "a")
                 + (color ? "C" : "c") + (temporal ? "T" : "t") + (clearProfile ? "K" : "k")
-                + ":" + debug.code + ":" + displacement;
+                + ":" + debug.code + ":" + displacement + ":" + profile.key();
     }
 
     @Override public boolean equals(Object other) {

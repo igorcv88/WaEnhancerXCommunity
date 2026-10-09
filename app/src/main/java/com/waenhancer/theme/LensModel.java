@@ -65,7 +65,7 @@ public final class LensModel {
     public static final float SPREAD_LEGACY_MIN_PX = 2f;
     public static final float SPREAD_LEGACY_MAX_PX = 6f;
 
-    /** Gaussian sigma per unit of the spec's blur radius, in dp. */
+    /** Requested RenderEffect blur radius per spec unit, in dp; not a measured Gaussian sigma. */
     public static final float SIGMA_DP_PER_UNIT = 0.80f;
     public static final float SIGMA_MIN_PX = 1.5f;
     public static final float SIGMA_MAX_PX = 30f;
@@ -300,7 +300,7 @@ public final class LensModel {
 
     // ---- filtering ---------------------------------------------------------------------------
 
-    /** Gaussian sigma of the soft backdrop, in px. */
+    /** Requested blur radius in px. Historical name retained for source compatibility. */
     public static float sigmaPx(GlassSpec spec, float density) {
         if (spec.blurRadius <= 0f) return 0f;
         return clamp(spec.blurRadius * SIGMA_DP_PER_UNIT * density, SIGMA_MIN_PX, SIGMA_MAX_PX);
@@ -324,6 +324,20 @@ public final class LensModel {
     /** Share of the soft backdrop at depth fraction {@code t} into the bevel. */
     public static float beta(float t) {
         return BETA_RIM + (1f - BETA_RIM) * smoothstep(0f, BETA_FULL_AT, t);
+    }
+
+    /** Mirrors profileBeta in AGSL, including the reconstruction candidate's warp-depth bias. */
+    public static float beta(float t, GlassOptics.Profile profile, float normalizedOffset) {
+        float depth = t;
+        if (profile == GlassOptics.Profile.RECONSTRUCT) {
+            depth += 0.12f * clamp(normalizedOffset, 0f, 1f);
+        }
+        return profile.rim + (1f - profile.rim) * smoothstep(0f, profile.fullAt, depth);
+    }
+
+    /** Small prefilter for residual detail; never downscales the source raster. */
+    public static float detailRadiusPx(float density) {
+        return clamp(0.65f * density, 0.75f, 3f);
     }
 
     /** sharp/soft mix: {@code (1-β)·sharp + β·soft}, which is how the two passes composite. */

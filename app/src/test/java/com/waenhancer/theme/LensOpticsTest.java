@@ -91,12 +91,13 @@ public class LensOpticsTest {
     // ---- filtering (LG-02/LG-07) -------------------------------------------------------------
 
     /**
-     * Background text behind the body must stop competing with the controls. Body text has a
+     * An ideal Gaussian reference, assuming sigma equals the requested radius. This is model
+     * arithmetic, not the Android HWUI PSF. Body text has a
      * stroke period of roughly 7 dp; the soft backdrop must attenuate it to 10% or less, at any
      * density, while a 60 dp colour mass keeps most of its contrast.
      */
     @Test
-    public void softBackdropRemovesTextButKeepsColourMasses() {
+    public void idealGaussianReferenceAttenuatesTextAndKeepsColourMasses() {
         GlassSpec spec = liquid(true);
         for (float density : new float[]{1f, 2f, 2.75f, 3.5f, 4f}) {
             double sigma = LensModel.sigmaPx(spec, density);
@@ -115,7 +116,7 @@ public class LensOpticsTest {
         assertEquals(0.1d, LensModel.gaussianResponse(LensModel.sigmaFor(0.2d, 0.1d), 0.2d), 1e-9);
     }
 
-    /** The margin covers the truncated Gaussian support, so the rim never samples a clamp. */
+    /** The engineering margin is three requested radii; effective kernel support needs GPU validation. */
     @Test
     public void paddingCoversThreeSigma() {
         for (float sigma : new float[]{1.5f, 4.4f, 11f, 30f}) {

@@ -17,21 +17,14 @@ import android.util.Log;
  *
  * <h3>Effect graph</h3>
  *
- * <p>Without filtering, one pass: the shader samples the recorded backdrop directly and does the
- * legacy nine-tap blur itself. With filtering, two passes over the same content, composited
- * source-over:</p>
- * <pre>
- *   soft  = lens(pass=1) ∘ gaussian(σ)     γ·β·M(soft),       alpha γ·β
- *   sharp = lens(pass=2)                   γ·(1-β)·M(sharp),  alpha γ·(1-β); empty where β = 1
- *   out   = sharp PLUS soft = γ·[(1-β)·M(sharp) + β·M(soft)],  alpha γ
- * </pre>
- * <p>γ is the shape's coverage, applied once. Source-over would not do: with coverage on both
- * passes it gives alpha γ(1-β) + γ[1 - γ(1-β)], which is 0.7125 instead of 0.5 at γ = 0.5,
- * β = 0.15 — a thicker, more opaque antialias band. {@link LensModel#composite} mirrors this.</p>
- * <p>β is the soft share: low at the rim, where the refraction needs structure to bend, and 1 in
- * the body, where the controls are and background text must not compete with them. The blur is
- * the platform's Gaussian ({@link RenderEffect#createBlurEffect}), so its response is
- * {@code exp(-2π²σ²f²)} with a known σ, not a sparse kernel with copies (LG-02/LG-07).</p>
+ * <p>Baseline/balanced/strong retain the two weighted V2 passes. The reconstruction candidate
+ * prefilters the detail input, integrates a small Jacobian footprint, and adds linear numeric
+ * contributions with PLUS. A final shader applies tint, lighting and contrast once and encodes
+ * once. Each branch carries coverage times its share; the final pass unpremultiplies before
+ * finishing, then applies coverage once. Inputs stay at native resolution.</p>
+ * <p>Android accepts a blur radius, not a published Gaussian sigma. Requested radii and a
+ * conservative 3-radius margin are engineering parameters; effective PSF/MTF requires GPU PNG
+ * readback on the target device. No sparse sampling scheme here is claimed to be full EWA.</p>
  *
  * <h3>Why the effect is rebuilt when uniforms change</h3>
  *
@@ -78,13 +71,14 @@ final class LensEffect {
 
     final Interaction interaction = new Interaction();
 
-    private RuntimeShader sharp, soft;
+    private RuntimeShader sharp, soft, finish;
     private RenderEffect effect;
     private String key;
     /** The material the current effect was built from; compared by value with the temporal group. */
     private GlassSpec builtSpec;
     private boolean twoPass;
-    private float sigma;
+    private float sigma, detailRadius;
+    private boolean reconstruct;
     private String status = "not built";
 
     /**
@@ -96,9 +90,7 @@ final class LensEffect {
      */
     boolean update(GlassSpec spec, int width, int height, float radius, float density,
                    GlassOptics optics, int padding, boolean temporalKeys) {
-        boolean filtering = optics.filtering && optics.debug != GlassOptics.Debug.RAW_INPUT
-                && optics.debug != GlassOptics.Debug.DISPLACEMENT
-                && optics.debug != GlassOptics.Debug.JACOBIAN && optics.debug != GlassOptics.Debug.GRID;
+        boolean filtering = optics.needsBlur();
         float sig = filtering ? LensModel.sigmaPx(spec, density) : 0f;
         filtering = filtering && sig > 0f;
         String next = optics.key() + "|" + width + "x" + height + "|" + radius + "|" + density
@@ -106,26 +98,30 @@ final class LensEffect {
         if (next.equals(key) && effect != null && sameMaterial(builtSpec, spec, temporalKeys)) return false;
         if (broken) return false;
         try {
-            if (sharp == null || (filtering && soft == null)) {
+            if (sharp == null || (filtering && soft == null) || (optics.reconstruct() && finish == null)) {
                 try {
                     if (sharp == null) sharp = new RuntimeShader(SHADER_V2);
                     if (filtering && soft == null) soft = new RuntimeShader(SHADER_V2);
+                    if (optics.reconstruct() && finish == null) finish = new RuntimeShader(SHADER_V2);
                 } catch (RuntimeException | LinkageError compile) {
                     // The program itself is refused: permanent for this process.
                     broken = true;
                     throw compile;
                 }
             }
+            reconstruct = filtering && optics.reconstruct();
+            detailRadius = reconstruct ? LensModel.detailRadiusPx(density) : 0f;
             interaction.onMaterialChange(optics.temporal);
             write(sharp, spec, width, height, radius, density, optics, padding, filtering ? 2f : 0f);
             if (filtering) write(soft, spec, width, height, radius, density, optics, padding, 1f);
+            if (reconstruct) write(finish, spec, width, height, radius, density, optics, padding, 3f);
             twoPass = filtering;
             sigma = sig;
             key = next;
             builtSpec = spec;
             effect = build();
             status = "v2 " + optics.key() + " " + width + "x" + height + " pad=" + padding
-                    + (filtering ? " sigma=" + sig : " single-pass");
+                    + (filtering ? " blurRadiusPx=" + sig + " detailRadiusPx=" + detailRadius : " single-pass");
             return true;
         } catch (RuntimeException | LinkageError error) {
             if (++failures >= MAX_FAILURES) broken = true;
@@ -179,6 +175,7 @@ final class LensEffect {
         try {
             writeInteraction(sharp);
             if (twoPass && soft != null) writeInteraction(soft);
+            if (reconstruct && finish != null) writeInteraction(finish);
             effect = build();
             return effect;
         } catch (RuntimeException | LinkageError error) {
@@ -190,10 +187,14 @@ final class LensEffect {
     private RenderEffect build() {
         RenderEffect sharpEffect = RenderEffect.createRuntimeShaderEffect(sharp, "content");
         if (!twoPass) return sharpEffect;
+        if (reconstruct) sharpEffect = RenderEffect.createChainEffect(sharpEffect,
+                RenderEffect.createBlurEffect(detailRadius, detailRadius, Shader.TileMode.CLAMP));
         RenderEffect blurred = RenderEffect.createBlurEffect(sigma, sigma, Shader.TileMode.CLAMP);
         RenderEffect softEffect = RenderEffect.createChainEffect(
                 RenderEffect.createRuntimeShaderEffect(soft, "content"), blurred);
-        return RenderEffect.createBlendModeEffect(softEffect, sharpEffect, BlendMode.PLUS);
+        RenderEffect mixture = RenderEffect.createBlendModeEffect(softEffect, sharpEffect, BlendMode.PLUS);
+        return reconstruct ? RenderEffect.createChainEffect(
+                RenderEffect.createRuntimeShaderEffect(finish, "content"), mixture) : mixture;
     }
 
     private void write(RuntimeShader shader, GlassSpec spec, int width, int height, float radius,
@@ -219,6 +220,9 @@ final class LensEffect {
         shader.setFloatUniform("uLo", geo.lo);
         shader.setFloatUniform("uGeo", stable ? 1f : 0f);
         shader.setFloatUniform("uPass", pass);
+        shader.setFloatUniform("uStage", reconstruct ? (pass > 2.5f ? 2f : 1f) : 0f);
+        shader.setFloatUniform("uReconstruction", optics.profile == GlassOptics.Profile.RECONSTRUCT ? 1f : 0f);
+        shader.setFloatUniform("uNoLight", optics.debug == GlassOptics.Debug.FINAL_NO_LIGHT ? 1f : 0f);
         shader.setFloatUniform("uBlur", blur);
         shader.setFloatUniform("uColorV2", optics.color ? 1f : 0f);
         // The legacy-warp view is the material with uGeo off, not a shader view of its own.
@@ -245,8 +249,8 @@ final class LensEffect {
                 ? LensModel.CONTRAST_TARGET_CLEAR : LensModel.CONTRAST_TARGET);
         shader.setFloatUniform("uProtectMax", optics.clearProfile
                 ? LensModel.PROTECTION_MAX_CLEAR : LensModel.PROTECTION_MAX);
-        shader.setFloatUniform("uBetaRim", LensModel.BETA_RIM);
-        shader.setFloatUniform("uBetaFull", LensModel.BETA_FULL_AT);
+        shader.setFloatUniform("uBetaRim", optics.profile.rim);
+        shader.setFloatUniform("uBetaFull", optics.profile.fullAt);
         shader.setFloatUniform("uProtFrom", LensModel.PROTECTION_FROM);
         shader.setFloatUniform("uProtTo", LensModel.PROTECTION_TO);
         writeInteraction(shader);
@@ -286,6 +290,9 @@ final class LensEffect {
             + "uniform float uLo;\n"
             + "uniform float uGeo;\n"
             + "uniform float uPass;\n"
+            + "uniform float uStage;\n"
+            + "uniform float uReconstruction;\n"
+            + "uniform float uNoLight;\n"
             + "uniform float uBlur;\n"
             + "uniform float uColorV2;\n"
             + "uniform float uDebug;\n"
@@ -388,6 +395,25 @@ final class LensEffect {
             + "    return float4(offset, 1.0 - k, 1.0 + k);\n"
             + "}\n"
             + "\n"
+            + "float4 pixelLinear(float2 c, float2 lo, float2 hi) {\n"
+            + "    float4 v = float4(content.eval(clamp(c, lo, hi)));\n"
+            + "    return float4(float3(toLinearSrgb(half3(v.rgb / max(v.a, 0.001)))) * v.a, v.a);\n"
+            + "}\n"
+            + "// Five weighted samples of the pixel footprint, not a low-resolution raster or EWA.\n"
+            + "float4 footprintSample(float2 c, float2 jx, float2 jy, float2 lo, float2 hi) {\n"
+            + "    float2 ax = jx * 0.45;\n"
+            + "    float2 ay = jy * 0.45;\n"
+            + "    return pixelLinear(c, lo, hi) * 0.5 + (pixelLinear(c + ax, lo, hi)\n"
+            + "        + pixelLinear(c - ax, lo, hi) + pixelLinear(c + ay, lo, hi)\n"
+            + "        + pixelLinear(c - ay, lo, hi)) * 0.125;\n"
+            + "}\n"
+            + "float profileBeta(float t, float2 offset) {\n"
+            + "    float depth = t;\n"
+            + "    if (uReconstruction > 0.5) {\n"
+            + "        depth += 0.12 * clamp(length(offset) / max(uCap, 1.0), 0.0, 1.0);\n"
+            + "    }\n"
+            + "    return uBetaRim + (1.0 - uBetaRim) * smoothstep(0.0, uBetaFull, depth);\n"
+            + "}\n"
             // Known lines for the GRID diagnostic: a 24px grid, finer 6px bars in alternate cells.
             + "float3 gridAt(float2 c) {\n"
             + "    float2 g = abs(fract(c / 24.0) - 0.5) * 24.0;\n"
@@ -443,24 +469,57 @@ final class LensEffect {
             + "    float activeCov = uActive * clamp(0.5 - ad / 1.5, 0.0, 1.0);\n"
             + "    float activeEdge = activeCov * clamp(1.0 + ad / max(uBevel * 0.45, 1.0), 0.0, 1.0);\n"
             + "\n"
-            + "    float beta = uPass > 0.5 ? uBetaRim + (1.0 - uBetaRim) * smoothstep(0.0, uBetaFull, t) : 0.0;\n"
+            + "    float4 off = lensOffsets(local);\n"
+            + "    float beta = profileBeta(t, off.xy);\n"
             // Each pass carries its own share, coverage included, and the two are added (PLUS):
             // out = γ·[(1-β)·sharp + β·soft], with the coverage γ applied exactly once. The
             // protection diagnostic shows the soft pass alone, at full weight.
-            + "    bool protView = uDebug > 4.5;\n"
-            + "    float w = uPass > 1.5 ? (protView ? 0.0 : 1.0 - beta)\n"
-            + "        : (uPass > 0.5 ? (protView ? 1.0 : beta) : 1.0);\n"
+            + "    bool protView = uDebug > 4.5 && uDebug < 5.5 && uStage != 1.0;\n"
+            + "    float w = uStage > 1.5 ? 1.0 : (uPass > 1.5 ? (protView ? 0.0 : 1.0 - beta)\n"
+            + "        : (uPass > 0.5 ? (protView ? 1.0 : beta) : 1.0));\n"
+            + "    if (uDebug == 7.0 || uDebug == 8.0) w = uDebug == 8.0 ? ((uPass == 1.0 || uPass == 0.0) ? 1.0 : 0.0) : 1.0;\n"
             + "    if (w < 0.0001) {\n"
             + "        return half4(0.0);\n"
             + "    }\n"
             + "\n"
-            + "    float4 off = lensOffsets(local);\n"
             + "    float2 lo = float2(uLo, uLo);\n"
             + "    float2 hi = uInput - float2(uLo, uLo);\n"
             + "    float2 cG = clamp(coord + off.xy, lo, hi);\n"
             + "    float2 cR = clamp(coord + off.xy * off.z, lo, hi);\n"
             + "    float2 cB = clamp(coord + off.xy * off.w, lo, hi);\n"
             + "\n"
+            + "    float2 jx = float2(1.0, 0.0);\n"
+            + "    float2 jy = float2(0.0, 1.0);\n"
+            + "    if ((uStage == 1.0 || uDebug == 3.0 || uDebug == 10.0) && t < 1.0) {\n"
+            + "        jx += (lensOffsets(local + float2(0.5, 0.0)).xy\n"
+            + "            - lensOffsets(local - float2(0.5, 0.0)).xy);\n"
+            + "        jy += (lensOffsets(local + float2(0.0, 0.5)).xy\n"
+            + "            - lensOffsets(local - float2(0.0, 0.5)).xy);\n"
+            + "    }\n"
+            + "    if (uDebug == 9.0) return half4(half3(float3(beta, 1.0-beta, 0.0)*cov), half(cov));\n"
+            + "    if (uDebug == 10.0) {\n"
+            + "        float det = jx.x*jy.y - jx.y*jy.x;\n"
+            + "        float tr = dot(jx,jx) + dot(jy,jy);\n"
+            + "        float disc = sqrt(max(0.0, tr*tr - 4.0*det*det));\n"
+            + "        float smin = sqrt(max(0.0, (tr-disc)*0.5));\n"
+            + "        float smax = sqrt(max(0.0, (tr+disc)*0.5));\n"
+            + "        return half4(half3(float3(clamp(smin,0.0,1.0), clamp(smax/2.0,0.0,1.0),\n"
+            + "            clamp(length(off.xy)/max(uCap,1.0),0.0,1.0))*cov), half(cov));\n"
+            + "    }\n"
+            + "    if (uDebug == 11.0) return half4(half3(float3(cov)), 1.0);\n"
+            + "    if (uStage == 1.0) {\n"
+            + "        float4 g = footprintSample(cG,jx,jy,lo,hi);\n"
+            + "        float4 red = g;\n"
+            + "        float4 blue = g;\n"
+            + "        if (length(off.xy) > 0.0001 && uDelta > 0.0) {\n"
+            + "            red = footprintSample(cR,jx,jy,lo,hi);\n"
+            + "            blue = footprintSample(cB,jx,jy,lo,hi);\n"
+            + "        }\n"
+            + "        float3 linear = float3(red.r/max(red.a,0.001), g.g/max(g.a,0.001), blue.b/max(blue.a,0.001));\n"
+            + "        if (g.a < 0.01) linear = float3(toLinearSrgb(half3(tint4.rgb)));\n"
+            + "        return half4(half3(linear*cov*w), half(cov*w));\n"
+            + "    }\n"
+            + "    if (uStage > 1.5) { cG=coord; cR=coord; cB=coord; }\n"
             // Diagnostics that replace the material.
             + "    if (uDebug > 0.5 && uDebug < 1.5) {\n"
             + "        float4 raw = float4(content.eval(clamp(coord, lo, hi)));\n"
@@ -492,7 +551,7 @@ final class LensEffect {
             // pass's input; without, the legacy nine-tap blur and sharp red/blue fringe taps.
             + "    float4 back;\n"
             + "    float3 col;\n"
-            + "    if (uPass > 0.5) {\n"
+            + "    if (uPass > 0.5 || uDebug == 7.0 || uDebug == 8.0) {\n"
             + "        back = float4(content.eval(cG));\n"
             + "        if (back.a < 0.01) {\n"
             + "            return half4(half3(tint4.rgb * cov * w), half(cov * w));\n"
@@ -518,12 +577,15 @@ final class LensEffect {
             + "        }\n"
             + "    }\n"
             + "\n"
+            + "    if (uDebug == 7.0 || uDebug == 8.0) {\n"
+            + "        return half4(half3(col*cov*w), half(cov*w));\n"
+            + "    }\n"
             // Transmission: saturation, tint and contrast protection. In linear light with the
             // colour group on; in encoded values (the legacy arithmetic) with it off.
-            + "    bool lin = uColorV2 > 0.5;\n"
+            + "    bool lin = uColorV2 > 0.5 || uStage > 1.5;\n"
             + "    float3 tint = tint4.rgb;\n"
             + "    if (lin) {\n"
-            + "        col = float3(toLinearSrgb(half3(col)));\n"
+            + "        if (uStage < 1.5) col = float3(toLinearSrgb(half3(col)));\n"
             + "        tint = float3(toLinearSrgb(half3(tint)));\n"
             + "    }\n"
             + "    float l0 = lum(col);\n"
@@ -532,18 +594,20 @@ final class LensEffect {
             + "        col = min(col, float3(1.0));\n"
             + "    }\n"
             // Adaptive tint: pulled toward the local (filtered) backdrop, as adaptTo does for the bar.
-            + "    if (uPass > 0.5 && uPass < 1.5 && uAdaptTint > 0.0) {\n"
+            + "    if (((uPass > 0.5 && uPass < 1.5) || uStage > 1.5) && uAdaptTint > 0.0) {\n"
             + "        tint = mix(tint, col, uAdaptTint);\n"
             + "    }\n"
             + "    col = mix(col, tint, tint4.a);\n"
-            + "    if (lin) {\n"
+            + "    if (lin && uStage < 1.5) {\n"
             + "        col = float3(fromLinearSrgb(half3(clamp(col, float3(0.0), float3(1.0)))));\n"
             + "    }\n"
             + "\n"
+            + "    float3 transmitted = col;\n"
             // The rim's light. Artistic, in encoded values, as in the legacy shader; the colour
             // group lowers its gains and caps the hairline's channel separation.
             + "    float2 lightDir = normalize(uLight + float2(0.0001, 0.0));\n"
             + "    float facing = dot(n, -lightDir);\n"
+            + "    if (uStage < 1.5) {\n"
             + "    float2 pn = p / max(hs, float2(1.0, 1.0));\n"
             + "    float phase = atan(pn.y, pn.x);\n"
             // Integer harmonics, so the pattern closes on itself round the outline.
@@ -587,14 +651,26 @@ final class LensEffect {
             + "        * max(-facing, 0.0) * uInnerShadow;\n"
             + "    col = col * (1.0 - 0.26 * shade);\n"
             + "    col = clamp(col, float3(0.0), float3(1.0));\n"
-            // Contrast protection, last: on the final colour of this pass, lighting included, in
-            // linear light whatever the colour group says, so the closed form is exact. Each pass
-            // is protected on its own pixel; luminance is linear in the (1-β, β) mix, so when both
-            // passes meet the target the composite does too. The soft pass's pixel is a local mean,
-            // which is what the glyphs above sit on; the sharp pass only has weight near the rim.
+            + "    }\n"
+            + "    if (uStage > 1.5) {\n"
+            + "        float depth = max(-d, 0.0);\n"
+            + "        float narrow = exp(-pow((depth-uHair*0.75)/max(uHair*0.65,0.8),2.0));\n"
+            + "        float broad = exp(-pow((depth-uBevel*0.18)/max(uBevel*0.20,1.0),2.0));\n"
+            + "        float backLight = smoothstep(0.02,0.70,lum(transmitted));\n"
+            + "        float reflectance = mix(0.25,0.75,backLight);\n"
+            + "        float directional = 0.15 + 0.85*pow(max(facing,0.0),2.0);\n"
+            + "        float glint = narrow*directional*reflectance*uSpec*0.28;\n"
+            + "        float ambient = broad*pow(max(facing,0.0),2.0)*uSpec*0.075;\n"
+            + "        float occlusion = broad*max(-facing,0.0)*uInnerShadow*0.28;\n"
+            + "        col = transmitted*(1.0-occlusion) + float3(1.0,0.985,0.96)*(glint+ambient);\n"
+            + "        col = mix(col,float3(toLinearSrgb(half3(activeTint4.rgb))),activeTint4.a*activeCov);\n"
+            + "    }\n"
+            + "    if (uNoLight > 0.5) col = transmitted;\n"
+            // Reconstruction protects the composed linear pixel after lighting. Historical profiles
+            // protect each encoded branch independently; do not infer a linear RGB mixture there.
             + "    float prot = 0.0;\n"
             + "    if (uAdaptive > 0.5 && uPass > 0.5) {\n"
-            + "        float3 linCol = float3(toLinearSrgb(half3(col)));\n"
+            + "        float3 linCol = uStage > 1.5 ? col : float3(toLinearSrgb(half3(col)));\n"
             + "        float3 linP = float3(toLinearSrgb(half3(protect4.rgb)));\n"
             + "        float lg = lum(linCol);\n"
             + "        float lc = lum(float3(toLinearSrgb(half3(content4.rgb))));\n"
@@ -608,11 +684,12 @@ final class LensEffect {
             + "            need = lg < limit ? (limit - lg) / max(lp - lg, 0.000001) : 0.0;\n"
             + "        }\n"
             + "        prot = clamp(need, 0.0, uProtectMax) * smoothstep(uProtFrom, uProtTo, t);\n"
-            + "        col = float3(fromLinearSrgb(half3(mix(linCol, linP, prot))));\n"
+            + "        col = uStage > 1.5 ? mix(linCol, linP, prot) : float3(fromLinearSrgb(half3(mix(linCol, linP, prot))));\n"
             + "    }\n"
             + "    if (protView) {\n"
             + "        col = float3(prot / max(uProtectMax, 0.001), beta, 0.0);\n"
             + "    }\n"
+            + "    if (uStage > 1.5 && !protView) col = float3(fromLinearSrgb(half3(clamp(col,float3(0.0),float3(1.0)))));\n"
             + "    return half4(half3(col * cov * w), half(cov * w));\n"
             + "}\n";
 }
