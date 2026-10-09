@@ -38,6 +38,7 @@ final class HomeGlassChrome {
 
     interface Host {
         boolean toolbarsEnabled();
+        boolean searchEnabled();
         void report(String key, String message);
     }
 
@@ -73,7 +74,9 @@ final class HomeGlassChrome {
     void sync(View root) {
         if (root == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
         try {
-            if (!host.toolbarsEnabled()) {
+            // Rows run behind the chrome for either surface: the search pill needs them as much
+            // as the header does. Only the header's fill belongs to the Headers switch.
+            if (!host.toolbarsEnabled() && !host.searchEnabled()) {
                 restore(root);
                 return;
             }
@@ -92,7 +95,10 @@ final class HomeGlassChrome {
                 return;
             }
             View fill = find(header, "toolbar_container");
-            if (fill != null) clearFill(fill);
+            if (fill != null) {
+                if (host.toolbarsEnabled()) clearFill(fill);
+                else restoreFill(fill);
+            }
             for (View container : containers((ViewGroup) pager)) extend((ViewGroup) container);
         } catch (Throwable error) {
             host.report("home-sync-error", "home chrome skipped: " + error);
@@ -208,6 +214,12 @@ final class HomeGlassChrome {
         Drawable clear = new ColorDrawable(Color.TRANSPARENT);
         replacements.put(fill, clear);
         fill.setBackground(clear);
+    }
+
+    private void restoreFill(View fill) {
+        Drawable original = cleared.remove(fill);
+        replacements.remove(fill);
+        if (original != null) fill.setBackground(original);
     }
 
     /** Undo everything recorded for this window. */

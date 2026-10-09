@@ -508,3 +508,13 @@ Why only some surfaces flashed: there are two pipelines. The conversation header
 Performance baseline (user `gfx.txt`, home scrolling, this build's predecessor): 1548 frames, median frame 19 ms, p90 24 ms, p99 65 ms; **GPU median 9 ms, p90 11 ms**. A 120 Hz frame has 8.3 ms, so the GPU alone exceeds the budget; the user's 60–80 Hz impression matches. Not yet attributed per surface. Likely costs, in order to measure: each live drawable re-records the content behind it and runs the blur/lens `RenderEffect` at full resolution every scrolling frame (LG-02: the "quarter-size" recording is a display list, so nothing is actually downsampled); home has several live surfaces at once (header, search pill, floating bar, FAB, filters). Candidate fixes, each to be measured on the device before/after with `dumpsys gfxinfo`: a real low-resolution capture (render the backdrop into a scaled layer before blurring); one shared backdrop per window instead of one per surface; and moving home header/search to the pane model the conversation screen uses, so both screens share one pipeline.
 
 Validation: `:app:testWhatsappDebugUnitTest` 425 tests, 0 failures; `:app:assembleWhatsappDebug` succeeded. No device run.
+
+## Search-only rows; idle frame rate — 2026-10-09
+
+Device report (user, after #80): with only Search on, nothing scrolls behind the search pill or the header; with only Headers on, rows show around the search row but not behind the header capsule; with both on, both work. The floating bar is independent and unaffected.
+
+- Search only: `HomeGlassChrome` ran only when TOOLBARS was on, so with Search alone the list was never extended. Fixed: the list extension runs when Headers or Search is on; the header fill is cleared only with Headers and restored when Headers is off while Search stays on.
+- Headers only, header capsule shows no rows: cause not established. In code, the header capture (`BehindRecorder.paintExact`) draws `pager_holder` as a sibling drawn before `header` regardless of the Search switch. Needs a `GlassState` log and a screenshot with Headers only.
+- Idle measurement (`idle_header.txt`, Headers only, untouched home, includes switching back to WhatsApp during the run): 154 frames in 10.1 s (~15 fps), frame p50 8 ms, GPU p50 3 ms. A glass-off idle baseline (`idle_off.txt`) was not supplied, so the share caused by glass is not attributed yet.
+
+Validation: `:app:testWhatsappDebugUnitTest` 425 tests, 0 failures; `:app:assembleWhatsappDebug` succeeded. No device run.
