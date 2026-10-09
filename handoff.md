@@ -2,7 +2,30 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — 2026-10-06
+## Current task — optical reconstruction, 2026-10-09
+
+Branch: `feat/glass-optical-reconstruction`, based on latest `master@cbbf20205a6da6ee2bffda2879d1c8245bca1b1e`. Published as ready-for-review **PR #84**: https://github.com/igorcv88/WaEnhancerXCommunity/pull/84. Implementation commit: `f4d39686c916b45992aa1d737b69d2b60f83361d`; its tree `8ccb35807e71123254b67f8af55852402de95a44` exactly matches the locally tested/committed implementation tree. A documentation-only follow-up records this publication; no code changed after the final verified APK. No related open glass PR existed; the six open PRs were dependency updates. No merge or workflow dispatch is authorized here.
+
+The user explicitly selected GPT-6.1 Sol High and authorized autonomous implementation, tests, compilation and an integrated review-ready PR using `LAUDO_DEFINITIVO_OTICA_LIQUID_GLASS_WAENHANCERX_2026-10-09.md` as the complete current specification. The older entries below are history. The reported stable capture behavior is preserved; Search was OFF in the relevant videos and remains user-selected.
+
+Implemented:
+- Four runtime profiles: exact V2 baseline transfer, balanced/strong beta-only candidates, and reconstruction. Existing preferences resolve to baseline. An explicit **Apply reconstruction candidate (Clear off)** action sets all optical groups/profile/debug/displacement consistently without changing styles, opacity or enabled surfaces. Changes apply on WhatsApp resume via the existing preference bridge/revision keys; the settings labels and synthetic lab refresh together.
+- Reconstruction prefilters residual detail at native resolution, integrates a five-sample Jacobian footprint, mixes linear numeric weighted contributions through PLUS, then applies material tint, directional micro-highlight/broad reflection/internal occlusion and contrast in one final pass, with one output encoding and one shape coverage. This is a two-scale approximation, not EWA/mips or measured Apple equivalence. Existing source selection, warp caps, native controls, transforms, capture graph/recovery/scheduling are retained. The floating bar's established BlurView/View finish stays baseline to preserve the user's convincing reference.
+- RAW_INPUT, SHARP_ONLY, SOFT_ONLY, beta, Jacobian, footprint, coverage, final-no-light, final and capture-generation diagnostics in the same APK. Soft isolation works even when Filtering is off. Reconstruction protection diagnostics measure the composed final pixel. Existing grid/displacement/legacy-warp diagnostics remain available; only diagnostic legacy warp folds.
+- API33+ synthetic GPU lab renders known native-pixel bars/step/diagonal/colour fields with the actual LensEffect graph and uses PixelCopy to export isolated graphical stages/final PNGs through the document picker. It captures only the module's own synthetic view, never WhatsApp. Private cached PNG/saved state handle rotation during export. Metadata can be copied (profile/groups/radii/physical dimensions/density/API/device/module/generation/status). The lab uses a dark LIQUID spec; actual light-theme/native-control acceptance remains separate.
+- LiveBudget charges the reconstruction graph at 6 padded pixel-passes versus historical 3, a conservative work estimate, not GPU time. No shared-source architecture, GPU downsampling or battery improvement is claimed. Blur documentation now distinguishes requested Android radius from an unknown effective HWUI sigma.
+- `tools/glass_optics_metrics.py` analyzes native PNG ROI luminance/ESF/LSF/MTF and encoded footprint scales, rejecting invalid inputs and stating the stationary-edge assumptions. CPU pixel goldens cover geometry/transfer/footprint under an explicit ideal-Gaussian reference; they are not driver images.
+
+Validation:
+- Full local JDK21/SDK36 Gradle `:app:testWhatsappDebugUnitTest :app:assembleWhatsappDebug` succeeded: **436 tests in 60 suites, zero failures/errors/skips**. The final settings-label/export corrections passed the same full incremental test and APK build. No source/dependency substitutes are used in the full build.
+- `tools/agsl_check.py`: both legacy SHADER and corrected SHADER_V2 pass glslangValidator after AGSL-to-GLSL adaptation. This does not establish Android AGSL compiler/driver acceptance.
+- PNG-metric synthetic smoke checks pass: native step/DC normalization, zero negative derivative share, rejection of an out-of-bounds ROI. `git diff --check` is clean.
+- Debug APK: `com.waenhancer.community`, version `1.8.0-alpha1` / code `18001`, min API28 / compile API36, arm64-v8a and armeabi-v7a; 15,985,124 bytes. ZIP CRC and APK v2 signature verification passed. SHA-256 `ab841647c25940b50f7bd0e016567f078065bd40a0adb39dbebbce37d67058c4`. This is a debug-signed calibration build, not a release-key update.
+- No device, GPU readback, visual A/B, frame benchmark or energy experiment was performed in this environment. The lab provides the mechanism to collect that evidence on the S25 Ultra; a shader/JVM/build pass is not visual acceptance.
+
+Device next steps: [docs/GLASS_OPTICAL_CALIBRATION_2026-10-09.md](docs/GLASS_OPTICAL_CALIBRATION_2026-10-09.md) contains exact activation, diagnostic meanings, a compact A0–A6 matrix, native PNG/MTF instructions, capture and native-control regressions, and frame/GPU/energy acceptance. Run LIQUID, Headers/Input/Floating on, Search off, Clear off; compare baseline/balanced/strong/reconstruction before selecting a production material. Record APK SHA, module/WhatsApp versions, physical density/size and profile settings with each result. Validate actual alpha/colour/HWUI PSF and GPU cost, especially the new intermediate linear numeric contract, before declaring appearance complete.
+
+## Historical task — 2026-10-06
 
 Repository: https://github.com/igorcv88/WaEnhancerXCommunity
 
