@@ -789,6 +789,9 @@ public final class AppLiquidGlass extends Feature {
             installing = true;
             try {
                 binding.original = replacement;
+                // The tint WhatsApp set with the new background is the native one to restore later.
+                binding.state = new BackgroundState(view);
+                binding.tintChanged = false;
                 binding.glass.replaceOriginal(replacement);
                 if (view.getBackgroundTintList() != null) view.setBackgroundTintList(null);
                 view.setBackground(binding.glass);
@@ -910,7 +913,7 @@ public final class AppLiquidGlass extends Feature {
         Drawable original;
         final Surface surface;
         final boolean nativeMask;
-        final BackgroundState state;
+        BackgroundState state;
         final int left, top, right, bottom;
         GlassMaterialDrawable glass;
         boolean tintChanged;
