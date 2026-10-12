@@ -67,7 +67,10 @@ public final class LiveBudget {
 
     /** Passes a surface's effect runs: three with the Gaussian graph, one otherwise. */
     public static int passes(GlassOptics optics, GlassSpec spec, float density) {
-        return optics.corrected && optics.filtering && LensModel.sigmaPx(spec, density) > 0f ? 3 : 1;
+        if (!optics.needsBlur() || LensModel.sigmaPx(spec, density) <= 0f) return 1;
+        // Detail blur + two reconstruction passes + soft blur + finish. PLUS is an additional
+        // blend, charged here too. This is a conservative work proxy, not GPU milliseconds.
+        return optics.reconstruct() ? 6 : 3;
     }
 
     /** Margin the recording carries, as {@link LiveBackdrop} computes it. */

@@ -713,7 +713,9 @@ public final class LiquidLens {
             status = "no view";
             return false;
         }
-        GlassOptics optics = GlassOptics.current();
+        // BlurView already supplies a reconstructed input. Keep the established floating-bar
+        // finish while the app-pane candidates are calibrated against it.
+        GlassOptics optics = GlassOptics.current().withProfile(GlassOptics.Profile.BASELINE);
         if (optics.corrected && !LensEffect.isBroken() && isActiveFor(spec)) {
             Boolean result = applyCorrected(view, spec, cornerRadiusPx, density, optics);
             if (result != null) return result;

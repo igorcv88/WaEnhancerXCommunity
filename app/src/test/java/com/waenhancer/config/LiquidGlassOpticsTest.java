@@ -164,7 +164,7 @@ public class LiquidGlassOpticsTest {
     public void everyKeyCrossesTheBridge() {
         String[] keys = {LiquidGlassOptics.MASTER, LiquidGlassOptics.FILTERING,
                 LiquidGlassOptics.ADAPTIVE, LiquidGlassOptics.COLOR, LiquidGlassOptics.TEMPORAL,
-                LiquidGlassOptics.CLEAR, LiquidGlassOptics.DEBUG, LiquidGlassOptics.DISPLACEMENT};
+                LiquidGlassOptics.CLEAR, LiquidGlassOptics.DEBUG, LiquidGlassOptics.DISPLACEMENT, LiquidGlassOptics.PROFILE};
         for (String key : keys) {
             PreferenceSchema.Entry entry = PreferenceSchema.entry(key);
             assertTrue(key + " missing from the schema", entry != null);

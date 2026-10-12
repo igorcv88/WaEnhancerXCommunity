@@ -60,7 +60,8 @@ public class OpticsReviewRegressionTest {
     // ---- 3/9. contrast after composition -----------------------------------------------------
 
     /**
-     * Protection runs per pass on that pass's final colour. Linear luminance is linear in the
+     * CPU model of linear per-pass protection. This is not evidence of the historical encoded
+     * PLUS graph's pixel colours. Linear luminance is linear in the
      * (1-β, β) mix, so if both passes are at or under the limit the composite is too.
      */
     @Test
@@ -84,7 +85,7 @@ public class OpticsReviewRegressionTest {
         String shader = LensEffect.SHADER_V2;
         int protection = shader.indexOf("if (uAdaptive > 0.5 && uPass > 0.5) {");
         assertTrue(protection > shader.indexOf("col = col * (1.0 - 0.26 * shade);"));
-        assertTrue(shader.contains("float3 linCol = float3(toLinearSrgb(half3(col)));"));
+        assertTrue(shader.contains("float3 linCol = uStage > 1.5 ? col : float3(toLinearSrgb(half3(col)));"));
     }
 
     /**

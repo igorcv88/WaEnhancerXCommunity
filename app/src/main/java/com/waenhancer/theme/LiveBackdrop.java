@@ -17,8 +17,8 @@ import android.util.Log;
  * list is not a raster: scaling the recording down and back up, as the legacy path does, does not
  * lower the resolution HWUI rasterises at, so it saves no work and filters nothing (LG-07). It
  * only adds a rounding error, {@code W / (4·ceil(W/4)) ≠ 1} (LG-06). The corrected path records
- * 1:1, and when the filtering group is on it records a margin of {@code 3σ} around the surface so
- * the Gaussian has real pixels at the rim instead of clamped ones. The caller is responsible for
+ * 1:1, and when the filtering group is on it records a conservative margin of three requested blur radii around the surface so
+ * the platform blur has real pixels at the rim instead of clamped ones. The caller is responsible for
  * never recording anything that draws this backdrop, or HWUI recurses on the RenderThread and the
  * process dies natively.</p>
  */
@@ -64,6 +64,8 @@ final class LiveBackdrop {
     private boolean correctedInstalled;
     private String loggedStatus;
     private long captureGeneration, effectRebuilds;
+    private long lastCaptureUptime;
+    private final android.graphics.Paint diagnosticPaint = new android.graphics.Paint();
 
     /**
      * The geometry of one recording: input size (surface plus margin), node size, and the
@@ -202,6 +204,7 @@ final class LiveBackdrop {
         hasContent = true;
         recordingState = RecordingState.RECORDED;
         captureGeneration++;
+        lastCaptureUptime = android.os.SystemClock.uptimeMillis();
         return true;
     }
 
@@ -262,6 +265,7 @@ final class LiveBackdrop {
         hasContent = true;
         recordingState = RecordingState.RECORDED;
         captureGeneration++;
+        lastCaptureUptime = android.os.SystemClock.uptimeMillis();
         return true;
     }
 
@@ -297,6 +301,13 @@ final class LiveBackdrop {
             return false;
         }
         ((RecordingCanvas) canvas).drawRenderNode(glassNode);
+        if (GlassOptics.current().debug == GlassOptics.Debug.TIME_GENERATION) {
+            diagnosticPaint.setColor(0xFF00FFAA);
+            diagnosticPaint.setTextSize(Math.max(10f, Math.min(24f, height * 0.16f)));
+            canvas.drawText("g=" + captureGeneration + " age="
+                    + (android.os.SystemClock.uptimeMillis() - lastCaptureUptime) + "ms r="
+                    + effectRebuilds, 8f, height - 6f, diagnosticPaint);
+        }
         return true;
     }
 

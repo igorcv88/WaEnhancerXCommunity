@@ -36,6 +36,10 @@ public class LiquidGlassActivity extends AppCompatActivity {
 
     private SharedPreferences prefs;
     private LinearLayout controls;
+    private com.waenhancer.theme.GlassOpticsLabView opticsLab;
+    private MaterialButton diagnosticMode;
+    private String pendingOpticsFile;
+    private static final int EXPORT_OPTICS_PNG = 903;
     /** Optics rows, enabled and disabled as their dependencies change. */
     private final java.util.Map<String, MaterialSwitch> opticsSwitches = new java.util.HashMap<>();
 
@@ -43,6 +47,7 @@ public class LiquidGlassActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        if (savedInstanceState != null) pendingOpticsFile = savedInstanceState.getString("optics_export");
         setContentView(buildContent());
     }
 
@@ -166,8 +171,8 @@ public class LiquidGlassActivity extends AppCompatActivity {
                         + "a bounded warp with no fold at the rounded ends, corners or selected tab, "
                         + "1:1 capture and exact placement.");
         addOpticsRow(LiquidGlassOptics.FILTERING, true, "1. Optical blur",
-                "A real Gaussian blur under the controls, sharp only at the rim. Background text stops "
-                        + "competing with the input field.");
+                "Platform blur and selectable rim reconstruction. The requested blur radius is "
+                        + "calibrated by the PNG lab; it is not a measured Gaussian sigma.");
         addOpticsRow(LiquidGlassOptics.ADAPTIVE, true, "2. Adaptive contrast",
                 "Darkens or lightens the glass only where the content behind would make icons and "
                         + "text hard to read, and tints toward the backdrop. Needs Optical blur.");
@@ -181,11 +186,37 @@ public class LiquidGlassActivity extends AppCompatActivity {
                 "More transparent glass on the app surfaces, with contrast protection doing the work "
                         + "of the tint. Needs Adaptive contrast. The bottom bar keeps its own style.");
 
+        MaterialButton profile = new MaterialButton(this);
+        profile.setText("Optical profile: " + prefs.getString(LiquidGlassOptics.PROFILE, "baseline"));
+        profile.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
+                .setTitle("Optical A/B profile")
+                .setItems(new String[]{"Baseline: original V2", "Balanced: rim transfer only",
+                        "Strong: rim transfer only", "Reconstruction: filtered detail, footprint and volume"},
+                        (dialog, which) -> {
+                            GlassOptics.Profile next = GlassOptics.Profile.values()[which];
+                            prefs.edit().putString(LiquidGlassOptics.PROFILE, next.key()).apply();
+                            profile.setText("Optical profile: " + next.key());
+                            refreshOpticsLab(); notifyChanged();
+                        }).show());
+        controls.addView(profile);
+        MaterialButton candidate = new MaterialButton(this);
+        candidate.setText("Apply reconstruction candidate (Clear off)");
+        candidate.setOnClickListener(v -> {
+            LiquidGlassOptics.applyReconstruction(prefs);
+            profile.setText("Optical profile: reconstruct");
+            refreshOpticsRows(); refreshOpticsLab(); notifyChanged();
+        });
+        controls.addView(candidate);
+        addCaption("Profiles apply to app surfaces when Optical blur is on. Baseline reproduces V2. "
+                + "Reconstruction is a candidate for device calibration. The floating bar retains "
+                + "its established finish. Keep Search off when reproducing the reported scenes.");
+
         addSection("Developer diagnostics");
         addCaption("Shader views for checking the corrected renderer. Only active with the "
                 + "Corrected renderer on.");
         MaterialButton debug = new MaterialButton(this,
                 null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
+        diagnosticMode = debug;
         GlassOptics.Debug[] views = GlassOptics.Debug.values();
         debug.setText("View: " + debugLabel(GlassOptics.Debug.from(
                 prefs.getString(LiquidGlassOptics.DEBUG, null))));
@@ -194,9 +225,69 @@ public class LiquidGlassActivity extends AppCompatActivity {
             GlassOptics.Debug next = views[(current.ordinal() + 1) % views.length];
             prefs.edit().putString(LiquidGlassOptics.DEBUG, next.key()).apply();
             debug.setText("View: " + debugLabel(next));
+            refreshOpticsLab();
             notifyChanged();
         });
         controls.addView(debug);
+
+        addCaption("Synthetic GPU lab: native-pixel 1/2/4/8 bars, diagonal, step edge and colour fields. "
+                + "The lab always uses the corrected renderer. Choose RAW, SHARP or SOFT to export "
+                + "an isolated graphical stage; final modes include material finishing.");
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            opticsLab = new com.waenhancer.theme.GlassOpticsLabView(this);
+            controls.addView(opticsLab, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(96)));
+            refreshOpticsLab();
+            MaterialButton export = new MaterialButton(this);
+            export.setText("Export synthetic GPU PNG");
+            export.setOnClickListener(v -> opticsLab.copyGpuPng(this, (bitmap, error) -> {
+                if (isFinishing() || isDestroyed()) { if (bitmap != null) bitmap.recycle(); return; }
+                if (error != null) {
+                    android.widget.Toast.makeText(this, error, android.widget.Toast.LENGTH_LONG).show();
+                    return;
+                }
+                export.setEnabled(false);
+                new Thread(() -> {
+                    java.io.File cached = null;
+                    try {
+                        cached = java.io.File.createTempFile("glass-optics-", ".png", getCacheDir());
+                        try (java.io.OutputStream out = new java.io.FileOutputStream(cached)) {
+                            if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out))
+                                throw new java.io.IOException("PNG write failed");
+                        }
+                        java.io.File ready = cached;
+                        runOnUiThread(() -> {
+                            export.setEnabled(true);
+                            if (isFinishing() || isDestroyed()) { ready.delete(); return; }
+                            if (pendingOpticsFile != null) new java.io.File(pendingOpticsFile).delete();
+                            pendingOpticsFile = ready.getAbsolutePath();
+                            android.content.Intent save = new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
+                            save.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+                            save.setType("image/png");
+                            save.putExtra(android.content.Intent.EXTRA_TITLE, "glass_"
+                                    + prefs.getString(LiquidGlassOptics.PROFILE,"baseline") + "_"
+                                    + prefs.getString(LiquidGlassOptics.DEBUG,"none") + ".png");
+                            startActivityForResult(save, EXPORT_OPTICS_PNG);
+                        });
+                    } catch (java.io.IOException | RuntimeException e) {
+                        if (cached != null) cached.delete();
+                        runOnUiThread(() -> {
+                            export.setEnabled(true);
+                            android.widget.Toast.makeText(this,"PNG capture could not be saved",android.widget.Toast.LENGTH_LONG).show();
+                        });
+                    } finally { bitmap.recycle(); }
+                }, "glass-png-capture").start();
+            }));
+            controls.addView(export);
+            MaterialButton metadata = new MaterialButton(this);
+            metadata.setText("Copy lab parameters");
+            metadata.setOnClickListener(v -> {
+                android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                        getSystemService(CLIPBOARD_SERVICE);
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Glass lab", opticsLab.metadata()));
+            });
+            controls.addView(metadata);
+        }
 
         TextView amount = new TextView(this);
         amount.setTextSize(13);
@@ -214,6 +305,7 @@ public class LiquidGlassActivity extends AppCompatActivity {
             @Override public void onStartTrackingTouch(@androidx.annotation.NonNull Slider slider) { }
             @Override public void onStopTrackingTouch(@androidx.annotation.NonNull Slider slider) {
                 prefs.edit().putFloat(LiquidGlassOptics.DISPLACEMENT, slider.getValue()).apply();
+                refreshOpticsLab();
                 notifyChanged();
             }
         });
@@ -238,7 +330,66 @@ public class LiquidGlassActivity extends AppCompatActivity {
             case GRID -> "synthetic grid";
             case PROTECTION -> "contrast protection (red) / blur share (green)";
             case LEGACY_WARP -> "original warp (diagnostic only: folds and duplicates at the edges)";
+            case SHARP_ONLY -> "refracted raw input (no material)";
+            case SOFT_ONLY -> "refracted platform blur (no material)";
+            case BETA_HEATMAP -> "soft share (red) / residual detail (green)";
+            case FOOTPRINT -> "sigma min (red), sigma max / 2 (green), displacement / cap (blue)";
+            case COVERAGE -> "shape coverage";
+            case FINAL_NO_LIGHT -> "final material without lighting";
+            case TIME_GENERATION -> "capture generation / age / rebuilds (app panes)";
         };
+    }
+
+    private void refreshOpticsLab() {
+        if (opticsLab == null) return;
+        GlassOptics lab = GlassOptics.resolve(true,
+                prefs.getBoolean(LiquidGlassOptics.FILTERING,true),
+                prefs.getBoolean(LiquidGlassOptics.ADAPTIVE,true),
+                prefs.getBoolean(LiquidGlassOptics.COLOR,true),
+                prefs.getBoolean(LiquidGlassOptics.TEMPORAL,true),
+                prefs.getBoolean(LiquidGlassOptics.CLEAR,false),
+                GlassOptics.Debug.from(prefs.getString(LiquidGlassOptics.DEBUG,null)),
+                prefs.getFloat(LiquidGlassOptics.DISPLACEMENT,LensModel.DEFAULT_DISPLACEMENT))
+                .withProfile(GlassOptics.Profile.from(prefs.getString(LiquidGlassOptics.PROFILE,null)));
+        opticsLab.configure(lab);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        super.onActivityResult(requestCode,resultCode,data);
+        if (requestCode != EXPORT_OPTICS_PNG) return;
+        String path = pendingOpticsFile;
+        pendingOpticsFile = null;
+        if (path == null || !new java.io.File(path).isFile()) {
+            android.widget.Toast.makeText(this,"Export frame expired; capture a new PNG",android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        java.io.File cached = new java.io.File(path);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) { cached.delete(); return; }
+        android.net.Uri destination = data.getData();
+        new Thread(() -> {
+            String message;
+            try (java.io.InputStream in = new java.io.FileInputStream(cached);
+                 java.io.OutputStream out = getContentResolver().openOutputStream(destination)) {
+                if (out == null) throw new java.io.IOException("PNG write failed");
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = in.read(buffer)) != -1) out.write(buffer,0,count);
+                message = "Synthetic GPU PNG saved";
+            } catch (java.io.IOException | RuntimeException e) { message = "PNG export failed"; }
+            finally { cached.delete(); }
+            String result = message;
+            runOnUiThread(() -> android.widget.Toast.makeText(this,result,android.widget.Toast.LENGTH_LONG).show());
+        },"glass-png-export").start();
+    }
+
+    @Override protected void onSaveInstanceState(android.os.Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putString("optics_export", pendingOpticsFile);
+    }
+
+    @Override protected void onDestroy() {
+        if (isFinishing() && pendingOpticsFile != null) new java.io.File(pendingOpticsFile).delete();
+        super.onDestroy();
     }
 
     private void addOpticsRow(String key, boolean defaultValue, String title, String summary) {
@@ -252,6 +403,9 @@ public class LiquidGlassActivity extends AppCompatActivity {
 
     /** Mirrors {@link GlassOptics#resolve}'s dependencies in the rows' enabled state. */
     private void refreshOpticsRows() {
+        refreshOpticsLab();
+        if (diagnosticMode != null) diagnosticMode.setText("View: " + debugLabel(
+                GlassOptics.Debug.from(prefs.getString(LiquidGlassOptics.DEBUG,null))));
         boolean master = prefs.getBoolean(LiquidGlassOptics.MASTER, false);
         boolean filtering = prefs.getBoolean(LiquidGlassOptics.FILTERING, true);
         boolean adaptive = prefs.getBoolean(LiquidGlassOptics.ADAPTIVE, true);
