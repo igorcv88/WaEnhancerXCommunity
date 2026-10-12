@@ -32,6 +32,13 @@ public final class LiquidGlassOptics {
     /** Developer: displacement as a fraction of the bevel, before the hard cap. */
     public static final String DISPLACEMENT = "liquid_glass_optics_displacement";
     public static final String PROFILE = "liquid_glass_optics_profile";
+    /**
+     * Which material renders glass: {@link #RENDERER_ONEMATE} (the default) or
+     * {@link #RENDERER_CLASSIC}, the renderer configured by the switches above.
+     */
+    public static final String RENDERER = "liquid_glass_renderer";
+    public static final String RENDERER_ONEMATE = "onemate";
+    public static final String RENDERER_CLASSIC = "classic";
 
     /**
      * Group switches, in the order the comparison is meant to be made. Stable geometry is not a
@@ -43,7 +50,7 @@ public final class LiquidGlassOptics {
 
     /** The effective switches. Never throws; unreadable values fall back to their defaults. */
     public static GlassOptics read(SharedPreferences prefs) {
-        if (prefs == null) return GlassOptics.LEGACY;
+        if (prefs == null) return GlassOptics.LEGACY.withOneMate(true);
         return GlassOptics.resolve(
                 bool(prefs, MASTER, false),
                 bool(prefs, FILTERING, true),
@@ -53,7 +60,14 @@ public final class LiquidGlassOptics {
                 bool(prefs, CLEAR, false),
                 GlassOptics.Debug.from(string(prefs, DEBUG)),
                 number(prefs, DISPLACEMENT, LensModel.DEFAULT_DISPLACEMENT))
-                .withProfile(GlassOptics.Profile.from(string(prefs, PROFILE)));
+                .withProfile(GlassOptics.Profile.from(string(prefs, PROFILE)))
+                .withOneMate(isOneMate(prefs));
+    }
+
+    /** Whether the OneMate material is selected. Anything but "classic" means yes. */
+    public static boolean isOneMate(SharedPreferences prefs) {
+        if (prefs == null) return true;
+        return !RENDERER_CLASSIC.equalsIgnoreCase(string(prefs, RENDERER));
     }
 
     /** "All improvements": the master switch and every group on, diagnostics off. */

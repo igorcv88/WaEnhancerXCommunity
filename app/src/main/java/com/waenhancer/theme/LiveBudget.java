@@ -67,6 +67,9 @@ public final class LiveBudget {
 
     /** Passes a surface's effect runs: three with the Gaussian graph, one otherwise. */
     public static int passes(GlassOptics optics, GlassSpec spec, float density) {
+        // OneMate: colour filter + Gaussian + lens/surface/highlight (seven taps in the bubble
+        // only; app surfaces sample once per pixel).
+        if (optics.oneMate && KyantLens.isAvailable()) return 3;
         if (!optics.needsBlur() || LensModel.sigmaPx(spec, density) <= 0f) return 1;
         // Detail blur + two reconstruction passes + soft blur + finish. PLUS is an additional
         // blend, charged here too. This is a conservative work proxy, not GPU milliseconds.
@@ -75,6 +78,7 @@ public final class LiveBudget {
 
     /** Margin the recording carries, as {@link LiveBackdrop} computes it. */
     public static int padding(GlassOptics optics, GlassSpec spec, float density) {
+        if (optics.oneMate && KyantLens.isAvailable()) return KyantLens.padding(density);
         return optics.corrected && optics.filtering ? LensModel.padding(LensModel.sigmaPx(spec, density)) : 0;
     }
 

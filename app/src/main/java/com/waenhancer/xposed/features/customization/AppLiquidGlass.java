@@ -155,6 +155,8 @@ public final class AppLiquidGlass extends Feature {
         GlassOptics optics;
         try {
             optics = LiquidGlassOptics.read(prefs);
+            com.waenhancer.theme.KyantLens.publishOpacity(LiquidGlassSettings.opacityPercent(prefs),
+                    LiquidGlassSettings.MATERIAL.recommendedOpacityPercent());
         } catch (Throwable error) {
             optics = GlassOptics.LEGACY;
             report("optics-read", "optics switches unreadable; original renderer: " + error);

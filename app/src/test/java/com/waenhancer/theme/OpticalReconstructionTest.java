@@ -15,7 +15,8 @@ public class OpticalReconstructionTest {
 
     @Test public void defaultRemainsBaselineAndExplicitCandidateIsAtomic() {
         FakeSharedPreferences prefs = new FakeSharedPreferences();
-        prefs.edit().putBoolean(LiquidGlassOptics.MASTER,true).apply();
+        prefs.edit().putString(LiquidGlassOptics.RENDERER,LiquidGlassOptics.RENDERER_CLASSIC)
+                .putBoolean(LiquidGlassOptics.MASTER,true).apply();
         assertEquals(GlassOptics.Profile.BASELINE,LiquidGlassOptics.read(prefs).profile);
         prefs.edit().putBoolean("liquid_glass_search",false).putBoolean(LiquidGlassOptics.CLEAR,true)
                 .putString(LiquidGlassOptics.DEBUG,"raw_input").apply();
