@@ -4,7 +4,7 @@ This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent
 
 ## Current task — OneMate glass material and bar bubble, 2026-10-12
 
-Branch: `claude/liquid-glass-nav-bar-ktxdge`, based on `master@6ae90fb` (PR #84 merged). PR: see the PR opened from this branch (ready for review, not merged). No workflow dispatched.
+Branch: `claude/liquid-glass-nav-bar-ktxdge`, based on `master@6ae90fb` (PR #84 merged). PR: [#85](https://github.com/igorcv88/WaEnhancerXCommunity/pull/85) (ready for review, not merged). No workflow dispatched.
 
 Request: adopt OneMate's (kalicyh/OneMate) liquid navigation bar (a bubble that rises when pressed and can be dragged) and its glass material on every surface. The user's screenshots show the current app surfaces as dark, near-opaque slabs with a wide grey rim; they called the bar acceptable and the rest ugly.
 
