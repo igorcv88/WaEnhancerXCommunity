@@ -296,6 +296,9 @@ public final class LiquidBubble extends View {
                     radius, progress))) {
                 drawTint(canvas, w, h, radius, progress);
             }
+            // On both paths, so the edge fades into the lens rim instead of popping off on the
+            // first lensed frame.
+            drawRestEdge(canvas, w, h, radius, progress);
         } finally {
             canvas.restoreToCount(save);
         }
@@ -308,8 +311,14 @@ public final class LiquidBubble extends View {
         tintPaint.setColor(color);
         rect.set(0f, 0f, w, h);
         canvas.drawRoundRect(rect, radius, radius, tintPaint);
-        // A hairline edge so the translucent wash reads as a pane of glass rather than a
-        // smudge. It fades out as the lens (which draws its own lit rim) takes over.
+    }
+
+    /**
+     * A hairline edge so the translucent rest wash reads as a pane of glass rather than a smudge.
+     * It fades out as the lens, which draws its own lit rim, takes over.
+     */
+    private void drawRestEdge(Canvas canvas, float w, float h, float radius, float progress) {
+        rect.set(0f, 0f, w, h);
         float edge = (1f - Math.max(0f, Math.min(1f, progress))) * REST_EDGE_ALPHA;
         if (lensed && edge > 0.004f) {
             float stroke = Math.max(1f, density);
