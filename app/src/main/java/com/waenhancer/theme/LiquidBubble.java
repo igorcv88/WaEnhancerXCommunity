@@ -63,10 +63,17 @@ public final class LiquidBubble extends View {
     private final Paint tintPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     /**
-     * Glass the bubble keeps at rest, as a fraction of the pressed lens: enough refraction at the
-     * rim and enough lit edge that the resting bubble reads as glass, not as a flat pill.
+     * Size of WhatsApp's own Material active indicator (the small green pill around the selected
+     * icon), which is the resting state: the bubble is born from it when motion starts, grows into
+     * the glass bubble, and shrinks back into it on arrival.
      */
-    static final float REST_GLASS = 0.35f;
+    static final float INDICATOR_W_DP = 64f;
+    static final float INDICATOR_H_DP = 32f;
+    /** Below this press progress the bubble is hidden and the native indicator stands alone. */
+    static final float VISIBLE_PROGRESS = 0.01f;
+    /** Opacity of the accent wash at the start of the morph, fading out as glass takes over. */
+    static final float MORPH_ACCENT_ALPHA = 0.45f;
+    private final Paint morphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     /** Where the tabs pager is, as a fractional bubble index; NaN when unknown. */
     public interface PagerSource {
@@ -151,7 +158,8 @@ public final class LiquidBubble extends View {
         // The resting lens shows a recording of the capture view; when that view is about to
         // redraw (the list moved behind the bar), redraw with it, or the bubble would show a
         // stale copy. Never invalidates on its own, so it cannot start a frame loop.
-        if (lensed && captureView != null && captureView.isDirty() && !isDirty()) invalidate();
+        if (lensed && motion != null && motion.pressProgress() > VISIBLE_PROGRESS
+                && captureView != null && captureView.isDirty() && !isDirty()) invalidate();
     }
 
     /** Follows the pager while it moves; settles when it has been still for two frames. */
@@ -383,24 +391,48 @@ public final class LiquidBubble extends View {
         float top = (getHeight() - h) / 2f;
         float radius = h / 2f;
         float progress = motion.pressProgress();
-        float sx = motion.drawScaleX();
-        float sy = motion.drawScaleY();
+        // At rest WhatsApp's own small green indicator is the indicator; the bubble only exists
+        // while something moves.
+        if (progress < VISIBLE_PROGRESS) return;
+        // Born from the native indicator: at low progress the bubble has the indicator's size,
+        // and grows to its own (then the pressed scale) as it rises; on landing it shrinks back.
+        float morphX = morphScale(INDICATOR_W_DP * density / w, progress);
+        float morphY = morphScale(INDICATOR_H_DP * density / h, progress);
+        float sx = motion.drawScaleX() * morphX;
+        float sy = motion.drawScaleY() * morphY;
 
         int save = canvas.save();
         canvas.translate(left, top);
         canvas.scale(sx, sy, w / 2f, h / 2f);
         try {
-            float glassLevel = REST_GLASS + (1f - REST_GLASS) * progress;
             if (!drawLens(canvas, left, top, Math.round(w), Math.round(h), radius, progress,
-                    glassLevel)) {
+                    progress)) {
                 // No live lens here (fallback material, another surface's recording): a wash
                 // and a hairline edge stand in for it.
                 drawTint(canvas, w, h, radius, progress);
                 drawRestEdge(canvas, w, h, radius, progress);
             }
+            // The green it was born from, fading out as the glass takes over.
+            float green = MORPH_ACCENT_ALPHA * (1f - progress) * (1f - progress);
+            if (green > 0.004f) {
+                morphPaint.setColor((Math.round(green * 255f) << 24) | (accent & 0xFFFFFF));
+                rect.set(0f, 0f, w, h);
+                canvas.drawRoundRect(rect, radius, radius, morphPaint);
+            }
         } finally {
             canvas.restoreToCount(save);
         }
+    }
+
+    /**
+     * Scale from the native indicator's size ({@code fromFraction} of the bubble's) to the
+     * bubble's own as progress rises; ease-out, so most of the growth happens early in the rise.
+     */
+    static float morphScale(float fromFraction, float progress) {
+        float from = Math.max(0.05f, Math.min(1f, fromFraction));
+        float p = Math.max(0f, Math.min(1f, progress));
+        float eased = 1f - (1f - p) * (1f - p);
+        return from + (1f - from) * eased;
     }
 
     private void drawTint(Canvas canvas, float w, float h, float radius, float progress) {
