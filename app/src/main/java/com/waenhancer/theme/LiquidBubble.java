@@ -70,10 +70,20 @@ public final class LiquidBubble extends View {
     static final float INDICATOR_W_DP = 64f;
     static final float INDICATOR_H_DP = 32f;
     /** Below this press progress the bubble is hidden and the native indicator stands alone. */
-    static final float VISIBLE_PROGRESS = 0.01f;
+    public static final float VISIBLE_PROGRESS = 0.01f;
     /** Opacity of the accent wash at the start of the morph, fading out as glass takes over. */
     static final float MORPH_ACCENT_ALPHA = 0.45f;
     private final Paint morphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    /**
+     * A private copy of WhatsApp's own indicator drawable, so the morph starts and ends on exactly
+     * its colour and shape. Null until the bar finds it; the accent wash stands in meanwhile.
+     */
+    private android.graphics.drawable.Drawable indicator;
+
+    /** Sets the native indicator look the bubble is born from and lands back into. */
+    public void setIndicatorDrawable(android.graphics.drawable.Drawable drawable) {
+        indicator = drawable;
+    }
 
     /** Where the tabs pager is, as a fractional bubble index; NaN when unknown. */
     public interface PagerSource {
@@ -91,6 +101,8 @@ public final class LiquidBubble extends View {
      * and pulse the bubble.
      */
     static final long PAGER_SETTLE_MS = 80L;
+    /** How close to a whole page the pager must rest for a swipe to count as finished. */
+    static final float PAGE_SETTLED_EPSILON = 0.01f;
     /** True while {@link #frame()} runs, so scheduling from inside it keeps the frame clock. */
     private boolean inFrame;
     /** After a drag commits a tab, the pager's own scroll toward it must not move the bubble. */
@@ -184,7 +196,11 @@ public final class LiquidBubble extends View {
         if (changed) {
             pagerChangedAt = now;
             if (!waitPagerSettle) follow(position);
-        } else if (now - pagerChangedAt >= PAGER_SETTLE_MS) {
+        } else if (now - pagerChangedAt >= PAGER_SETTLE_MS
+                && Math.abs(position - Math.round(position)) < PAGE_SETTLED_EPSILON) {
+            // Still *and* on a page. A finger resting mid-swipe holds the pager still between
+            // pages; ending the follow there deflated the bubble under the finger and re-inflated
+            // it when the swipe resumed.
             waitPagerSettle = false;
             if (following) endFollow();
         }
@@ -412,12 +428,23 @@ public final class LiquidBubble extends View {
                 drawTint(canvas, w, h, radius, progress);
                 drawRestEdge(canvas, w, h, radius, progress);
             }
-            // The green it was born from, fading out as the glass takes over.
-            float green = MORPH_ACCENT_ALPHA * (1f - progress) * (1f - progress);
-            if (green > 0.004f) {
-                morphPaint.setColor((Math.round(green * 255f) << 24) | (accent & 0xFFFFFF));
-                rect.set(0f, 0f, w, h);
-                canvas.drawRoundRect(rect, radius, radius, morphPaint);
+            // The indicator it was born from, fading out as the glass takes over (and back in as
+            // it lands): at zero progress the bubble is exactly WhatsApp's pill, so the hand-off
+            // to the real one shows no colour jump.
+            float fade = (1f - progress) * (1f - progress);
+            if (indicator != null) {
+                if (fade > 0.004f) {
+                    indicator.setBounds(0, 0, Math.round(w), Math.round(h));
+                    indicator.setAlpha(Math.round(fade * 255f));
+                    indicator.draw(canvas);
+                }
+            } else {
+                float green = MORPH_ACCENT_ALPHA * fade;
+                if (green > 0.004f) {
+                    morphPaint.setColor((Math.round(green * 255f) << 24) | (accent & 0xFFFFFF));
+                    rect.set(0f, 0f, w, h);
+                    canvas.drawRoundRect(rect, radius, radius, morphPaint);
+                }
             }
         } finally {
             canvas.restoreToCount(save);
