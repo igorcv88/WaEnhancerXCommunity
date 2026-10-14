@@ -2,7 +2,18 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — bubble rest look and swipe glass, 2026-10-14 (second recording)
+## Current task — bubble glass at rest, pager sync, green flash, 2026-10-14 (third recording)
+
+Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@d3f4321` (PR #89 merged). New PR from this branch.
+
+Third device recording (1080×262, 8.5 s):
+- **Swipes never moved the bubble.** It stayed flat and jumped tab to tab after the page settled. The `setScrollState`/`dispatchOnPageScrolled` hooks on `androidx.viewpager.widget.ViewPager` never fired, so this WhatsApp build's tabs pager is not that class by name (obfuscated). Replaced by polling: `FloatingBottomBar.pagerPosition` reads the pager's scroll offset every window frame through the bubble's pre-draw listener, and every bubble frame while following. It uses `scrollX/width` for a classic pager, or reflective `View.computeHorizontalScrollOffset` on a single horizontally-scrollable child for a RecyclerView-backed one, then maps pages to bubble indices through `getTabIdForIndex`. Movement lifts and follows; two still frames end the follow and deflate the bubble. After a drag commits a tab, the pager's own scroll is ignored until it settles. The dead method hooks were removed.
+- **Green flash on page change.** During a selection's brief rise the lens drew the tab row through an accent `SRC_IN` filter, turning every icon green. The row is now recorded in its own colours.
+- **Not glass at rest.** The bubble keeps `REST_GLASS` = 35% of the pressed lens at rest (refraction and lit rim, but no inner shadow and no rise). `KyantLens.bubble(dark, press, glass, density)` decouples the wash and shadow (press) from the lens and rim (glass). To keep the resting lens current, it redraws in the same frame whenever the bar's capture view is dirty (`View.isDirty`), so it never starts a frame loop of its own. The hairline edge is now drawn only on the non-lens fallback path.
+
+Validation: 456 tests, 0 failures. AGSL check passes. Debug APK SHA-256 `e8a3542b4416e945eea4cf32823c0efc96a54db8cc64e37f7541e9eafe905b64`. Not device-validated. Unknowns: whether the pager's scroll source is detected correctly (scrollX or the inner RecyclerView); the per-frame cost of the resting lens while the list scrolls.
+
+## Previous task — bubble rest look and swipe glass, 2026-10-14 (second recording)
 
 Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@4fea4e5` (PR #88 merged). New PR from this branch.
 

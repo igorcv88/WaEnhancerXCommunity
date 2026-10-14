@@ -115,4 +115,18 @@ public class KyantLensTest {
         assertNotEquals(rest.key(), pressed.key());
         assertEquals(pressed.key(), KyantLens.bubble(true, 1f, density).key());
     }
+
+    /** At rest the bubble keeps some glass (lens and rim) while its wash stays the rest wash. */
+    @Test
+    public void restingBubbleKeepsGlassWithoutPressing() {
+        float density = 3f;
+        KyantLens.Params rest = KyantLens.bubble(true, 0f, LiquidBubble.REST_GLASS, density);
+        assertEquals(10f * density * LiquidBubble.REST_GLASS, rest.refractHeight, 1e-4f);
+        assertEquals(LiquidBubble.REST_GLASS, rest.highlight, 0f);
+        assertEquals(Math.round(0.10f * 255f), rest.tint >>> 24);
+        assertEquals(0f, rest.shadowAlpha, 0f);
+        // The two-argument form is the old coupled behaviour.
+        assertEquals(KyantLens.bubble(true, 0.4f, 0.4f, density).key(),
+                KyantLens.bubble(true, 0.4f, density).key());
+    }
 }

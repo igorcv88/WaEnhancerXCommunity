@@ -299,10 +299,21 @@ public final class KyantLens {
 
     /** The bottom-bar bubble at press progress {@code progress} (0 rest, 1 pressed). */
     static Params bubble(boolean dark, float progress, float density) {
+        return bubble(dark, progress, progress, density);
+    }
+
+    /**
+     * The bottom-bar bubble with its glass decoupled from the press: {@code press} drives the
+     * surface wash and the inner shadow (a finger, a swipe), {@code glass} the lens depth and the
+     * lit rim. At rest the bubble keeps some glass, so it reads as a lens rather than a flat
+     * translucent pill.
+     */
+    static Params bubble(boolean dark, float press, float glass, float density) {
         Params p = new Params();
-        float t = Math.max(0f, Math.min(1f, progress));
-        p.refractHeight = BUBBLE_REFRACT_HEIGHT_DP * density * t;
-        p.refractAmount = BUBBLE_REFRACT_AMOUNT_DP * density * t;
+        float t = Math.max(0f, Math.min(1f, press));
+        float g = Math.max(0f, Math.min(1f, glass));
+        p.refractHeight = BUBBLE_REFRACT_HEIGHT_DP * density * g;
+        p.refractAmount = BUBBLE_REFRACT_AMOUNT_DP * density * g;
         p.depth = 1f;
         p.chroma = BUBBLE_CHROMA;
         // Rest: the content-colour wash; pressed: 3% black (OneMate onDrawSurface).
@@ -314,7 +325,7 @@ public final class KyantLens {
         p.tint = (Math.round(a * 255f) << 24) | rgb;
         p.strokeWidth = STROKE_DP * density;
         p.bloom = BLOOM_DP * density;
-        p.highlight = t;
+        p.highlight = g;
         p.strokeAlpha = STROKE_ALPHA;
         setLights(p, LIGHT_PRIMARY_BUBBLE);
         p.shadowRadius = BUBBLE_SHADOW_DP * density * t;

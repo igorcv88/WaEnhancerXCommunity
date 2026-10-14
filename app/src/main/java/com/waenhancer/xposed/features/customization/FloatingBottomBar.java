@@ -455,32 +455,6 @@ public class FloatingBottomBar extends Feature {
             XposedBridge.log("[WAEX-FBB] Error hooking dispatchOnPageSelected: " + t);
         }
 
-        // OneMate bubble: follow a page swipe frame by frame instead of waiting for the page to
-        // settle. Only user swipes (DRAGGING) drive it; a tab tap scrolls the pager too, and the
-        // bubble animates that one itself.
-        try {
-            Class<?> viewPagerClass = XposedHelpers.findClass("androidx.viewpager.widget.ViewPager", classLoader);
-            XposedBridge.hookAllMethods(viewPagerClass, "setScrollState", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    try {
-                        onPagerScrollState((View) param.thisObject, (int) param.args[0]);
-                    } catch (Throwable ignored) {}
-                }
-            });
-            XposedBridge.hookAllMethods(viewPagerClass, "dispatchOnPageScrolled", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    try {
-                        onPagerScrolled((View) param.thisObject, (int) param.args[0],
-                                (float) param.args[1]);
-                    } catch (Throwable ignored) {}
-                }
-            });
-        } catch (Throwable t) {
-            XposedBridge.log("[WAEX-FBB] bubble pager follow unavailable: " + t);
-        }
-
         // Hook tab selection calls on BottomNavigationView directly to intercept clicks and manual selections
         try {
             XposedBridge.hookAllMethods(loadTabFrameClass, "setSelectedItemId", new XC_MethodHook() {
@@ -1537,6 +1511,7 @@ public class FloatingBottomBar extends Feature {
         // Last child: above the tab row it refracts, so it is drawn after everything it records.
         host.addView(bubble, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        bubble.setPagerSource(() -> pagerPosition(bottomNav));
         bubbles.put(bottomNav, bubble);
         installBubbleTouch(bottomNav, bubble);
         suppressNativeIndicator(bottomNav);
@@ -1575,6 +1550,9 @@ public class FloatingBottomBar extends Feature {
         bubble.setStyle(DesignUtils.getPrimaryColor(), DesignUtils.isNightMode(ctx),
                 surface != null && surface.isLensed());
         bubble.setTabs(centers, widths, selected, glassSpecFor(bottomNav).animate);
+        int[] map = new int[tabs.size()];
+        for (int page = 0; page < map.length; page++) map[page] = bubbleIndexForPage(bottomNav, page);
+        pageToBubble.put(bottomNav, map);
     }
 
     /** Gives every tab item the bubble's press/drag handling, keeping any listener it had. */
@@ -1702,60 +1680,56 @@ public class FloatingBottomBar extends Feature {
         }
     }
 
-    /** Pagers a finger is currently swiping (ViewPager DRAGGING, then its settle). */
-    private static final WeakHashMap<View, Boolean> swipingPagers = new WeakHashMap<>();
-    /** The bar each tabs pager belongs to, so a scroll frame does not walk the window. */
-    private static final WeakHashMap<View, View> pagerBars = new WeakHashMap<>();
+    /** The home tabs pager of each bar, found once. */
+    private static final WeakHashMap<View, java.lang.ref.WeakReference<View>> barPagers = new WeakHashMap<>();
+    /** Pager page → bubble index, per bar; rebuilt on every bubble update (layout, selection). */
+    private static final WeakHashMap<View, int[]> pageToBubble = new WeakHashMap<>();
+    private static java.lang.reflect.Method horizontalScrollOffset;
 
     /**
-     * Pagers known not to be the home tabs pager (status, media, nested carousels). The hooks are
-     * process-wide, so without this every swipe of one of them would walk the window again.
+     * The tabs pager's position as a fractional bubble index, read from its scroll offset, or NaN.
+     * Works for a classic ViewPager (scrollX) and a RecyclerView-backed one (its horizontal scroll
+     * offset) without depending on either class's name, which this WhatsApp build obfuscates.
      */
-    private static final WeakHashMap<View, Boolean> otherPagers = new WeakHashMap<>();
-
-    /** Resolved once per swipe (at DRAGGING), never per scroll frame. */
-    private static View barForPager(View pager) {
-        View bar = pagerBars.get(pager);
-        if (bar != null && bar.isAttachedToWindow()) return bar;
-        if (otherPagers.containsKey(pager)) return null;
-        ViewGroup root = getRootLayout(pager);
-        if (findViewPager(root) != pager) {
-            // Definitively another pager. A missing bar is not cached: the tabs pager can be
-            // swiped before its bar has been styled.
-            otherPagers.put(pager, true);
-            return null;
+    private static float pagerPosition(View bar) {
+        java.lang.ref.WeakReference<View> ref = barPagers.get(bar);
+        View pager = ref == null ? null : ref.get();
+        if (pager == null || !pager.isAttachedToWindow()) {
+            pager = findViewPager(getRootLayout(bar));
+            if (pager == null) return Float.NaN;
+            barPagers.put(bar, new java.lang.ref.WeakReference<>(pager));
         }
-        bar = findBottomNavInRoot(root);
-        if (bar == null) return null;
-        pagerBars.put(pager, bar);
-        return bar;
-    }
-
-    private static void onPagerScrollState(View pager, int state) {
-        if (state == 1) { // SCROLL_STATE_DRAGGING
-            View bar = barForPager(pager);
-            if (bar != null && bubbles.containsKey(bar)) swipingPagers.put(pager, true);
-        } else if (state == 0) { // SCROLL_STATE_IDLE
-            if (swipingPagers.remove(pager) == null) return;
-            View bar = barForPager(pager);
-            LiquidBubble bubble = bar == null ? null : bubbles.get(bar);
-            if (bubble != null) {
-                bubble.endFollow();
-                updateBubble(bar, bubble);
+        int width = pager.getWidth();
+        if (width <= 0 || !pager.isShown()) return Float.NaN;
+        float page;
+        View scroller = pager;
+        if (pager instanceof ViewGroup && ((ViewGroup) pager).getChildCount() == 1) {
+            View child = ((ViewGroup) pager).getChildAt(0);
+            if (child.canScrollHorizontally(1) || child.canScrollHorizontally(-1)) scroller = child;
+        }
+        if (scroller == pager) {
+            page = pager.getScrollX() / (float) width;
+        } else {
+            try {
+                if (horizontalScrollOffset == null) {
+                    horizontalScrollOffset = View.class.getDeclaredMethod("computeHorizontalScrollOffset");
+                    horizontalScrollOffset.setAccessible(true);
+                }
+                int sw = scroller.getWidth();
+                if (sw <= 0) return Float.NaN;
+                page = ((Integer) horizontalScrollOffset.invoke(scroller)) / (float) sw;
+            } catch (Throwable t) {
+                return Float.NaN;
             }
         }
-    }
-
-    private static void onPagerScrolled(View pager, int position, float offset) {
-        if (!swipingPagers.containsKey(pager)) return;
-        View bar = pagerBars.get(pager);
-        LiquidBubble bubble = bar == null ? null : bubbles.get(bar);
-        if (bubble == null) return;
-        int from = bubbleIndexForPage(bar, position);
-        if (from < 0) return;
-        int to = offset > 0f ? bubbleIndexForPage(bar, position + 1) : from;
-        if (to < 0) to = from;
-        bubble.follow(from + (to - from) * offset);
+        int[] map = pageToBubble.get(bar);
+        if (map == null || map.length == 0) return Float.NaN;
+        int lo = (int) Math.floor(page);
+        float frac = page - lo;
+        if (lo < 0 || lo >= map.length || map[lo] < 0) return Float.NaN;
+        int hi = Math.min(map.length - 1, lo + 1);
+        int to = map[hi] < 0 ? map[lo] : map[hi];
+        return map[lo] + (to - map[lo]) * frac;
     }
 
     /** The bubble index (visible tab order) of the tab shown at pager {@code page}. */
