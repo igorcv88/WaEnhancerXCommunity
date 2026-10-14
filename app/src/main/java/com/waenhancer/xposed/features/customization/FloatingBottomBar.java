@@ -1549,10 +1549,23 @@ public class FloatingBottomBar extends Feature {
         nativeIndicators.put(bottomNav, found);
         if (found.isEmpty()) return;
         try {
-            android.graphics.drawable.Drawable background = found.get(0).getBackground();
+            // The pill being replaced is the selected tab's, in its current (stateful) look: a
+            // ConstantState copy starts in the default state, so the source state is carried over.
+            View source = found.get(0);
+            for (View indicator : found) {
+                if (isInSelectedTab(indicator)) {
+                    source = indicator;
+                    break;
+                }
+            }
+            android.graphics.drawable.Drawable background = source.getBackground();
             android.graphics.drawable.Drawable.ConstantState state =
                     background == null ? null : background.getConstantState();
-            if (state != null) bubble.setIndicatorDrawable(state.newDrawable().mutate());
+            if (state != null) {
+                android.graphics.drawable.Drawable copy = state.newDrawable().mutate();
+                copy.setState(background.getState());
+                bubble.setIndicatorDrawable(copy);
+            }
         } catch (Throwable ignored) {
             // The accent wash stands in.
         }
@@ -1560,6 +1573,18 @@ public class FloatingBottomBar extends Feature {
         Boolean hidden = nativeIndicatorsHidden.get(bottomNav);
         if (hidden != null && hidden) applyNativeIndicatorsHidden(found, true);
     }
+
+    private static boolean isInSelectedTab(View view) {
+        for (View v = view; v != null; ) {
+            if (v.isSelected()) return true;
+            ViewParent parent = v.getParent();
+            v = parent instanceof View ? (View) parent : null;
+        }
+        return false;
+    }
+
+    /** Visibility each indicator had before the bubble hid it, restored as it was. */
+    private static final WeakHashMap<View, Integer> indicatorVisibility = new WeakHashMap<>();
 
     private static void setNativeIndicatorsHidden(View bottomNav, boolean hidden) {
         Boolean current = nativeIndicatorsHidden.get(bottomNav);
@@ -1576,8 +1601,16 @@ public class FloatingBottomBar extends Feature {
     private static void applyNativeIndicatorsHidden(java.util.List<View> views, boolean hidden) {
         for (View view : views) {
             if (view == null) continue;
-            int wanted = hidden ? View.INVISIBLE : View.VISIBLE;
-            if (view.getVisibility() != wanted) view.setVisibility(wanted);
+            if (hidden) {
+                // Only views the host app is showing; an inactive (INVISIBLE/GONE) one stays as is.
+                if (view.getVisibility() != View.VISIBLE || indicatorVisibility.containsKey(view)) continue;
+                indicatorVisibility.put(view, View.VISIBLE);
+                view.setVisibility(View.INVISIBLE);
+            } else {
+                Integer previous = indicatorVisibility.remove(view);
+                // Restore only what the bubble changed, and only if nothing else changed it since.
+                if (previous != null && view.getVisibility() == View.INVISIBLE) view.setVisibility(previous);
+            }
         }
     }
 
