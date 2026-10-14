@@ -1693,7 +1693,8 @@ public class FloatingBottomBar extends Feature {
     /**
      * Press and drag on the selected tab move the bubble (OneMate: the drag gesture lives on the
      * indicator). A press on another tab is left to WhatsApp: its click selects the tab, and the
-     * selection then sends the bubble across with a rise-travel-land animation. Once a drag has
+     * selection then sends the bubble across with a rise-travel-land animation (the pager's jump
+     * to the new page is not followed; see {@link LiquidBubble#holdPagerFollow()}). Once a drag has
      * started the item's own press is cancelled, so lifting the finger never also clicks it; the
      * tab the bubble settles on is selected through its own click instead.
      */
@@ -1749,6 +1750,13 @@ public class FloatingBottomBar extends Feature {
                     case android.view.MotionEvent.ACTION_CANCEL: {
                         boolean wasDragging = dragging;
                         dragging = false;
+                        if (!armed && e.getActionMasked() == android.view.MotionEvent.ACTION_UP
+                                && bubbles.get(bottomNav) == bubble
+                                && bubbleTabs(bottomNav).indexOf(v) != bubble.selectedIndex()) {
+                            // A tap on another tab: its click jumps the pager there. The bubble
+                            // glides on the selection report rather than following that jump.
+                            bubble.holdPagerFollow();
+                        }
                         if (armed) {
                             int index = bubble.release();
                             armed = false;
