@@ -455,6 +455,32 @@ public class FloatingBottomBar extends Feature {
             XposedBridge.log("[WAEX-FBB] Error hooking dispatchOnPageSelected: " + t);
         }
 
+        // OneMate bubble: follow a page swipe frame by frame instead of waiting for the page to
+        // settle. Only user swipes (DRAGGING) drive it; a tab tap scrolls the pager too, and the
+        // bubble animates that one itself.
+        try {
+            Class<?> viewPagerClass = XposedHelpers.findClass("androidx.viewpager.widget.ViewPager", classLoader);
+            XposedBridge.hookAllMethods(viewPagerClass, "setScrollState", new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    try {
+                        onPagerScrollState((View) param.thisObject, (int) param.args[0]);
+                    } catch (Throwable ignored) {}
+                }
+            });
+            XposedBridge.hookAllMethods(viewPagerClass, "dispatchOnPageScrolled", new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    try {
+                        onPagerScrolled((View) param.thisObject, (int) param.args[0],
+                                (float) param.args[1]);
+                    } catch (Throwable ignored) {}
+                }
+            });
+        } catch (Throwable t) {
+            XposedBridge.log("[WAEX-FBB] bubble pager follow unavailable: " + t);
+        }
+
         // Hook tab selection calls on BottomNavigationView directly to intercept clicks and manual selections
         try {
             XposedBridge.hookAllMethods(loadTabFrameClass, "setSelectedItemId", new XC_MethodHook() {
@@ -1513,6 +1539,7 @@ public class FloatingBottomBar extends Feature {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         bubbles.put(bottomNav, bubble);
         installBubbleTouch(bottomNav, bubble);
+        suppressNativeIndicator(bottomNav);
     }
 
     /** Tab items in bubble order: the menu's visible children. */
@@ -1675,11 +1702,120 @@ public class FloatingBottomBar extends Feature {
         }
     }
 
+    /** Pagers a finger is currently swiping (ViewPager DRAGGING, then its settle). */
+    private static final WeakHashMap<View, Boolean> swipingPagers = new WeakHashMap<>();
+    /** The bar each tabs pager belongs to, so a scroll frame does not walk the window. */
+    private static final WeakHashMap<View, View> pagerBars = new WeakHashMap<>();
+
+    private static View barForPager(View pager) {
+        View bar = pagerBars.get(pager);
+        if (bar != null && bar.isAttachedToWindow()) return bar;
+        ViewGroup root = getRootLayout(pager);
+        bar = findBottomNavInRoot(root);
+        if (bar == null || findViewPager(root) != pager) return null;
+        pagerBars.put(pager, bar);
+        return bar;
+    }
+
+    private static void onPagerScrollState(View pager, int state) {
+        if (state == 1) { // SCROLL_STATE_DRAGGING
+            swipingPagers.put(pager, true);
+        } else if (state == 0) { // SCROLL_STATE_IDLE
+            if (swipingPagers.remove(pager) == null) return;
+            View bar = barForPager(pager);
+            LiquidBubble bubble = bar == null ? null : bubbles.get(bar);
+            if (bubble != null) {
+                bubble.endFollow();
+                updateBubble(bar, bubble);
+            }
+        }
+    }
+
+    private static void onPagerScrolled(View pager, int position, float offset) {
+        if (!swipingPagers.containsKey(pager)) return;
+        View bar = barForPager(pager);
+        LiquidBubble bubble = bar == null ? null : bubbles.get(bar);
+        if (bubble == null) return;
+        int from = bubbleIndexForPage(bar, position);
+        if (from < 0) return;
+        int to = offset > 0f ? bubbleIndexForPage(bar, position + 1) : from;
+        if (to < 0) to = from;
+        bubble.follow(from + (to - from) * offset);
+    }
+
+    /** The bubble index (visible tab order) of the tab shown at pager {@code page}. */
+    private static int bubbleIndexForPage(View bar, int page) {
+        int tabId = getTabIdForIndex(bar, page);
+        if (tabId == -1) return -1;
+        java.util.List<View> tabs = bubbleTabs(bar);
+        for (int i = 0; i < tabs.size(); i++) if (tabs.get(i).getId() == tabId) return i;
+        return -1;
+    }
+
+    /**
+     * What the bubble replaces in WhatsApp's own tab row: the Material active-indicator pill
+     * under the selected tab, and each item's press ripple. Left in place they drew a second,
+     * darker pill inside the bubble, and the lens recorded them as green slabs. Restored when the
+     * glass host is removed.
+     */
+    private static final WeakHashMap<View, Object[]> suppressedNative = new WeakHashMap<>();
+
+    private static void suppressNativeIndicator(View bottomNav) {
+        try {
+            XposedHelpers.callMethod(bottomNav, "setItemActiveIndicatorEnabled", false);
+        } catch (Throwable ignored) {
+            // Obfuscated or older Material: hidden per item below.
+        }
+        for (View item : bubbleTabs(bottomNav)) {
+            if (!suppressedNative.containsKey(item)) {
+                suppressedNative.put(item, new Object[]{item.getBackground(),
+                        Build.VERSION.SDK_INT >= 23 ? item.getForeground() : null});
+            }
+            if (item.getBackground() != null) item.setBackground(null);
+            if (Build.VERSION.SDK_INT >= 23 && item.getForeground() != null) item.setForeground(null);
+            ImageView icon = findFirstIcon(item);
+            if (icon == null || !(icon.getParent() instanceof ViewGroup)) continue;
+            ViewGroup container = (ViewGroup) icon.getParent();
+            for (int i = 0; i < container.getChildCount(); i++) {
+                View sibling = container.getChildAt(i);
+                // Material's active indicator: a plain View behind the icon, painted only by
+                // its background. Icons, labels, badges and containers are left alone.
+                if (sibling == icon || sibling instanceof ImageView || sibling instanceof TextView
+                        || sibling instanceof ViewGroup || sibling.getBackground() == null) continue;
+                if (sibling.getVisibility() == View.VISIBLE) {
+                    if (!suppressedNative.containsKey(sibling)) {
+                        suppressedNative.put(sibling, new Object[]{View.VISIBLE});
+                    }
+                    sibling.setVisibility(View.INVISIBLE);
+                }
+            }
+        }
+    }
+
+    private static void restoreNativeIndicator(View bottomNav) {
+        try {
+            XposedHelpers.callMethod(bottomNav, "setItemActiveIndicatorEnabled", true);
+        } catch (Throwable ignored) {}
+        for (java.util.Map.Entry<View, Object[]> entry
+                : new java.util.ArrayList<>(suppressedNative.entrySet())) {
+            View view = entry.getKey();
+            Object[] saved = entry.getValue();
+            if (view == null || saved == null) continue;
+            if (saved.length == 1) {
+                view.setVisibility(View.VISIBLE);
+            } else {
+                view.setBackground((Drawable) saved[0]);
+                if (Build.VERSION.SDK_INT >= 23) view.setForeground((Drawable) saved[1]);
+            }
+        }
+        suppressedNative.clear();
+    }
+
     private static void removeGlassHost(View bottomNav) {
         try {
             GlassSurface surface = glassSurfaces.remove(bottomNav);
             liquidMorphs.remove(bottomNav);
-            bubbles.remove(bottomNav);
+            if (bubbles.remove(bottomNav) != null) restoreNativeIndicator(bottomNav);
             if (surface != null) surface.detach();
         } catch (Throwable ignored) {}
     }
@@ -1874,6 +2010,7 @@ public class FloatingBottomBar extends Feature {
             LiquidBubble bubble = bubbles.get(bottomNav);
             if (bubble != null) {
                 installBubbleTouch(bottomNav, bubble);
+                suppressNativeIndicator(bottomNav);
                 updateBubble(bottomNav, bubble);
             }
         } catch (Throwable ignored) {
