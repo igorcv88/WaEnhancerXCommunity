@@ -1514,7 +1514,6 @@ public class FloatingBottomBar extends Feature {
         bubble.setPagerSource(() -> pagerPosition(bottomNav));
         bubbles.put(bottomNav, bubble);
         installBubbleTouch(bottomNav, bubble);
-        suppressNativeIndicator(bottomNav);
     }
 
     /** Tab items in bubble order: the menu's visible children. */
@@ -1741,70 +1740,11 @@ public class FloatingBottomBar extends Feature {
         return -1;
     }
 
-    /**
-     * What the bubble replaces in WhatsApp's own tab row: the Material active-indicator pill
-     * under the selected tab, and each item's press ripple. Left in place they drew a second,
-     * darker pill inside the bubble, and the lens recorded them as green slabs. Restored when the
-     * glass host is removed.
-     */
-    private static final WeakHashMap<View, Object[]> suppressedNative = new WeakHashMap<>();
-
-    private static void suppressNativeIndicator(View bottomNav) {
-        try {
-            XposedHelpers.callMethod(bottomNav, "setItemActiveIndicatorEnabled", false);
-        } catch (Throwable ignored) {
-            // Obfuscated or older Material: hidden per item below.
-        }
-        for (View item : bubbleTabs(bottomNav)) {
-            if (!suppressedNative.containsKey(item)) {
-                suppressedNative.put(item, new Object[]{item.getBackground(),
-                        Build.VERSION.SDK_INT >= 23 ? item.getForeground() : null});
-            }
-            if (item.getBackground() != null) item.setBackground(null);
-            if (Build.VERSION.SDK_INT >= 23 && item.getForeground() != null) item.setForeground(null);
-            ImageView icon = findFirstIcon(item);
-            if (icon == null || !(icon.getParent() instanceof ViewGroup)) continue;
-            ViewGroup container = (ViewGroup) icon.getParent();
-            for (int i = 0; i < container.getChildCount(); i++) {
-                View sibling = container.getChildAt(i);
-                // Material's active indicator: a plain View behind the icon, painted only by
-                // its background. Icons, labels, badges and containers are left alone.
-                if (sibling == icon || sibling instanceof ImageView || sibling instanceof TextView
-                        || sibling instanceof ViewGroup || sibling.getBackground() == null) continue;
-                if (sibling.getVisibility() == View.VISIBLE) {
-                    if (!suppressedNative.containsKey(sibling)) {
-                        suppressedNative.put(sibling, new Object[]{View.VISIBLE});
-                    }
-                    sibling.setVisibility(View.INVISIBLE);
-                }
-            }
-        }
-    }
-
-    private static void restoreNativeIndicator(View bottomNav) {
-        try {
-            XposedHelpers.callMethod(bottomNav, "setItemActiveIndicatorEnabled", true);
-        } catch (Throwable ignored) {}
-        for (java.util.Map.Entry<View, Object[]> entry
-                : new java.util.ArrayList<>(suppressedNative.entrySet())) {
-            View view = entry.getKey();
-            Object[] saved = entry.getValue();
-            if (view == null || saved == null) continue;
-            if (saved.length == 1) {
-                view.setVisibility(View.VISIBLE);
-            } else {
-                view.setBackground((Drawable) saved[0]);
-                if (Build.VERSION.SDK_INT >= 23) view.setForeground((Drawable) saved[1]);
-            }
-        }
-        suppressedNative.clear();
-    }
-
     private static void removeGlassHost(View bottomNav) {
         try {
             GlassSurface surface = glassSurfaces.remove(bottomNav);
             liquidMorphs.remove(bottomNav);
-            if (bubbles.remove(bottomNav) != null) restoreNativeIndicator(bottomNav);
+            bubbles.remove(bottomNav);
             if (surface != null) surface.detach();
         } catch (Throwable ignored) {}
     }
@@ -1999,7 +1939,6 @@ public class FloatingBottomBar extends Feature {
             LiquidBubble bubble = bubbles.get(bottomNav);
             if (bubble != null) {
                 installBubbleTouch(bottomNav, bubble);
-                suppressNativeIndicator(bottomNav);
                 updateBubble(bottomNav, bubble);
             }
         } catch (Throwable ignored) {

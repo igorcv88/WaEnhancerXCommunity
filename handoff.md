@@ -2,7 +2,30 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — bubble glass at rest, pager sync, green flash, 2026-10-14 (third recording)
+## Current task — native indicator at rest, bubble morphs from it, 2026-10-14 (fourth report)
+
+Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@e5a3c61` (PR #90 merged). New PR from this branch.
+
+User report (screenshot plus description): transitions, drag and swipe-follow are now right ("perfect"). The resting state is still bad: a white/grey, opaque, vapour-like bubble. The user's decision: at rest, go back to WhatsApp's small green indicator around the icon, and keep the bubble only for motion. Their ideal: the green indicator grows into the glass bubble, travels, and shrinks back into the green on arrival.
+
+Implemented, a first step of that ideal:
+- `suppressNativeIndicator`/`restoreNativeIndicator` were removed. WhatsApp's Material active indicator and the item ripples stay as WhatsApp draws them.
+- `LiquidBubble.onDraw` draws nothing below `VISIBLE_PROGRESS` (1% press). At rest only the native indicator shows, and the resting lens no longer redraws with the capture view.
+- While rising, the bubble's size morphs from the native indicator's (64×32dp, `INDICATOR_W/H_DP`) to its own, with an ease-out (`morphScale`). An accent wash (45% × (1−p)²) fades out as the glass (lens and rim = press progress) takes over. On landing the same curve runs back. `REST_GLASS` was removed.
+
+Validation: 457 tests, 0 failures (`morphScale` test added). Debug APK SHA-256 `4436ee2e33a63e58511dc28447c22e4b6658c4bf472c43733a2695ff767b9906`. Not device-validated.
+
+Known issue the user reported, not fixed: right after opening WhatsApp, a slow finger swipe on the chat list sometimes snapped the bubble back to the origin tab, then it stabilised. Likely cause: the first frames before `pageToBubble`/`barPagers` are populated by the first `updateBubble`, or a selection report arriving mid-swipe while `following` was not yet set. Investigate with logging of `pagerPosition` and `setTabs` during the first swipe.
+
+### Plan for the full "green becomes the bubble" animation (user's ideal, not implemented)
+
+1. **Measure the real native indicator.** Find the active-indicator view per item (the plain View behind the icon, as the removed heuristic did) and read its bounds and corner radius in host coordinates each layout. Use those instead of the 64×32dp constants, so the bubble is born exactly on top of it.
+2. **Hand-off without double drawing.** When progress leaves 0, hide the native indicator for the duration (alpha 0, restored on landing) so the green pill visibly becomes the bubble rather than staying behind. On landing, show the native indicator on the new tab only after the morph-back finishes, to avoid a flash of two pills.
+3. **Colour morph.** Interpolate from the indicator's actual drawable colour (sampled from its background `ColorStateList`/`MaterialShapeDrawable` fill), not the theme accent, to the glass wash, in linear light.
+4. **Shape morph.** Morph the corner radius and height from the indicator's to the bubble's, which the scale curve already approximates. Optionally add a short overshoot on the way out, using the existing scale springs.
+5. **Acceptance:** recordings at 120 Hz of tap, swipe and drag, checked frame by frame for no double pill, no colour jump, and no size pop at the start or end.
+
+## Previous task — bubble glass at rest, pager sync, green flash, 2026-10-14 (third recording)
 
 Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@d3f4321` (PR #89 merged). New PR from this branch.
 

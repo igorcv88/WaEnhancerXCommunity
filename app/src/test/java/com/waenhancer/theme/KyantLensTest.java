@@ -120,13 +120,24 @@ public class KyantLensTest {
     @Test
     public void restingBubbleKeepsGlassWithoutPressing() {
         float density = 3f;
-        KyantLens.Params rest = KyantLens.bubble(true, 0f, LiquidBubble.REST_GLASS, density);
-        assertEquals(10f * density * LiquidBubble.REST_GLASS, rest.refractHeight, 1e-4f);
-        assertEquals(LiquidBubble.REST_GLASS, rest.highlight, 0f);
+        KyantLens.Params rest = KyantLens.bubble(true, 0f, 0.35f, density);
+        assertEquals(10f * density * 0.35f, rest.refractHeight, 1e-4f);
+        assertEquals(0.35f, rest.highlight, 0f);
         assertEquals(Math.round(0.10f * 255f), rest.tint >>> 24);
         assertEquals(0f, rest.shadowAlpha, 0f);
         // The two-argument form is the old coupled behaviour.
         assertEquals(KyantLens.bubble(true, 0.4f, 0.4f, density).key(),
                 KyantLens.bubble(true, 0.4f, density).key());
+    }
+
+    /** The bubble grows out of the native indicator's size and back. */
+    @Test
+    public void bubbleMorphsFromTheNativeIndicator() {
+        assertEquals(0.5f, LiquidBubble.morphScale(0.5f, 0f), 1e-6f);
+        assertEquals(1f, LiquidBubble.morphScale(0.5f, 1f), 1e-6f);
+        float half = LiquidBubble.morphScale(0.5f, 0.5f);
+        assertTrue(half > 0.75f && half < 1f);
+        assertEquals(1f, LiquidBubble.morphScale(3f, 0f), 1e-6f);
+        assertEquals(0.05f, LiquidBubble.morphScale(0f, 0f), 1e-6f);
     }
 }
