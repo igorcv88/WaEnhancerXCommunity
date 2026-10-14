@@ -1507,6 +1507,9 @@ public class FloatingBottomBar extends Feature {
             host.setScaleX(scale);
             host.setScaleY(scale);
             host.setTranslationX(rubberBand);
+            // The bubble replaces WhatsApp's pill while it is visible: hidden for the morph,
+            // shown again once the bubble has shrunk back into it.
+            setNativeIndicatorsHidden(bottomNav, progress > LiquidBubble.VISIBLE_PROGRESS);
         });
         // Last child: above the tab row it refracts, so it is drawn after everything it records.
         host.addView(bubble, new FrameLayout.LayoutParams(
@@ -1514,6 +1517,101 @@ public class FloatingBottomBar extends Feature {
         bubble.setPagerSource(() -> pagerPosition(bottomNav));
         bubbles.put(bottomNav, bubble);
         installBubbleTouch(bottomNav, bubble);
+    }
+
+    /** Native indicator views per bar, and whether they are currently hidden by the bubble. */
+    private static final WeakHashMap<View, java.util.List<View>> nativeIndicators = new WeakHashMap<>();
+    private static final WeakHashMap<View, Boolean> nativeIndicatorsHidden = new WeakHashMap<>();
+
+    /**
+     * WhatsApp's Material active indicators: in each tab item, the plain View behind the icon that
+     * is painted only by its background. Icons, labels, badges and containers are never matched.
+     */
+    private static java.util.List<View> findNativeIndicators(View bottomNav) {
+        java.util.List<View> found = new java.util.ArrayList<>();
+        for (View item : bubbleTabs(bottomNav)) {
+            ImageView icon = findFirstIcon(item);
+            if (icon == null || !(icon.getParent() instanceof ViewGroup)) continue;
+            ViewGroup container = (ViewGroup) icon.getParent();
+            for (int i = 0; i < container.getChildCount(); i++) {
+                View sibling = container.getChildAt(i);
+                if (sibling == icon || sibling instanceof ImageView || sibling instanceof TextView
+                        || sibling instanceof ViewGroup || sibling.getBackground() == null) continue;
+                found.add(sibling);
+            }
+        }
+        return found;
+    }
+
+    /** Refreshes the indicator list and hands the bubble a private copy of the indicator look. */
+    private static void updateNativeIndicators(View bottomNav, LiquidBubble bubble) {
+        java.util.List<View> found = findNativeIndicators(bottomNav);
+        nativeIndicators.put(bottomNav, found);
+        if (found.isEmpty()) return;
+        try {
+            // The pill being replaced is the selected tab's, in its current (stateful) look: a
+            // ConstantState copy starts in the default state, so the source state is carried over.
+            View source = found.get(0);
+            for (View indicator : found) {
+                if (isInSelectedTab(indicator)) {
+                    source = indicator;
+                    break;
+                }
+            }
+            android.graphics.drawable.Drawable background = source.getBackground();
+            android.graphics.drawable.Drawable.ConstantState state =
+                    background == null ? null : background.getConstantState();
+            if (state != null) {
+                android.graphics.drawable.Drawable copy = state.newDrawable().mutate();
+                copy.setState(background.getState());
+                bubble.setIndicatorDrawable(copy);
+            }
+        } catch (Throwable ignored) {
+            // The accent wash stands in.
+        }
+        // A re-layout can rebuild the views; re-apply the current state to the new ones.
+        Boolean hidden = nativeIndicatorsHidden.get(bottomNav);
+        if (hidden != null && hidden) applyNativeIndicatorsHidden(found, true);
+    }
+
+    private static boolean isInSelectedTab(View view) {
+        for (View v = view; v != null; ) {
+            if (v.isSelected()) return true;
+            ViewParent parent = v.getParent();
+            v = parent instanceof View ? (View) parent : null;
+        }
+        return false;
+    }
+
+    /** Visibility each indicator had before the bubble hid it, restored as it was. */
+    private static final WeakHashMap<View, Integer> indicatorVisibility = new WeakHashMap<>();
+
+    private static void setNativeIndicatorsHidden(View bottomNav, boolean hidden) {
+        Boolean current = nativeIndicatorsHidden.get(bottomNav);
+        if (current != null && current == hidden) return;
+        nativeIndicatorsHidden.put(bottomNav, hidden);
+        java.util.List<View> views = nativeIndicators.get(bottomNav);
+        if (views != null) applyNativeIndicatorsHidden(views, hidden);
+    }
+
+    /**
+     * INVISIBLE rather than alpha: Material animates the indicator's alpha and scale on selection
+     * and would overwrite an alpha, but only changes visibility when the indicator is disabled.
+     */
+    private static void applyNativeIndicatorsHidden(java.util.List<View> views, boolean hidden) {
+        for (View view : views) {
+            if (view == null) continue;
+            if (hidden) {
+                // Only views the host app is showing; an inactive (INVISIBLE/GONE) one stays as is.
+                if (view.getVisibility() != View.VISIBLE || indicatorVisibility.containsKey(view)) continue;
+                indicatorVisibility.put(view, View.VISIBLE);
+                view.setVisibility(View.INVISIBLE);
+            } else {
+                Integer previous = indicatorVisibility.remove(view);
+                // Restore only what the bubble changed, and only if nothing else changed it since.
+                if (previous != null && view.getVisibility() == View.INVISIBLE) view.setVisibility(previous);
+            }
+        }
     }
 
     /** Tab items in bubble order: the menu's visible children. */
@@ -1552,6 +1650,7 @@ public class FloatingBottomBar extends Feature {
         int[] map = new int[tabs.size()];
         for (int page = 0; page < map.length; page++) map[page] = bubbleIndexForPage(bottomNav, page);
         pageToBubble.put(bottomNav, map);
+        updateNativeIndicators(bottomNav, bubble);
     }
 
     /** Gives every tab item the bubble's press/drag handling, keeping any listener it had. */
@@ -1744,7 +1843,11 @@ public class FloatingBottomBar extends Feature {
         try {
             GlassSurface surface = glassSurfaces.remove(bottomNav);
             liquidMorphs.remove(bottomNav);
-            bubbles.remove(bottomNav);
+            if (bubbles.remove(bottomNav) != null) {
+                setNativeIndicatorsHidden(bottomNav, false);
+                nativeIndicators.remove(bottomNav);
+                nativeIndicatorsHidden.remove(bottomNav);
+            }
             if (surface != null) surface.detach();
         } catch (Throwable ignored) {}
     }

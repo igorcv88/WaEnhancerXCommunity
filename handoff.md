@@ -2,7 +2,18 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — native indicator at rest, bubble morphs from it, 2026-10-14 (fourth report)
+## Current task — bubble hand-off polish, 2026-10-14 (fifth recording)
+
+Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@2fc2c30` (PR #91 merged). New PR from this branch.
+
+User verdict: very close. The fifth recording (1080×234, 11.7 s) showed three defects:
+- **Bubble shrank mid-swipe and re-grew** (at 2.0–2.9 s) when the finger paused between pages. Cause: "pager still for 80 ms" ended the follow. Fix: the follow ends only when the pager is still *and* within `PAGE_SETTLED_EPSILON` (0.01 page) of a whole page.
+- **Double indicator during motion** (Codex P2 on #91): WhatsApp's pill stayed on the old tab, and the lens recorded it. Fix: the bar listener hides the native indicator views (`findNativeIndicators`: the plain background View beside each tab icon, as INVISIBLE) while press progress > `VISIBLE_PROGRESS`, and shows them when the bubble has shrunk back. The state is re-applied after layouts and restored when the host is removed.
+- **"Strange green" flash on landing**: the morph wash was the theme accent at 45%, much lighter than WhatsApp's dark-green pill. Fix: the bubble draws a mutated copy of the native indicator's background drawable (`ConstantState.newDrawable().mutate()`), faded by (1−p)². At zero progress it is the native pill, so the hand-off has no colour jump. The accent wash remains a fallback when the drawable cannot be copied.
+
+Validation: 457 tests, 0 failures. Debug APK SHA-256 `37db5c13e52a5c102755fb5bdb9c847fd7cfa8baee6f75891751cd4dc422e88d`. Not device-validated. Known approximation: the copied drawable is drawn in bubble space and canvas-scaled to the indicator's size, so an absolute corner radius scales with it (slightly less rounded than the native pill at the end of the morph). If visible, draw it at indicator bounds with an inverse scale. The first-swipe-after-start glitch from the previous report is still uninvestigated.
+
+## Previous task — native indicator at rest, bubble morphs from it, 2026-10-14 (fourth report)
 
 Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@e5a3c61` (PR #90 merged). New PR from this branch.
 
