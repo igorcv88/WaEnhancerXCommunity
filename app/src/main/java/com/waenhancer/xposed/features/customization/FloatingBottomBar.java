@@ -1707,19 +1707,34 @@ public class FloatingBottomBar extends Feature {
     /** The bar each tabs pager belongs to, so a scroll frame does not walk the window. */
     private static final WeakHashMap<View, View> pagerBars = new WeakHashMap<>();
 
+    /**
+     * Pagers known not to be the home tabs pager (status, media, nested carousels). The hooks are
+     * process-wide, so without this every swipe of one of them would walk the window again.
+     */
+    private static final WeakHashMap<View, Boolean> otherPagers = new WeakHashMap<>();
+
+    /** Resolved once per swipe (at DRAGGING), never per scroll frame. */
     private static View barForPager(View pager) {
         View bar = pagerBars.get(pager);
         if (bar != null && bar.isAttachedToWindow()) return bar;
+        if (otherPagers.containsKey(pager)) return null;
         ViewGroup root = getRootLayout(pager);
+        if (findViewPager(root) != pager) {
+            // Definitively another pager. A missing bar is not cached: the tabs pager can be
+            // swiped before its bar has been styled.
+            otherPagers.put(pager, true);
+            return null;
+        }
         bar = findBottomNavInRoot(root);
-        if (bar == null || findViewPager(root) != pager) return null;
+        if (bar == null) return null;
         pagerBars.put(pager, bar);
         return bar;
     }
 
     private static void onPagerScrollState(View pager, int state) {
         if (state == 1) { // SCROLL_STATE_DRAGGING
-            swipingPagers.put(pager, true);
+            View bar = barForPager(pager);
+            if (bar != null && bubbles.containsKey(bar)) swipingPagers.put(pager, true);
         } else if (state == 0) { // SCROLL_STATE_IDLE
             if (swipingPagers.remove(pager) == null) return;
             View bar = barForPager(pager);
@@ -1733,7 +1748,7 @@ public class FloatingBottomBar extends Feature {
 
     private static void onPagerScrolled(View pager, int position, float offset) {
         if (!swipingPagers.containsKey(pager)) return;
-        View bar = barForPager(pager);
+        View bar = pagerBars.get(pager);
         LiquidBubble bubble = bar == null ? null : bubbles.get(bar);
         if (bubble == null) return;
         int from = bubbleIndexForPage(bar, position);
