@@ -25,10 +25,15 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
+import com.waenhancer.config.LiquidGlassOptics;
+import com.waenhancer.config.LiquidGlassSettings;
 import com.waenhancer.theme.GlassBudget;
+import com.waenhancer.theme.GlassOptics;
 import com.waenhancer.theme.GlassRenderer;
 import com.waenhancer.theme.GlassSpec;
 import com.waenhancer.theme.GlassSurface;
+import com.waenhancer.theme.KyantLens;
+import com.waenhancer.theme.LiquidBubble;
 import com.waenhancer.theme.LiquidLens;
 import com.waenhancer.theme.LiquidMorph;
 import com.waenhancer.xposed.core.Feature;
@@ -88,6 +93,10 @@ public class FloatingBottomBar extends Feature {
     private static final WeakHashMap<View, GlassSurface> glassSurfaces = new WeakHashMap<>();
     /** The morphing blob under the selected tab, for the variants that have one. */
     private static final WeakHashMap<View, LiquidMorph> liquidMorphs = new WeakHashMap<>();
+    /** The OneMate bubble under the selected tab, when the OneMate material is selected. */
+    private static final WeakHashMap<View, LiquidBubble> bubbles = new WeakHashMap<>();
+    /** OneMate widens the bar by 16dp while the bubble is pressed. */
+    private static final float BUBBLE_BAR_GROWTH_DP = 16f;
     private static boolean scrollHideEnabled = true;
     private static String scrollHideMode = "tabs";
     private static boolean glassEnabled = false;
@@ -126,6 +135,15 @@ public class FloatingBottomBar extends Feature {
         pillManualHeightDp = Math.round(normalized("floating_bottom_bar_manual_height"));
         fabVisibleOffsetDp = Math.round(normalized("floating_bottom_bar_fab_offset"));
         fabMode = getPrefString(activePrefs, "floating_bottom_bar_fab_mode", "default");
+        // The bar can be installed before any activity resume has published the renderer
+        // switches, and the bubble is chosen at install time, so publish them here too.
+        try {
+            GlassOptics.publish(LiquidGlassOptics.read(prefs));
+            KyantLens.publishOpacity(glassOpacity,
+                    LiquidGlassSettings.MATERIAL.recommendedOpacityPercent());
+        } catch (Throwable t) {
+            XposedBridge.log("[WAEX-FBB] optics publish failed: " + t);
+        }
 
         // Emitted before anything can go wrong, so its absence is itself a result: no line means
         // this module never ran in this process, which is a different problem from any decision
@@ -1414,7 +1432,11 @@ public class FloatingBottomBar extends Feature {
 
             GlassSpec hostSpec = surface.currentSpec();
             boolean lensed = surface.isLensed();
-            installMorph(surface, bottomNav, hostSpec, lensed, density);
+            if (GlassOptics.current().oneMate && hostSpec != null && hostSpec.morphing) {
+                installBubble(surface, bottomNav, lensed, density);
+            } else {
+                installMorph(surface, bottomNav, hostSpec, lensed, density);
+            }
 
             XposedBridge.log("glass host installed: lensed=" + lensed
                     + " variant=" + getPrefString(activePrefs,
@@ -1467,10 +1489,197 @@ public class FloatingBottomBar extends Feature {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
+    /**
+     * Adds OneMate's bubble above the bar's tabs: a faint pill at rest that rises into a lens on
+     * press and can be dragged between tabs. See {@link LiquidBubble}.
+     */
+    private static void installBubble(GlassSurface surface, View bottomNav, boolean lensed,
+                                      float density) {
+        liquidMorphs.remove(bottomNav);
+        final android.content.Context ctx = bottomNav.getContext();
+        LiquidBubble bubble = new LiquidBubble(ctx);
+        bubble.setSources(surface.captureView(), bottomNav);
+        bubble.setStyle(DesignUtils.getPrimaryColor(), DesignUtils.isNightMode(ctx), lensed);
+        final FrameLayout host = surface.host();
+        bubble.setListener((progress, rubberBand) -> {
+            float width = host.getWidth();
+            float scale = width > 0f ? 1f + progress * BUBBLE_BAR_GROWTH_DP * density / width : 1f;
+            host.setScaleX(scale);
+            host.setScaleY(scale);
+            host.setTranslationX(rubberBand);
+        });
+        // Last child: above the tab row it refracts, so it is drawn after everything it records.
+        host.addView(bubble, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        bubbles.put(bottomNav, bubble);
+        installBubbleTouch(bottomNav, bubble);
+    }
+
+    /** Tab items in bubble order: the menu's visible children. */
+    private static java.util.List<View> bubbleTabs(View bottomNav) {
+        java.util.List<View> tabs = new java.util.ArrayList<>();
+        ViewGroup menu = findMenuView(bottomNav);
+        if (menu == null) return tabs;
+        for (int i = 0; i < menu.getChildCount(); i++) {
+            View item = menu.getChildAt(i);
+            if (item != null && item.getVisibility() == View.VISIBLE && item.getWidth() > 0) tabs.add(item);
+        }
+        return tabs;
+    }
+
+    /** Sends the tab geometry and the selected tab to the bubble, in the host's coordinates. */
+    private static void updateBubble(View bottomNav, LiquidBubble bubble) {
+        ViewGroup menu = findMenuView(bottomNav);
+        java.util.List<View> tabs = bubbleTabs(bottomNav);
+        if (menu == null || tabs.isEmpty()) return;
+        float[] centers = new float[tabs.size()];
+        float[] widths = new float[tabs.size()];
+        int selected = -1;
+        for (int i = 0; i < tabs.size(); i++) {
+            View item = tabs.get(i);
+            float left = item.getLeft() + menu.getLeft() + bottomNav.getLeft();
+            centers[i] = left + item.getWidth() / 2f;
+            widths[i] = item.getWidth();
+            if (selected < 0 && item.isSelected()) selected = i;
+        }
+        if (selected < 0) selected = bubble.selectedIndex();
+        GlassSurface surface = glassSurfaces.get(bottomNav);
+        android.content.Context ctx = bottomNav.getContext();
+        bubble.setStyle(DesignUtils.getPrimaryColor(), DesignUtils.isNightMode(ctx),
+                surface != null && surface.isLensed());
+        bubble.setTabs(centers, widths, selected, glassSpecFor(bottomNav).animate);
+    }
+
+    /** Gives every tab item the bubble's press/drag handling, keeping any listener it had. */
+    private static void installBubbleTouch(View bottomNav, LiquidBubble bubble) {
+        ViewGroup menu = findMenuView(bottomNav);
+        if (menu == null) return;
+        for (int i = 0; i < menu.getChildCount(); i++) {
+            View item = menu.getChildAt(i);
+            if (item == null) continue;
+            View.OnTouchListener existing = getOnTouchListener(item);
+            if (existing instanceof BubbleTouch) {
+                ((BubbleTouch) existing).bubble = bubble;
+                continue;
+            }
+            item.setOnTouchListener(new BubbleTouch(bottomNav, bubble, existing));
+        }
+    }
+
+    private static java.lang.reflect.Field listenerInfoField, onTouchListenerField;
+
+    /** The item's current touch listener; resolved once, since this runs on layout passes. */
+    private static View.OnTouchListener getOnTouchListener(View view) {
+        try {
+            if (listenerInfoField == null) {
+                listenerInfoField = View.class.getDeclaredField("mListenerInfo");
+                listenerInfoField.setAccessible(true);
+            }
+            Object listenerInfo = listenerInfoField.get(view);
+            if (listenerInfo == null) return null;
+            if (onTouchListenerField == null) {
+                onTouchListenerField = listenerInfo.getClass().getDeclaredField("mOnTouchListener");
+                onTouchListenerField.setAccessible(true);
+            }
+            return (View.OnTouchListener) onTouchListenerField.get(listenerInfo);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * Press and drag on the selected tab move the bubble (OneMate: the drag gesture lives on the
+     * indicator). A press on another tab is left to WhatsApp: its click selects the tab, and the
+     * selection then sends the bubble across with a rise-travel-land animation. Once a drag has
+     * started the item's own press is cancelled, so lifting the finger never also clicks it; the
+     * tab the bubble settles on is selected through its own click instead.
+     */
+    private static final class BubbleTouch implements View.OnTouchListener {
+        private final View bottomNav;
+        private final View.OnTouchListener delegate;
+        LiquidBubble bubble;
+        private float downX, lastX;
+        private boolean armed, dragging;
+
+        BubbleTouch(View bottomNav, LiquidBubble bubble, View.OnTouchListener delegate) {
+            this.bottomNav = bottomNav;
+            this.bubble = bubble;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public boolean onTouch(View v, android.view.MotionEvent e) {
+            try {
+                switch (e.getActionMasked()) {
+                    case android.view.MotionEvent.ACTION_DOWN: {
+                        downX = lastX = e.getRawX();
+                        dragging = false;
+                        java.util.List<View> tabs = bubbleTabs(bottomNav);
+                        armed = bubbles.get(bottomNav) == bubble
+                                && tabs.indexOf(v) == bubble.selectedIndex();
+                        if (armed) bubble.press();
+                        break;
+                    }
+                    case android.view.MotionEvent.ACTION_MOVE: {
+                        if (!armed) break;
+                        float x = e.getRawX();
+                        if (!dragging && Math.abs(x - downX) > android.view.ViewConfiguration
+                                .get(v.getContext()).getScaledTouchSlop()) {
+                            dragging = true;
+                            if (v.getParent() != null) v.getParent().requestDisallowInterceptTouchEvent(true);
+                            android.view.MotionEvent cancel = android.view.MotionEvent.obtain(e);
+                            cancel.setAction(android.view.MotionEvent.ACTION_CANCEL);
+                            v.onTouchEvent(cancel);
+                            cancel.recycle();
+                            v.setPressed(false);
+                            lastX = downX;
+                        }
+                        if (dragging) {
+                            bubble.drag(x - lastX);
+                            lastX = x;
+                            return true;
+                        }
+                        lastX = x;
+                        break;
+                    }
+                    case android.view.MotionEvent.ACTION_UP:
+                    case android.view.MotionEvent.ACTION_CANCEL: {
+                        boolean wasDragging = dragging;
+                        dragging = false;
+                        if (armed) {
+                            int index = bubble.release();
+                            armed = false;
+                            if (wasDragging) {
+                                java.util.List<View> tabs = bubbleTabs(bottomNav);
+                                if (e.getActionMasked() == android.view.MotionEvent.ACTION_UP
+                                        && index >= 0 && index < tabs.size()
+                                        && !tabs.get(index).isSelected()) {
+                                    bubble.expect(index);
+                                    tabs.get(index).performClick();
+                                } else {
+                                    // Settled back on the tab it started from, or cancelled.
+                                    updateBubble(bottomNav, bubble);
+                                }
+                                return true;
+                            }
+                        }
+                        break;
+                    }
+                    default:
+                        break;
+                }
+            } catch (Throwable t) {
+                XposedBridge.log("[WAEX-FBB] bubble touch: " + t);
+            }
+            return delegate != null && delegate.onTouch(v, e);
+        }
+    }
+
     private static void removeGlassHost(View bottomNav) {
         try {
             GlassSurface surface = glassSurfaces.remove(bottomNav);
             liquidMorphs.remove(bottomNav);
+            bubbles.remove(bottomNav);
             if (surface != null) surface.detach();
         } catch (Throwable ignored) {}
     }
@@ -1661,6 +1870,11 @@ public class FloatingBottomBar extends Feature {
             if (morph != null) {
                 morph.applySpec(spec);
                 moveMorphToSelectedTab(bottomNav, morph, density);
+            }
+            LiquidBubble bubble = bubbles.get(bottomNav);
+            if (bubble != null) {
+                installBubbleTouch(bottomNav, bubble);
+                updateBubble(bottomNav, bubble);
             }
         } catch (Throwable ignored) {
         }

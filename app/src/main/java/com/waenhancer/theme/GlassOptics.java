@@ -113,17 +113,23 @@ public final class GlassOptics {
     /** Base displacement as a fraction of the bevel, before the hard cap. Developer tuning. */
     public final float displacement;
     public final Profile profile;
+    /**
+     * The OneMate material ({@link KyantLens}) replaces both lenses on every surface. Independent
+     * of {@link #corrected}: when it is on, the corrected groups, profile and diagnostics do not
+     * apply, because none of their passes run. Capture sources and recovery are unchanged.
+     */
+    public final boolean oneMate;
 
     private GlassOptics(boolean corrected, boolean geometry, boolean filtering, boolean adaptive,
                         boolean color, boolean temporal, boolean clearProfile, Debug debug,
                         float displacement) {
         this(corrected, geometry, filtering, adaptive, color, temporal, clearProfile, debug,
-                displacement, Profile.BASELINE);
+                displacement, Profile.BASELINE, false);
     }
 
     private GlassOptics(boolean corrected, boolean geometry, boolean filtering, boolean adaptive,
                         boolean color, boolean temporal, boolean clearProfile, Debug debug,
-                        float displacement, Profile profile) {
+                        float displacement, Profile profile, boolean oneMate) {
         this.corrected = corrected;
         this.geometry = geometry;
         this.legacyWarp = corrected && debug == Debug.LEGACY_WARP;
@@ -135,12 +141,20 @@ public final class GlassOptics {
         this.debug = debug == null ? Debug.NONE : debug;
         this.displacement = displacement;
         this.profile = profile == null ? Profile.BASELINE : profile;
+        this.oneMate = oneMate;
     }
 
     public GlassOptics withProfile(Profile value) {
-        if (!corrected) return LEGACY;
+        if (!corrected) return oneMate ? LEGACY.withOneMate(true) : LEGACY;
         return new GlassOptics(corrected, geometry, filtering, adaptive, color, temporal,
-                clearProfile, debug, displacement, value);
+                clearProfile, debug, displacement, value, oneMate);
+    }
+
+    /** These switches with the OneMate material selected or not. */
+    public GlassOptics withOneMate(boolean value) {
+        if (value == oneMate) return this;
+        return new GlassOptics(corrected, geometry, filtering, adaptive, color, temporal,
+                clearProfile, debug, displacement, profile, value);
     }
 
     /** Reconstruction is opt-in and disabled for geometric/input isolation views. */
@@ -201,6 +215,11 @@ public final class GlassOptics {
 
     /** A short stable key for effect caches and logs. */
     public String key() {
+        String base = classicKey();
+        return oneMate ? "onemate|" + base : base;
+    }
+
+    private String classicKey() {
         if (!corrected) return "legacy";
         return "v2:" + (filtering ? "F" : "f") + (adaptive ? "A" : "a")
                 + (color ? "C" : "c") + (temporal ? "T" : "t") + (clearProfile ? "K" : "k")

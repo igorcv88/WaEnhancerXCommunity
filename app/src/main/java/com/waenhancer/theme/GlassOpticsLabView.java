@@ -29,7 +29,7 @@ public final class GlassOpticsLabView extends View {
     public GlassOpticsLabView(Context context) { super(context); }
 
     public void configure(GlassOptics value) {
-        optics = value;
+        optics = value == null ? GlassOptics.ALL : value.withOneMate(false);
         revision++;
         rendered = false;
         invalidate();

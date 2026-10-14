@@ -24,6 +24,13 @@ public class LiquidGlassOpticsTest {
     @Before
     public void setUp() {
         prefs = new FakeSharedPreferences();
+        // These tests are about the classic renderer's switches; the OneMate default has its own.
+        classic(prefs);
+    }
+
+    private static FakeSharedPreferences classic(FakeSharedPreferences p) {
+        p.edit().putString(LiquidGlassOptics.RENDERER, LiquidGlassOptics.RENDERER_CLASSIC).apply();
+        return p;
     }
 
     @After
@@ -35,8 +42,36 @@ public class LiquidGlassOpticsTest {
     @Test
     public void defaultIsTheOriginalRenderer() {
         assertSame(GlassOptics.LEGACY, LiquidGlassOptics.read(prefs));
-        assertSame(GlassOptics.LEGACY, LiquidGlassOptics.read(null));
         assertFalse(GlassOptics.LEGACY.corrected);
+        assertFalse(GlassOptics.LEGACY.oneMate);
+    }
+
+    /**
+     * The OneMate material is the default renderer; its switch leaves every classic switch as it
+     * was, so turning it off returns exactly to the previous configuration.
+     */
+    @Test
+    public void oneMateIsTheDefaultAndKeepsClassicSwitches() {
+        FakeSharedPreferences fresh = new FakeSharedPreferences();
+        GlassOptics o = LiquidGlassOptics.read(fresh);
+        assertTrue(o.oneMate);
+        assertFalse(o.corrected);
+        assertTrue(LiquidGlassOptics.read(null).oneMate);
+        assertTrue(LiquidGlassOptics.isOneMate(fresh));
+        assertEquals(GlassOptics.LEGACY, o.withOneMate(false));
+
+        fresh.edit().putBoolean(LiquidGlassOptics.MASTER, true).apply();
+        GlassOptics all = LiquidGlassOptics.read(fresh);
+        assertTrue(all.oneMate);
+        assertEquals(GlassOptics.ALL, all.withOneMate(false));
+        assertTrue(all.withProfile(GlassOptics.Profile.RECONSTRUCT).oneMate);
+        assertTrue(o.withProfile(GlassOptics.Profile.RECONSTRUCT).oneMate);
+        assertFalse(all.key().equals(GlassOptics.ALL.key()));
+
+        fresh.edit().putString(LiquidGlassOptics.RENDERER, "CLASSIC").apply();
+        assertEquals(GlassOptics.ALL, LiquidGlassOptics.read(fresh));
+        fresh.edit().putInt(LiquidGlassOptics.RENDERER, 3).apply();
+        assertTrue("an unreadable value keeps the default", LiquidGlassOptics.read(fresh).oneMate);
     }
 
     /** The master switch alone selects every correction. */
@@ -56,7 +91,7 @@ public class LiquidGlassOpticsTest {
                 LiquidGlassOptics.ADAPTIVE, LiquidGlassOptics.COLOR, LiquidGlassOptics.TEMPORAL,
                 LiquidGlassOptics.CLEAR};
         for (int mask = 0; mask < (1 << keys.length); mask++) {
-            FakeSharedPreferences p = new FakeSharedPreferences();
+            FakeSharedPreferences p = classic(new FakeSharedPreferences());
             for (int i = 0; i < keys.length; i++) p.edit().putBoolean(keys[i], (mask & (1 << i)) != 0).apply();
             GlassOptics o = LiquidGlassOptics.read(p);
             boolean master = (mask & 1) != 0;
@@ -164,7 +199,8 @@ public class LiquidGlassOpticsTest {
     public void everyKeyCrossesTheBridge() {
         String[] keys = {LiquidGlassOptics.MASTER, LiquidGlassOptics.FILTERING,
                 LiquidGlassOptics.ADAPTIVE, LiquidGlassOptics.COLOR, LiquidGlassOptics.TEMPORAL,
-                LiquidGlassOptics.CLEAR, LiquidGlassOptics.DEBUG, LiquidGlassOptics.DISPLACEMENT, LiquidGlassOptics.PROFILE};
+                LiquidGlassOptics.CLEAR, LiquidGlassOptics.DEBUG, LiquidGlassOptics.DISPLACEMENT, LiquidGlassOptics.PROFILE,
+                LiquidGlassOptics.RENDERER};
         for (String key : keys) {
             PreferenceSchema.Entry entry = PreferenceSchema.entry(key);
             assertTrue(key + " missing from the schema", entry != null);

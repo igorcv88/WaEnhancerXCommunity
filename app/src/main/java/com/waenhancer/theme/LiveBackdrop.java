@@ -62,6 +62,9 @@ final class LiveBackdrop {
     private LensEffect corrected;
     /** Which path installed {@code glassNode}'s effect, so a switch rebuilds it. */
     private boolean correctedInstalled;
+    /** OneMate material, built when {@link GlassOptics#oneMate} is on. */
+    private KyantLens oneMate;
+    private boolean oneMateInstalled;
     private String loggedStatus;
     private long captureGeneration, effectRebuilds;
     private long lastCaptureUptime;
@@ -158,12 +161,16 @@ final class LiveBackdrop {
         hasContent = false;
         recordingState = RecordingState.TEMPORARILY_UNAVAILABLE;
         GlassOptics optics = GlassOptics.current();
+        if (optics.oneMate && KyantLens.isAvailable()) {
+            return captureOneMate(width, height, radiusPx, density, spec, painter);
+        }
         if (optics.corrected && !LensEffect.isBroken()) {
             return captureCorrected(width, height, radiusPx, density, spec, painter, optics);
         }
-        if (correctedInstalled) {
+        if (correctedInstalled || oneMateInstalled) {
             // Back to the legacy lens: make applyLens install it again.
             correctedInstalled = false;
+            oneMateInstalled = false;
             effectSpec = null;
             contentPadding = 0;
             glassNode.setRenderEffect(null);
@@ -252,12 +259,70 @@ final class LiveBackdrop {
             glassNode.setRenderEffect(corrected.effect());
             effectRebuilds++;
             correctedInstalled = true;
+            oneMateInstalled = false;
             effectSpec = null;
             String status = corrected.status();
             if (!status.equals(loggedStatus)) {
                 loggedStatus = status;
                 Log.i(TAG_V2, status);
             }
+        }
+        contentWidth = width;
+        contentHeight = height;
+        contentPadding = padding;
+        hasContent = true;
+        recordingState = RecordingState.RECORDED;
+        captureGeneration++;
+        lastCaptureUptime = android.os.SystemClock.uptimeMillis();
+        return true;
+    }
+
+    /**
+     * The OneMate material: a 1:1 recording with the blur's margin, then saturation, blur and
+     * {@link KyantLens}'s lens/surface/highlight pass. Same recording contract as the corrected
+     * path; only the effect differs.
+     */
+    private boolean captureOneMate(int width, int height, float radiusPx, float density,
+                                   GlassSpec spec, Painter painter) {
+        int padding = KyantLens.padding(density);
+        Layout layout = new Layout(width, height, padding, true);
+        node.setPosition(0, 0, layout.nodeWidth, layout.nodeHeight);
+        RecordingCanvas canvas = node.beginRecording(layout.nodeWidth, layout.nodeHeight);
+        boolean painted;
+        capturing = true;
+        try {
+            canvas.translate(padding, padding);
+            canvas.clipRect(-padding, -padding, width + padding, height + padding);
+            painted = painter.paint(canvas, padding);
+        } finally {
+            capturing = false;
+            node.endRecording();
+        }
+        if (!painted) {
+            hasContent = false;
+            return false;
+        }
+        glassNode.setPosition(-padding, -padding, width + padding, height + padding);
+        RecordingCanvas glass = glassNode.beginRecording(layout.inputWidth, layout.inputHeight);
+        try {
+            glass.drawRenderNode(node);
+        } finally {
+            glassNode.endRecording();
+        }
+        if (oneMate == null) oneMate = new KyantLens();
+        KyantLens.Params params = KyantLens.surface(spec, height, density, KyantLens.surfaceAlpha255());
+        boolean changed = oneMate.update(params, width, height, radiusPx, padding, padding);
+        if (oneMate.effect() == null) {
+            // Refused program: the next capture takes the classic path (KyantLens.isAvailable()).
+            hasContent = false;
+            return false;
+        }
+        if (changed || !oneMateInstalled) {
+            glassNode.setRenderEffect(oneMate.effect());
+            effectRebuilds++;
+            oneMateInstalled = true;
+            correctedInstalled = false;
+            effectSpec = null;
         }
         contentWidth = width;
         contentHeight = height;
@@ -314,7 +379,8 @@ final class LiveBackdrop {
     String status() {
         return "recordingState=" + recordingState() + " captureAvailable=" + available() + " hasContent=" + hasContent
                 + " hasDisplayList=" + (node.hasDisplayList() && glassNode.hasDisplayList())
-                + " shaderStatus=" + (lensFailed ? "disabled" : correctedInstalled ? "v2" : "legacy")
+                + " shaderStatus=" + (lensFailed ? "disabled" : oneMateInstalled ? "onemate"
+                        : correctedInstalled ? "v2" : "legacy")
                 + " captureGeneration=" + captureGeneration + " rebuilds=" + effectRebuilds
                 + " materialRevision=" + GlassOptics.revision()
                 + " captureSize=" + contentWidth + "x" + contentHeight;

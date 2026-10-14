@@ -2,7 +2,29 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — optical reconstruction, 2026-10-09
+## Current task — OneMate glass material and bar bubble, 2026-10-12
+
+Branch: `claude/liquid-glass-nav-bar-ktxdge`, based on `master@6ae90fb` (PR #84 merged). PR: [#85](https://github.com/igorcv88/WaEnhancerXCommunity/pull/85) (ready for review, not merged). No workflow dispatched.
+
+Request: adopt OneMate's (kalicyh/OneMate) liquid navigation bar (a bubble that rises when pressed and can be dragged) and its glass material on every surface. The user's screenshots show the current app surfaces as dark, near-opaque slabs with a wide grey rim; they called the bar acceptable and the rest ugly.
+
+Implemented (full audit: [docs/ONEMATE_MATERIAL_2026-10-12.md](docs/ONEMATE_MATERIAL_2026-10-12.md)):
+- `KyantLens`: the OneMate/Kyant0/miuix material as RenderEffects. Saturation 1.5 → 4dp blur (Skia radius solved for miuix sigma 4dp·0.45) → one AGSL pass with an inward circle-profile edge lens (24dp), a surface tint (40% at Liquid's recommended opacity, moved by the slider, clamped 0.12–0.85) and the miuix dual-peak BloomStroke rim. Ported from the Apache-2.0 upstreams, not from OneMate (which has no licence); NOTICE updated.
+- `GlassOptics.oneMate` and the new public key `liquid_glass_renderer` (default `onemate`; `classic` restores the previous renderer and every classic switch exactly). `LiveBackdrop` adds a OneMate capture path (1:1 + 3σ margin) for every pane/drawable surface; `LiquidLens.apply` installs it on the floating bar's and scroll button's BlurViews; `LiveBudget` charges 3 passes and the margin. Refused program → classic paths.
+- `BubbleMotion` (pure, tested) + `LiquidBubble` replace `LiquidMorph` on the bar's Liquid style under OneMate: rest tint; on press of the selected tab it rises to 78/56 with lens depth, dispersion 0.5, rim and inner shadow, the bar widens by 16dp; dragging follows with velocity squash and a 4dp rubber band; release selects the settled tab via its own click (a 700 ms guard ignores WhatsApp's stale selection report). Tapping another tab animates rise→travel→land. The bubble records only preceding siblings in the capture-excluded host (BlurView output + accent-filtered tab row).
+- Settings: "Material → OneMate material" switch on the Liquid Glass page; the optical-corrections caption says they apply to the classic renderer only. The synthetic lab is forced to the corrected renderer.
+
+Validation: JDK 21/SDK 36 `:app:testWhatsappDebugUnitTest :app:assembleWhatsappDebug` — **453 tests, 62 suites, 0 failures/errors/skips** (+`KyantLensTest` 6, `BubbleMotionTest` 10, 1 OneMate-default test; two classic-default tests now pin `classic`). `tools/agsl_check.py` passes all three shaders under glslangValidator (not proof of AGSL/driver acceptance). Debug APK `com.waenhancer.community` 1.8.0-alpha1/18001, debug-signed, SHA-256 `3e209c00aab4765d9185c20179a6254fa1765535b8d75074074955735fe26e50` (last build before docs-only changes). `git diff --check` clean. Build environment note: Maven Central returned HTTP 429 repeatedly; a machine-local Gradle init script pointing at Google's Maven Central mirror was used (not committed).
+
+Not validated: no device run. Unknown: the real look over WhatsApp content in dark and light themes, bubble frame cost (it re-records while pressed), BlurView drawing into a foreign RenderNode on the user's ROM, and the hidden-API reflection on `mListenerInfo.mOnTouchListener` (if it fails, any WhatsApp item touch listener is not chained).
+
+Open decisions / next steps:
+1. Device acceptance per the checklist in the audit doc (S25 Ultra, Liquid style, opacity at the recommended value). Record the APK SHA and versions.
+2. Decide whether to hide WhatsApp's native active-indicator pill under the bubble. This needs the view that draws it in the user's build.
+3. Optional: tilt-driven highlight (sensor inside WhatsApp; deliberately not ported), and `InteractiveHighlight`.
+4. If the tint is too strong or weak on device, tune `KyantLens.SURFACE_ALPHA` and the slider mapping, not the classic `GlassSpec` variants.
+
+## Previous task — optical reconstruction, 2026-10-09
 
 Branch: `feat/glass-optical-reconstruction`, based on latest `master@cbbf20205a6da6ee2bffda2879d1c8245bca1b1e`. Published as ready-for-review **PR #84**: https://github.com/igorcv88/WaEnhancerXCommunity/pull/84. Implementation commit: `f4d39686c916b45992aa1d737b69d2b60f83361d`; its tree `8ccb35807e71123254b67f8af55852402de95a44` exactly matches the locally tested/committed implementation tree. A documentation-only follow-up records this publication; no code changed after the final verified APK. No related open glass PR existed; the six open PRs were dependency updates. No merge or workflow dispatch is authorized here.
 

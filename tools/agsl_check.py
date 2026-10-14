@@ -15,6 +15,7 @@ import tempfile
 SOURCES = [
     ("app/src/main/java/com/waenhancer/theme/LiquidLens.java", "SHADER"),
     ("app/src/main/java/com/waenhancer/theme/LensEffect.java", "SHADER_V2"),
+    ("app/src/main/java/com/waenhancer/theme/KyantLens.java", "SHADER"),
 ]
 
 

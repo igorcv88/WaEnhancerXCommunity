@@ -11,3 +11,23 @@ is ported from two MIT-licensed projects:
   Copyright (c) Saurav Sajeev. MIT License.
   Ported: circular meniscus thickness profile, Schlick-Fresnel term, and the
   split between the lit rim and the opposite-side glow.
+
+The OneMate glass material and the bottom-bar bubble
+(app/src/main/java/com/waenhancer/theme/KyantLens.java, BubbleMotion.java and
+LiquidBubble.java) are ported from two Apache-2.0-licensed projects. They are
+the sources that the OneMate app (https://github.com/kalicyh/OneMate) mirrors;
+OneMate's own files carry no licence and were used only as a reference for
+parameters, never copied.
+
+  Kyant0/AndroidLiquidGlass — https://github.com/Kyant0/AndroidLiquidGlass
+  Copyright Kyant0. Apache License 2.0. Revision 65ab177e90e5c1d8c62e70cf7755841982da65f6.
+  Ported: the rounded-rect refraction lens (circle profile, smoothed gradient,
+  depth effect, seven-tap chromatic dispersion) and the DampedDragAnimation
+  press/drag/release springs, rewritten in Java for Android Views.
+
+  compose-miuix-ui/miuix — https://github.com/compose-miuix-ui/miuix
+  Copyright 2026, compose-miuix-ui contributors. Apache License 2.0.
+  Revision 6ef604ae6d53e4b241cdb89ccbf2caf86a7a33d0.
+  Ported: the dual-peak BloomStroke rim highlight shader, the blur radius-to-sigma
+  factor, and the liquid-glass navigation bar's material recipe (vibrancy, blur,
+  lens, surface tint, highlight, pressed indicator), rewritten for Android Views.

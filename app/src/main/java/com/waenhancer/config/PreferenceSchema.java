@@ -195,6 +195,7 @@ public final class PreferenceSchema {
         add(entries, "liquid_glass_optics_debug", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_optics_profile", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_optics_displacement", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "liquid_glass_renderer", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "glass_dialogs", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "glass_dialogs_variant", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "floating_bottom_bar_height_mode", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);

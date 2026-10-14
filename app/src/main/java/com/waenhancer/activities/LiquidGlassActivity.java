@@ -70,6 +70,21 @@ public class LiquidGlassActivity extends AppCompatActivity {
                 + "default. The effect is more visible over a detailed wallpaper. Your existing "
                 + "navigation bar and scroll button settings are kept.");
 
+        addSection("Material");
+        addSwitchRow("OneMate material",
+                "The glass from OneMate (Kyant0 Liquid Glass): saturated backdrop, light 4dp blur, "
+                        + "a lens only at the edges, a 40% surface tint and a thin two-light rim. On "
+                        + "the bottom bar the selected tab becomes a bubble that rises when pressed "
+                        + "and can be dragged between tabs. The opacity slider moves the tint around "
+                        + "40% (Liquid's recommended opacity gives exactly 40%). Turn off to use the "
+                        + "classic renderer and the optical corrections below.",
+                LiquidGlassOptics.isOneMate(prefs),
+                checked -> {
+                    prefs.edit().putString(LiquidGlassOptics.RENDERER, checked
+                            ? LiquidGlassOptics.RENDERER_ONEMATE
+                            : LiquidGlassOptics.RENDERER_CLASSIC).apply();
+                });
+
         addSection("Home");
         addBarRow();
 
@@ -137,7 +152,8 @@ public class LiquidGlassActivity extends AppCompatActivity {
      */
     private void addOpticsSection() {
         addSection("Optical corrections (experimental)");
-        addCaption("Compare the corrected renderer with the original one. Changes apply when you "
+        addCaption("Classic renderer only: these have no effect while OneMate material is on. "
+                + "Compare the corrected renderer with the original one. Changes apply when you "
                 + "return to WhatsApp; no restart is needed. Off by default: nothing changes until "
                 + "you turn this on, and your style, opacity and surface settings are not changed.");
 

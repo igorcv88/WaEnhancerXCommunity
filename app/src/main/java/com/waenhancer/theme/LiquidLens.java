@@ -716,6 +716,13 @@ public final class LiquidLens {
         // BlurView already supplies a reconstructed input. Keep the established floating-bar
         // finish while the app-pane candidates are calibrated against it.
         GlassOptics optics = GlassOptics.current().withProfile(GlassOptics.Profile.BASELINE);
+        if (optics.oneMate && KyantLens.isAvailable() && isActiveFor(spec)) {
+            Boolean result = applyOneMate(view, spec, cornerRadiusPx, density);
+            if (result != null) return result;
+        } else if (oneMate.remove(view) != null) {
+            installed.remove(view);
+            corrected.remove(view);
+        }
         if (optics.corrected && !LensEffect.isBroken() && isActiveFor(spec)) {
             Boolean result = applyCorrected(view, spec, cornerRadiusPx, density, optics);
             if (result != null) return result;
@@ -818,6 +825,41 @@ public final class LiquidLens {
         status = "active: " + lens.status();
         return true;
     }
+
+    /**
+     * The OneMate material on a view already drawing its captured backdrop (the bar's BlurView).
+     * Null when it could not be built, so the caller carries on with the classic lenses.
+     */
+    private static Boolean applyOneMate(View view, GlassSpec spec, float cornerRadiusPx,
+                                        float density) {
+        int width = view.getWidth();
+        int height = view.getHeight();
+        if (width <= 0 || height <= 0) {
+            status = "deferred: surface not measured yet (" + width + "x" + height + ")";
+            return false;
+        }
+        KyantLens lens = oneMate.get(view);
+        if (lens == null) {
+            lens = new KyantLens();
+            oneMate.put(view, lens);
+        }
+        KyantLens.Params params = KyantLens.surface(spec, height, density, KyantLens.surfaceAlpha255());
+        boolean changed = lens.update(params, width, height, cornerRadiusPx, 0f, 0f);
+        if (lens.effect() == null) {
+            oneMate.remove(view);
+            return null;
+        }
+        if (changed || installed.containsKey(view) || corrected.containsKey(view)) {
+            installed.remove(view);
+            corrected.remove(view);
+            view.setRenderEffect(lens.effect());
+        }
+        status = "active: onemate " + width + "x" + height;
+        return true;
+    }
+
+    /** OneMate material state per view; see {@link KyantLens}. */
+    private static final java.util.WeakHashMap<View, KyantLens> oneMate = new java.util.WeakHashMap<>();
 
     /** Corrected-lens state per view; see {@link LensEffect}. */
     private static final java.util.WeakHashMap<View, LensEffect> corrected = new java.util.WeakHashMap<>();
@@ -949,6 +991,7 @@ public final class LiquidLens {
             view.setRenderEffect(null);
             installed.remove(view);
             corrected.remove(view);
+            oneMate.remove(view);
             ValueAnimator animator = pressAnimators.remove(view);
             if (animator != null) animator.cancel();
         } catch (Throwable ignored) {
