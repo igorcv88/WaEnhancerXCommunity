@@ -75,7 +75,17 @@ public final class LiquidBubble extends View {
 
     private PagerSource pagerSource;
     private float lastPagerPosition = Float.NaN;
-    private int pagerStillFrames;
+    /** When the pager position last changed (uptime ms). */
+    private long pagerChangedAt;
+    /**
+     * How long the pager must hold still before a follow ends. Time rather than a count of
+     * polls: the pager is polled from both the window's pre-draw and the bubble's own frame, so
+     * two polls can fall in one vsync, and a one-frame pause in a slow swipe would end the follow
+     * and pulse the bubble.
+     */
+    static final long PAGER_SETTLE_MS = 80L;
+    /** True while {@link #frame()} runs, so scheduling from inside it keeps the frame clock. */
+    private boolean inFrame;
     /** After a drag commits a tab, the pager's own scroll toward it must not move the bubble. */
     private boolean waitPagerSettle;
     private final android.view.ViewTreeObserver.OnPreDrawListener preDraw = () -> {
@@ -158,11 +168,15 @@ public final class LiquidBubble extends View {
                 || Math.abs(position - lastPagerPosition) > 0.0005f;
         boolean first = Float.isNaN(lastPagerPosition);
         lastPagerPosition = position;
-        if (first) return;
+        long now = android.os.SystemClock.uptimeMillis();
+        if (first) {
+            pagerChangedAt = now;
+            return;
+        }
         if (changed) {
-            pagerStillFrames = 0;
+            pagerChangedAt = now;
             if (!waitPagerSettle) follow(position);
-        } else if (++pagerStillFrames >= 2) {
+        } else if (now - pagerChangedAt >= PAGER_SETTLE_MS) {
             waitPagerSettle = false;
             if (following) endFollow();
         }
@@ -290,7 +304,7 @@ public final class LiquidBubble extends View {
      */
     public void expect(int index) {
         waitPagerSettle = true;
-        pagerStillFrames = 0;
+        pagerChangedAt = android.os.SystemClock.uptimeMillis();
         expected = index;
         expectedUntil = android.os.SystemClock.uptimeMillis() + EXPECT_MS;
         selected = index;
@@ -301,13 +315,24 @@ public final class LiquidBubble extends View {
     private void schedule() {
         if (frameScheduled) return;
         frameScheduled = true;
-        lastFrameNanos = 0L;
+        // Only a loop that is starting resets the clock; one continued from inside a frame keeps
+        // it, or every frame would integrate 1/60 s whatever the refresh rate.
+        if (!inFrame) lastFrameNanos = 0L;
         postOnAnimation(this::frame);
     }
 
     private void frame() {
         frameScheduled = false;
         if (motion == null) return;
+        inFrame = true;
+        try {
+            stepFrame();
+        } finally {
+            inFrame = false;
+        }
+    }
+
+    private void stepFrame() {
         // The pager can stop between window frames; keep polling while following so the end of
         // a swipe is seen even if nothing else redraws.
         if (following) pollPager();
