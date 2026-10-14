@@ -83,6 +83,20 @@ public final class LiquidBubble extends View {
     public void setSources(View captureView, View tabs) {
         this.captureView = captureView;
         this.tabs = tabs;
+        // No outline: the Z below is only for draw order and must not cast a shadow.
+        setOutlineProvider(null);
+        keepAboveTabs();
+    }
+
+    /**
+     * Draws above the tab row. A ViewGroup sorts children by Z before index, and the hooked tab
+     * row keeps its own elevation, so being the last child was not enough: the real icons were
+     * drawn over the bubble's magnified copy of them, two icons per tab.
+     */
+    private void keepAboveTabs() {
+        if (tabs == null) return;
+        float wanted = tabs.getZ() + 1f - getElevation();
+        if (getTranslationZ() != wanted) setTranslationZ(wanted);
     }
 
     public void setListener(Listener listener) {
@@ -105,6 +119,7 @@ public final class LiquidBubble extends View {
     public void setTabs(float[] tabCenters, float[] tabWidths, int selectedIndex, boolean animate) {
         if (tabCenters == null || tabWidths == null || tabCenters.length == 0
                 || tabCenters.length != tabWidths.length) return;
+        keepAboveTabs();
         centers = tabCenters.clone();
         widths = tabWidths.clone();
         int reported = Math.max(0, Math.min(selectedIndex, centers.length - 1));
@@ -116,8 +131,11 @@ public final class LiquidBubble extends View {
         selected = reported;
         if (motion == null || motion.tabs() != centers.length) {
             motion = new BubbleMotion(centers.length, selected, PRESSED_SCALE);
-        } else if (!motion.isPressed()) {
-            motion.animateTo(selected, animate);
+        } else if (!motion.isPressed() && !following) {
+            // A swipe that just ended leaves the bubble on (or a hair from) the selected tab:
+            // place it rather than starting a rise-travel-land for a sub-pixel distance.
+            if (Math.abs(motion.targetValue() - selected) < 0.05f) motion.snapTo(selected);
+            else motion.animateTo(selected, animate);
         }
         schedule();
         invalidate();
@@ -140,6 +158,7 @@ public final class LiquidBubble extends View {
 
     public void press() {
         if (motion == null) return;
+        following = false;
         motion.press();
         schedule();
     }
@@ -156,6 +175,26 @@ public final class LiquidBubble extends View {
         boolean ltr = centers.length < 2 || centers[centers.length - 1] >= centers[0];
         motion.dragBy(dx / average * (ltr ? 1f : -1f), dx);
         schedule();
+    }
+
+    /** True while a page swipe drives the bubble's position (see {@link #follow}). */
+    private boolean following;
+
+    /**
+     * Follows a page swipe: {@code index} is the fractional tab the pager is showing. The bubble
+     * tracks it frame by frame, flat (no rise), instead of waiting for the page to settle and
+     * then travelling. Ignored while a finger holds the bubble.
+     */
+    public void follow(float index) {
+        if (motion == null || motion.isPressed() || expected >= 0) return;
+        following = true;
+        motion.follow(index);
+        invalidate();
+    }
+
+    /** The swipe ended: selection reports drive the bubble again. */
+    public void endFollow() {
+        following = false;
     }
 
     /** Finger up or cancel. Returns the tab the bubble settles on. */
@@ -252,7 +291,7 @@ public final class LiquidBubble extends View {
     }
 
     private void drawTint(Canvas canvas, float w, float h, float radius, float progress) {
-        KyantLens.Params params = KyantLens.bubble(dark, progress, density);
+        KyantLens.Params params = KyantLens.bubble(accent, progress, density);
         int color = lensed ? params.tint : ((Math.round(0.15f * 255f) << 24) | (accent & 0xFFFFFF));
         if ((color >>> 24) == 0) return;
         tintPaint.setColor(color);
@@ -294,7 +333,7 @@ public final class LiquidBubble extends View {
             } finally {
                 glass.endRecording();
             }
-            lens.update(KyantLens.bubble(dark, progress, density), w, h, radius, 0f, 0f);
+            lens.update(KyantLens.bubble(accent, progress, density), w, h, radius, 0f, 0f);
             if (lens.effect() == null) return false;
             glass.setRenderEffect(lens.effect());
             ((RecordingCanvas) canvas).drawRenderNode(glass);

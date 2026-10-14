@@ -151,4 +151,18 @@ public class BubbleMotionTest {
         assertTrue(m.value() <= 3.5f);
         assertTrue(m.scaleX() < 2f);
     }
+
+    /** A page swipe places the bubble directly, flat: no rise, no lag behind the page. */
+    @Test
+    public void followTracksThePagerWithoutRising() {
+        BubbleMotion m = new BubbleMotion(3, 0, PRESSED);
+        m.follow(0.4f);
+        assertEquals(0.4f, m.value(), 0f);
+        assertEquals(0f, m.pressProgress(), 0f);
+        assertTrue(m.isIdle());
+        m.follow(1.7f);
+        assertEquals(1.7f, m.value(), 0f);
+        m.follow(9f);
+        assertEquals(2f, m.value(), 0f);
+    }
 }

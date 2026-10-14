@@ -2,7 +2,21 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — OneMate glass material and bar bubble, 2026-10-12
+## Current task — bubble device fixes, 2026-10-14
+
+Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@202b58d` (PR #85 merged). New PR opened from this branch. No workflow dispatched.
+
+Device evidence: a screen recording of the bar from the user (1080×280, 10 s, 120 fps). Four defects were found in it, each traced to a cause in the code:
+1. **Grey "white bubble" at rest.** WhatsApp's Material active-indicator pill (dark green) was still drawn, and OneMate's 10% white rest wash sat around it as a second pill. Fix: `FloatingBottomBar.suppressNativeIndicator` calls `setItemActiveIndicatorEnabled(false)` by reflection; if that fails, it hides the plain background View beside each tab icon. It also removes the items' press ripples. Everything is restored in `removeGlassHost`. The rest wash is now the accent at 22% (`KyantLens.BUBBLE_REST_ALPHA`), so the bubble is the only indicator.
+2. **Two icons inside the bubble** (one white, one green, moving apart). The tab row's own elevation sorted it above the bubble, so the real icons were drawn over the bubble's magnified copy. Fix: the bubble's translationZ is kept 1px above the tab row's Z, re-asserted on every layout. It has no outline, so it casts no shadow.
+3. **Solid green slab in the lens.** The accent `SRC_IN` tint of the recorded tab row also filled the native pill and the ripple. Fixed by (1).
+4. **Bubble lags the page swipe.** It moved only after `dispatchOnPageSelected` and the page settling. Fix: hooks on androidx `ViewPager.setScrollState` and `dispatchOnPageScrolled`. While a user swipe is in progress (DRAGGING through IDLE), the bubble follows the fractional page flat (`LiquidBubble.follow` / `BubbleMotion.follow`, no rise). The page-to-tab mapping goes through the existing `getTabIdForIndex` and view ids. Tab taps keep the rise→travel→land animation. A swipe ending within 0.05 tab of the selected tab is snapped, not re-animated.
+
+Validation: `:app:testWhatsappDebugUnitTest :app:assembleWhatsappDebug` — 454 tests, 62 suites, 0 failures (the bubble tint test was updated; a page-follow test was added). AGSL check passes. Debug APK SHA-256 `caabf1c90e9d70634e5cc221e083d59a4644ade347f05417d2db3b892de5d88d`. Not device-validated. Unknowns: whether the reflection method exists in the user's WhatsApp (if not, the per-item heuristic must find the indicator view); whether the tabs pager is androidx `ViewPager` or a subclass that overrides those methods; whether removing item ripples loses any WhatsApp press feedback the user wants.
+
+Next: re-record the same gestures (rest, tap between tabs, swipe pages, press-and-drag across tabs) on this build.
+
+## Previous task — OneMate glass material and bar bubble, 2026-10-12
 
 Branch: `claude/liquid-glass-nav-bar-ktxdge`, based on `master@6ae90fb` (PR #84 merged). PR: [#85](https://github.com/igorcv88/WaEnhancerXCommunity/pull/85) (ready for review, not merged). No workflow dispatched.
 

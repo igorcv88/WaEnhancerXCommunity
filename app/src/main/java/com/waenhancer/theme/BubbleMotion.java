@@ -157,6 +157,11 @@ public final class BubbleMotion {
         else pressed = true;
     }
 
+    /** Places the bubble at a fractional index without animation (a page swipe in progress). */
+    public void follow(float index) {
+        value.snap(clamp(index, 0f, maxValue));
+    }
+
     /** Places the bubble without animation (layout changes, first frame). */
     public void snapTo(int index) {
         value.snap(clamp(index, 0f, maxValue));
