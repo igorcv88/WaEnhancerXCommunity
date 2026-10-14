@@ -2,7 +2,19 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — bubble device fixes, 2026-10-14
+## Current task — bubble rest look and swipe glass, 2026-10-14 (second recording)
+
+Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@4fea4e5` (PR #88 merged). New PR from this branch.
+
+Second device recording (1080×274, 6.7 s): dragging the bubble with a finger is now stable. Two problems remained:
+- **Rest look.** It was a solid accent pill as wide as the tab (the 22% accent wash). The user asked for OneMate's look: a translucent bubble slightly larger than a plain pill, or failing that, the old small indicator. Since WhatsApp's own pill is now hidden, the rest wash is back to OneMate's 10% white (dark) / 10% black (light), plus a hairline edge (16%) that fades out as the lens takes over.
+- **Swipe moved flat, with no glass.** `LiquidBubble.follow` now lifts the bubble into the lens for the length of the swipe (`BubbleMotion.lift`, a press without a finger). `endFollow` deflates it onto the tab when the pager goes IDLE.
+
+Validation: 455 tests, 0 failures (bubble rest test reverted to the 10% wash; lift/release test added). Debug APK SHA-256 `0070a5cb17fbe2eefb1cf0de1df3f1312b5e4b94df3cbe4f4eceb7691c22ffce`. Not device-validated.
+
+Next: re-record rest, swipe and tap. If the translucent bubble still reads badly, the user's stated fallback is a small indicator around the icon only.
+
+## Previous task — bubble device fixes, 2026-10-14
 
 Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@202b58d` (PR #85 merged). New PR opened from this branch. No workflow dispatched.
 

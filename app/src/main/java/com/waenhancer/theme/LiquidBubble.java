@@ -187,14 +187,25 @@ public final class LiquidBubble extends View {
      */
     public void follow(float index) {
         if (motion == null || motion.isPressed() || expected >= 0) return;
-        following = true;
+        if (!following) {
+            // Rise into the lens for the length of the swipe, as a tap's travel does, so the
+            // bubble moves as glass rather than as a flat pill.
+            following = true;
+            motion.lift();
+            schedule();
+        }
         motion.follow(index);
         invalidate();
     }
 
-    /** The swipe ended: selection reports drive the bubble again. */
+    /** The swipe ended: deflate onto the tab, then selection reports drive the bubble again. */
     public void endFollow() {
+        if (!following) return;
         following = false;
+        if (motion != null && !motion.isPressed()) {
+            motion.release();
+            schedule();
+        }
     }
 
     /** Finger up or cancel. Returns the tab the bubble settles on. */
@@ -285,18 +296,44 @@ public final class LiquidBubble extends View {
                     radius, progress))) {
                 drawTint(canvas, w, h, radius, progress);
             }
+            // On both paths, so the edge fades into the lens rim instead of popping off on the
+            // first lensed frame.
+            drawRestEdge(canvas, w, h, radius, progress);
         } finally {
             canvas.restoreToCount(save);
         }
     }
 
     private void drawTint(Canvas canvas, float w, float h, float radius, float progress) {
-        KyantLens.Params params = KyantLens.bubble(accent, progress, density);
+        KyantLens.Params params = KyantLens.bubble(dark, progress, density);
         int color = lensed ? params.tint : ((Math.round(0.15f * 255f) << 24) | (accent & 0xFFFFFF));
         if ((color >>> 24) == 0) return;
         tintPaint.setColor(color);
         rect.set(0f, 0f, w, h);
         canvas.drawRoundRect(rect, radius, radius, tintPaint);
+    }
+
+    /**
+     * A hairline edge so the translucent rest wash reads as a pane of glass rather than a smudge.
+     * It fades out as the lens, which draws its own lit rim, takes over.
+     */
+    private void drawRestEdge(Canvas canvas, float w, float h, float radius, float progress) {
+        rect.set(0f, 0f, w, h);
+        float edge = (1f - Math.max(0f, Math.min(1f, progress))) * REST_EDGE_ALPHA;
+        if (lensed && edge > 0.004f) {
+            float stroke = Math.max(1f, density);
+            edgePaint.setStrokeWidth(stroke);
+            edgePaint.setColor((Math.round(edge * 255f) << 24) | (dark ? 0xFFFFFF : 0x000000));
+            rect.inset(stroke / 2f, stroke / 2f);
+            canvas.drawRoundRect(rect, radius - stroke / 2f, radius - stroke / 2f, edgePaint);
+        }
+    }
+
+    /** Opacity of the rest hairline edge. */
+    static final float REST_EDGE_ALPHA = 0.16f;
+    private final Paint edgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    {
+        edgePaint.setStyle(Paint.Style.STROKE);
     }
 
     /** The pressed lens. False when it cannot run here, so the caller draws the tint instead. */
@@ -333,7 +370,7 @@ public final class LiquidBubble extends View {
             } finally {
                 glass.endRecording();
             }
-            lens.update(KyantLens.bubble(accent, progress, density), w, h, radius, 0f, 0f);
+            lens.update(KyantLens.bubble(dark, progress, density), w, h, radius, 0f, 0f);
             if (lens.effect() == null) return false;
             glass.setRenderEffect(lens.effect());
             ((RecordingCanvas) canvas).drawRenderNode(glass);

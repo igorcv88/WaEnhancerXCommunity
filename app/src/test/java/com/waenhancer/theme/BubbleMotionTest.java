@@ -165,4 +165,20 @@ public class BubbleMotionTest {
         m.follow(9f);
         assertEquals(2f, m.value(), 0f);
     }
+
+    /** A swipe lifts the bubble into the lens without a finger, and release deflates it. */
+    @Test
+    public void liftRisesWithoutAFingerAndReleaseDeflates() {
+        BubbleMotion m = new BubbleMotion(3, 0, PRESSED);
+        m.lift();
+        assertFalse(m.isPressed());
+        for (int i = 0; i < 30; i++) { m.follow(i / 30f); m.step(FRAME); }
+        assertTrue(m.pressProgress() > 0.9f);
+        m.follow(1f);
+        m.release();
+        run(m, 1f);
+        assertEquals(1f, m.value(), 0f);
+        assertEquals(0f, m.pressProgress(), 0.01f);
+        assertTrue(m.isIdle());
+    }
 }

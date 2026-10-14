@@ -157,6 +157,17 @@ public final class BubbleMotion {
         else pressed = true;
     }
 
+    /**
+     * Rises as on a press, without a finger: {@link #isPressed()} stays false. Used while a page
+     * swipe moves the bubble; {@link #release()} deflates it.
+     */
+    public void lift() {
+        releasePending = false;
+        press.target = 1f;
+        scaleX.target = pressedScale;
+        scaleY.target = pressedScale;
+    }
+
     /** Places the bubble at a fractional index without animation (a page swipe in progress). */
     public void follow(float index) {
         value.snap(clamp(index, 0f, maxValue));

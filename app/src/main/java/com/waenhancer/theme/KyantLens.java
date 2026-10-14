@@ -291,26 +291,26 @@ public final class KyantLens {
     }
 
     /**
-     * Rest tint of the bubble: the accent at this alpha. OneMate's rest wash is 10% white, which
-     * on WhatsApp sat around the native indicator as a second, greyish pill; with the native
-     * indicator hidden the bubble is the indicator, so it carries the accent instead.
+     * Rest wash of the bubble: OneMate's 10% white (dark theme) or black (light). It is
+     * translucent on purpose; WhatsApp's own selected-tab pill is hidden while the bubble is
+     * installed, so the bubble is the only indicator and must not read as a solid pill.
      */
-    static final float BUBBLE_REST_ALPHA = 0.22f;
+    static final float BUBBLE_REST_ALPHA = 0.10f;
 
     /** The bottom-bar bubble at press progress {@code progress} (0 rest, 1 pressed). */
-    static Params bubble(int accent, float progress, float density) {
+    static Params bubble(boolean dark, float progress, float density) {
         Params p = new Params();
         float t = Math.max(0f, Math.min(1f, progress));
         p.refractHeight = BUBBLE_REFRACT_HEIGHT_DP * density * t;
         p.refractAmount = BUBBLE_REFRACT_AMOUNT_DP * density * t;
         p.depth = 1f;
         p.chroma = BUBBLE_CHROMA;
-        // Rest: the accent wash; pressed: 3% black (OneMate onDrawSurface).
+        // Rest: the content-colour wash; pressed: 3% black (OneMate onDrawSurface).
         float restAlpha = BUBBLE_REST_ALPHA * (1f - t);
         float pressAlpha = 0.03f * t;
         float a = restAlpha + pressAlpha * (1f - restAlpha);
         float mix = a <= 0f ? 0f : restAlpha / a;
-        int rgb = lerpRgb(0x000000, accent & 0xFFFFFF, mix);
+        int rgb = lerpRgb(0x000000, dark ? 0xFFFFFF : 0x000000, mix);
         p.tint = (Math.round(a * 255f) << 24) | rgb;
         p.strokeWidth = STROKE_DP * density;
         p.bloom = BLOOM_DP * density;

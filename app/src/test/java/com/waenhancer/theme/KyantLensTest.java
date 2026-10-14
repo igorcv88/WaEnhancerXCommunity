@@ -88,20 +88,20 @@ public class KyantLensTest {
         assertEquals(0f, small.shadowAlpha, 0f);
     }
 
-    /** At rest the bubble is an accent tint; pressed it is a lens with depth, dispersion and shadow. */
+    /** At rest the bubble is a translucent wash; pressed it is a lens with depth, dispersion and shadow. */
     @Test
     public void bubbleRisesWithPressProgress() {
         float density = 3f;
-        int accent = 0xFF25D366;
-        KyantLens.Params rest = KyantLens.bubble(accent, 0f, density);
+        KyantLens.Params rest = KyantLens.bubble(true, 0f, density);
         assertEquals(0f, rest.refractHeight, 0f);
         assertEquals(0f, rest.refractAmount, 0f);
         assertEquals(0f, rest.highlight, 0f);
         assertEquals(0f, rest.shadowAlpha, 0f);
-        assertEquals(Math.round(KyantLens.BUBBLE_REST_ALPHA * 255f), rest.tint >>> 24);
-        assertEquals(accent & 0xFFFFFF, rest.tint & 0xFFFFFF);
+        assertEquals(Math.round(0.10f * 255f), rest.tint >>> 24);
+        assertEquals(0xFFFFFF, rest.tint & 0xFFFFFF);
+        assertEquals(0x000000, KyantLens.bubble(false, 0f, density).tint & 0xFFFFFF);
 
-        KyantLens.Params pressed = KyantLens.bubble(accent, 1f, density);
+        KyantLens.Params pressed = KyantLens.bubble(true, 1f, density);
         assertEquals(10f * density, pressed.refractHeight, 1e-4f);
         assertEquals(14f * density, pressed.refractAmount, 1e-4f);
         assertEquals(1f, pressed.depth, 0f);
@@ -113,9 +113,6 @@ public class KyantLensTest {
         assertEquals(0f, pressed.blurRadius, 0f);
         assertEquals(1f, pressed.saturation, 0f);
         assertNotEquals(rest.key(), pressed.key());
-        assertEquals(pressed.key(), KyantLens.bubble(accent, 1f, density).key());
-        // Half way the wash is still accent-hued, never grey or white.
-        int half = KyantLens.bubble(accent, 0.5f, density).tint;
-        assertTrue(((half >> 8) & 0xFF) > ((half >> 16) & 0xFF));
+        assertEquals(pressed.key(), KyantLens.bubble(true, 1f, density).key());
     }
 }
