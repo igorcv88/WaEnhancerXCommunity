@@ -246,4 +246,15 @@ public class BubbleMotionTest {
         float mid = LiquidBubble.settleScale(1.3f, 0.15f);
         assertTrue(mid > 1f && mid < 1.3f);
     }
+
+    /** Long frames do not stretch the tap: it still ends 450 ms after it starts. */
+    @Test
+    public void glideRunsOnWallTime() {
+        BubbleMotion m = new BubbleMotion(3, 0, PRESSED);
+        m.animateTo(1, true);
+        for (int i = 0; i < 7; i++) m.step(0.065f);
+        assertFalse(m.isGliding());
+        assertEquals(1f, m.value(), 0f);
+        assertEquals(0f, m.pressProgress(), 0f);
+    }
 }

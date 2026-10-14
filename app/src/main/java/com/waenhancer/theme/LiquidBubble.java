@@ -459,13 +459,17 @@ public final class LiquidBubble extends View {
             float fade = (1f - progress) * (1f - progress);
             if (indicator != null) {
                 if (fade > 0.004f) {
+                    // The native look is pill *and* icon (WhatsApp draws its icon over its pill;
+                    // the bubble draws above the tab row, so the pill copy alone covered the
+                    // icon). Composite both at full opacity in one layer and fade that layer, so
+                    // the landing ends exactly as the native tab looks.
+                    rect.set(0f, 0f, w, h);
+                    int layer = canvas.saveLayerAlpha(rect, Math.round(fade * 255f));
                     indicator.setBounds(0, 0, Math.round(w), Math.round(h));
-                    indicator.setAlpha(Math.round(fade * 255f));
+                    indicator.setAlpha(255);
                     indicator.draw(canvas);
-                    // The bubble draws above the tab row, so the pill copy covered the selected
-                    // icon; WhatsApp draws its icon over its pill. Put the icons back on top, at
-                    // the pill's opacity, so the landing ends exactly as the native tab looks.
-                    drawIcons(canvas, left, top, w, h, radius, fade);
+                    drawIcons(canvas, left, top, w, h, radius);
+                    canvas.restoreToCount(layer);
                 }
             } else {
                 float green = MORPH_ACCENT_ALPHA * fade;
@@ -492,8 +496,7 @@ public final class LiquidBubble extends View {
     }
 
     /** The tab row redrawn inside the bubble's shape, in the bubble's (scaled) space. */
-    private void drawIcons(Canvas canvas, float left, float top, float w, float h, float radius,
-                           float alpha) {
+    private void drawIcons(Canvas canvas, float left, float top, float w, float h, float radius) {
         if (tabs == null || LiveBackdrop.isCapturing()) return;
         int save = canvas.save();
         try {
@@ -501,7 +504,6 @@ public final class LiquidBubble extends View {
             rect.set(0f, 0f, w, h);
             iconClip.addRoundRect(rect, radius, radius, android.graphics.Path.Direction.CW);
             canvas.clipPath(iconClip);
-            canvas.saveLayerAlpha(rect, Math.round(alpha * 255f));
             canvas.translate(-left, -top);
             drawSibling(canvas, tabs, null);
         } catch (Throwable ignored) {

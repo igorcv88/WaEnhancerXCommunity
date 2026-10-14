@@ -41,9 +41,13 @@ Implemented:
   - `settleScale` eases the spring scale to exactly 1 over the last 30% of the deflation;
   - `drawIcons` redraws the tab row inside the pill at the pill copy's opacity, so the landing ends as WhatsApp draws its tab: icon over pill.
 
+Codex review on #93, both fixed:
+- the glide timeline advances on uncapped wall time; only the springs keep the 50 ms cap;
+- the landing pill copy and the redrawn icons are composited in one layer that fades as a unit, as WhatsApp's pill-plus-icon would.
+
 Validation:
-- 461 tests, 0 failures (4 new: glide timing, redirect continuity, interruption, `settleScale`).
-- Debug APK SHA-256 `9694f2f2191f95f810a62b1e5a1559239d78b24fc89e308522e7738aa9ba3c1b`.
+- 462 tests, 0 failures (5 new: glide timing, redirect continuity, interruption, wall-time glide, `settleScale`).
+- Debug APK SHA-256 `f12a3e14f1b67be59b9ef6f749aa56933b5bbbb6fc6c33efb830404c83f80b5c`.
 - **Not device-validated.**
 
 Visual change to confirm on the device: during the rise the content inside the bubble no longer zooms up from about 60%; it starts at 1:1 and magnifies to the pressed scale.

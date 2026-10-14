@@ -262,7 +262,9 @@ public final class BubbleMotion {
     public boolean step(float seconds) {
         float dt = clamp(seconds, 0f, MAX_FRAME);
         if (gliding) {
-            glideTime += dt;
+            // The timeline runs on wall time: a long frame must not stretch the fixed 450 ms.
+            // Only the springs need the MAX_FRAME cap, for integration stability.
+            glideTime += Math.max(0f, seconds);
             applyGlide();
             if (glideTime >= GLIDE_END) {
                 gliding = false;
