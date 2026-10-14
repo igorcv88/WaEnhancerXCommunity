@@ -2,8 +2,6 @@ package com.waenhancer.theme;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.graphics.BlendMode;
-import android.graphics.BlendModeColorFilter;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RecordingCanvas;
@@ -63,8 +61,37 @@ public final class LiquidBubble extends View {
     static final long EXPECT_MS = 700L;
 
     private final Paint tintPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint tabTint = new Paint();
-    private int tabTintColor;
+
+    /**
+     * Glass the bubble keeps at rest, as a fraction of the pressed lens: enough refraction at the
+     * rim and enough lit edge that the resting bubble reads as glass, not as a flat pill.
+     */
+    static final float REST_GLASS = 0.35f;
+
+    /** Where the tabs pager is, as a fractional bubble index; NaN when unknown. */
+    public interface PagerSource {
+        float position();
+    }
+
+    private PagerSource pagerSource;
+    private float lastPagerPosition = Float.NaN;
+    /** When the pager position last changed (uptime ms). */
+    private long pagerChangedAt;
+    /**
+     * How long the pager must hold still before a follow ends. Time rather than a count of
+     * polls: the pager is polled from both the window's pre-draw and the bubble's own frame, so
+     * two polls can fall in one vsync, and a one-frame pause in a slow swipe would end the follow
+     * and pulse the bubble.
+     */
+    static final long PAGER_SETTLE_MS = 80L;
+    /** True while {@link #frame()} runs, so scheduling from inside it keeps the frame clock. */
+    private boolean inFrame;
+    /** After a drag commits a tab, the pager's own scroll toward it must not move the bubble. */
+    private boolean waitPagerSettle;
+    private final android.view.ViewTreeObserver.OnPreDrawListener preDraw = () -> {
+        onWindowFrame();
+        return true;
+    };
     private final RectF rect = new RectF();
     private RenderNode source;
     private RenderNode glass;
@@ -101,6 +128,59 @@ public final class LiquidBubble extends View {
 
     public void setListener(Listener listener) {
         this.listener = listener;
+    }
+
+    /**
+     * Polled every window frame (and every bubble frame while following). Reading the pager's
+     * scroll position works whatever class the host app's pager is; the method hooks this
+     * replaced depended on androidx names that this WhatsApp build does not use.
+     */
+    public void setPagerSource(PagerSource source) {
+        pagerSource = source;
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        getViewTreeObserver().addOnPreDrawListener(preDraw);
+    }
+
+    /** Once per window frame, before it draws. */
+    private void onWindowFrame() {
+        pollPager();
+        // The resting lens shows a recording of the capture view; when that view is about to
+        // redraw (the list moved behind the bar), redraw with it, or the bubble would show a
+        // stale copy. Never invalidates on its own, so it cannot start a frame loop.
+        if (lensed && captureView != null && captureView.isDirty() && !isDirty()) invalidate();
+    }
+
+    /** Follows the pager while it moves; settles when it has been still for two frames. */
+    private void pollPager() {
+        if (pagerSource == null || motion == null) return;
+        float position;
+        try {
+            position = pagerSource.position();
+        } catch (Throwable t) {
+            return;
+        }
+        if (Float.isNaN(position)) return;
+        boolean changed = Float.isNaN(lastPagerPosition)
+                || Math.abs(position - lastPagerPosition) > 0.0005f;
+        boolean first = Float.isNaN(lastPagerPosition);
+        lastPagerPosition = position;
+        long now = android.os.SystemClock.uptimeMillis();
+        if (first) {
+            pagerChangedAt = now;
+            return;
+        }
+        if (changed) {
+            pagerChangedAt = now;
+            if (!waitPagerSettle) follow(position);
+        } else if (now - pagerChangedAt >= PAGER_SETTLE_MS) {
+            waitPagerSettle = false;
+            if (following) endFollow();
+        }
+        if (following && !frameScheduled) schedule();
     }
 
     /** Theme inputs; {@code lensed} false keeps the bubble a plain tint (no live glass). */
@@ -223,6 +303,8 @@ public final class LiquidBubble extends View {
      * the new tab selected only after its click listener has run.
      */
     public void expect(int index) {
+        waitPagerSettle = true;
+        pagerChangedAt = android.os.SystemClock.uptimeMillis();
         expected = index;
         expectedUntil = android.os.SystemClock.uptimeMillis() + EXPECT_MS;
         selected = index;
@@ -233,13 +315,27 @@ public final class LiquidBubble extends View {
     private void schedule() {
         if (frameScheduled) return;
         frameScheduled = true;
-        lastFrameNanos = 0L;
+        // Only a loop that is starting resets the clock; one continued from inside a frame keeps
+        // it, or every frame would integrate 1/60 s whatever the refresh rate.
+        if (!inFrame) lastFrameNanos = 0L;
         postOnAnimation(this::frame);
     }
 
     private void frame() {
         frameScheduled = false;
         if (motion == null) return;
+        inFrame = true;
+        try {
+            stepFrame();
+        } finally {
+            inFrame = false;
+        }
+    }
+
+    private void stepFrame() {
+        // The pager can stop between window frames; keep polling while following so the end of
+        // a swipe is seen even if nothing else redraws.
+        if (following) pollPager();
         long now = System.nanoTime();
         float seconds = lastFrameNanos == 0L ? 1f / 60f : (now - lastFrameNanos) / 1_000_000_000f;
         lastFrameNanos = now;
@@ -250,7 +346,7 @@ public final class LiquidBubble extends View {
                     total, BubbleMotion.RUBBER_BAND_DP * density));
         }
         invalidate();
-        if (moving) {
+        if ((moving || following) && !frameScheduled) {
             frameScheduled = true;
             postOnAnimation(this::frame);
         }
@@ -259,7 +355,9 @@ public final class LiquidBubble extends View {
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
+        getViewTreeObserver().removeOnPreDrawListener(preDraw);
         frameScheduled = false;
+        lastPagerPosition = Float.NaN;
         if (source != null) source.discardDisplayList();
         if (glass != null) glass.discardDisplayList();
     }
@@ -292,13 +390,14 @@ public final class LiquidBubble extends View {
         canvas.translate(left, top);
         canvas.scale(sx, sy, w / 2f, h / 2f);
         try {
-            if (!(progress > 0.002f && drawLens(canvas, left, top, Math.round(w), Math.round(h),
-                    radius, progress))) {
+            float glassLevel = REST_GLASS + (1f - REST_GLASS) * progress;
+            if (!drawLens(canvas, left, top, Math.round(w), Math.round(h), radius, progress,
+                    glassLevel)) {
+                // No live lens here (fallback material, another surface's recording): a wash
+                // and a hairline edge stand in for it.
                 drawTint(canvas, w, h, radius, progress);
+                drawRestEdge(canvas, w, h, radius, progress);
             }
-            // On both paths, so the edge fades into the lens rim instead of popping off on the
-            // first lensed frame.
-            drawRestEdge(canvas, w, h, radius, progress);
         } finally {
             canvas.restoreToCount(save);
         }
@@ -338,7 +437,7 @@ public final class LiquidBubble extends View {
 
     /** The pressed lens. False when it cannot run here, so the caller draws the tint instead. */
     private boolean drawLens(Canvas canvas, float left, float top, int w, int h, float radius,
-                             float progress) {
+                             float progress, float glassLevel) {
         if (!lensed || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
                 || !KyantLens.isAvailable() || !canvas.isHardwareAccelerated()
                 || !(canvas instanceof RecordingCanvas) || LiveBackdrop.isCapturing()
@@ -355,11 +454,10 @@ public final class LiquidBubble extends View {
             try {
                 in.translate(-left, -top);
                 drawSibling(in, captureView, null);
-                if (tabTintColor != (accent | 0xFF000000)) {
-                    tabTintColor = accent | 0xFF000000;
-                    tabTint.setColorFilter(new BlendModeColorFilter(tabTintColor, BlendMode.SRC_IN));
-                }
-                drawSibling(in, tabs, tabTint);
+                // The tab row in its own colours. OneMate tints it with the accent because its
+                // icons are monochrome; WhatsApp already colours the selected tab, and the tint
+                // turned every icon green for the length of each transition (a green flash).
+                drawSibling(in, tabs, null);
             } finally {
                 source.endRecording();
             }
@@ -370,7 +468,7 @@ public final class LiquidBubble extends View {
             } finally {
                 glass.endRecording();
             }
-            lens.update(KyantLens.bubble(dark, progress, density), w, h, radius, 0f, 0f);
+            lens.update(KyantLens.bubble(dark, progress, glassLevel, density), w, h, radius, 0f, 0f);
             if (lens.effect() == null) return false;
             glass.setRenderEffect(lens.effect());
             ((RecordingCanvas) canvas).drawRenderNode(glass);
