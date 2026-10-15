@@ -2,7 +2,65 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — bubble hand-off polish, 2026-10-14 (fifth recording)
+## Current task — tap timing and landing icon, 2026-10-14 (seventh recording)
+
+Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@03a7e4a` (PR #92 merged). New PR from this branch.
+
+User verdict: the look and the transitions are right; only the speed of a tab tap is wrong ("explodes and compresses at once"). Their phone runs the animator duration scale at 0.33×.
+
+Measured in the seventh recording (1080×262, 645 frames, about 60 fps):
+- **Tap chats → groups:** the bubble appeared on Groups at once, peaked at about 80 ms and was back to the pill by about 200 ms. Groups → calls took about 270 ms. **There was no travel.** WhatsApp's click jumps the pager to the new page in about one frame, the bubble followed the pager there, then swelled and collapsed in place.
+- **Page swipe groups → chats:** travel about 170 ms, hold about 100 ms, shrink about 200 ms, so about 480 ms visible. The user's reference for "right".
+- **Landing defect:** for the last about 100 ms of each landing (taps at 0.90–0.98 s and 1.58–1.66 s, swipe at 4.43–4.53 s) the selected icon showed small and dim inside the pill, then popped to full size when the native indicator returned. Two causes:
+  - the morph scaled the canvas, so content shrank to about 60%;
+  - the pill copy was drawn over the icon, because the bubble's Z is above the tab row.
+- **One frame with no indicator** at the start of a tap (0.699 s). Not specifically fixed; the glide starts on the origin tab, which should cover it. Device check pending.
+
+References checked:
+- Apple does not publish the iOS 26 tab bar's spring.
+- SwiftUI's `.smooth`, `.snappy` and `.bouncy` default to a 0.5 s duration.
+- Material 3 Expressive's default spatial spring has stiffness about 380 (third-party token mirrors), settling in about 0.3–0.35 s.
+- The old tap springs (stiffness 1000 for value and press, deflate on arrival) landed in about 0.2 s.
+
+Agreed with the user (AskUserQuestion): a tap takes **about 450 ms, fixed**, not scaled by the animator setting. Animator scale 0 ("remove animations") still snaps.
+
+Implemented:
+- `BubbleMotion` glide, a deterministic timeline used by `animateTo` when no finger holds the bubble:
+  - rise 0–120 ms, ease-out cubic;
+  - travel 120–300 ms, ease-in-out cubic, with analytic velocity so the squash still applies;
+  - land 300–450 ms, ease-in-out.
+  - The scale springs keep their wobble.
+  - A redirect mid-glide continues from the current height and position.
+  - `press`, `lift`, `follow` and `snapTo` cancel a glide.
+- `LiquidBubble.holdPagerFollow()`:
+  - `BubbleTouch` calls it on ACTION_UP over a non-selected tab, so the pager's jump is not followed and the selection report starts the glide.
+  - The hold ends when the pager rests on a page, or after `EXPECT_MS` (700 ms). `expect()` shares it.
+  - `setTabs` no longer snaps a glide that is already heading to the selected tab.
+- `LiquidBubble.onDraw`:
+  - the morph now sizes the shape, not its content, so icons are 1:1 at the hand-off;
+  - `settleScale` eases the spring scale to exactly 1 over the last 30% of the deflation;
+  - `drawIcons` redraws the tab row inside the pill at the pill copy's opacity, so the landing ends as WhatsApp draws its tab: icon over pill.
+
+Codex review on #93, both fixed:
+- the glide timeline advances on uncapped wall time; only the springs keep the 50 ms cap;
+- the landing pill copy and the redrawn icons are composited in one layer that fades as a unit, as WhatsApp's pill-plus-icon would.
+
+Validation:
+- 462 tests, 0 failures (5 new: glide timing, redirect continuity, interruption, wall-time glide, `settleScale`).
+- Debug APK SHA-256 `f12a3e14f1b67be59b9ef6f749aa56933b5bbbb6fc6c33efb830404c83f80b5c`.
+- **Not device-validated.**
+
+Visual change to confirm on the device: during the rise the content inside the bubble no longer zooms up from about 60%; it starts at 1:1 and magnifies to the pressed scale.
+
+Next:
+- Record taps (adjacent and two tabs apart), a swipe, and a drag. Check:
+  - travel from the origin tab;
+  - total tap time about 450 ms;
+  - no small or dim icon on landing;
+  - no empty frame at tap start.
+- If a tap shows no travel, the pager jump is still being followed. Check that `BubbleTouch` sees ACTION_UP for non-selected tabs on that build.
+
+## Previous task — bubble hand-off polish, 2026-10-14 (fifth recording)
 
 Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@2fc2c30` (PR #91 merged). New PR from this branch.
 

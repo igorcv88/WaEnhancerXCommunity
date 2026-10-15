@@ -107,6 +107,8 @@ public final class LiquidBubble extends View {
     private boolean inFrame;
     /** After a drag commits a tab, the pager's own scroll toward it must not move the bubble. */
     private boolean waitPagerSettle;
+    /** Uptime after which {@link #waitPagerSettle} no longer blocks a follow, settled or not. */
+    private long waitPagerUntil;
     private final android.view.ViewTreeObserver.OnPreDrawListener preDraw = () -> {
         onWindowFrame();
         return true;
@@ -195,7 +197,7 @@ public final class LiquidBubble extends View {
         }
         if (changed) {
             pagerChangedAt = now;
-            if (!waitPagerSettle) follow(position);
+            if (!waitPagerSettle || now > waitPagerUntil) follow(position);
         } else if (now - pagerChangedAt >= PAGER_SETTLE_MS
                 && Math.abs(position - Math.round(position)) < PAGE_SETTLED_EPSILON) {
             // Still *and* on a page. A finger resting mid-swipe holds the pager still between
@@ -236,10 +238,18 @@ public final class LiquidBubble extends View {
         if (motion == null || motion.tabs() != centers.length) {
             motion = new BubbleMotion(centers.length, selected, PRESSED_SCALE);
         } else if (!motion.isPressed() && !following) {
-            // A swipe that just ended leaves the bubble on (or a hair from) the selected tab:
-            // place it rather than starting a rise-travel-land for a sub-pixel distance.
-            if (Math.abs(motion.targetValue() - selected) < 0.05f) motion.snapTo(selected);
-            else motion.animateTo(selected, animate);
+            boolean there = Math.abs(motion.targetValue() - selected) < 0.05f;
+            if (there && motion.isGliding()) {
+                // Already gliding there; a layout pass must not cut the tap's travel short.
+            } else if (there) {
+                // A swipe that just ended leaves the bubble on (or a hair from) the selected tab:
+                // place it rather than starting a rise-travel-land for a sub-pixel distance.
+                motion.snapTo(selected);
+            } else {
+                // "Remove animations" (animator scale 0) is honoured; any other scale is not: the
+                // tap's timing is fixed (see BubbleMotion.GLIDE_END).
+                motion.animateTo(selected, animate && android.animation.ValueAnimator.areAnimatorsEnabled());
+            }
         }
         schedule();
         invalidate();
@@ -327,11 +337,23 @@ public final class LiquidBubble extends View {
      * the new tab selected only after its click listener has run.
      */
     public void expect(int index) {
-        waitPagerSettle = true;
-        pagerChangedAt = android.os.SystemClock.uptimeMillis();
+        holdPagerFollow();
         expected = index;
         expectedUntil = android.os.SystemClock.uptimeMillis() + EXPECT_MS;
         selected = index;
+    }
+
+    /**
+     * A tap on another tab is about to make the host app move its pager there, often in a single
+     * frame. The bubble must glide there when the selection is reported instead of following
+     * the pager's jump (which put it on the new tab at once, to swell and collapse in place). The
+     * hold ends once the pager rests on a page, and after {@link #EXPECT_MS} in any case.
+     */
+    public void holdPagerFollow() {
+        long now = android.os.SystemClock.uptimeMillis();
+        waitPagerSettle = true;
+        pagerChangedAt = now;
+        waitPagerUntil = now + EXPECT_MS;
     }
 
     // ---------------------------------------------------------------------------------- frame
@@ -401,21 +423,24 @@ public final class LiquidBubble extends View {
         if (motion == null || centers.length == 0 || getHeight() <= 0) return;
         float value = motion.value();
         float cx = BubbleMotion.interpolate(centers, value);
-        float w = Math.max(1f, BubbleMotion.interpolate(widths, value) - 2f * INSET_DP * density);
-        float h = Math.max(1f, getHeight() - 2f * INSET_DP * density);
-        float left = cx - w / 2f;
-        float top = (getHeight() - h) / 2f;
-        float radius = h / 2f;
+        float fullW = Math.max(1f, BubbleMotion.interpolate(widths, value) - 2f * INSET_DP * density);
+        float fullH = Math.max(1f, getHeight() - 2f * INSET_DP * density);
         float progress = motion.pressProgress();
         // At rest WhatsApp's own small green indicator is the indicator; the bubble only exists
         // while something moves.
         if (progress < VISIBLE_PROGRESS) return;
         // Born from the native indicator: at low progress the bubble has the indicator's size,
         // and grows to its own (then the pressed scale) as it rises; on landing it shrinks back.
-        float morphX = morphScale(INDICATOR_W_DP * density / w, progress);
-        float morphY = morphScale(INDICATOR_H_DP * density / h, progress);
-        float sx = motion.drawScaleX() * morphX;
-        float sy = motion.drawScaleY() * morphY;
+        // The morph sizes the shape, not its content: scaling the canvas by it shrank the icons
+        // to about 60% just as the bubble handed over to the native pill, which then popped them
+        // back to full size (a dim, small icon for the last ~100 ms of every landing).
+        float w = Math.max(1f, fullW * morphScale(INDICATOR_W_DP * density / fullW, progress));
+        float h = Math.max(1f, fullH * morphScale(INDICATOR_H_DP * density / fullH, progress));
+        float left = cx - w / 2f;
+        float top = (getHeight() - h) / 2f;
+        float radius = h / 2f;
+        float sx = settleScale(motion.drawScaleX(), progress);
+        float sy = settleScale(motion.drawScaleY(), progress);
 
         int save = canvas.save();
         canvas.translate(left, top);
@@ -434,9 +459,17 @@ public final class LiquidBubble extends View {
             float fade = (1f - progress) * (1f - progress);
             if (indicator != null) {
                 if (fade > 0.004f) {
+                    // The native look is pill *and* icon (WhatsApp draws its icon over its pill;
+                    // the bubble draws above the tab row, so the pill copy alone covered the
+                    // icon). Composite both at full opacity in one layer and fade that layer, so
+                    // the landing ends exactly as the native tab looks.
+                    rect.set(0f, 0f, w, h);
+                    int layer = canvas.saveLayerAlpha(rect, Math.round(fade * 255f));
                     indicator.setBounds(0, 0, Math.round(w), Math.round(h));
-                    indicator.setAlpha(Math.round(fade * 255f));
+                    indicator.setAlpha(255);
                     indicator.draw(canvas);
+                    drawIcons(canvas, left, top, w, h, radius);
+                    canvas.restoreToCount(layer);
                 }
             } else {
                 float green = MORPH_ACCENT_ALPHA * fade;
@@ -450,6 +483,37 @@ public final class LiquidBubble extends View {
             canvas.restoreToCount(save);
         }
     }
+
+    /**
+     * The spring scale (pressed size, velocity squash) eased back to 1 over the last 30% of the
+     * deflation. The scale springs are slower than the press, so without this the bubble handed
+     * over to the native pill while still a few percent larger than it.
+     */
+    static float settleScale(float scale, float progress) {
+        float x = Math.max(0f, Math.min(1f, progress / 0.3f));
+        float weight = x * x * (3f - 2f * x);
+        return 1f + (scale - 1f) * weight;
+    }
+
+    /** The tab row redrawn inside the bubble's shape, in the bubble's (scaled) space. */
+    private void drawIcons(Canvas canvas, float left, float top, float w, float h, float radius) {
+        if (tabs == null || LiveBackdrop.isCapturing()) return;
+        int save = canvas.save();
+        try {
+            iconClip.reset();
+            rect.set(0f, 0f, w, h);
+            iconClip.addRoundRect(rect, radius, radius, android.graphics.Path.Direction.CW);
+            canvas.clipPath(iconClip);
+            canvas.translate(-left, -top);
+            drawSibling(canvas, tabs, null);
+        } catch (Throwable ignored) {
+            // Decoration only.
+        } finally {
+            canvas.restoreToCount(save);
+        }
+    }
+
+    private final android.graphics.Path iconClip = new android.graphics.Path();
 
     /**
      * Scale from the native indicator's size ({@code fromFraction} of the bubble's) to the

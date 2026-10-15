@@ -76,6 +76,19 @@ public final class BubbleMotion {
     private boolean releasePending;
     private boolean pressed;
 
+    /*
+     * A tap's choreography, in seconds of real time: rise on the old tab, travel, land on the new
+     * one. 450 ms in all, agreed with the user against the page swipe they liked (about 480 ms at
+     * their 0.33x animator scale); iOS's and Material's default springs settle in 300-500 ms.
+     * Fixed rather than scaled by the system animator setting: the springs it replaces landed in
+     * about 200 ms, which read as an in-place pop at 0.33x.
+     */
+    static final float GLIDE_RISE = 0.12f;
+    static final float GLIDE_TRAVEL_END = 0.30f;
+    static final float GLIDE_END = 0.45f;
+    private boolean gliding;
+    private float glideTime, glideFrom, glideTo;
+
     /**
      * @param tabs         number of tabs, at least 1
      * @param initial      initially selected tab
@@ -112,8 +125,11 @@ public final class BubbleMotion {
         return scaleY.value * (1f - clamp(v * 0.25f, -0.2f, 0.2f));
     }
 
+    public boolean isGliding() { return gliding; }
+
     /** Finger down on the bubble. */
     public void press() {
+        stopGlide();
         pressed = true;
         releasePending = false;
         press.target = 1f;
@@ -145,16 +161,77 @@ public final class BubbleMotion {
     public void animateTo(int index, boolean animate) {
         float to = clamp(index, 0f, maxValue);
         if (!animate) {
+            stopGlide();
             value.snap(to);
             return;
         }
         // Already heading there (a drag that just ended, or a repeated selection callback).
         if (Math.abs(value.target - to) < 0.001f) return;
-        boolean wasPressed = pressed;
-        press();
+        if (pressed) {
+            // A finger holds the bubble: let the value spring carry it, as before.
+            value.target = to;
+            return;
+        }
+        glideTo(to);
+    }
+
+    /**
+     * Starts (or redirects) the tap choreography toward {@code to}. A glide that interrupts a
+     * rise or another glide continues from the bubble's current height and position.
+     */
+    private void glideTo(float to) {
+        float p = clamp(press.value, 0f, 1f);
+        // The point of the rise that matches the current height, so the press never jumps.
+        float riseAt = GLIDE_RISE * (1f - (float) Math.cbrt(1f - p));
+        glideTime = gliding ? Math.min(glideTime, riseAt) : riseAt;
+        gliding = true;
+        glideFrom = value.value;
+        glideTo = to;
         value.target = to;
-        if (!wasPressed) release();
-        else pressed = true;
+        releasePending = false;
+        scaleX.target = pressedScale;
+        scaleY.target = pressedScale;
+        applyGlide();
+    }
+
+    private void applyGlide() {
+        float t = glideTime;
+        float p;
+        if (t < GLIDE_RISE) {
+            float x = 1f - t / GLIDE_RISE;
+            p = 1f - x * x * x;                       // ease-out: lifts at once, then slows
+        } else if (t < GLIDE_TRAVEL_END) {
+            p = 1f;
+        } else {
+            p = 1f - easeInOut((t - GLIDE_TRAVEL_END) / (GLIDE_END - GLIDE_TRAVEL_END));
+            scaleX.target = 1f;
+            scaleY.target = 1f;
+        }
+        press.value = press.target = clamp(p, 0f, 1f);
+        press.velocity = 0f;
+        float span = GLIDE_TRAVEL_END - GLIDE_RISE;
+        float x = clamp((t - GLIDE_RISE) / span, 0f, 1f);
+        value.value = glideFrom + (glideTo - glideFrom) * easeInOut(x);
+        // Analytic velocity, so the travel still squashes the bubble along its motion.
+        value.velocity = (x > 0f && x < 1f) ? (glideTo - glideFrom) * easeInOutSlope(x) / span : 0f;
+    }
+
+    private void stopGlide() {
+        if (!gliding) return;
+        gliding = false;
+        value.velocity = 0f;
+    }
+
+    /** Cubic ease-in-out on [0, 1]. */
+    static float easeInOut(float x) {
+        x = clamp(x, 0f, 1f);
+        return x < 0.5f ? 4f * x * x * x : 1f - (float) Math.pow(-2f * x + 2f, 3) / 2f;
+    }
+
+    static float easeInOutSlope(float x) {
+        x = clamp(x, 0f, 1f);
+        float y = x < 0.5f ? x : 1f - x;
+        return 12f * y * y;
     }
 
     /**
@@ -162,6 +239,7 @@ public final class BubbleMotion {
      * swipe moves the bubble; {@link #release()} deflates it.
      */
     public void lift() {
+        stopGlide();
         releasePending = false;
         press.target = 1f;
         scaleX.target = pressedScale;
@@ -170,19 +248,33 @@ public final class BubbleMotion {
 
     /** Places the bubble at a fractional index without animation (a page swipe in progress). */
     public void follow(float index) {
+        stopGlide();
         value.snap(clamp(index, 0f, maxValue));
     }
 
     /** Places the bubble without animation (layout changes, first frame). */
     public void snapTo(int index) {
+        stopGlide();
         value.snap(clamp(index, 0f, maxValue));
     }
 
     /** Advances every spring. Returns true while anything is still moving. */
     public boolean step(float seconds) {
         float dt = clamp(seconds, 0f, MAX_FRAME);
-        value.step(dt);
-        press.step(dt);
+        if (gliding) {
+            // The timeline runs on wall time: a long frame must not stretch the fixed 450 ms.
+            // Only the springs need the MAX_FRAME cap, for integration stability.
+            glideTime += Math.max(0f, seconds);
+            applyGlide();
+            if (glideTime >= GLIDE_END) {
+                gliding = false;
+                value.snap(glideTo);
+                press.snap(0f);
+            }
+        } else {
+            value.step(dt);
+            press.step(dt);
+        }
         scaleX.step(dt);
         scaleY.step(dt);
         offset.step(dt);
@@ -191,7 +283,7 @@ public final class BubbleMotion {
     }
 
     public boolean isIdle() {
-        return !releasePending && value.atRest() && press.atRest() && scaleX.atRest()
+        return !gliding && !releasePending && value.atRest() && press.atRest() && scaleX.atRest()
                 && scaleY.atRest() && offset.atRest();
     }
 

@@ -181,4 +181,80 @@ public class BubbleMotionTest {
         assertEquals(0f, m.pressProgress(), 0.01f);
         assertTrue(m.isIdle());
     }
+
+    /** The agreed tap timing: rise ~120 ms, travel to ~300 ms, land by ~450 ms, real time. */
+    @Test
+    public void tapGlideTakesFourHundredFiftyMilliseconds() {
+        BubbleMotion m = new BubbleMotion(3, 0, PRESSED);
+        m.animateTo(1, true);
+        assertTrue(m.isGliding());
+        float t = 0f;
+        float firstMove = -1f, arrived = -1f, landed = -1f, risen = -1f;
+        while (t < 1f) {
+            m.step(FRAME);
+            t += FRAME;
+            if (risen < 0f && m.pressProgress() > 0.99f) risen = t;
+            if (firstMove < 0f && m.value() > 0.001f) firstMove = t;
+            if (arrived < 0f && m.value() > 0.999f) arrived = t;
+            if (landed < 0f && m.pressProgress() < 0.001f && arrived > 0f) landed = t;
+        }
+        assertEquals(0.12f, risen, 0.02f);
+        assertTrue("travel waits for the rise: " + firstMove, firstMove >= 0.12f);
+        assertEquals(0.30f, arrived, 0.02f);
+        assertEquals(0.45f, landed, 0.02f);
+        assertFalse(m.isGliding());
+        assertTrue(m.isIdle() || m.scaleX() < 1.05f);
+    }
+
+    /** A new tap mid-glide redirects from where the bubble is: no jump in height or position. */
+    @Test
+    public void redirectedGlideIsContinuous() {
+        BubbleMotion m = new BubbleMotion(4, 0, PRESSED);
+        m.animateTo(3, true);
+        run(m, 0.2f);
+        float value = m.value(), press = m.pressProgress();
+        m.animateTo(1, true);
+        assertEquals(value, m.value(), 1e-4f);
+        assertEquals(press, m.pressProgress(), 0.01f);
+        run(m, 1f);
+        assertEquals(1f, m.value(), 0f);
+        assertEquals(0f, m.pressProgress(), 0f);
+    }
+
+    /** A page swipe or a finger takes over from a glide. */
+    @Test
+    public void swipeAndPressInterruptAGlide() {
+        BubbleMotion m = new BubbleMotion(3, 0, PRESSED);
+        m.animateTo(2, true);
+        run(m, 0.15f);
+        m.follow(0.5f);
+        assertFalse(m.isGliding());
+        assertEquals(0.5f, m.value(), 0f);
+        m.animateTo(2, true);
+        run(m, 0.05f);
+        m.press();
+        assertFalse(m.isGliding());
+        assertTrue(m.isPressed());
+    }
+
+    /** The drawn scale reaches exactly 1 as the bubble hands over to the native pill. */
+    @Test
+    public void settleScaleIsOneAtRest() {
+        assertEquals(1f, LiquidBubble.settleScale(1.3f, 0f), 0f);
+        assertEquals(1.3f, LiquidBubble.settleScale(1.3f, 0.3f), 1e-6f);
+        assertEquals(1.3f, LiquidBubble.settleScale(1.3f, 1f), 1e-6f);
+        float mid = LiquidBubble.settleScale(1.3f, 0.15f);
+        assertTrue(mid > 1f && mid < 1.3f);
+    }
+
+    /** Long frames do not stretch the tap: it still ends 450 ms after it starts. */
+    @Test
+    public void glideRunsOnWallTime() {
+        BubbleMotion m = new BubbleMotion(3, 0, PRESSED);
+        m.animateTo(1, true);
+        for (int i = 0; i < 7; i++) m.step(0.065f);
+        assertFalse(m.isGliding());
+        assertEquals(1f, m.value(), 0f);
+        assertEquals(0f, m.pressProgress(), 0f);
+    }
 }
