@@ -197,6 +197,14 @@ public final class LiquidBubble extends View {
         boolean first = Float.isNaN(lastPagerPosition);
         lastPagerPosition = position;
         long now = android.os.SystemClock.uptimeMillis();
+        if (motion.isGliding() && tapHoldUntil != 0L) {
+            // The tap's selection arrived and its glide holds the follow off from here. Hand
+            // over to the settle-based hold, which ends as soon as the pager rests on a page, so
+            // a real swipe right after the glide is followed instead of ignored to 700 ms.
+            tapHoldUntil = 0L;
+            waitPagerSettle = true;
+            waitPagerUntil = now + EXPECT_MS;
+        }
         if (first) {
             pagerChangedAt = now;
             return;

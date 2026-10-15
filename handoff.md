@@ -29,9 +29,11 @@ Refraction review (frames at 0.78 s and 0.95 s):
 - The bubble's interior is clearly darker than the bar, because it shows the page without the bar's 40% surface tint, plus OneMate's 15% inner shadow and 3% black. In the dark theme it reads more like a dark hole than clear glass.
 - Not changed: the user called the look right. Option offered: a faint light wash inside the bubble while risen.
 
+Codex review on #94: a swipe started within 700 ms of a tap was not followed. Fixed: once the tap's glide starts, the fixed hold gives way to the settle-based hold, which ends as soon as the pager rests on a page.
+
 Validation:
 - 463 tests, 0 failures (new or changed: continuous-gesture timing, travel curve, wall-time glide).
-- Debug APK SHA-256 `6fcd726c2d6f1e0eb701d020832a6b5517271c002d6d3977781c90c280646de7`.
+- Debug APK SHA-256 `8efc7390c45f886585562fe81e489b537654f425cdc4e314653eb12842b64a30`.
 - Not device-validated.
 
 Next: record taps (adjacent and two tabs apart). Check:
