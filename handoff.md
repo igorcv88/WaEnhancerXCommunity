@@ -2,7 +2,47 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — tap timing and landing icon, 2026-10-14 (seventh recording)
+## Current task — tap as one continuous gesture, 2026-10-15 (eighth recording)
+
+Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@6fb33f8` (PR #93 merged). New PR from this branch.
+
+User verdict on #93: the tap now feels stuck ("travado"): it rises, then moves, then closes, like separate steps. The user proposed a different motion: the bubble starts expanding at the origin, keeps expanding toward the tapped tab, arrives large, then collapses, with the collapse a little slower. The swipe is judged right; no change was requested to it.
+
+Measured in the eighth recording (888×270, 273 frames, about 54 fps), tap calls → groups:
+- the rise started on Calls at 0.70 s;
+- the bubble jumped to Groups with the page between 0.78 and 0.83 s;
+- it then **sat fully inflated for ~300 ms** (0.83–1.12 s);
+- it shrank by 1.25 s.
+
+Cause: the pager-follow took the tap over, so the glide from #93 did not run as designed. `holdPagerFollow` cleared itself after the pager had been still for 80 ms, and WhatsApp starts its page scroll more than 80 ms after the finger lifts. The follow then lifted the bubble, snapped it with the page, and held it until the pager settled. The stepped design (rise, then travel, then land, each eased to a stop) would also have read as halting.
+
+Implemented:
+- **The tap is one gesture** (`BubbleMotion.applyGlide`):
+  - travel 0–300 ms on `1-(1-x)^4(1+4x)`: starts from rest, peaks at a quarter of the way, eases in;
+  - rise 0–180 ms, ease-out from the current height, so the bubble grows while travelling and arrives full size;
+  - collapse 270–500 ms, ease-in-out, slower than the growth as the user suggested;
+  - a redirect restarts from the current position and height.
+- **The tap hold no longer ends on stillness.** `tapHoldUntil` lasts `EXPECT_MS` (700 ms) from the finger lifting. `pollPager` also never follows while a glide runs. `expect()` (drag commit) keeps its own settle-based hold.
+
+Refraction review (frames at 0.78 s and 0.95 s):
+- The lens reads correctly: content is magnified 1.39× and smeared at the rim, with a lit edge.
+- The bubble's interior is clearly darker than the bar, because it shows the page without the bar's 40% surface tint, plus OneMate's 15% inner shadow and 3% black. In the dark theme it reads more like a dark hole than clear glass.
+- Not changed: the user called the look right. Option offered: a faint light wash inside the bubble while risen.
+
+Codex review on #94: a swipe started within 700 ms of a tap was not followed. Fixed: once the tap's glide starts, the fixed hold gives way to the settle-based hold, which ends as soon as the pager rests on a page.
+
+Validation:
+- 463 tests, 0 failures (new or changed: continuous-gesture timing, travel curve, wall-time glide).
+- Debug APK SHA-256 `8efc7390c45f886585562fe81e489b537654f425cdc4e314653eb12842b64a30`.
+- Not device-validated.
+
+Next: record taps (adjacent and two tabs apart). Check:
+- the bubble leaves the old tab at once, growing;
+- it arrives full size around 270 ms;
+- there is no full-size hold;
+- the collapse is smooth and about 230 ms.
+
+## Previous task — tap timing and landing icon, 2026-10-14 (seventh recording)
 
 Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@03a7e4a` (PR #92 merged). New PR from this branch.
 

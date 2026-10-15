@@ -77,17 +77,22 @@ public final class BubbleMotion {
     private boolean pressed;
 
     /*
-     * A tap's choreography, in seconds of real time: rise on the old tab, travel, land on the new
-     * one. 450 ms in all, agreed with the user against the page swipe they liked (about 480 ms at
-     * their 0.33x animator scale); iOS's and Material's default springs settle in 300-500 ms.
-     * Fixed rather than scaled by the system animator setting: the springs it replaces landed in
-     * about 200 ms, which read as an in-place pop at 0.33x.
+     * A tap's choreography, in seconds of real time. One continuous gesture rather than three
+     * steps: the bubble leaves the old tab at once and grows into the lens *while* it travels,
+     * arriving full size, then collapses into the new tab's pill a little more slowly than it
+     * grew. The stepped version (rise 120 ms, travel, land; each eased to a stop) read as halting
+     * on the device. About 500 ms in all, close to the ~480 ms page swipe the user likes; fixed,
+     * not scaled by the system animator setting.
      */
-    static final float GLIDE_RISE = 0.12f;
+    /** Travel from the old tab to the new one: fast early, gentle arrival. */
     static final float GLIDE_TRAVEL_END = 0.30f;
-    static final float GLIDE_END = 0.45f;
+    /** The rise into the lens, overlapping the first part of the travel. */
+    static final float GLIDE_RISE = 0.18f;
+    /** The collapse starts as the bubble arrives (it is within 0.05% of the tab by then). */
+    static final float GLIDE_LAND_START = 0.27f;
+    static final float GLIDE_END = 0.50f;
     private boolean gliding;
-    private float glideTime, glideFrom, glideTo;
+    private float glideTime, glideFrom, glideTo, glidePressFrom;
 
     /**
      * @param tabs         number of tabs, at least 1
@@ -157,7 +162,7 @@ public final class BubbleMotion {
         return Math.round(clamp(value.target, 0f, maxValue));
     }
 
-    /** Programmatic selection (a tap on another tab): rise, travel, land, deflate. */
+    /** Programmatic selection (a tap on another tab): grow while travelling, then collapse. */
     public void animateTo(int index, boolean animate) {
         float to = clamp(index, 0f, maxValue);
         if (!animate) {
@@ -176,17 +181,15 @@ public final class BubbleMotion {
     }
 
     /**
-     * Starts (or redirects) the tap choreography toward {@code to}. A glide that interrupts a
-     * rise or another glide continues from the bubble's current height and position.
+     * Starts (or redirects) the tap choreography toward {@code to}, from wherever the bubble is
+     * and however high it already is, so a redirect never jumps.
      */
     private void glideTo(float to) {
-        float p = clamp(press.value, 0f, 1f);
-        // The point of the rise that matches the current height, so the press never jumps.
-        float riseAt = GLIDE_RISE * (1f - (float) Math.cbrt(1f - p));
-        glideTime = gliding ? Math.min(glideTime, riseAt) : riseAt;
         gliding = true;
+        glideTime = 0f;
         glideFrom = value.value;
         glideTo = to;
+        glidePressFrom = clamp(press.value, 0f, 1f);
         value.target = to;
         releasePending = false;
         scaleX.target = pressedScale;
@@ -199,21 +202,37 @@ public final class BubbleMotion {
         float p;
         if (t < GLIDE_RISE) {
             float x = 1f - t / GLIDE_RISE;
-            p = 1f - x * x * x;                       // ease-out: lifts at once, then slows
-        } else if (t < GLIDE_TRAVEL_END) {
+            p = glidePressFrom + (1f - glidePressFrom) * (1f - x * x * x);   // ease-out
+        } else if (t < GLIDE_LAND_START) {
             p = 1f;
         } else {
-            p = 1f - easeInOut((t - GLIDE_TRAVEL_END) / (GLIDE_END - GLIDE_TRAVEL_END));
+            p = 1f - easeInOut((t - GLIDE_LAND_START) / (GLIDE_END - GLIDE_LAND_START));
             scaleX.target = 1f;
             scaleY.target = 1f;
         }
         press.value = press.target = clamp(p, 0f, 1f);
         press.velocity = 0f;
-        float span = GLIDE_TRAVEL_END - GLIDE_RISE;
-        float x = clamp((t - GLIDE_RISE) / span, 0f, 1f);
-        value.value = glideFrom + (glideTo - glideFrom) * easeInOut(x);
+        float x = clamp(t / GLIDE_TRAVEL_END, 0f, 1f);
+        value.value = glideFrom + (glideTo - glideFrom) * travel(x);
         // Analytic velocity, so the travel still squashes the bubble along its motion.
-        value.velocity = (x > 0f && x < 1f) ? (glideTo - glideFrom) * easeInOutSlope(x) / span : 0f;
+        value.velocity = (x > 0f && x < 1f)
+                ? (glideTo - glideFrom) * travelSlope(x) / GLIDE_TRAVEL_END : 0f;
+    }
+
+    /**
+     * Travel curve: starts from rest (no jolt while the bubble is still pill-sized), peaks at a
+     * quarter of the way, and eases into the tab. 1 - (1-x)^4 (1+4x).
+     */
+    static float travel(float x) {
+        x = clamp(x, 0f, 1f);
+        float y = 1f - x;
+        return 1f - y * y * y * y * (1f + 4f * x);
+    }
+
+    static float travelSlope(float x) {
+        x = clamp(x, 0f, 1f);
+        float y = 1f - x;
+        return 20f * x * y * y * y;
     }
 
     private void stopGlide() {
@@ -228,11 +247,6 @@ public final class BubbleMotion {
         return x < 0.5f ? 4f * x * x * x : 1f - (float) Math.pow(-2f * x + 2f, 3) / 2f;
     }
 
-    static float easeInOutSlope(float x) {
-        x = clamp(x, 0f, 1f);
-        float y = x < 0.5f ? x : 1f - x;
-        return 12f * y * y;
-    }
 
     /**
      * Rises as on a press, without a finger: {@link #isPressed()} stays false. Used while a page

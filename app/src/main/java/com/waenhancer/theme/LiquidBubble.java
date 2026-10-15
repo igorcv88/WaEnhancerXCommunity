@@ -109,6 +109,12 @@ public final class LiquidBubble extends View {
     private boolean waitPagerSettle;
     /** Uptime after which {@link #waitPagerSettle} no longer blocks a follow, settled or not. */
     private long waitPagerUntil;
+    /**
+     * Uptime until which a tap on another tab blocks pager-follow. Unlike {@link #waitPagerSettle}
+     * it is not cleared by the pager resting: right after the tap the pager has not moved yet,
+     * and WhatsApp starts its scroll only after more than the settle time.
+     */
+    private long tapHoldUntil;
     private final android.view.ViewTreeObserver.OnPreDrawListener preDraw = () -> {
         onWindowFrame();
         return true;
@@ -191,13 +197,25 @@ public final class LiquidBubble extends View {
         boolean first = Float.isNaN(lastPagerPosition);
         lastPagerPosition = position;
         long now = android.os.SystemClock.uptimeMillis();
+        if (motion.isGliding() && tapHoldUntil != 0L) {
+            // The tap's selection arrived and its glide holds the follow off from here. Hand
+            // over to the settle-based hold, which ends as soon as the pager rests on a page, so
+            // a real swipe right after the glide is followed instead of ignored to 700 ms.
+            tapHoldUntil = 0L;
+            waitPagerSettle = true;
+            waitPagerUntil = now + EXPECT_MS;
+        }
         if (first) {
             pagerChangedAt = now;
             return;
         }
         if (changed) {
             pagerChangedAt = now;
-            if (!waitPagerSettle || now > waitPagerUntil) follow(position);
+            // A tap's glide owns the bubble until it lands; the pager's own jump to the tapped
+            // page must not take it over (it did, and held the bubble inflated for ~300 ms).
+            boolean held = (waitPagerSettle && now <= waitPagerUntil)
+                    || now <= tapHoldUntil || motion.isGliding();
+            if (!held) follow(position);
         } else if (now - pagerChangedAt >= PAGER_SETTLE_MS
                 && Math.abs(position - Math.round(position)) < PAGE_SETTLED_EPSILON) {
             // Still *and* on a page. A finger resting mid-swipe holds the pager still between
@@ -337,7 +355,10 @@ public final class LiquidBubble extends View {
      * the new tab selected only after its click listener has run.
      */
     public void expect(int index) {
-        holdPagerFollow();
+        long now = android.os.SystemClock.uptimeMillis();
+        waitPagerSettle = true;
+        pagerChangedAt = now;
+        waitPagerUntil = now + EXPECT_MS;
         expected = index;
         expectedUntil = android.os.SystemClock.uptimeMillis() + EXPECT_MS;
         selected = index;
@@ -347,13 +368,10 @@ public final class LiquidBubble extends View {
      * A tap on another tab is about to make the host app move its pager there, often in a single
      * frame. The bubble must glide there when the selection is reported instead of following
      * the pager's jump (which put it on the new tab at once, to swell and collapse in place). The
-     * hold ends once the pager rests on a page, and after {@link #EXPECT_MS} in any case.
+     * hold lasts {@link #EXPECT_MS}; once the glide starts, the glide itself holds the follow off.
      */
     public void holdPagerFollow() {
-        long now = android.os.SystemClock.uptimeMillis();
-        waitPagerSettle = true;
-        pagerChangedAt = now;
-        waitPagerUntil = now + EXPECT_MS;
+        tapHoldUntil = android.os.SystemClock.uptimeMillis() + EXPECT_MS;
     }
 
     // ---------------------------------------------------------------------------------- frame

@@ -182,28 +182,48 @@ public class BubbleMotionTest {
         assertTrue(m.isIdle());
     }
 
-    /** The agreed tap timing: rise ~120 ms, travel to ~300 ms, land by ~450 ms, real time. */
+    /**
+     * The tap is one gesture: the bubble leaves at once and grows while travelling, arrives
+     * full size at ~270 ms, and collapses into the new tab by ~500 ms.
+     */
     @Test
-    public void tapGlideTakesFourHundredFiftyMilliseconds() {
+    public void tapGrowsWhileTravellingThenCollapses() {
         BubbleMotion m = new BubbleMotion(3, 0, PRESSED);
         m.animateTo(1, true);
         assertTrue(m.isGliding());
         float t = 0f;
-        float firstMove = -1f, arrived = -1f, landed = -1f, risen = -1f;
+        float firstMove = -1f, arrived = -1f, landed = -1f, risen = -1f, valueAtRisen = 0f;
         while (t < 1f) {
             m.step(FRAME);
             t += FRAME;
-            if (risen < 0f && m.pressProgress() > 0.99f) risen = t;
+            if (risen < 0f && m.pressProgress() > 0.99f) { risen = t; valueAtRisen = m.value(); }
             if (firstMove < 0f && m.value() > 0.001f) firstMove = t;
             if (arrived < 0f && m.value() > 0.999f) arrived = t;
             if (landed < 0f && m.pressProgress() < 0.001f && arrived > 0f) landed = t;
         }
-        assertEquals(0.12f, risen, 0.02f);
-        assertTrue("travel waits for the rise: " + firstMove, firstMove >= 0.12f);
-        assertEquals(0.30f, arrived, 0.02f);
-        assertEquals(0.45f, landed, 0.02f);
+        assertTrue("moves from the first frames: " + firstMove, firstMove <= 0.05f);
+        assertEquals(0.15f, risen, 0.03f);  // 99% of the 180 ms ease-out rise
+        // Still on its way when fully risen: the growth happens during the travel.
+        assertTrue("value at full rise " + valueAtRisen, valueAtRisen > 0.6f && valueAtRisen < 1f);
+        assertEquals(0.27f, arrived, 0.03f);
+        assertEquals(0.50f, landed, 0.03f);
+        // The collapse (~230 ms) is slower than the growth (~180 ms).
+        assertTrue(landed - arrived > risen);
         assertFalse(m.isGliding());
-        assertTrue(m.isIdle() || m.scaleX() < 1.05f);
+    }
+
+    @Test
+    public void travelCurveStartsAndEndsAtRest() {
+        assertEquals(0f, BubbleMotion.travel(0f), 0f);
+        assertEquals(1f, BubbleMotion.travel(1f), 1e-6f);
+        assertEquals(0f, BubbleMotion.travelSlope(0f), 0f);
+        assertEquals(0f, BubbleMotion.travelSlope(1f), 0f);
+        float prev = 0f;
+        for (float x = 0.01f; x <= 1f; x += 0.01f) {
+            float v = BubbleMotion.travel(x);
+            assertTrue(v >= prev);
+            prev = v;
+        }
     }
 
     /** A new tap mid-glide redirects from where the bubble is: no jump in height or position. */
@@ -247,12 +267,12 @@ public class BubbleMotionTest {
         assertTrue(mid > 1f && mid < 1.3f);
     }
 
-    /** Long frames do not stretch the tap: it still ends 450 ms after it starts. */
+    /** Long frames do not stretch the tap: it still ends 500 ms after it starts. */
     @Test
     public void glideRunsOnWallTime() {
         BubbleMotion m = new BubbleMotion(3, 0, PRESSED);
         m.animateTo(1, true);
-        for (int i = 0; i < 7; i++) m.step(0.065f);
+        for (int i = 0; i < 8; i++) m.step(0.065f);
         assertFalse(m.isGliding());
         assertEquals(1f, m.value(), 0f);
         assertEquals(0f, m.pressProgress(), 0f);
