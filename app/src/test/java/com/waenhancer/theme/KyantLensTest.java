@@ -42,8 +42,8 @@ public class KyantLensTest {
         for (float density : new float[]{1f, 2f, 2.75f, 3.5f}) {
             float radius = KyantLens.blurRadiusPx(density);
             float skiaSigma = 0.57735f * radius + 0.5f;
-            assertEquals(4f * density * 0.45f, skiaSigma, 1e-3f);
-            assertTrue(KyantLens.padding(density) >= 3f * 4f * density * 0.45f);
+            assertEquals(KyantLens.BLUR_DP * density * 0.45f, skiaSigma, 1e-3f);
+            assertTrue(KyantLens.padding(density) >= 3f * KyantLens.BLUR_DP * density * 0.45f);
         }
     }
 

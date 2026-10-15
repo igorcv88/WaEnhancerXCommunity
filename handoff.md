@@ -2,7 +2,45 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — tap as one continuous gesture, 2026-10-15 (eighth recording)
+## Current task — hidden FAB reappearing, stronger blur, 2026-10-15 (ninth recording)
+
+Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@056cb7c` (PR #94 merged). New PR from this branch.
+
+User report, ninth recording (704×322, 3.85 s):
+1. **The call FAB ("Start a call") showed behind the bar while swiping pages**, although the bar's FAB mode is Hidden. It did not appear after tapping a tab.
+2. **The glass looked low quality, not like Liquid Glass.** The blur reads as weak; the FAB behind the bar looked pixelated.
+
+Findings:
+- **FAB.** Hidden mode was enforced only on:
+  - a FAB's own constructor-attach and layout (only for the class names in `FAB_CLASS_CANDIDATES`);
+  - the install sweep, 500 ms after install;
+  - list-scroll events (`animateFabs`).
+
+  A FAB that WhatsApp shows during a page swipe was hit by none of these.
+- **Blur.** The OneMate capture is already 1:1 (no downsampling). The impression comes from miuix's 4dp blur (sigma 1.8dp, ~5 px): the FAB's edge stays hard inside the bar, and the 24dp rim lens drags that hard edge into streaks.
+
+Implemented:
+- `FloatingBottomBar.keepFabsHidden(root)`: in Hidden mode, a global-layout listener on the home root sweeps `findFabs` and sets any non-GONE FAB to GONE after every layout pass. Showing a GONE view always requests a layout, and the listener runs before that frame's draw, so the button is never drawn.
+- `KyantLens.BLUR_DP` raised from 4 to 10 dp (sigma 4.5dp). The edge mode is CLAMP, so the bar's edges are not darkened. The capture padding grows with it, through `KyantLens.padding` and `LiveBudget`.
+- ARCHITECTURE.md and the Liquid Glass page caption are updated.
+
+Validation:
+- 463 tests, 0 failures.
+- AGSL check passes for all three shaders.
+- Debug APK SHA-256 `a142873b0a3abe83b565ffd54daccd411190973b0aa4d65dbe66aca105dc6bac`.
+- Not device-validated.
+
+Unknowns:
+- Whether the swipe-time FAB is under the same root as the bar (assumed: same activity content).
+- Whether WhatsApp shows it in a way that skips a layout pass, for example a FAB kept VISIBLE and animated by alpha only. The mode sets GONE, so it should not.
+- The frame cost of the larger blur on app surfaces.
+
+Next:
+- Record a swipe across all tabs with FAB mode Hidden.
+- Compare the bar glass over the FAB or a colourful wallpaper.
+- If 10dp is too soft or too strong, the next step is a user blur slider for the OneMate material.
+
+## Previous task — tap as one continuous gesture, 2026-10-15 (eighth recording)
 
 Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@6fb33f8` (PR #93 merged). New PR from this branch.
 

@@ -194,8 +194,13 @@ public final class KyantLens {
     // OneMate's bottom-bar recipe, which is what every surface uses here.
     /** Lens band depth and displacement, dp (OneMate: 24dp/24dp). */
     static final float REFRACTION_DP = 24f;
-    /** miuix blur(4dp). */
-    static final float BLUR_DP = 4f;
+    /**
+     * Backdrop blur, dp (miuix/OneMate: 4dp). Raised after device review: at 4dp (sigma 1.8dp,
+     * ~5 px) a high-contrast shape behind the bar, such as WhatsApp's green call FAB, kept a
+     * hard edge and the rim's refraction smeared it into streaks, which read as low resolution
+     * rather than glass. 10dp gives sigma 4.5dp (~12 px at density 2.75).
+     */
+    static final float BLUR_DP = 10f;
     static final float SATURATION = 1.5f;
     /** Surface tint alpha at the material's recommended opacity (OneMate: surfaceContainer 0.4). */
     static final float SURFACE_ALPHA = 0.40f;
@@ -261,7 +266,7 @@ public final class KyantLens {
         return surfaceAlpha255;
     }
 
-    /** Blur radius to hand {@code createBlurEffect} so its sigma matches miuix's blur(4dp). */
+    /** Blur radius to hand {@code createBlurEffect} so its sigma matches miuix's blur(BLUR_DP). */
     static float blurRadiusPx(float density) {
         float sigma = BLUR_DP * density * RADIUS_TO_SIGMA;
         return Math.max(0f, (sigma - 0.5f) / SKIA_RADIUS_SCALE);
