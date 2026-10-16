@@ -849,6 +849,7 @@ public class FloatingBottomBar extends Feature {
             });
 
             // 5. Style the FABs so they float above the pill in the mode the user picked.
+            if ("hidden".equals(fabMode)) keepFabsHidden(rootLayout);
             rootLayout.postDelayed(() -> {
                 try {
                     for (View fab : findFabs(rootLayout)) {
@@ -1087,6 +1088,33 @@ public class FloatingBottomBar extends Feature {
         } catch (Throwable ignored) {
             return false;
         }
+    }
+
+    /** Roots that already enforce the Hidden FAB mode after every layout pass. */
+    private static final WeakHashMap<View, Boolean> fabHiders = new WeakHashMap<>();
+
+    /**
+     * Hidden mode, enforced after every layout pass of the home screen. The other hooks only hid
+     * the FABs found on a list scroll or on the button's own re-layout, so a FAB that WhatsApp
+     * shows during a page swipe (the Calls tab's "Start a call") stayed visible behind the bar.
+     * Showing a GONE view always requests a layout, and this listener runs after that layout
+     * and before the frame is drawn, so the button is hidden without being drawn once. Cheap
+     * enough: layout passes are rare compared with frames, and the scroll handler already does
+     * the same sweep on every scroll event.
+     */
+    private static void keepFabsHidden(ViewGroup root) {
+        if (fabHiders.containsKey(root)) return;
+        fabHiders.put(root, true);
+        root.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
+            if (!"hidden".equals(fabMode)) return;
+            try {
+                for (View fab : findFabs(root)) {
+                    if (fab.getVisibility() != View.GONE) fab.setVisibility(View.GONE);
+                }
+            } catch (Throwable ignored) {
+                // Decoration only.
+            }
+        });
     }
 
     private static java.util.List<View> findFabs(ViewGroup root) {
