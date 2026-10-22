@@ -41,7 +41,7 @@ def scope_configs(dump, resource_id=None):
             raise AssertionError('Duplicate compiled scope')
         configs.append(set(items))
     if not configs:
-        raise AssertionError('No compiled scope configurations decoded')
+        raise AssertionError('No compiled scope configurations decoded: ' + scopes[0][:2000])
     return configs
 
 
@@ -78,7 +78,7 @@ def verify(apk, profile, aapt2, apkanalyzer):
         if not match:
             raise AssertionError(f'Unsupported compiled scope reference: {scope_ref!r}')
         resource_id = int(match[1], 16)
-    dump = subprocess.check_output([aapt2, 'dump', 'resources', '--values', str(apk)], text=True)
+    dump = subprocess.check_output([aapt2, 'dump', 'resources', str(apk)], text=True)
     configs = scope_configs(dump, resource_id)
     with zipfile.ZipFile(apk) as archive:
         strings = set()
