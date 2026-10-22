@@ -1,36 +1,31 @@
 package com.waenhancer.xposed.bridge.client;
 
-import android.content.ComponentName;
 import android.content.Context;
-import android.content.Intent;
-import android.provider.Settings;
-import android.util.Log;
-import android.widget.Toast;
+import android.net.Uri;
 
 import com.waenhancer.BuildConfig;
-import com.waenhancer.activities.ForceStartActivity;
 import com.waenhancer.xposed.bridge.WaeIIFace;
-import com.waenhancer.xposed.core.WppCore;
-import com.waenhancer.xposed.utils.Utils;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
 
 import de.robv.android.xposed.XposedBridge;
 
+/** Direct module IPC. No SettingsProvider, activity trampoline or PackageManager hook. */
 public class ProviderClient extends BaseClient {
-
+    private static final ScheduledExecutorService TIMEOUTS = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread thread = new Thread(r, "WAEX-bridge-timeout");
+        thread.setDaemon(true);
+        return thread;
+    });
     private final Context context;
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-    private final Semaphore reconnectSemaphore = new Semaphore(1);
-    private WaeIIFace service;
-    private CompletableFuture<Boolean> continuation;
+    private volatile WaeIIFace service;
+    private CompletableFuture<Boolean> connection;
 
     public ProviderClient(Context context) {
-        this.context = context;
+        this.context = context.getApplicationContext();
     }
 
     @Override
@@ -39,78 +34,48 @@ public class ProviderClient extends BaseClient {
     }
 
     @Override
-    public CompletableFuture<Boolean> connect() {
+    public synchronized CompletableFuture<Boolean> connect() {
         if (service != null && service.asBinder().pingBinder()) {
             return CompletableFuture.completedFuture(true);
         }
-
-        continuation = new CompletableFuture<>();
-
-        CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-            boolean connected = false;
+        if (connection != null && !connection.isDone()) return connection;
+        service = null;
+        final CompletableFuture<Boolean> attempt = new CompletableFuture<>();
+        connection = attempt;
+        CompletableFuture.runAsync(() -> {
+            WaeIIFace candidate = null;
             try {
-                var currentActivity = WppCore.getCurrentActivity();
-                if (currentActivity != null) {
-                    var intent = new Intent();
-                    intent.setComponent(new ComponentName(BuildConfig.APPLICATION_ID, ForceStartActivity.class.getName()));
-                    intent.putExtra("pkg", currentActivity.getPackageName());
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    currentActivity.startActivity(intent);
-                } else {
-                    // Fallback: try to start from application context
-                    var intent = new Intent();
-                    intent.setComponent(new ComponentName(BuildConfig.APPLICATION_ID, ForceStartActivity.class.getName()));
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    Utils.getApplication().startActivity(intent);
+                var result = context.getContentResolver().call(
+                        Uri.parse("content://" + BuildConfig.APPLICATION_ID + ".hookprovider"),
+                        "getHookBinder", null, null);
+                var binder = result == null ? null : result.getBinder("binder");
+                if (binder != null && binder.pingBinder()) {
+                    candidate = WaeIIFace.Stub.asInterface(binder);
                 }
             } catch (Exception e) {
-                XposedBridge.log("ProviderClient: Failed to start ForceStartActivity: " + e.getMessage());
+                XposedBridge.log("[WAEX] Direct bridge unavailable: " + e.getClass().getSimpleName());
             }
-
-            try {
-                var resolver = Utils.getApplication().getContentResolver();
-                var bundle = resolver.call(Settings.System.CONTENT_URI, "WaEnhancer X", "getHookBinder", null);
-                var binder = bundle != null ? bundle.getBinder("binder") : null;
-                if (binder != null) {
-                    service = WaeIIFace.Stub.asInterface(binder);
-                    if (service != null && service.asBinder().pingBinder()) {
-                        ;
-
-                        connected = true;
-                    }
+            synchronized (ProviderClient.this) {
+                // A timed-out or superseded call must not publish a stale Binder.
+                if (connection == attempt && !attempt.isDone()) {
+                    service = candidate;
+                    attempt.complete(candidate != null);
                 }
-            } catch (Exception e) {
-                XposedBridge.log("Error in Bridge: " + e.getMessage());
             }
-
-            continuation.complete(connected);
-            return continuation.join();
         });
-
-        scheduler.schedule(() -> {
-            if (!continuation.isDone()) {
-                continuation.completeExceptionally(new Exception("Connection timed out"));
+        var timeout = TIMEOUTS.schedule(() -> {
+            synchronized (ProviderClient.this) {
+                attempt.complete(false);
             }
         }, 3, TimeUnit.SECONDS);
-
-        return future.exceptionally(ex -> false);
+        attempt.whenComplete((value, failure) -> timeout.cancel(false));
+        return attempt;
     }
 
     @Override
     public void tryReconnect() {
-        if (service != null && service.asBinder().pingBinder()) return;
-        reconnectSemaphore.acquireUninterruptibly();
-        connect().whenComplete((canLoad, ex) -> {
-            try {
-                if (ex != null || !canLoad) {
-                    /* Log removed */
-                    Utils.doRestart(context);
-                } else {
-                    Utils.showToast("Reconnected to Bridge", Toast.LENGTH_SHORT);
-                }
-            } finally {
-                reconnectSemaphore.release();
-            }
+        connect().thenAccept(connected -> {
+            if (!connected) XposedBridge.log("[WAEX] Direct bridge reconnect failed; no automatic restart.");
         });
     }
 }

@@ -85,7 +85,7 @@ public class HookProvider extends ContentProvider {
 
             if (METHOD_BINDER.equals(method)) {
                 Bundle result = new Bundle();
-                result.putBinder("binder", HookBinder.getInstance());
+                result.putBinder("binder", HookBinder.getInstance(context));
                 return result;
             }
 

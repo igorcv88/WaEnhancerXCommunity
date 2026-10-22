@@ -2,7 +2,17 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — hidden FAB reappearing, stronger blur, 2026-10-15 (ninth recording)
+## Current task — application-only Xposed/IPC review, 2026-10-22
+
+Branch: `review/app-only-no-system-server-20261022`, based on `master@4039cecaec7fb63d56a28f6f7191e3cb590f6f95`. Focused ready-for-review PR; no merge or public release authorized. See [audit, upstream pin, feature/process matrix and rollback](docs/APP_ONLY_REVIEW_2026-10-22.md).
+
+Removed ScopeHook, unused AndroidPermissions, downgrade Patch, AntiUpdater, BridgeClient/BridgeService, HookBL and AntiWa. Added a positive entrypoint allowlist and fixed companion scope to `com.waenhancer.community`. ProviderClient calls the UID-gated module provider directly, shares pending connections, rejects late timeout results and avoids automatic restart loops. HookBinder now authenticates each transaction. Removed global zygote diagnostic properties and their status readers; live self-hook stays authoritative. Spoof controls/search removed; original stored settings/secrets, migrations and public/private schema retained. Core WhatsApp feature hooks were preserved.
+
+Local validation: executable dispatcher/IPC harness 3 tests passed; negative scopes register zero hooks; every resource qualifier/Manifest scanned. Existing full Gradle/JVM suite and compiled APK verification remain pending because Gradle/Android SDK are unavailable locally. Manual workflow gains default `mode=lab` with exact expected_sha and signed APK artifact only; explicit `mode=release` keeps master-only publication. No workflow was dispatched, phone modified or APK declared physically validated.
+
+Next: run the manual LAB workflow on this exact PR head, require existing JVM suite and APK structural checks, review failures before installation, then perform the documented Android-17 provider visibility/preferences/media/Business checks separately from baseline integrity observations. The browser available in this session is signed out and the GitHub connector has no workflow-dispatch operation; this prevents an authenticated manual dispatch from this session.
+
+## Previous task — hidden FAB reappearing, stronger blur, 2026-10-15 (ninth recording)
 
 Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@056cb7c` (PR #94 merged). New PR from this branch.
 

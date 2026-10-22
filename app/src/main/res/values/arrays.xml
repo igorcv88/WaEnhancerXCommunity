@@ -3,8 +3,7 @@
     <string-array name="scope">
         <item>com.whatsapp</item>
         <item>com.whatsapp.w4b</item>
-        <item>com.waenhancer</item>
-        <item>android</item>
+        <item>com.waenhancer.community</item>
     </string-array>
 
 

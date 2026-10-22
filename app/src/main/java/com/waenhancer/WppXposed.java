@@ -3,11 +3,8 @@ package com.waenhancer;
 import android.app.Application;
 import android.content.res.XModuleResources;
 
-import com.waenhancer.xposed.AntiUpdater;
-import com.waenhancer.xposed.bridge.ScopeHook;
 import com.waenhancer.xposed.bridge.client.DeferredProviderSharedPreferences;
 import com.waenhancer.xposed.core.FeatureLoader;
-import com.waenhancer.xposed.downgrade.Patch;
 import com.waenhancer.xposed.utils.XResManager;
 import com.waenhancer.xposed.utils.Utils;
 
@@ -28,12 +25,10 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
-        if (Utils.DEBUG) {
-            ;
-        }
-        var packageName = lpparam.packageName;
+        // Reject stale/extra LSPosed scopes before initializing app helpers or any hooks.
+        String packageName = lpparam.packageName;
+        if (!AppOnlyScope.accepts(packageName, BuildConfig.APPLICATION_ID)) return;
         var classLoader = lpparam.classLoader;
-
         if (packageName.equals(BuildConfig.APPLICATION_ID)) {
             if (Utils.DEBUG) {
                 ;
@@ -70,15 +65,6 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
                                             .putInt("active_xposed_api_version", apiVersion)
                                             .apply();
 
-                                    if (localPrefs.getBoolean("bootloader_spoofer", false)) {
-                                        try {
-                                            com.waenhancer.xposed.spoofer.HookBL.hook(
-                                                    lpparam.classLoader, localPrefs);
-                                        } catch (Throwable t) {
-                                            XposedBridge.log("[WAEX] Failed to hook Bootloader Spoofer in settings app: "
-                                                    + t.getMessage());
-                                        }
-                                    }
                                 } catch (Throwable t) {
                                     XposedBridge.log("[WAEX] Failed to initialize manager self-hook preferences: " + t);
                                 }
@@ -94,13 +80,8 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
             ;
         }
 
-        AntiUpdater.hookSession(lpparam);
 
-        Patch.handleLoadPackage(lpparam);
-
-        ScopeHook.hook(lpparam);
-
-        //  AndroidPermissions.hook(lpparam); in tests
+        // App-local feature initialization.
         boolean isWpp = packageName.equals(FeatureLoader.PACKAGE_WPP);
         boolean isBusiness = packageName.equals(FeatureLoader.PACKAGE_BUSINESS);
         boolean isOriginal = App.isOriginalPackage();
@@ -215,23 +196,7 @@ public class WppXposed implements IXposedHookLoadPackage, IXposedHookInitPackage
     public void initZygote(StartupParam startupParam) throws Throwable {
         MODULE_PATH = startupParam.modulePath;
 
-        // initZygote runs before an Android app process exists. Keep this callback independent of
-        // Utils and other application helpers: merely reading Utils.DEBUG initializes Utils, whose
-        // static Handler depends on an app/main Looper and can abort module initialization here.
-        // The properties below are optional diagnostics only; failure must never block hook loading.
-        try {
-            Class<?> sysProp = Class.forName("android.os.SystemProperties");
-            java.lang.reflect.Method set = sysProp.getMethod("set", String.class, String.class);
-            set.invoke(null, "debug.waenhancer.lsposed", "1");
-            try {
-                int apiVersion = de.robv.android.xposed.XposedBridge.getXposedVersion();
-                set.invoke(null, "debug.waenhancer.lsposed.api", String.valueOf(apiVersion));
-            } catch (Throwable t2) {
-                XposedBridge.log("[WAEX] Optional LSPosed API marker unavailable: " + t2);
-            }
-        } catch (Throwable t) {
-            XposedBridge.log("[WAEX] Optional LSPosed marker unavailable: " + t);
-        }
+        // No global property writes, runtime hooks or app helpers at zygote initialization.
     }
 
     public void disableSecureFlag() {

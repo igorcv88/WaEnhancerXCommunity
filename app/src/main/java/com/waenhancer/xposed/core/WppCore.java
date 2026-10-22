@@ -16,7 +16,6 @@ import androidx.annotation.Nullable;
 import com.waenhancer.views.dialog.BottomDialogWpp;
 import com.waenhancer.xposed.bridge.WaeIIFace;
 import com.waenhancer.xposed.bridge.client.BaseClient;
-import com.waenhancer.xposed.bridge.client.BridgeClient;
 import com.waenhancer.xposed.bridge.client.ProviderClient;
 import com.waenhancer.xposed.compat.HostResolverCompat;
 import com.waenhancer.xposed.core.components.FMessageWpp;
@@ -213,33 +212,9 @@ public class WppCore {
     }
 
     public static void initBridge(Context context) throws Exception {
-        var prefsCacheHooks = UnobfuscatorCache.getInstance().sPrefsCacheHooks;
-        int preferredOrder = prefsCacheHooks.getInt("preferredOrder", 1); // 0 for ProviderClient first, 1 for
-        // BridgeClient first
-
-        boolean connected = false;
-        if (preferredOrder == 0) {
-            if (tryConnectBridge(new ProviderClient(context))) {
-                connected = true;
-            } else if (tryConnectBridge(new BridgeClient(context))) {
-                connected = true;
-                preferredOrder = 1; // Update preference to BridgeClient first
-            }
-        } else {
-            if (tryConnectBridge(new BridgeClient(context))) {
-                connected = true;
-            } else if (tryConnectBridge(new ProviderClient(context))) {
-                connected = true;
-                preferredOrder = 0; // Update preference to ProviderClient first
-            }
-        }
-
-        if (!connected) {
+        if (!tryConnectBridge(new ProviderClient(context))) {
             throw new Exception(context.getString(R.string.bridge_error));
         }
-
-        // Update the preferred order if it changed
-        prefsCacheHooks.edit().putInt("preferredOrder", preferredOrder).apply();
     }
 
     private static boolean tryConnectBridge(BaseClient baseClient) throws Exception {
