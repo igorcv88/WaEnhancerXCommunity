@@ -4,7 +4,7 @@ This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent
 
 ## Current task — import user-selected emoji TTF for WhatsApp, 2026-10-22
 
-Branch `feat/user-selected-whatsapp-emoji-font`, based on `master@299fd5c93faef1d1236f6d20cd1c9d0a579c4682`. New focused PR; no related open PR was listed at the start. No merge, workflow dispatch, or phone installation authorized.
+Branch `feat/user-selected-whatsapp-emoji-font`, based on `master@299fd5c93faef1d1236f6d20cd1c9d0a579c4682`. Review-ready PR [#97](https://github.com/igorcv88/WaEnhancerXCommunity/pull/97), initial remote head `dd490db2af435e3def932987fd8ac4bb74bf3ab8` (the PR handoff follow-up changes that head). No related open PR was listed at the start. No merge, workflow dispatch, or phone installation performed.
 
 Background: One UI 9 FlipFont/ScamsungFonts can display Apple-style glyphs in most fields; WhatsApp still displays its own emoji shapes before sending. In the previous WaEnhancer implementation, `disable_defEmojis()` intercepted a broad set of `ReplacementSpan`/`ImageSpan` draw methods and called `canvas.drawText` with the original WhatsApp `Paint`. The enabled toggle did not prove the hook installed or that a custom typeface had been selected.
 
