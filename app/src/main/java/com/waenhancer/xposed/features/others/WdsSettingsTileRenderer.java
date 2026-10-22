@@ -992,6 +992,7 @@ public class WdsSettingsTileRenderer {
     static {
         ACTION_TARGETS.put("open_deleted_messages", "com.waenhancer.activities.DeletedMessagesActivity");
         ACTION_TARGETS.put("call_recording_manage", "com.waenhancer.activities.RecordingsActivity");
+        ACTION_TARGETS.put("custom_emoji_font_picker", "com.waenhancer.activities.EmojiFontSettingsActivity");
     }
 
     private static View createActionTile(Context context, JSONObject pref) {

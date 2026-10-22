@@ -311,6 +311,16 @@
     <string name="android_version">Android SDK</string>
     <string name="message_removed_on">Deleted on %s.</string>
     <string name="disable_default_emojis">Disable Default Emojis</string>
+    <string name="custom_emoji_font_title">Custom WhatsApp emoji font</string>
+    <string name="custom_emoji_font_explanation">Choose your own color emoji TTF. The selected font is kept privately in WaEnhancer and used in WhatsApp when Disable Default Emojis is enabled. Restart WhatsApp after changing the font. No root module is required.</string>
+    <string name="custom_emoji_font_choose">Choose TTF file</string>
+    <string name="custom_emoji_font_remove">Remove imported font</string>
+    <string name="custom_emoji_font_remove_confirmation">Remove the private copy of the emoji font? Your original document will not be deleted.</string>
+    <string name="custom_emoji_font_remove_failed">Could not remove the imported font.</string>
+    <string name="custom_emoji_font_selected">Selected: %1$s</string>
+    <string name="custom_emoji_font_not_selected">No custom emoji font selected</string>
+    <string name="custom_emoji_font_imported">Font imported. Restart WhatsApp to apply it.</string>
+    <string name="custom_emoji_font_import_failed">Font import failed: %1$s</string>
     <string name="theme_mode">Dark Theme WaEnhancer Community</string>
     <string name="theme_mode_sum">Force a theme mode in the WaEnhancer Community</string>
     <string name="wae_color_mode">WAE color mode</string>

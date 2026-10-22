@@ -97,6 +97,10 @@ public class Others extends Feature {
     private static final String PRIMARY_DEVICE_EMOJI = " \uD83D\uDCF1";
     private static final String LINKED_DEVICE_EMOJI = " \uD83D\uDDA5\uFE0F";
     private static volatile boolean messageDeviceSourceConversationActive = false;
+    private static final java.util.concurrent.atomic.AtomicBoolean firstEmojiDrawLogged =
+            new java.util.concurrent.atomic.AtomicBoolean();
+    private static final java.util.concurrent.atomic.AtomicBoolean firstEmojiDrawFailureLogged =
+            new java.util.concurrent.atomic.AtomicBoolean();
 
     public static ConcurrentHashMap<Integer, Boolean> propsBoolean = new ConcurrentHashMap<>();
     public static ConcurrentHashMap<Integer, Integer> propsInteger = new ConcurrentHashMap<>();
@@ -1446,8 +1450,39 @@ public class Others extends Feature {
 
     private void disable_defEmojis() throws Exception {
         var spanClasses = Unobfuscator.loadEmojiSpanClasses(classLoader);
+        final java.util.concurrent.atomic.AtomicReference<android.graphics.Typeface> customTypeface =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        // Binder connection can take up to four seconds if the module process is unavailable;
+        // do not delay WhatsApp's startup or perform any IPC on a draw frame.
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try (android.os.ParcelFileDescriptor font = WppCore.getClientBridge().openEmojiFont()) {
+                if (font != null) {
+                    customTypeface.set(new android.graphics.Typeface.Builder(font.getFileDescriptor()).build());
+                }
+                XposedBridge.log("[WAEX][EmojiFont] fontLoaded=" + (customTypeface.get() != null));
+            } catch (Throwable unavailable) {
+                XposedBridge.log("[WAEX][EmojiFont] Imported font unavailable: "
+                        + unavailable.getClass().getSimpleName());
+            }
+        });
+        int hookCount = 0;
+        java.util.Set<Method> installed = new java.util.HashSet<>();
+        // Some WhatsApp emoji ImageSpans inherit draw() from the Android framework
+        // instead of declaring their own method. This hook is process-scoped by LSPosed.
+        try {
+            Method inherited = android.text.style.DynamicDrawableSpan.class.getDeclaredMethod(
+                    "draw", android.graphics.Canvas.class, CharSequence.class,
+                    int.class, int.class, float.class, int.class, int.class, int.class,
+                    android.graphics.Paint.class);
+            hookEmojiDrawMethod(inherited, customTypeface);
+            installed.add(inherited);
+            hookCount++;
+        } catch (Throwable unavailable) {
+            XposedBridge.log("[WAEX][EmojiFont] Framework draw hook unavailable: "
+                    + unavailable.getClass().getSimpleName());
+        }
         if (spanClasses == null || spanClasses.length == 0) {
-            /* Log removed */
+            XposedBridge.log("[WAEX][EmojiFont] No WhatsApp emoji span candidates found");
         } else {
             /* Log removed */
             for (var spanClass : spanClasses) {
@@ -1464,33 +1499,55 @@ public class Others extends Feature {
                     );
                     /* Log removed */
                     for (var method : methods) {
-                        /* Log removed */
-                        XposedBridge.hookMethod(method, new XC_MethodHook() {
-                            @Override
-                            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                                android.graphics.Canvas canvas = (android.graphics.Canvas) param.args[0];
-                                CharSequence text = (CharSequence) param.args[1];
-                                int start = (int) param.args[2];
-                                int end = (int) param.args[3];
-                                float x = (float) param.args[4];
-                                int top = (int) param.args[5];
-                                int y = (int) param.args[6];
-                                int bottom = (int) param.args[7];
-                                android.graphics.Paint paint = (android.graphics.Paint) param.args[8];
-
-                                if (text != null && start >= 0 && end > start && end <= text.length()) {
-                                    CharSequence emoji = text.subSequence(start, end);
-                                    canvas.drawText(emoji.toString(), x, y, paint);
-                                }
-                                param.setResult(null);
-                            }
-                        });
+                        if (installed.add(method)) {
+                            hookEmojiDrawMethod(method, customTypeface);
+                            hookCount++;
+                        }
                     }
                 } catch (Throwable t) {
                     XposedBridge.log("[WAEX] Error hooking ReplacementSpan draw method for class " + spanClass.getName() + ": " + t.toString());
                 }
             }
-        }    }
+        }
+        XposedBridge.log("[WAEX][EmojiFont] installedDrawHooks=" + hookCount
+                + " spanClasses=" + (spanClasses == null ? 0 : spanClasses.length));
+    }
+
+    private void hookEmojiDrawMethod(Method method,
+            java.util.concurrent.atomic.AtomicReference<android.graphics.Typeface> selectedTypeface) {
+        XposedBridge.hookMethod(method, new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) {
+                if (param.args.length != 9 || !(param.args[1] instanceof CharSequence)
+                        || !(param.args[8] instanceof android.graphics.Paint)) return;
+                CharSequence text = (CharSequence) param.args[1];
+                int start = (int) param.args[2];
+                int end = (int) param.args[3];
+                // Never rewrite regular text, image badges or non-emoji replacement spans.
+                if (!EmojiSpanText.isEmojiOnly(text, start, end)) return;
+                try {
+                    android.graphics.Paint paint = new android.graphics.Paint(
+                            (android.graphics.Paint) param.args[8]);
+                    android.graphics.Typeface font = selectedTypeface.get();
+                    if (font != null) paint.setTypeface(font);
+                    android.graphics.Canvas canvas = (android.graphics.Canvas) param.args[0];
+                    canvas.drawText(text.subSequence(start, end).toString(),
+                            (float) param.args[4], (int) param.args[6], paint);
+                    param.setResult(null);
+                    if (firstEmojiDrawLogged.compareAndSet(false, true)) {
+                        XposedBridge.log("[WAEX][EmojiFont] First emoji draw intercepted; customTypeface="
+                                + (font != null));
+                    }
+                } catch (Throwable failed) {
+                    // The original WhatsApp span must remain available when drawing fails.
+                    if (firstEmojiDrawFailureLogged.compareAndSet(false, true)) {
+                        XposedBridge.log("[WAEX][EmojiFont] Draw failed: "
+                                + failed.getClass().getSimpleName());
+                    }
+                }
+            }
+        });
+    }
 
     private void showOnline(boolean showOnline) throws Exception {
         var checkOnlineMethod = Unobfuscator.loadCheckOnlineMethod(classLoader);

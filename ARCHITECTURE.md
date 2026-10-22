@@ -28,6 +28,12 @@ A hook that needs a secret obtains it through a narrow provider operation rather
 
 Private databases/files hold `Deleted for Me` records, preserved media, migration snapshots, and local diagnostics.
 
+### User-selected WhatsApp emoji fonts
+
+The companion app's document picker accepts a user-provided color emoji SFNT/TTF (up to 128 MB), verifies the bounded table directory and that Android can load the font, then atomically replaces one fixed file inside its private `files/user-emoji/` directory. The source document URI is not retained; the original document is not altered. Only a non-exported display-name cache key lives in `private_config`, and the font binary is deliberately omitted from application backups and releases. No Apple or third-party emoji artwork is shipped with the module.
+
+The existing UID-authenticated HookBinder exposes exactly one new read-only capability, `openEmojiFont()`. It takes no path and returns a descriptor for the fixed private font, using `O_NOFOLLOW` and a regular-file check. The general file bridge still refuses private paths. When the user's **Disable Default Emojis** preference is enabled, the WhatsApp-side hook starts a one-time asynchronous `Typeface` load from that descriptor so Binder delays never block application startup or draw frames. Intercepted emoji-only spans are painted with a cloned `Paint` and that typeface once available, without mutating the sender's paint or changing Android's font fallback configuration. Missing font, inaccessible bridge, unexpected spans and drawing failures fall back locally; logs report only install counts, font readiness and the first rendering outcome, never text content. Reopening WhatsApp is required after an import/removal. Hooks and rendering remain version-specific and require physical confirmation.
+
 ## IPC and automation
 
 Cross-process entry points use capability-specific contracts rather than generic storage access.

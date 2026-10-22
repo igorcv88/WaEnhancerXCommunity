@@ -17,4 +17,7 @@ interface WaeIIFace {
 
     List listFiles(String path);
 
+    /** Read-only access to the one user-imported emoji font. No caller-provided path. */
+    ParcelFileDescriptor openEmojiFont();
+
 }

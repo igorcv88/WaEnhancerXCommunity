@@ -210,6 +210,18 @@ public abstract class EmbeddedBasePreferenceFragment extends PreferenceFragmentC
 
     @Override
     public boolean onPreferenceTreeClick(@NonNull Preference preference) {
+        if ("custom_emoji_font_picker".equals(preference.getKey())) {
+            try {
+                Intent intent = new Intent();
+                intent.setClassName(BuildConfig.APPLICATION_ID,
+                        "com.waenhancer.activities.EmojiFontSettingsActivity");
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                requireContext().startActivity(intent);
+            } catch (Exception e) {
+                Utils.showToast("Failed to open Emoji Font Settings", android.widget.Toast.LENGTH_SHORT);
+            }
+            return true;
+        }
         if ("call_recording_settings".equals(preference.getKey())) {
             try {
                 Intent intent = new Intent();

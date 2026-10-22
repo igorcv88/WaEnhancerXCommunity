@@ -150,6 +150,15 @@ public class GeneralFragment extends BaseFragment {
             setPreferencesFromResource(R.xml.preference_general_conversation, rootKey);
             setDisplayHomeAsUpEnabled(false);
 
+            androidx.preference.Preference emojiFont = findPreference("custom_emoji_font_picker");
+            if (emojiFont != null) {
+                emojiFont.setOnPreferenceClickListener(preference -> {
+                    startActivity(new android.content.Intent(requireContext(),
+                            com.waenhancer.activities.EmojiFontSettingsActivity.class));
+                    return true;
+                });
+            }
+
             androidx.preference.EditTextPreference customLimitPref = findPreference("customforwardlimit");
             if (customLimitPref != null) {
                 customLimitPref.setSummaryProvider(preference -> {
