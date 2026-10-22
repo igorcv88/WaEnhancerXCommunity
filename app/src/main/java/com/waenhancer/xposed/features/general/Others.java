@@ -1449,7 +1449,15 @@ public class Others extends Feature {
     }
 
     private void disable_defEmojis() throws Exception {
-        var spanClasses = Unobfuscator.loadEmojiSpanClasses(classLoader);
+        Class<?>[] spanClasses;
+        try {
+            spanClasses = Unobfuscator.loadEmojiSpanClasses(classLoader);
+        } catch (Throwable lookupFailed) {
+            // An unsupported WhatsApp build must not prevent the framework span fallback.
+            spanClasses = new Class<?>[0];
+            XposedBridge.log("[WAEX][EmojiFont] WhatsApp span lookup failed: "
+                    + lookupFailed.getClass().getSimpleName());
+        }
         final java.util.concurrent.atomic.AtomicReference<android.graphics.Typeface> customTypeface =
                 new java.util.concurrent.atomic.AtomicReference<>();
         // Binder connection can take up to four seconds if the module process is unavailable;
