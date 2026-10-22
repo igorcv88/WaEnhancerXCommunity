@@ -41,21 +41,9 @@
                 android:targetClass="com.waenhancer.ui.fragments.SupportedVersionsActivity" />
         </Preference>
 
-        <rikka.material.preference.MaterialSwitchPreference
-            android:summary="@string/bootloader_spoofer_sum"
-            android:title="@string/bootloader_spoofer"
-            app:key="bootloader_spoofer" />
-
-        <rikka.material.preference.MaterialSwitchPreference
-            android:summary="@string/bootloader_spoofer_sum"
-            android:title="Enable Custom KeyBox"
-            app:key="bootloader_spoofer_custom" />
 
 
-        <Preference
-            android:key="bootloader_spoofer_verify"
-            android:summary="Check spoofer trust chain, keys, and expiration"
-            android:title="Verify Spoofer" />
+
 
         <rikka.material.preference.MaterialSwitchPreference
             app:key="ampm"

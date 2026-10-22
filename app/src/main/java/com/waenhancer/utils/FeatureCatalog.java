@@ -138,17 +138,6 @@ public class FeatureCatalog {
                                 "SupportedVersionsActivity",
                                 Arrays.asList("version", "supported", "manage", "add", "edit", "delete", "custom", "user", "list")));
 
-                catalog.add(new SearchableFeature("bootloader_spoofer",
-                                context.getString(R.string.bootloader_spoofer),
-                                context.getString(R.string.bootloader_spoofer_sum),
-                                SearchableFeature.Category.GENERAL_HOME,
-                                SearchableFeature.FragmentType.GENERAL,
-                                "general_home",
-                                Arrays.asList("bootloader", "spoofer", "ban")));
-
-
-
-
                 catalog.add(new SearchableFeature("ampm",
                                 context.getString(R.string.ampm),
                                 null,

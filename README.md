@@ -1,3 +1,9 @@
+## Application-only review build
+
+The current review removes system_server/SettingsProvider hooks, WhatsApp downgrade/update interception and optional bootloader/root spoofing. WhatsApp, WhatsApp Business and the Community settings app are the only suggested Xposed scopes. Media downloads, themes and preferences use a UID-validated direct provider bridge. This is not a claim of physical Android 17 or Wallet validation; see [the audit and test/rollback procedure](docs/APP_ONLY_REVIEW_2026-10-22.md).
+
+Manual workflow: choose `mode=lab`, select the review branch and supply its exact `expected_sha` to produce a signed experimental Actions artifact without a public release. `mode=release` publishes only from master. Existing data and stored settings are preserved; no automatic migration deletes old spoof preferences.
+
 <p align="center">
   <img src=".github/assets/waenhancer-community-banner.svg" alt="WaEnhancer Community" width="100%" />
 </p>

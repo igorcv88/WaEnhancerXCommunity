@@ -3,6 +3,18 @@ name: Build APK Release
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "LAB artifact only, or public release from master"
+        required: true
+        default: lab
+        type: choice
+        options:
+          - lab
+          - release
+      expected_sha:
+        description: "LAB only: required full commit SHA to verify the selected ref"
+        required: false
+        type: string
       channel:
         description: "Release channel"
         required: true
@@ -24,6 +36,7 @@ env:
 
 jobs:
   release:
+    if: inputs.mode == 'release'
     name: Test, build, verify, and publish
     runs-on: ubuntu-latest
 
@@ -51,6 +64,9 @@ jobs:
 
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v6
+
+      - name: Check app-only runtime and packaged-source contracts
+        run: python3 tools/test_app_only_runtime.py
 
       - name: Validate release-note generator
         run: python3 -m py_compile .github/scripts/build_release_notes.py
@@ -238,6 +254,16 @@ jobs:
             -PandroidKeyAlias="$KEY_ALIAS" \
             -PandroidKeyPassword="$KEY_PASSWORD"
 
+      - name: Verify compiled app-only profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find app/build/outputs/apk/whatsapp/release -maxdepth 1 -type f -name '*.apk')
+          [[ "${#apks[@]}" == 1 ]]
+          bt="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          analyzer="$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/apkanalyzer' -type f | sort | tail -n 1)"
+          python3 tools/verify_apk_profile.py "${apks[0]}" AppOnly --aapt2 "$bt/aapt2" --apkanalyzer "$analyzer"
+
       - name: Locate release APK and R8 mapping
         id: artifacts
         shell: bash
@@ -411,3 +437,74 @@ jobs:
           if [[ -n "${KEYSTORE_PATH:-}" ]]; then
             rm -f "$KEYSTORE_PATH"
           fi
+
+  lab:
+    if: inputs.mode == 'lab'
+    name: Test and build pinned app-only APK (no release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify selected source SHA
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - uses: gradle/actions/wrapper-validation@v6
+      - name: Run dispatcher and IPC regression harness
+        run: python3 tools/test_app_only_runtime.py
+      - name: Build signed experimental APK and run JVM suite
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            test -n "${!name:-}"
+          done
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/lab.jks"
+          chmod 600 "$RUNNER_TEMP/lab.jks"
+          keytool -exportcert -keystore "$RUNNER_TEMP/lab.jks" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" | sha256sum | cut -d' ' -f1 > "$RUNNER_TEMP/lab-cert.sha256"
+          ./gradlew :app:testWhatsappDebugUnitTest :app:assembleWhatsappRelease \
+            -PVERSION_NAME=0.0.0-app-only-LAB \
+            -PandroidStoreFile="$RUNNER_TEMP/lab.jks" \
+            -PandroidStorePassword="$STORE_PASSWORD" \
+            -PandroidKeyAlias="$KEY_ALIAS" \
+            -PandroidKeyPassword="$KEY_PASSWORD"
+      - name: Inspect and hash experimental APK
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find app/build/outputs/apk/whatsapp/release -maxdepth 1 -type f -name '*.apk')
+          [[ "${#apks[@]}" == 1 ]]
+          bt="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          analyzer="$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/apkanalyzer' -type f | sort | tail -n 1)"
+          "$bt/apksigner" verify --verbose --print-certs "${apks[0]}" > "$RUNNER_TEMP/lab-cert.txt"
+          actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/lab-cert.txt" | tr '[:upper:]' '[:lower:]')"
+          [[ "$actual" == "$(cat "$RUNNER_TEMP/lab-cert.sha256")" ]]
+          "$bt/zipalign" -c -P 16 4 "${apks[0]}"
+          python3 tools/verify_apk_profile.py "${apks[0]}" AppOnly --aapt2 "$bt/aapt2" --apkanalyzer "$analyzer"
+          mkdir lab-artifacts
+          cp "${apks[0]}" lab-artifacts/WaEnhancer-AppOnly-LAB.apk
+          cd lab-artifacts
+          sha256sum WaEnhancer-AppOnly-LAB.apk > WaEnhancer-AppOnly-LAB.apk.sha256
+          printf '%s\n' "$GITHUB_SHA" > source-commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WaEnhancer-AppOnly-LAB-${{ github.sha }}
+          path: lab-artifacts/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/lab.jks"

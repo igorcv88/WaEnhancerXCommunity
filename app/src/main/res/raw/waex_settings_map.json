@@ -1656,13 +1656,13 @@
     {
       "id": "advanced",
       "title": "Advanced",
-      "summary": "Expiration bypass, backup features & bootloader spoofer",
+      "summary": "Expiration bypass and backup features",
       "icon": "ic_settings",
       "sub_screens": [
         {
           "id": "advanced_main",
           "title": "Advanced Settings",
-          "summary": "Expiration bypass, backup features & bootloader spoofer",
+          "summary": "Expiration bypass and backup features",
           "prefs": [
             {
               "key": "disable_expiration",
@@ -1704,30 +1704,6 @@
               "title": "Manage Supported Versions",
               "summary": "Add, edit, or delete custom supported versions",
               "dep": "customize_supported_versions"
-            },
-            {
-              "key": "bootloader_spoofer",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "Bootloader Spoofer",
-              "summary": "Use this if you have been banned and are receiving the unofficial Whatsapp message"
-            },
-            {
-              "key": "bootloader_spoofer_custom",
-              "type": "switch",
-              "value_type": "boolean",
-              "default": false,
-              "title": "Enable Custom KeyBox",
-              "summary": "Use this if you have been banned and are receiving the unofficial Whatsapp message"
-            },
-            {
-              "key": "bootloader_spoofer_verify",
-              "type": "action",
-              "value_type": "string",
-              "default": null,
-              "title": "Verify Spoofer",
-              "summary": "Check spoofer trust chain, keys, and expiration"
             },
             {
               "key": "ampm",

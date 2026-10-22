@@ -15,6 +15,7 @@ import com.waenhancer.config.NspPreferenceMigration;
 import com.waenhancer.config.PreferenceSchema;
 import com.waenhancer.config.PreferenceStores;
 import com.waenhancer.security.CallerAuthority;
+import com.waenhancer.security.BridgePreferencePolicy;
 import com.waenhancer.xposed.bridge.service.HookBinder;
 
 import java.util.HashMap;
@@ -85,7 +86,7 @@ public class HookProvider extends ContentProvider {
 
             if (METHOD_BINDER.equals(method)) {
                 Bundle result = new Bundle();
-                result.putBinder("binder", HookBinder.getInstance());
+                result.putBinder("binder", HookBinder.getInstance(context));
                 return result;
             }
 
@@ -96,7 +97,7 @@ public class HookProvider extends ContentProvider {
             }
 
             if (METHOD_GET.equals(method) && extras != null) {
-                String key = extras.getString("key");
+                String key = stringExtra(extras, "key");
                 Bundle result = new Bundle();
                 if (isReadablePublicKey(key)) {
                     putTyped(result, publicStore.getAll().get(key));
@@ -117,7 +118,7 @@ public class HookProvider extends ContentProvider {
             }
 
             if (METHOD_GET_SECRET.equals(method) && extras != null) {
-                String key = extras.getString("key");
+                String key = stringExtra(extras, "key");
                 if (key == null || !PreferenceSchema.isSecret(key)) return null;
                 Bundle result = new Bundle();
                 Object value = PreferenceStores.privateStore(context).getAll().get(key);
@@ -131,9 +132,9 @@ public class HookProvider extends ContentProvider {
             }
 
             if (METHOD_REMOVE.equals(method) && extras != null) {
-                String key = extras.getString("key");
+                String key = stringExtra(extras, "key");
                 if (!isWritableKey(key)) return null;
-                PreferenceStores.storeFor(context, key).edit().remove(key).commit();
+                if (!PreferenceStores.publicStore(context).edit().remove(key).commit()) return null;
                 notifyPreferencesChanged(context);
                 return Bundle.EMPTY;
             }
@@ -152,26 +153,31 @@ public class HookProvider extends ContentProvider {
         return entry != null && entry.store == PreferenceSchema.Store.PUBLIC;
     }
 
-    /** A write is accepted for a key the schema knows and that is not a secret. */
+    /** External preference mutations never reach the private store. */
     private static boolean isWritableKey(String key) {
-        if (key == null) return false;
-        PreferenceSchema.Entry entry = PreferenceSchema.entry(key);
-        return entry != null && entry.sensitivity != PreferenceSchema.Sensitivity.SECRET;
+        return BridgePreferencePolicy.writable(key);
+    }
+
+    private static String stringExtra(Bundle extras, String key) {
+        Object value = extras.get(key);
+        return value instanceof String ? (String) value : null;
     }
 
     private Bundle write(Context context, Bundle extras) {
-        String key = extras.getString("key");
-        String type = extras.getString("type");
-        if (!isWritableKey(key) || type == null) return null;
+        String key = stringExtra(extras, "key");
+        String type = stringExtra(extras, "type");
+        if (!extras.containsKey("value") || !BridgePreferencePolicy.accepts(key, type, extras.get("value"))) return null;
 
-        SharedPreferences.Editor editor = PreferenceStores.storeFor(context, key).edit();
+        SharedPreferences.Editor editor = PreferenceStores.publicStore(context).edit();
         switch (type) {
             case "string":
                 editor.putString(key, extras.getString("value"));
                 break;
             case "string_set":
-                var values = extras.getStringArrayList("value");
-                editor.putStringSet(key, values == null ? null : new HashSet<>(values));
+                var values = (java.util.List<?>) extras.get("value");
+                var strings = values == null ? null : new HashSet<String>();
+                if (values != null) for (Object item : values) strings.add((String) item);
+                editor.putStringSet(key, strings);
                 break;
             case "boolean":
                 editor.putBoolean(key, extras.getBoolean("value"));
@@ -188,7 +194,7 @@ public class HookProvider extends ContentProvider {
             default:
                 return null;
         }
-        editor.commit();
+        if (!editor.commit()) return null;
         notifyPreferencesChanged(context);
         return Bundle.EMPTY;
     }

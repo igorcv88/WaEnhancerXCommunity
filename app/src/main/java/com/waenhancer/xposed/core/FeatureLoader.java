@@ -100,7 +100,6 @@ import com.waenhancer.xposed.features.others.Stickers;
 import com.waenhancer.xposed.features.others.TextStatusComposer;
 import com.waenhancer.xposed.features.others.ToastViewer;
 import com.waenhancer.xposed.features.others.Spy;
-import com.waenhancer.xposed.features.privacy.AntiWa;
 import com.waenhancer.xposed.features.privacy.CallPrivacy;
 import com.waenhancer.xposed.features.privacy.CustomPrivacy;
 import com.waenhancer.xposed.features.privacy.DndMode;
@@ -111,7 +110,6 @@ import com.waenhancer.xposed.features.privacy.LockedChatsEnhancer;
 import com.waenhancer.xposed.features.privacy.TagMessage;
 import com.waenhancer.xposed.features.privacy.TypingPrivacy;
 import com.waenhancer.xposed.features.privacy.ViewOnce;
-import com.waenhancer.xposed.spoofer.HookBL;
 import com.waenhancer.xposed.utils.DesignUtils;
 import com.waenhancer.xposed.utils.ReflectionUtils;
 import com.waenhancer.xposed.utils.ResId;
@@ -271,14 +269,6 @@ public class FeatureLoader {
                                 defaultHandler.uncaughtException(thread, throwable);
                             }
                         });
-
-                        // Inject Booloader Spoofer
-                        if (pref.getBoolean("bootloader_spoofer", false)) {
-                            HookBL.hook(loader, pref);
-                            if (Feature.DEBUG) {
-                                ;
-                            }
-                        }
 
                         PackageManager packageManager = mApp.getPackageManager();
 
@@ -1024,7 +1014,6 @@ public class FeatureLoader {
                 ToastViewer.class,
                 SettingsInjector.class,
                 MenuHome.class,
-                AntiWa.class,
                 CustomPrivacy.class,
                 AudioTranscript.class,
                 GoogleTranslate.class,

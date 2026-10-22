@@ -653,16 +653,8 @@ public class MainActivity extends BaseActivity {
     public static boolean isXposedFrameworkPresent(Context context) {
         final String TAG = "WaeX_FwDetect";
 
-        // 1. System property written by our own initZygote — most reliable signal when in-scope or system allows.
-        try {
-            Class<?> sp = Class.forName("android.os.SystemProperties");
-            java.lang.reflect.Method get = sp.getMethod("get", String.class, String.class);
-            String val = (String) get.invoke(null, "debug.waenhancer.lsposed", "0");
-            if ("1".equals(val)) {
-                /* Log removed */
-                return true;
-            }
-        } catch (Throwable ignored) {}
+        // The live, module-local self hook is the activation signal.
+        if (com.waenhancer.utils.ModuleStatus.isModuleActive()) return true;
 
         // 2. Shell Command Check: Check directory visibility of LSPosed or other modules directories.
         // Bypasses Java API sandboxing since we catch the "Permission denied" error on existing folders.

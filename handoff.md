@@ -2,7 +2,19 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — hidden FAB reappearing, stronger blur, 2026-10-15 (ninth recording)
+## Current task — constrain bridge capabilities and restore Knox Matrix parity, 2026-10-22
+
+Branch `review/app-only-no-system-server-20261022`, PR [#96](https://github.com/igorcv88/WaEnhancerXCommunity/pull/96), security follow-up based on head `887b659db1a82c56361be14b1625765ca3b1a8ee`. No merge/public release/phone installation authorized. See [the app-only audit and follow-up](docs/APP_ONLY_REVIEW_2026-10-22.md).
+
+Fixed the UID-only file bridge: canonical primary shared-storage boundary, seven existing media-output categories and extension allowlists, read-only theme/selected-wallpaper images, write-only media outputs, O_NOFOLLOW and opened-descriptor validation before truncate/return. No listFiles capability; no production caller needs it. Configured download/wallpaper paths cannot authorize private module storage. HookProvider writes/removes only schema-known public non-secret keys and validates both declared/raw types. Private controls reuse the companion editor rather than silently editing a host-only mirror. Removed the three spoof controls from the raw injected settings JSON as well as prior XML/search changes.
+
+Failed initial preference hydration and observer registration now retry on later reads with a monotonic 500 ms limit. Notifications preserve invalidation across the throttle; cached values survive failure and an authoritative snapshot restores synchronization. Startup-only feature hooks can still require restarting WhatsApp after an initial configuration outage; this is a physical test item, not an automatic reinstallation claim.
+
+Validation: four local methods passed, including executable production entrypoint, auth, Binder/provider, schema/policies and deferred/provider preference classes against Android stubs. Tests exercise all 26 private keys, valid/malformed public types, private paths/DBs/traversal/symlinks, descriptor modes/rejection before truncation, cold-start retry, settings update and companion loss/recovery. Canonical files/symlinks use real host temporary files; Binder/Os/provider rules are simulated. Full Android build, existing JVM suite, compiled APK gates and physical API-37 operation remain pending. User explicitly prefers no browser; the exposed GitHub connector has no new-run dispatch operation. Provide the final PR-head expected_sha for a manual `mode=lab`, `channel=beta` execution. The previous `887b659...` build input is obsolete after these changes.
+
+Preserved app-only scope/entrypoint, public/private storage and migrations, safe named transcription/Tasker secret operations, media/theme functionality within the supported shared-storage locations, and all existing phone modules/settings. No browser, workflow dispatch, phone change, merge or release performed during this follow-up.
+
+## Previous task — hidden FAB reappearing, stronger blur, 2026-10-15 (ninth recording)
 
 Branch `claude/liquid-glass-nav-bar-ktxdge`, restarted from `master@056cb7c` (PR #94 merged). New PR from this branch.
 

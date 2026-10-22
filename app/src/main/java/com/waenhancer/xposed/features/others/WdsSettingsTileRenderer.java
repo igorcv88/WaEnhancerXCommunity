@@ -261,7 +261,9 @@ public class WdsSettingsTileRenderer {
                 String summary = pref.optString("summary", "");
 
                 View tile;
-                if (!isEnabled) {
+                if (com.waenhancer.security.BridgePreferencePolicy.requiresCompanion(key)) {
+                    tile = createOpenInModuleTile(context, pref, prefs);
+                } else if (!isEnabled) {
                     final String displayTitle = title;
                     tile = createWdsRow(context, title, summary, null, v -> {
                         try {
