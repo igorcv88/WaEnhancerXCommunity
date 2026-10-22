@@ -101,6 +101,24 @@ public class Others extends Feature {
             new java.util.concurrent.atomic.AtomicBoolean();
     private static final java.util.concurrent.atomic.AtomicBoolean firstEmojiDrawFailureLogged =
             new java.util.concurrent.atomic.AtomicBoolean();
+    private static final java.util.concurrent.atomic.AtomicBoolean firstEmojiSpanBypassLogged =
+            new java.util.concurrent.atomic.AtomicBoolean();
+    private static final java.util.concurrent.atomic.AtomicBoolean firstEmojiSpanDeferredLogged =
+            new java.util.concurrent.atomic.AtomicBoolean();
+    private static final java.util.concurrent.atomic.AtomicInteger emojiSpanCandidatesLogged =
+            new java.util.concurrent.atomic.AtomicInteger();
+    private static final int MAX_PENDING_EMOJI_SPANS = 256;
+
+    private static final class PendingEmojiSpan {
+        final java.lang.ref.WeakReference<android.text.Spannable> text;
+        final java.lang.ref.WeakReference<android.text.style.ReplacementSpan> originalSpan;
+
+        PendingEmojiSpan(android.text.Spannable text,
+                android.text.style.ReplacementSpan originalSpan) {
+            this.text = new java.lang.ref.WeakReference<>(text);
+            this.originalSpan = new java.lang.ref.WeakReference<>(originalSpan);
+        }
+    }
 
     public static ConcurrentHashMap<Integer, Boolean> propsBoolean = new ConcurrentHashMap<>();
     public static ConcurrentHashMap<Integer, Integer> propsInteger = new ConcurrentHashMap<>();
@@ -1460,10 +1478,11 @@ public class Others extends Feature {
         }
         final java.util.concurrent.atomic.AtomicReference<android.graphics.Typeface> customTypeface =
                 new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.List<PendingEmojiSpan> pendingEmojiSpans = new java.util.ArrayList<>();
         // Binder connection can take up to four seconds if the module process is unavailable;
         // do not delay WhatsApp's startup or perform any IPC on a draw frame.
         java.util.concurrent.CompletableFuture.runAsync(() -> {
-            try (android.os.ParcelFileDescriptor font = WppCore.getClientBridge().openEmojiFont()) {
+            try (android.os.ParcelFileDescriptor font = openSelectedEmojiFont()) {
                 if (font != null) {
                     customTypeface.set(new android.graphics.Typeface.Builder(font.getFileDescriptor()).build());
                 }
@@ -1471,6 +1490,8 @@ public class Others extends Feature {
             } catch (Throwable unavailable) {
                 XposedBridge.log("[WAEX][EmojiFont] Imported font unavailable: "
                         + unavailable.getClass().getSimpleName());
+            } finally {
+                schedulePendingEmojiSpanFlush(customTypeface, pendingEmojiSpans);
             }
         });
         int hookCount = 0;
@@ -1519,6 +1540,145 @@ public class Others extends Feature {
         }
         XposedBridge.log("[WAEX][EmojiFont] installedDrawHooks=" + hookCount
                 + " spanClasses=" + (spanClasses == null ? 0 : spanClasses.length));
+        XposedBridge.log("[WAEX][EmojiFont] installedSpanHooks="
+                + installEmojiSpanBypass(customTypeface, pendingEmojiSpans));
+    }
+
+    private android.os.ParcelFileDescriptor openSelectedEmojiFont() throws Exception {
+        com.waenhancer.xposed.bridge.WaeIIFace service;
+        try {
+            service = WppCore.getClientBridge();
+        } catch (Exception sharedBridgeUnavailable) {
+            // Lite Mode intentionally leaves WppCore.client null. Connect a temporary
+            // provider client for this single read-only capability without starting
+            // the full bridge or exposing it to unrelated features.
+            android.content.Context app = Utils.getApplication();
+            if (app == null) throw sharedBridgeUnavailable;
+            var fontClient = new com.waenhancer.xposed.bridge.client.ProviderClient(app);
+            if (!Boolean.TRUE.equals(fontClient.connect().get(5,
+                    java.util.concurrent.TimeUnit.SECONDS)) || fontClient.getService() == null) {
+                throw sharedBridgeUnavailable;
+            }
+            service = fontClient.getService();
+            XposedBridge.log("[WAEX][EmojiFont] using independent font bridge");
+        }
+        return service.openEmojiFont();
+    }
+
+    private static void schedulePendingEmojiSpanFlush(
+            java.util.concurrent.atomic.AtomicReference<android.graphics.Typeface> selectedTypeface,
+            java.util.List<PendingEmojiSpan> pendingEmojiSpans) {
+        android.graphics.Typeface font = selectedTypeface.get();
+        if (font == null) return;
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+            java.util.List<PendingEmojiSpan> waiting;
+            synchronized (pendingEmojiSpans) {
+                waiting = new java.util.ArrayList<>(pendingEmojiSpans);
+                pendingEmojiSpans.clear();
+            }
+            int restored = 0;
+            for (PendingEmojiSpan entry : waiting) {
+                android.text.Spannable text = entry.text.get();
+                android.text.style.ReplacementSpan originalSpan = entry.originalSpan.get();
+                if (text == null || originalSpan == null) continue;
+                try {
+                    int start = text.getSpanStart(originalSpan);
+                    int end = text.getSpanEnd(originalSpan);
+                    int flags = text.getSpanFlags(originalSpan);
+                    if (!EmojiSpanText.isEmojiOnly(text, start, end)) continue;
+                    text.setSpan(new android.text.style.TypefaceSpan(font), start, end, flags);
+                    text.removeSpan(originalSpan);
+                    restored++;
+                } catch (Throwable failed) {
+                    XposedBridge.log("[WAEX][EmojiFont] Deferred span failed: "
+                            + failed.getClass().getSimpleName());
+                }
+            }
+            if (restored > 0) {
+                if (firstEmojiSpanBypassLogged.compareAndSet(false, true)) {
+                    XposedBridge.log("[WAEX][EmojiFont] First emoji replacement span bypassed");
+                }
+                XposedBridge.log("[WAEX][EmojiFont] deferredEmojiSpansApplied=" + restored);
+            }
+        });
+    }
+
+    private int installEmojiSpanBypass(
+            java.util.concurrent.atomic.AtomicReference<android.graphics.Typeface> selectedTypeface,
+            java.util.List<PendingEmojiSpan> pendingEmojiSpans) {
+        int count = 0;
+        XC_MethodHook intercept = new XC_MethodHook() {
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) {
+                if (param.args.length != 4
+                        || !(param.args[0] instanceof android.text.style.ReplacementSpan)
+                        || !(param.thisObject instanceof android.text.Spannable)
+                        || param.hasThrowable()) return;
+                android.text.Spannable editable = (android.text.Spannable) param.thisObject;
+                android.text.style.ReplacementSpan originalSpan =
+                        (android.text.style.ReplacementSpan) param.args[0];
+                int start = (int) param.args[1];
+                int end = (int) param.args[2];
+                boolean emojiOnly = EmojiSpanText.isEmojiOnly(editable, start, end);
+                int sample = emojiSpanCandidatesLogged.getAndIncrement();
+                if (sample < 6) {
+                    // Only class names and span lengths; never log user message contents.
+                    XposedBridge.log("[WAEX][EmojiFont] replacementSpanCandidate="
+                            + param.args[0].getClass().getName()
+                            + " length=" + (end - start) + " emojiOnly=" + emojiOnly);
+                }
+                android.graphics.Typeface font = selectedTypeface.get();
+                if (!emojiOnly) return;
+                try {
+                    // Let the original span stay in place until font loading succeeds.
+                    // An absent or invalid TTF must preserve WhatsApp's own rendering.
+                    if (editable.getSpanStart(originalSpan) != start
+                            || editable.getSpanEnd(originalSpan) != end) return;
+                    int flags = editable.getSpanFlags(originalSpan);
+                    if (font != null) {
+                        editable.setSpan(new android.text.style.TypefaceSpan(font), start, end, flags);
+                        editable.removeSpan(originalSpan);
+                        if (firstEmojiSpanBypassLogged.compareAndSet(false, true)) {
+                            XposedBridge.log("[WAEX][EmojiFont] First emoji replacement span bypassed");
+                        }
+                    } else {
+                        synchronized (pendingEmojiSpans) {
+                            if (pendingEmojiSpans.size() < MAX_PENDING_EMOJI_SPANS) {
+                                pendingEmojiSpans.add(new PendingEmojiSpan(editable, originalSpan));
+                                if (firstEmojiSpanDeferredLogged.compareAndSet(false, true)) {
+                                    XposedBridge.log("[WAEX][EmojiFont] First emoji replacement span deferred");
+                                }
+                            }
+                        }
+                        // Covers loading completing during the original setSpan call.
+                        schedulePendingEmojiSpanFlush(selectedTypeface, pendingEmojiSpans);
+                    }
+                } catch (Throwable failed) {
+                    if (firstEmojiDrawFailureLogged.compareAndSet(false, true)) {
+                        XposedBridge.log("[WAEX][EmojiFont] Span bypass failed: "
+                                + failed.getClass().getSimpleName());
+                    }
+                }
+            }
+        };
+        try {
+            XposedBridge.hookMethod(android.text.SpannableStringBuilder.class.getDeclaredMethod(
+                    "setSpan", Object.class, int.class, int.class, int.class), intercept);
+            count++;
+        } catch (Throwable failed) {
+            XposedBridge.log("[WAEX][EmojiFont] Mutable span hook unavailable: "
+                    + failed.getClass().getSimpleName());
+        }
+        try {
+            // SpannableString inherits its implementation from SpannableStringInternal.
+            XposedBridge.hookMethod(android.text.SpannableString.class.getMethod(
+                    "setSpan", Object.class, int.class, int.class, int.class), intercept);
+            count++;
+        } catch (Throwable failed) {
+            XposedBridge.log("[WAEX][EmojiFont] Immutable span hook unavailable: "
+                    + failed.getClass().getSimpleName());
+        }
+        return count;
     }
 
     private void hookEmojiDrawMethod(Method method,
