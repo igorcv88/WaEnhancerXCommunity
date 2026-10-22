@@ -22,7 +22,7 @@ import android.util.Log;
  *       the backdrop, by a circle profile ({@code 1 - sqrt(1 - x²)}): zero in the body, steep at
  *       the rim. Inward only, so it never samples outside the recording.</li>
  *   <li><b>Surface and highlight.</b> A neutral 18% wash over the result, then a soft
- *       directional reflection confined to the bevel, without a continuous outline.</li>
+ *       persistent grazing-edge reflection joined to a soft directional bevel.</li>
  * </ol>
  *
  * <p>Steps 1-2 are platform effects; 3-4 are one AGSL pass. The press-state bubble of the bottom
@@ -157,8 +157,8 @@ public final class KyantLens {
             + "        col.rgb *= 1.0 - uShadowA * m;\n"
             + "    }\n"
             + "\n"
-            // Surface reflections have no ambient stroke. A broad smooth envelope lives
-            // inside the bevel and dies at both ends; only light-facing normals brighten.
+            // One continuous material: a narrow grazing reflection persists around the
+            // outline and overlaps the soft bevel. Both use the same live colour.
             // The pressed tab retains its original BloomStroke treatment.
             + "    if (uHighlight > 0.0 && uStrokeA <= 0.0) {\n"
             + "        float band = max(uBloom * 2.0, 1.0);\n"
@@ -173,8 +173,17 @@ public final class KyantLens {
             // extra capture: scrolling changes the same samples used by the glass body.
             + "        float luminance = dot(transmitted, float3(0.2126, 0.7152, 0.0722));\n"
             + "        float response = mix(0.35, 1.0, smoothstep(0.0, 0.75, luminance));\n"
-            + "        float reflection = clamp(light * envelope * uHighlight * response, 0.0, 1.0);\n"
-            + "        float3 reflected = mix(transmitted, float3(1.0), 0.25) * col.a;\n"
+            // A nonzero all-angle floor keeps dark/back-facing edges visible. Gaussian
+            // falloff starts at the actual outline: no inset stroke or second contour.
+            // Inspired by OneUILiquidGlass's persistent contour plus directional runs;
+            // unlike its compositor-only popup overlay we can modulate live pixels here.
+            + "        float sigma = max(uStrokeW * 0.65, 0.75);\n"
+            + "        float contour = exp(-0.5 * depth * depth / (sigma * sigma));\n"
+            + "        float contourGain = (0.10 + 0.16 * smoothstep(0.0, 0.75, luminance))\n"
+            + "                          * (0.85 + 0.15 * clamp(light, 0.0, 1.0));\n"
+            + "        float bevelGain = light * envelope * uHighlight * response;\n"
+            + "        float reflection = clamp(contour * contourGain + bevelGain * 0.45, 0.0, 0.45);\n"
+            + "        float3 reflected = mix(float3(1.0), transmitted, 0.15) * col.a;\n"
             + "        col.rgb = mix(col.rgb, max(col.rgb, reflected), reflection);\n"
             + "    } else if (uHighlight > 0.0) {\n"
             + "        float bigR = max(r, uBloom);\n"
