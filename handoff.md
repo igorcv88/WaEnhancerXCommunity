@@ -2,7 +2,19 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — neutral Liquid Glass surfaces, 2026-10-22
+## Current task — persistent integrated rim after physical review, 2026-10-22
+
+Branch `fix/persistent-glass-rim-20261022`, based on `master@8a82ad72` after PR #99 merged. User physically approves the blur and body colour but reports the outline disappeared, especially around the composer. Preserve all body, blur and capture parameters.
+
+Cause in #99: the envelope is zero exactly on the outline, directional light can be zero along whole runs, and dark backdrop response plus a mostly dark reflected colour further suppress the remaining light. New treatment joins a narrow Gaussian grazing contour (sigma 0.65dp, minimum 0.75px) to the existing 4dp bevel, using one reflected colour. The contour coefficient has an all-angle 0.085 minimum over black, rising with local pre-wash backdrop luminance; the directional bevel is reduced to 45% of its previous coefficient to avoid a second strong band. Reflection target is neutral white with 15% live backdrop colour. No inset stroke, extra draw, extra sample, timer, body tint/saturation/blur/refraction/capture change. Selected-tab bubble and classic/fallback are untouched.
+
+Reference inspected: `igorcv88/OneUILiquidGlass@2b278cd4cb7dda8e9562d360033fbdbb9320de89`, `LiquidGlassShader.java` COMMON/edge and `sfhook/refract.h`. Heads-up/profile 0 gets persistent module-side contour plus directional lit runs; its compositor shader applies refraction/filtering, not rim lighting. Its module overlay explicitly cannot sample compositor backdrop pixels: do not claim its lighting coefficient dynamically samples that backdrop. Adapted the design principle, not its shader code or cross-process hooks. Excluded geometric RGB fringe, inset hairline geometry, body filtering and lockscreen cool tint to preserve the approved neutral WaE material.
+
+Validation: diff whitespace and numerical contour checks pass (all angles over black retain light, brighter local backgrounds increase contour gain, falloff is continuous and negligible in the body; premultiplied bounds preserved). These are not Java/AGSL compilation. Existing environment still lacks cached Gradle/Android SDK/compiler and glslangValidator; APK and physical acceptance remain pending. No workflow dispatch or merge.
+
+Next: build the focused PR and compare input/navbar over black, white and moving coloured content. Confirm a visible complete contour, smooth corners, no detached/double line, unchanged body/blur and readable input icons. The contour calibration needs device confirmation.
+
+## Previous task — neutral Liquid Glass surfaces, 2026-10-22
 
 Branch `fix/neutral-liquid-glass-20261022`, based on `master@b85d2f5`. Focused PR targeting master; no merge or workflow dispatch.
 
