@@ -2,7 +2,15 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — persistent integrated rim after physical review, 2026-10-22
+## Current task — PR #99/#100 review follow-up, 2026-10-22
+
+Both PRs are merged in `master@6eacdc0a`. User explicitly authorizes corrections directly on the default branch. PR #99's completed review has no findings. PR #100 has one valid P2 (`discussion_r4353661876`): over a white light-theme body, the reflected target and body are both white, so max-only brightening cannot delimit the surface.
+
+Correction: retain the existing dark-background arithmetic exactly, but gradually switch the narrow contour target toward 55% of the body RGB once composited body luminance rises from 0.65 to 0.95. The polarity transition is smooth. The contour's share of the combined reflection limits darkening to the narrow grazing band; the wider directional bevel remains luminous. Body colour/opacity, blur, refraction, geometry, capture, classic/fallback and bubble are unchanged. No new input uniforms or samples.
+
+Validation: five executable Python tests evaluate the actual extracted production AGSL arithmetic (not a hand-copied model): visible rim on white/near-white, illuminated rim on dark backdrops, unchanged interior, continuous bright transition, and 1000 randomized premultiplied-alpha bounds. They use NumPy and the existing shader extractor. Java/AGSL compilation and APK remain unverified because Android/Gradle/compiler tooling is absent. Physical aesthetics in both themes still require confirmation; no build dispatch.
+
+## Previous task — persistent integrated rim after physical review, 2026-10-22
 
 Branch `fix/persistent-glass-rim-20261022`, based on `master@8a82ad72` after PR #99 merged. User physically approves the blur and body colour but reports the outline disappeared, especially around the composer. Preserve all body, blur and capture parameters.
 

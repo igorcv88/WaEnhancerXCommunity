@@ -184,7 +184,13 @@ public final class KyantLens {
             + "        float bevelGain = light * envelope * uHighlight * response;\n"
             + "        float reflection = clamp(contour * contourGain + bevelGain * 0.45, 0.0, 0.45);\n"
             + "        float3 reflected = mix(float3(1.0), transmitted, 0.15) * col.a;\n"
-            + "        col.rgb = mix(col.rgb, max(col.rgb, reflected), reflection);\n"
+            // Keep #100's dark-background result exactly. Only the narrow contour
+            // changes polarity when the composited body is too bright to illuminate.
+            + "        float bodyLuma = dot(col.rgb / max(col.a, 0.0001), float3(0.2126, 0.7152, 0.0722));\n"
+            + "        float bright = smoothstep(0.65, 0.95, bodyLuma);\n"
+            + "        float contourShare = contour * contourGain / max(contour * contourGain + bevelGain * 0.45, 0.0001);\n"
+            + "        float3 target = mix(max(col.rgb, reflected), col.rgb * 0.55, bright * contourShare);\n"
+            + "        col.rgb = mix(col.rgb, target, reflection);\n"
             + "    } else if (uHighlight > 0.0) {\n"
             + "        float bigR = max(r, uBloom);\n"
             + "        float2 xa = abs(p);\n"
