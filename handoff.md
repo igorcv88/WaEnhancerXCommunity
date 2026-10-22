@@ -2,7 +2,19 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — WhatsApp emoji rendering follow-up, 2026-10-22
+## Current task — neutral Liquid Glass surfaces, 2026-10-22
+
+Branch `fix/neutral-liquid-glass-20261022`, based on `master@b85d2f5`. Focused PR targeting master; no merge or workflow dispatch.
+
+User screenshots show a blue-grey cast and continuous bright outline on the floating bar and especially the composer. User explicitly approves the existing blur and requests preserving it. The default OneMate path uses `KyantLens.surface` from both `LiveBackdrop` and `LiquidLens`; its old recipe boosts saturation to 1.5 and overlays the theme-derived RGB at 40% default opacity. This is a code-supported explanation, not device proof of the active renderer/settings.
+
+Changes: retain the exact 10dp blur, radius conversion, padding, refraction, capture and recovery paths. Use original backdrop saturation and an achromatic black/white readability wash, 18% at recommended opacity (slider remains active). Remove the body surface's constant stroke; apply a lower-strength directional reflection with a smooth 4dp envelope that fades at the outline and interior. Clamp light-facing normals before raising them to the fourth power, rather than illuminating both sides with a squared signed dot product. Reflection colour and strength follow the live refracted backdrop before the neutral wash, so scrolling content modulates the bevel without a timer or added capture. This incorporates the user clarification: retain a gently illuminated, integrated, dynamic edge, not an absent edge. Preserve the selected-tab bubble's existing material and motion. Classic renderer and fallback remain unchanged. Update material caption and architecture. Existing KyantLens input tests updated and a neutral-wash regression case added.
+
+Validation: `git diff --check` passes. Full Gradle/JUnit execution blocked: Gradle 8.14.5 is not cached and its download fails with network unreachable; Android SDK/JDK compiler unavailable. Shader checker cannot run because glslangValidator is absent. Numerical envelope/neutral transmission checks run separately in Python; these do not compile Java or AGSL and are not device evidence. No APK built or installed.
+
+Next: build this PR, then compare the same composer and home views with current settings, both themes and a bright image behind the input. Confirm readable hint/icons, no blue pigment added over neutral content, softer edge and unchanged blur. Actual aesthetic acceptance remains pending. The source background itself can be blue/green; neutral glass preserves those colours rather than removing them. The 18%/0.32 reflection calibration is provisional until physical review.
+
+## Previous task — WhatsApp emoji rendering follow-up, 2026-10-22
 
 The original emoji picker PR #97 **was merged** into `master` at `92242056f46f3e8ca33bb9b15904c239f98d6e36` at 18:56 UTC. A subsequent span-bypass commit was mistakenly pushed to the already-merged feature branch; it was **not included in master**. Preserve PR #97 as historical. Follow-up must be based on `master` in a new PR (`fix/emoji-span-rendering-lite-20261022`) and must address the outstanding Codex P2 review comment about Lite Mode as well as the physical rendering failure.
 

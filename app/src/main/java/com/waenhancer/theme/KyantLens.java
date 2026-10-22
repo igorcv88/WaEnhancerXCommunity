@@ -15,14 +15,14 @@ import android.util.Log;
  * <p>The whole material is four steps, in this order, and that order is most of why it looks
  * right where the classic renderer does not:</p>
  * <ol>
- *   <li><b>Vibrancy.</b> Saturation 1.5 on the backdrop, before anything else touches it.</li>
- *   <li><b>A small blur.</b> 4dp (miuix maps a radius to sigma by 0.45). Enough to take the
+ *   <li><b>Vibrancy.</b> Unmodified saturation on the backdrop, before anything else touches it.</li>
+ *   <li><b>Backdrop blur.</b> 10dp (miuix maps a radius to sigma by 0.45). Enough to take the
  *       detail out of text behind the glass, little enough that shapes and colour survive.</li>
  *   <li><b>An edge lens.</b> Only a band {@code refractionHeight} deep inside the outline bends
  *       the backdrop, by a circle profile ({@code 1 - sqrt(1 - x²)}): zero in the body, steep at
  *       the rim. Inward only, so it never samples outside the recording.</li>
- *   <li><b>Surface and highlight.</b> A flat 40% surface tint over the result, then a thin
- *       additive rim lit by two directional lights (miuix's dual-peak {@code BloomStroke}).</li>
+ *   <li><b>Surface and highlight.</b> A neutral 18% wash over the result, then a soft
+ *       directional reflection confined to the bevel, without a continuous outline.</li>
  * </ol>
  *
  * <p>Steps 1-2 are platform effects; 3-4 are one AGSL pass. The press-state bubble of the bottom
@@ -145,6 +145,8 @@ public final class KyantLens {
             + "        col = float4(content.eval(coord));\n"
             + "    }\n"
             + "\n"
+            // Retain the live refracted colour for the bevel reflection, before the wash.
+            + "    float3 transmitted = clamp(col.rgb / max(col.a, 0.0001), 0.0, 1.0);\n"
             // Surface: the flat tint drawn over the lensed backdrop (premultiplied source-over).
             + "    col = col * (1.0 - uTint.a) + float4(uTint.rgb * uTint.a, uTint.a);\n"
             + "\n"
@@ -155,8 +157,26 @@ public final class KyantLens {
             + "        col.rgb *= 1.0 - uShadowA * m;\n"
             + "    }\n"
             + "\n"
-            // Highlight: miuix dual-peak BloomStroke, added (BlendMode.PLUS) over the surface.
-            + "    if (uHighlight > 0.0) {\n"
+            // Surface reflections have no ambient stroke. A broad smooth envelope lives
+            // inside the bevel and dies at both ends; only light-facing normals brighten.
+            // The pressed tab retains its original BloomStroke treatment.
+            + "    if (uHighlight > 0.0 && uStrokeA <= 0.0) {\n"
+            + "        float band = max(uBloom * 2.0, 1.0);\n"
+            + "        float t = clamp(depth / band, 0.0, 1.0);\n"
+            + "        float envelope = 16.0 * t * t * (1.0 - t) * (1.0 - t);\n"
+            + "        float2 n = gradRR(p, hs, r);\n"
+            + "        float l1 = max(dot(n, uLight1.xy), 0.0);\n"
+            + "        float l2 = max(dot(n, uLight2.xy), 0.0);\n"
+            + "        float light = l1 * l1 * l1 * l1 * uLight1I\n"
+            + "                    + l2 * l2 * l2 * l2 * uLight2I;\n"
+            // The reflected colour and intensity follow the live backdrop. No timer or
+            // extra capture: scrolling changes the same samples used by the glass body.
+            + "        float luminance = dot(transmitted, float3(0.2126, 0.7152, 0.0722));\n"
+            + "        float response = mix(0.35, 1.0, smoothstep(0.0, 0.75, luminance));\n"
+            + "        float reflection = clamp(light * envelope * uHighlight * response, 0.0, 1.0);\n"
+            + "        float3 reflected = mix(transmitted, float3(1.0), 0.25) * col.a;\n"
+            + "        col.rgb = mix(col.rgb, max(col.rgb, reflected), reflection);\n"
+            + "    } else if (uHighlight > 0.0) {\n"
             + "        float bigR = max(r, uBloom);\n"
             + "        float2 xa = abs(p);\n"
             + "        if (!(xa.x < hs.x - bigR && xa.y < hs.y - bigR)) {\n"
@@ -201,15 +221,15 @@ public final class KyantLens {
      * rather than glass. 10dp gives sigma 4.5dp (~12 px at density 2.75).
      */
     static final float BLUR_DP = 10f;
-    static final float SATURATION = 1.5f;
-    /** Surface tint alpha at the material's recommended opacity (OneMate: surfaceContainer 0.4). */
-    static final float SURFACE_ALPHA = 0.40f;
-    static final float SURFACE_ALPHA_MIN = 0.12f;
+    static final float SATURATION = 1f;
+    /** Neutral wash at the recommended opacity; blur is calibrated independently. */
+    static final float SURFACE_ALPHA = 0.18f;
+    static final float SURFACE_ALPHA_MIN = 0f;
     static final float SURFACE_ALPHA_MAX = 0.85f;
     /** Highlight(width 1dp, alpha 0.75) with BloomStroke(white 12%, innerBlur 2dp, dual peak). */
     static final float STROKE_DP = 1f;
     static final float BLOOM_DP = 2f;
-    static final float HIGHLIGHT_ALPHA = 0.75f;
+    static final float HIGHLIGHT_ALPHA = 0.32f;
     static final float STROKE_ALPHA = 0.12f;
 
     /**
@@ -244,13 +264,13 @@ public final class KyantLens {
         return 1f - (float) Math.sqrt(Math.max(0f, 1f - x * x));
     }
 
-    /** Surface tint alpha for the user's opacity slider, centred on OneMate's 40%. */
+    /** Surface tint alpha for the user's opacity slider, centred on the neutral 18% wash. */
     static float surfaceAlpha(float opacityPercent, int recommendedPercent) {
         float alpha = SURFACE_ALPHA + (opacityPercent - recommendedPercent) / 100f;
         return Math.max(SURFACE_ALPHA_MIN, Math.min(SURFACE_ALPHA_MAX, alpha));
     }
 
-    /** Surface tint alpha, 0-255, published from the opacity slider; OneMate's 40% until then. */
+    /** Surface tint alpha, 0-255, published from the opacity slider; 18% until then. */
     private static volatile int surfaceAlpha255 = Math.round(SURFACE_ALPHA * 255f);
 
     /**
@@ -284,11 +304,16 @@ public final class KyantLens {
         float half = height / 2f;
         p.refractHeight = Math.min(REFRACTION_DP * density, half);
         p.refractAmount = REFRACTION_DP * density;
-        p.tint = (surfaceAlpha255 << 24) | (spec.fillColor & 0x00FFFFFF);
+        // The theme surface is blue-grey, and adaptTo can tint it again. Neither is
+        // a pigment in clear glass. Keep only a neutral readability wash; the
+        // recorded backdrop supplies all hue. Content colour selects dark/light.
+        int neutral = SemanticTheme.relativeLuminance(spec.contentColor) > 0.5d
+                ? 0x000000 : 0xFFFFFF;
+        p.tint = (surfaceAlpha255 << 24) | neutral;
         p.strokeWidth = STROKE_DP * density;
         p.bloom = BLOOM_DP * density;
         p.highlight = HIGHLIGHT_ALPHA;
-        p.strokeAlpha = STROKE_ALPHA;
+        p.strokeAlpha = 0f;
         setLights(p, LIGHT_PRIMARY_BAR);
         p.saturation = SATURATION;
         p.blurRadius = blurRadiusPx(density);

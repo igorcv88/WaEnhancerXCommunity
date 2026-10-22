@@ -72,11 +72,11 @@ public class LiquidGlassActivity extends AppCompatActivity {
 
         addSection("Material");
         addSwitchRow("OneMate material",
-                "The glass from OneMate (Kyant0 Liquid Glass): saturated backdrop, 10dp blur, "
-                        + "a lens only at the edges, a 40% surface tint and a thin two-light rim. On "
+                "The glass from OneMate (Kyant0 Liquid Glass): original backdrop colours, 10dp blur, "
+                        + "a lens only at the edges, an 18% neutral wash and soft directional edge reflections. On "
                         + "the bottom bar the selected tab becomes a bubble that rises when pressed "
                         + "and can be dragged between tabs. The opacity slider moves the tint around "
-                        + "40% (Liquid's recommended opacity gives exactly 40%). Turn off to use the "
+                        + "18% (Liquid's recommended opacity gives exactly 18%). Turn off to use the "
                         + "classic renderer and the optical corrections below.",
                 LiquidGlassOptics.isOneMate(prefs),
                 checked -> {
