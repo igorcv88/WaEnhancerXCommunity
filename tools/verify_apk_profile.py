@@ -21,11 +21,16 @@ SYSTEM = {'com.android.server.knox.dar.DarManagerService',
           'com.samsung.android.knoxguard.service.KnoxGuardSeService'}
 
 
-def scope_configs(dump):
-    blocks = re.split(r'(?m)^\s*resource\s+0x[0-9a-fA-F]+\s+', dump)[1:]
-    scopes = [b for b in blocks if re.match(r'(?:\S+:)?array/scope(?:\s|$)', b)]
+def scope_configs(dump, resource_id=None):
+    # AAPT resource optimization can rename array/scope. Resolve the exact ID
+    # referenced by the compiled Manifest, rather than trusting a source name.
+    blocks = re.findall(r'(?ms)^\s*resource\s+(0x[0-9a-fA-F]+)\s+(.+?)(?=^\s*resource\s+0x|\Z)', dump)
+    if resource_id is not None:
+        scopes = [b for rid, b in blocks if int(rid, 16) == resource_id]
+    else:
+        scopes = [b for rid, b in blocks if re.match(r'(?:\S+:)?array/scope(?:\s|$)', b)]
     if len(scopes) != 1:
-        raise AssertionError('Expected one compiled array/scope resource')
+        raise AssertionError(f'Expected one compiled scope array, id={resource_id!r}')
     configs = []
     for part in re.split(r'(?m)^\s*\([^\n]*\)\s+\(array\)', scopes[0])[1:]:
         # aapt2 prints array string values in quotes, including qualified arrays.
@@ -65,10 +70,16 @@ def verify(apk, profile, aapt2, apkanalyzer):
     key = ('com.waenhancer.HOOK_PROFILE' if profile == 'AppOnly'
            else 'io.mesalabs.knoxpatch.HOOK_PROFILE')
     assert metadata[key].get(ANDROID+'value') == profile
-    assert metadata['xposedscope'].get(ANDROID+'resource') in ('@array/scope',) or re.fullmatch(
-        r'@(?:0x)?[0-9a-fA-F]+', metadata['xposedscope'].get(ANDROID+'resource', ''))
+    scope_ref = metadata['xposedscope'].get(ANDROID+'resource', '')
+    print(f'Compiled {profile} scope reference: {scope_ref!r}', flush=True)
+    resource_id = None
+    if scope_ref != '@array/scope':
+        match = re.fullmatch(r'@(?:ref/)?(?:0x)?([0-9a-fA-F]{8})', scope_ref)
+        if not match:
+            raise AssertionError(f'Unsupported compiled scope reference: {scope_ref!r}')
+        resource_id = int(match[1], 16)
     dump = subprocess.check_output([aapt2, 'dump', 'resources', '--values', str(apk)], text=True)
-    configs = scope_configs(dump)
+    configs = scope_configs(dump, resource_id)
     with zipfile.ZipFile(apk) as archive:
         strings = set()
         dex_files = [n for n in archive.namelist() if re.fullmatch(r'classes\d*\.dex', n)]
