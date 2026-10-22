@@ -4,7 +4,7 @@ This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent
 
 ## Current task — application-only Xposed/IPC review, 2026-10-22
 
-Branch: `review/app-only-no-system-server-20261022`, based on `master@4039cecaec7fb63d56a28f6f7191e3cb590f6f95`. Focused ready-for-review PR; no merge or public release authorized. See [audit, upstream pin, feature/process matrix and rollback](docs/APP_ONLY_REVIEW_2026-10-22.md).
+Branch: `review/app-only-no-system-server-20261022`, based on `master@4039cecaec7fb63d56a28f6f7191e3cb590f6f95`. Ready-for-review PR [#96](https://github.com/igorcv88/WaEnhancerXCommunity/pull/96); no merge or public release authorized. See [audit, upstream pin, feature/process matrix and rollback](docs/APP_ONLY_REVIEW_2026-10-22.md).
 
 Removed ScopeHook, unused AndroidPermissions, downgrade Patch, AntiUpdater, BridgeClient/BridgeService, HookBL and AntiWa. Added a positive entrypoint allowlist and fixed companion scope to `com.waenhancer.community`. ProviderClient calls the UID-gated module provider directly, shares pending connections, rejects late timeout results and avoids automatic restart loops. HookBinder now authenticates each transaction. Removed global zygote diagnostic properties and their status readers; live self-hook stays authoritative. Spoof controls/search removed; original stored settings/secrets, migrations and public/private schema retained. Core WhatsApp feature hooks were preserved.
 
