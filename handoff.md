@@ -2,7 +2,23 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — constrain bridge capabilities and restore Knox Matrix parity, 2026-10-22
+## Current task — import user-selected emoji TTF for WhatsApp, 2026-10-22
+
+Branch `feat/user-selected-whatsapp-emoji-font`, based on `master@299fd5c93faef1d1236f6d20cd1c9d0a579c4682`. Review-ready PR [#97](https://github.com/igorcv88/WaEnhancerXCommunity/pull/97), initial remote head `dd490db2af435e3def932987fd8ac4bb74bf3ab8` (the PR handoff follow-up changes that head). No related open PR was listed at the start. No merge, workflow dispatch, or phone installation performed.
+
+Background: One UI 9 FlipFont/ScamsungFonts can display Apple-style glyphs in most fields; WhatsApp still displays its own emoji shapes before sending. In the previous WaEnhancer implementation, `disable_defEmojis()` intercepted a broad set of `ReplacementSpan`/`ImageSpan` draw methods and called `canvas.drawText` with the original WhatsApp `Paint`. The enabled toggle did not prove the hook installed or that a custom typeface had been selected.
+
+Changes in this branch:
+- A companion-owned color-emoji TTF picker in Conversation settings, also reachable from the embedded settings interfaces. Import uses Android's document picker, bounded 128 MB copying, SFNT directory checks, Android `Typeface` validation, and atomic replacement in a private fixed path. Choose/remove are explicit actions; imported artwork is never committed or bundled.
+- A dedicated, UID-authenticated, read-only `openEmojiFont()` Binder method with no path argument. Existing generic file access remains restricted to shared-storage media/theme paths.
+- The emoji span hook starts a one-time asynchronous typeface load, clones `Paint` for emoji-only spans, includes inherited Android `DynamicDrawableSpan.draw`, skips non-emoji spans and fails closed when a resolver or draw fails. One-time diagnostics log install count, font availability and first intercepted draw without message content.
+- Preference XML, raw embedded settings map, activity manifest, strings, schema metadata, architecture and JUnit tests updated.
+
+Local validation: 8 pure-Java JUnit tests pass on Temurin JDK 21, including optional validation against the user's 42 MB `iOS18.4.ttf`; five changed XML documents parse; embedded settings JSON parses; `git diff --check` passes. Full Android Gradle suite/APK build has **not** passed here: Gradle 8.14.5 is available but this container lacks the Android SDK and initially had only JRE 17. Do not present these tests as an APK/physical success.
+
+Physical acceptance steps (after an Android build): install APK, select `iOS18.4.ttf` from the module app's Conversation settings, leave **Disable Default Emojis** on, force-stop/reopen WhatsApp, compare `😍 🫩 ❤️ 🇧🇷 🧑🏽‍⚕️` before sending, in outgoing/incoming bubbles, captions, and reactions. Inspect LSPosed log entries prefixed `[WAEX][EmojiFont]`. `fontLoaded=false` or an import/bridge exception means the custom typeface is not available; `customTypeface=false` on the *first draw* alone may merely mean asynchronous loading has not finished. An installed hook count with no first draw means the installed WhatsApp build likely uses another rendering path. These cases require a targeted follow-up and must not be called fully compatible. Verify non-emoji spans, composer typography, app restart and WhatsApp Business separately. No Google Play Services or system_server hooks, font systemless mount, or external root module is added.
+
+## Previous task — constrain bridge capabilities and restore Knox Matrix parity, 2026-10-22
 
 Branch `review/app-only-no-system-server-20261022`, PR [#96](https://github.com/igorcv88/WaEnhancerXCommunity/pull/96), security follow-up based on head `887b659db1a82c56361be14b1625765ca3b1a8ee`. No merge/public release/phone installation authorized. See [the app-only audit and follow-up](docs/APP_ONLY_REVIEW_2026-10-22.md).
 

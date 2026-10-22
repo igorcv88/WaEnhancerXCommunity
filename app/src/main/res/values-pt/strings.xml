@@ -221,6 +221,16 @@
     <string name="android_version">Versão do sistema (API)</string>
     <string name="message_removed_on">Mensagem apagada em %s</string>
     <string name="disable_default_emojis">Desativar emojis padrão</string>
+    <string name="custom_emoji_font_title">Fonte de emojis personalizada do WhatsApp</string>
+    <string name="custom_emoji_font_explanation">Selecione um arquivo TTF com emojis coloridos. A fonte fica armazenada na área privada do WaEnhancer e é usada no WhatsApp quando a opção Desativar emojis padrão está ativada. Reinicie o WhatsApp após trocar a fonte. Não exige módulo root adicional.</string>
+    <string name="custom_emoji_font_choose">Selecionar arquivo TTF</string>
+    <string name="custom_emoji_font_remove">Remover fonte importada</string>
+    <string name="custom_emoji_font_remove_confirmation">Remover a cópia privada da fonte? O arquivo original não será apagado.</string>
+    <string name="custom_emoji_font_remove_failed">Não foi possível remover a fonte importada.</string>
+    <string name="custom_emoji_font_selected">Selecionada: %1$s</string>
+    <string name="custom_emoji_font_not_selected">Nenhuma fonte personalizada selecionada</string>
+    <string name="custom_emoji_font_imported">Fonte importada. Reinicie o WhatsApp para aplicar.</string>
+    <string name="custom_emoji_font_import_failed">Falha ao importar a fonte: %1$s</string>
     <string name="theme_mode"> Tema escuro WaEnhancer Community</string>
     <string name="theme_mode_sum">Selecione um modo de tema no WaEnhancer Community</string>
     <string name="disable_default_emojis_sum">Desative os emojis padrão do Whatsapp e use emojis do sistema.\n(OBSERVAÇÃO: Os emojis do WhatsApp desaparecerão do seletor, use o teclado para inserir)</string>

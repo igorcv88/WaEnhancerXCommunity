@@ -36,6 +36,10 @@ public class SecurityHarness {
   deny(()->new BridgeFilePolicy(root,secret.getParentFile(),themes,"").file(secret.getParent()+"/WhatsApp/Profile Photo/x.jpg",true));
   Context c=new Context();c.pm.owned=new String[]{"com.whatsapp"};Binder.uid=10001;var prefs=PreferenceStores.publicStore(c);prefs.edit().putString("wallpaper_file",image.getPath()).commit();var bridge=HookBinder.getInstance(c);
   try(var fd=bridge.openFile(image.getPath(),false)){check(fd!=null);check((android.system.Os.lastFlags&3)==android.system.OsConstants.O_RDONLY);}
+  File emoji=EmojiFontStore.fontFile(c);emoji.getParentFile().mkdirs();Files.writeString(emoji.toPath(),"fixture-font");
+  try(var fd=bridge.openEmojiFont()){check(fd!=null);check((android.system.Os.lastFlags&3)==android.system.OsConstants.O_RDONLY);check((android.system.Os.lastFlags&android.system.OsConstants.O_NOFOLLOW)!=0);}
+  Files.delete(emoji.toPath());Files.createSymbolicLink(emoji.toPath(),secret.toPath());check(bridge.openEmojiFont()==null);Files.delete(emoji.toPath());
+  check(bridge.openEmojiFont()==null);check(android.system.Os.openCount()==0);
   try(var fd=bridge.openFile(output,true)){check(fd!=null);check((android.system.Os.lastFlags&3)==android.system.OsConstants.O_WRONLY);}
   deny(()->bridge.openFile(secret.getPath(),false));deny(()->bridge.openFile(secret.getPath(),true));deny(()->bridge.createDir(secret.getParent()));deny(()->bridge.listFiles(themes.getPath()));
   int truncates=android.system.Os.truncates;android.system.Os.forcedPath=secret.getPath();deny(()->bridge.openFile(output,true));android.system.Os.forcedPath=null;check(android.system.Os.truncates==truncates);check(Files.readString(secret.toPath()).equals("secret"));check(android.system.Os.openCount()==0);
@@ -62,7 +66,7 @@ public class SecurityHarness {
   provider.call("put_preference",null,put("wallpaper","boolean",false));provider.call("put_preference",null,put("wallpaper","boolean",true));provider.call("put_preference",null,put("wallpaper","boolean",false));
   Thread.sleep(550);check(!deferred.getBoolean("wallpaper",true));
   Binder.uid=2000;c.pm.owned=null;check(provider.call("get_all_preferences",null,null)==null);
-  System.out.println("PASS: canonical path/type capabilities, private paths/databases/traversal/symlink/prefix rejection, read-only image and write-only media FDs, post-open race rejection before truncate, all "+tested+" private schema keys reject write/remove, strict public types, private/secret enumeration denied, deferred cold-start failure retries, settings reload, companion loss and recovery");
+  System.out.println("PASS: canonical path/type capabilities, private paths/databases/traversal/symlink/prefix rejection, read-only image and user-selected emoji font FDs, write-only media FDs, post-open race rejection before truncate, all "+tested+" private schema keys reject write/remove, strict public types, private/secret enumeration denied, deferred cold-start failure retries, settings reload, companion loss and recovery");
  }
 }'''
 }

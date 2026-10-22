@@ -524,6 +524,14 @@
               "summary": "Disables Whatsapp\\'s default emojis and uses system emojis\n(NOTE: Whatsapp emojis will disappear from the selector, use the keyboard to insert)."
             },
             {
+              "key": "custom_emoji_font_picker",
+              "type": "action",
+              "value_type": "string",
+              "default": null,
+              "title": "Custom WhatsApp emoji font",
+              "summary": "Import a color emoji TTF in WaEnhancer; restart WhatsApp to apply it."
+            },
+            {
               "key": "stamp_copied_message",
               "type": "switch",
               "value_type": "boolean",

@@ -146,6 +146,8 @@ public final class PreferenceSchema {
         add(entries, "deleted_message_color", Type.INT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "disable_ads", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "disable_defemojis", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        // The font itself lives in private files; the label is local metadata, not a hook setting.
+        add(entries, "user_emoji_font_name", Type.STRING, Sensitivity.CACHE, Store.PRIVATE);
         add(entries, "disable_expiration", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "disable_profile_status", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "disable_sensor_proximity", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);

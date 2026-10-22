@@ -8,6 +8,7 @@ import android.system.Os;
 import android.system.OsConstants;
 
 import com.waenhancer.config.PreferenceStores;
+import com.waenhancer.config.EmojiFontStore;
 import com.waenhancer.security.BridgeFilePolicy;
 import com.waenhancer.security.CallerAuthority;
 import com.waenhancer.xposed.bridge.WaeIIFace;
@@ -90,5 +91,23 @@ public class HookBinder extends WaeIIFace.Stub {
         enforceCaller();
         // There are no file-bridge enumeration consumers. Retain the ABI but grant no capability.
         throw new SecurityException("File enumeration is not a bridge capability");
+    }
+
+    @Override
+    public ParcelFileDescriptor openEmojiFont() throws RemoteException {
+        enforceCaller();
+        File target = EmojiFontStore.fontFile(context);
+        FileDescriptor descriptor = null;
+        try {
+            // Dedicated capability: no path argument, no write mode, no directory enumeration.
+            descriptor = Os.open(target.getAbsolutePath(), OsConstants.O_RDONLY
+                    | OsConstants.O_NOFOLLOW | OsConstants.O_CLOEXEC, 0);
+            if (!OsConstants.S_ISREG(Os.fstat(descriptor).st_mode)) return null;
+            return ParcelFileDescriptor.dup(descriptor);
+        } catch (Exception unavailable) {
+            return null;
+        } finally {
+            if (descriptor != null) try { Os.close(descriptor); } catch (Exception ignored) {}
+        }
     }
 }
