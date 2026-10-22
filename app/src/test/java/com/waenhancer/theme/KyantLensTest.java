@@ -36,7 +36,7 @@ public class KyantLensTest {
         assertTrue(KyantLens.circleMap(h / 2f, h) < 0.14f);
     }
 
-    /** createBlurEffect's radius is chosen so Skia's sigma equals miuix's blur(4dp) sigma. */
+    /** createBlurEffect's radius is chosen so Skia's sigma equals miuix's blur(10dp) sigma. */
     @Test
     public void blurRadiusMatchesMiuixSigma() {
         for (float density : new float[]{1f, 2f, 2.75f, 3.5f}) {
@@ -47,15 +47,15 @@ public class KyantLensTest {
         }
     }
 
-    /** The slider's Liquid position gives OneMate's 40%; the ends are clamped. */
+    /** The slider's Liquid position gives the neutral 18% wash; the ends are clamped. */
     @Test
-    public void opacityMapsAroundFortyPercent() {
-        assertEquals(0.40f, KyantLens.surfaceAlpha(10f, 10), 1e-6f);
-        assertEquals(0.65f, KyantLens.surfaceAlpha(35f, 10), 1e-6f);
+    public void opacityMapsAroundEighteenPercent() {
+        assertEquals(0.18f, KyantLens.surfaceAlpha(10f, 10), 1e-6f);
+        assertEquals(0.43f, KyantLens.surfaceAlpha(35f, 10), 1e-6f);
         assertEquals(KyantLens.SURFACE_ALPHA_MAX, KyantLens.surfaceAlpha(100f, 10), 1e-6f);
         assertEquals(KyantLens.SURFACE_ALPHA_MIN, KyantLens.surfaceAlpha(-100f, 10), 1e-6f);
         KyantLens.publishOpacity(10f, 10);
-        assertEquals(102, KyantLens.surfaceAlpha255());
+        assertEquals(46, KyantLens.surfaceAlpha255());
     }
 
     @Test
@@ -68,7 +68,7 @@ public class KyantLensTest {
         assertTrue(KyantLens.LIGHT_PRIMARY_BAR[0] < 0f && KyantLens.LIGHT_PRIMARY_BAR[1] < 0f);
     }
 
-    /** App surfaces: the band never reaches past the middle, the tint keeps the surface's hue. */
+    /** App surfaces: the band never reaches past the middle, the wash does not add a hue. */
     @Test
     public void surfaceParamsFollowTheRecipe() {
         GlassSpec spec = GlassSpec.resolve(GlassSpec.Variant.LIQUID, true, 0, 0xFF25D366, 10f,
@@ -80,12 +80,31 @@ public class KyantLensTest {
         KyantLens.Params small = KyantLens.surface(spec, 100, density, 102);
         assertEquals(50f, small.refractHeight, 1e-4f);
         assertEquals(102, small.tint >>> 24);
-        assertEquals(spec.fillColor & 0xFFFFFF, small.tint & 0xFFFFFF);
-        assertEquals(1.5f, small.saturation, 0f);
+        assertEquals(0, small.tint & 0xFFFFFF);
+        assertEquals(0f, small.strokeAlpha, 0f);
+        assertEquals(1f, small.saturation, 0f);
         assertEquals(0f, small.depth, 0f);
         assertEquals(0f, small.chroma, 0f);
         assertEquals(KyantLens.HIGHLIGHT_ALPHA, small.highlight, 0f);
         assertEquals(0f, small.shadowAlpha, 0f);
+    }
+
+    /** Theme and sampled accent colours must not become a pigment in live glass. */
+    @Test
+    public void surfaceWashIsNeutralAcrossThemesAndAdaptedBackdrops() {
+        for (boolean dark : new boolean[]{true, false}) {
+            for (int hue : new int[]{0xFF1F2C34, 0xFF25D366, 0xFF3366FF}) {
+                GlassSpec spec = GlassSpec.resolve(GlassSpec.Variant.LIQUID, dark,
+                        hue, hue, 10f, true, false).adaptTo(hue, dark);
+                KyantLens.Params p = KyantLens.surface(spec, 100, 2.75f, 46);
+                int rgb = p.tint & 0xFFFFFF;
+                assertTrue(rgb == 0 || rgb == 0xFFFFFF);
+                assertEquals(46, p.tint >>> 24);
+                assertEquals(1f, p.saturation, 0f);
+                assertEquals(0f, p.strokeAlpha, 0f);
+                assertEquals(KyantLens.blurRadiusPx(2.75f), p.blurRadius, 0f);
+            }
+        }
     }
 
     /** At rest the bubble is a translucent wash; pressed it is a lens with depth, dispersion and shadow. */
