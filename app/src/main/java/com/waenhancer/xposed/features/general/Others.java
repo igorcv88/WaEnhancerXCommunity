@@ -101,6 +101,10 @@ public class Others extends Feature {
             new java.util.concurrent.atomic.AtomicBoolean();
     private static final java.util.concurrent.atomic.AtomicBoolean firstEmojiDrawFailureLogged =
             new java.util.concurrent.atomic.AtomicBoolean();
+    private static final java.util.concurrent.atomic.AtomicBoolean firstEmojiSpanBypassLogged =
+            new java.util.concurrent.atomic.AtomicBoolean();
+    private static final java.util.concurrent.atomic.AtomicInteger emojiSpanCandidatesLogged =
+            new java.util.concurrent.atomic.AtomicInteger();
 
     public static ConcurrentHashMap<Integer, Boolean> propsBoolean = new ConcurrentHashMap<>();
     public static ConcurrentHashMap<Integer, Integer> propsInteger = new ConcurrentHashMap<>();
@@ -1519,6 +1523,67 @@ public class Others extends Feature {
         }
         XposedBridge.log("[WAEX][EmojiFont] installedDrawHooks=" + hookCount
                 + " spanClasses=" + (spanClasses == null ? 0 : spanClasses.length));
+        XposedBridge.log("[WAEX][EmojiFont] installedSpanHooks="
+                + installEmojiSpanBypass(customTypeface));
+    }
+
+    private int installEmojiSpanBypass(
+            java.util.concurrent.atomic.AtomicReference<android.graphics.Typeface> selectedTypeface) {
+        int count = 0;
+        XC_MethodHook intercept = new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) {
+                if (param.args.length != 4
+                        || !(param.args[0] instanceof android.text.style.ReplacementSpan)
+                        || !(param.thisObject instanceof android.text.Spannable)) return;
+                android.text.Spannable editable = (android.text.Spannable) param.thisObject;
+                int start = (int) param.args[1];
+                int end = (int) param.args[2];
+                boolean emojiOnly = EmojiSpanText.isEmojiOnly(editable, start, end);
+                int sample = emojiSpanCandidatesLogged.getAndIncrement();
+                if (sample < 6) {
+                    // Only class names and span lengths; never log user message contents.
+                    XposedBridge.log("[WAEX][EmojiFont] replacementSpanCandidate="
+                            + param.args[0].getClass().getName()
+                            + " length=" + (end - start) + " emojiOnly=" + emojiOnly);
+                }
+                android.graphics.Typeface font = selectedTypeface.get();
+                if (!emojiOnly || font == null) return;
+                try {
+                    // WhatsApp can attach its bitmap span after initially drawing Apple glyphs.
+                    // Suppress only emoji ranges; let Android shape them with the selected TTF.
+                    param.setResult(null);
+                    editable.setSpan(new android.text.style.TypefaceSpan(font), start, end,
+                            (int) param.args[3]);
+                    if (firstEmojiSpanBypassLogged.compareAndSet(false, true)) {
+                        XposedBridge.log("[WAEX][EmojiFont] First emoji replacement span bypassed");
+                    }
+                } catch (Throwable failed) {
+                    if (firstEmojiDrawFailureLogged.compareAndSet(false, true)) {
+                        XposedBridge.log("[WAEX][EmojiFont] Span bypass failed: "
+                                + failed.getClass().getSimpleName());
+                    }
+                }
+            }
+        };
+        try {
+            XposedBridge.hookMethod(android.text.SpannableStringBuilder.class.getDeclaredMethod(
+                    "setSpan", Object.class, int.class, int.class, int.class), intercept);
+            count++;
+        } catch (Throwable failed) {
+            XposedBridge.log("[WAEX][EmojiFont] Mutable span hook unavailable: "
+                    + failed.getClass().getSimpleName());
+        }
+        try {
+            // SpannableString inherits its implementation from SpannableStringInternal.
+            XposedBridge.hookMethod(android.text.SpannableString.class.getMethod(
+                    "setSpan", Object.class, int.class, int.class, int.class), intercept);
+            count++;
+        } catch (Throwable failed) {
+            XposedBridge.log("[WAEX][EmojiFont] Immutable span hook unavailable: "
+                    + failed.getClass().getSimpleName());
+        }
+        return count;
     }
 
     private void hookEmojiDrawMethod(Method method,
