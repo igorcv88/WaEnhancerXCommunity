@@ -34,7 +34,7 @@ STUBS = {
 'com/waenhancer/config/NspPreferenceMigration.java': '''package com.waenhancer.config; public class NspPreferenceMigration {public static void restoreIfNeeded(android.content.Context c){}}''',
 'com/waenhancer/xposed/utils/Utils.java': '''package com.waenhancer.xposed.utils; public class Utils {public static boolean DEBUG=false;static{de.robv.android.xposed.XposedBridge.helpers++;}}''',
 'com/waenhancer/xposed/utils/XResManager.java': '''package com.waenhancer.xposed.utils; public class XResManager {public static Object moduleResources,hostResources;public static java.util.Set<Integer> validModuleIds=new java.util.HashSet<>();public static int getHostId(int i){return i;}}''',
-'com/waenhancer/xposed/bridge/client/DeferredProviderSharedPreferences.java': '''package com.waenhancer.xposed.bridge.client; public class DeferredProviderSharedPreferences {}''',
+
 'com/waenhancer/xposed/core/FeatureLoader.java': '''package com.waenhancer.xposed.core; public class FeatureLoader {public static final String PACKAGE_WPP="com.whatsapp",PACKAGE_BUSINESS="com.whatsapp.w4b";public static int starts;public static void start(ClassLoader l,Object p,String path){starts++;}}''',
 'com/waenhancer/xposed/bridge/WaeIIFace.java': '''package com.waenhancer.xposed.bridge; public interface WaeIIFace {android.os.IBinder asBinder(); abstract class Stub implements WaeIIFace,android.os.IBinder {public static WaeIIFace asInterface(android.os.IBinder b){return (WaeIIFace)b;} public android.os.IBinder asBinder(){return this;}public boolean pingBinder(){return true;} public android.os.ParcelFileDescriptor openFile(String p,boolean c)throws android.os.RemoteException{return null;} public boolean createDir(String p)throws android.os.RemoteException{return false;}public java.util.List listFiles(String p)throws android.os.RemoteException{return null;}}}''',
 'de/robv/android/xposed/XposedBridge.java': '''package de.robv.android.xposed;public class XposedBridge {public static int hooks,helpers;public static void log(Object m){}public static int getXposedVersion(){return 100;}}''',
@@ -78,6 +78,16 @@ public class Harness {
 }
 
 
+from bridge_security_stubs import STUBS as SECURITY_STUBS
+STUBS.update(SECURITY_STUBS)
+STUBS['com/waenhancer/xposed/utils/Utils.java'] = STUBS['com/waenhancer/xposed/utils/Utils.java'].replace('public static boolean DEBUG', 'public static void log(String s){} public static boolean DEBUG')
+STUBS['android/content/ContentResolver.java'] = STUBS['android/content/ContentResolver.java'].replace('public volatile int calls;', 'public void notifyChange(android.net.Uri u,Object o){} public void registerContentObserver(android.net.Uri u,boolean d,android.database.ContentObserver o){} public volatile int calls;')
+STUBS['com/waenhancer/xposed/core/FeatureLoader.java'] = STUBS['com/waenhancer/xposed/core/FeatureLoader.java'].replace('public static int starts;', 'public static android.app.Application mApp; public static int starts;')
+STUBS['android/content/ContentResolver.java'] = STUBS['android/content/ContentResolver.java'].replace('public volatile int calls;', 'public android.content.ContentProvider provider;public boolean unavailable;public volatile int calls;').replace('calls++;', 'calls++;if(unavailable)return null;if(provider!=null)return provider.call(m,a,b);')
+STUBS['android/content/ContentResolver.java'] = STUBS['android/content/ContentResolver.java'].replace('public void notifyChange(android.net.Uri u,Object o){}', 'public final java.util.List<android.database.ContentObserver> observers=new java.util.ArrayList<>();public void notifyChange(android.net.Uri u,Object o){for(var observer:observers)observer.onChange(false);}') .replace('public void registerContentObserver(android.net.Uri u,boolean d,android.database.ContentObserver o){}', 'public void registerContentObserver(android.net.Uri u,boolean d,android.database.ContentObserver o){if(unavailable)throw new SecurityException();observers.add(o);}')
+STUBS['Harness.java'] = STUBS['Harness.java'].replace('check(binder.listFiles("/absent")!=null);', 'check(binder.createDir(new java.io.File(android.os.Environment.getExternalStoragePublicDirectory("Download"), "WhatsApp/Profile Photo").getPath()));')
+
+
 class Runtime(unittest.TestCase):
     def test_actual_entrypoint_and_ipc(self):
         with tempfile.TemporaryDirectory() as td:
@@ -87,10 +97,15 @@ class Runtime(unittest.TestCase):
                 p=tmp/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(source);files.append(str(p))
             for name in ('AppOnlyScope.java','WppXposed.java','security/CallerAuthority.java',
                          'xposed/bridge/service/HookBinder.java','xposed/bridge/client/BaseClient.java',
-                         'xposed/bridge/client/ProviderClient.java'):
+                         'xposed/bridge/client/ProviderClient.java','config/PreferenceSchema.java',
+                         'security/BridgeFilePolicy.java','security/BridgePreferencePolicy.java',
+                         'xposed/bridge/providers/HookProvider.java',
+                         'xposed/bridge/client/ProviderSharedPreferences.java',
+                         'xposed/bridge/client/DeferredProviderSharedPreferences.java'):
                 files.append(str(JAVA/'com/waenhancer'/name))
             subprocess.run(['java','com.sun.tools.javac.Main','-d',str(tmp/'classes'),*files],check=True)
-            subprocess.run(['java','-cp',str(tmp/'classes'),'Harness'],check=True,timeout=15)
+            for harness in ('Harness','SecurityHarness'):
+                subprocess.run(['java','-Dwaex.testRoot='+str(tmp/'shared'),'-cp',str(tmp/'classes'),harness],check=True,timeout=15)
 
     def test_all_resource_qualifiers_and_manifest(self):
         found=0
@@ -103,6 +118,24 @@ class Runtime(unittest.TestCase):
         app=ET.parse(ROOT/'app/src/main/AndroidManifest.xml').find('application')
         self.assertEqual('true',app.get(ns+'forceQueryable'))
         self.assertFalse(any('BridgeService' in e.get(ns+'name','') for e in app.findall('service')))
+
+    def test_injected_settings_map_has_no_removed_controls(self):
+        import json
+        source=(ROOT/'app/src/main/res/raw/waex_settings_map.json').read_text()
+        json.loads(source)
+        self.assertNotIn('bootloader_spoofer',source)
+        renderer=(JAVA/'com/waenhancer/xposed/features/others/WdsSettingsTileRenderer.java').read_text()
+        self.assertIn('BridgePreferencePolicy.requiresCompanion(key)',renderer)
+        import re
+        schema=dict(re.findall(r'add\(entries, "([^"]+)", Type\.(\w+)',(JAVA/'com/waenhancer/config/PreferenceSchema.java').read_text()))
+        def walk(value):
+            if isinstance(value,dict):
+                if value.get('key') in schema and value.get('value_type'):
+                    self.assertEqual(schema[value['key']],value['value_type'].upper(),value['key'])
+                for child in value.values(): walk(child)
+            elif isinstance(value,list):
+                for child in value: walk(child)
+        walk(json.loads(source))
 
     def test_removed_implementations_and_zygote_markers(self):
         s=(JAVA/'com/waenhancer/WppXposed.java').read_text()

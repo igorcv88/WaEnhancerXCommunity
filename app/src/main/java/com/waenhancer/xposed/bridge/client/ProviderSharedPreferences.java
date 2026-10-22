@@ -29,6 +29,16 @@ public class ProviderSharedPreferences implements SharedPreferences {
     private static final String AUTHORITY_SUFFIX = ".hookprovider";
 
     private final SharedPreferences fallbackPrefs;
+    private volatile boolean hydrated;
+    private volatile boolean observerRegistered;
+    private volatile long lastObserverAttempt;
+
+    private void ensureHydrated() {
+        if (!hydrated) hydrateFromProvider();
+        if (!observerRegistered && System.nanoTime() / 1_000_000 - lastObserverAttempt >= 500) {
+            registerObserver();
+        }
+    }
 
     public ProviderSharedPreferences(Context context, SharedPreferences localPrefs, SharedPreferences fallbackPrefs) {
         ;
@@ -47,7 +57,9 @@ public class ProviderSharedPreferences implements SharedPreferences {
         }
     }
 
-    private void registerObserver() {
+    private synchronized void registerObserver() {
+        if (observerRegistered) return;
+        lastObserverAttempt = System.nanoTime() / 1_000_000;
         String authority = BuildConfig.APPLICATION_ID + AUTHORITY_SUFFIX;
         try {
             ;
@@ -55,19 +67,15 @@ public class ProviderSharedPreferences implements SharedPreferences {
                     Uri.parse("content://" + authority + "/preferences"),
                     true,
                     new android.database.ContentObserver(new android.os.Handler(android.os.Looper.getMainLooper())) {
-                        private long lastHydration = 0;
                         @Override
                         public void onChange(boolean selfChange) {
-                            long now = System.currentTimeMillis();
-                            if (now - lastHydration > 500) {
-                                lastHydration = now;
-                                ;
-                                hydrateFromProvider();
-                            }
+                            // Preserve invalidation even if a burst is throttled. The next read
+                            // retries instead of leaving the last notification permanently stale.
+                            invalidateAndHydrate();
                         }
                     }
             );
-            ;
+            observerRegistered = true;
         } catch (Throwable e) {
             Utils.log("[WAEX] ProviderSharedPreferences: Failed to register observer: " + e.getMessage());
             // No legacy-authority fallback: "com.waenhancer.hookprovider" belongs to the upstream
@@ -77,11 +85,12 @@ public class ProviderSharedPreferences implements SharedPreferences {
     }
 
     @Override
-    public Map<String, ?> getAll() { return localPrefs.getAll(); }
+    public Map<String, ?> getAll() { ensureHydrated(); return localPrefs.getAll(); }
 
     @Nullable
     @Override
     public String getString(String key, @Nullable String defValue) {
+        ensureHydrated();
         if (localPrefs.contains(key)) return localPrefs.getString(key, defValue);
         if (fallbackPrefs != null && fallbackPrefs.contains(key)) return fallbackPrefs.getString(key, defValue);
         try {
@@ -102,6 +111,7 @@ public class ProviderSharedPreferences implements SharedPreferences {
     @Nullable
     @Override
     public Set<String> getStringSet(String key, @Nullable Set<String> defValues) {
+        ensureHydrated();
         if (localPrefs.contains(key)) return localPrefs.getStringSet(key, defValues);
         if (fallbackPrefs != null && fallbackPrefs.contains(key)) return fallbackPrefs.getStringSet(key, defValues);
         return localPrefs.getStringSet(key, defValues);
@@ -109,6 +119,7 @@ public class ProviderSharedPreferences implements SharedPreferences {
 
     @Override
     public int getInt(String key, int defValue) {
+        ensureHydrated();
         if (localPrefs.contains(key)) return localPrefs.getInt(key, defValue);
         if (fallbackPrefs != null && fallbackPrefs.contains(key)) return fallbackPrefs.getInt(key, defValue);
         return localPrefs.getInt(key, defValue);
@@ -116,6 +127,7 @@ public class ProviderSharedPreferences implements SharedPreferences {
 
     @Override
     public long getLong(String key, long defValue) {
+        ensureHydrated();
         if (localPrefs.contains(key)) return localPrefs.getLong(key, defValue);
         if (fallbackPrefs != null && fallbackPrefs.contains(key)) return fallbackPrefs.getLong(key, defValue);
         return localPrefs.getLong(key, defValue);
@@ -123,6 +135,7 @@ public class ProviderSharedPreferences implements SharedPreferences {
 
     @Override
     public float getFloat(String key, float defValue) {
+        ensureHydrated();
         if (localPrefs.contains(key)) return localPrefs.getFloat(key, defValue);
         if (fallbackPrefs != null && fallbackPrefs.contains(key)) return fallbackPrefs.getFloat(key, defValue);
         try {
@@ -141,6 +154,7 @@ public class ProviderSharedPreferences implements SharedPreferences {
 
     @Override
     public boolean getBoolean(String key, boolean defValue) {
+        ensureHydrated();
         if (localPrefs.contains(key)) return localPrefs.getBoolean(key, defValue);
         if (fallbackPrefs != null && fallbackPrefs.contains(key)) return fallbackPrefs.getBoolean(key, defValue);
         return localPrefs.getBoolean(key, defValue);
@@ -148,11 +162,16 @@ public class ProviderSharedPreferences implements SharedPreferences {
 
     @Override
     public boolean contains(String key) {
+        ensureHydrated();
         return localPrefs.contains(key) || (fallbackPrefs != null && fallbackPrefs.contains(key));
     }
 
     public void reload() {
-        ;
+        invalidateAndHydrate();
+    }
+
+    private synchronized void invalidateAndHydrate() {
+        hydrated = false;
         hydrateFromProvider();
     }
 
@@ -174,13 +193,14 @@ public class ProviderSharedPreferences implements SharedPreferences {
     private long lastHydrationTime = 0;
 
     @SuppressWarnings("unchecked")
-    private void hydrateFromProvider() {
-        long now = System.currentTimeMillis();
-        if (now - lastHydrationTime < 500) {
+    private synchronized void hydrateFromProvider() {
+        long now = System.nanoTime() / 1_000_000;
+        if (lastHydrationTime != 0 && now - lastHydrationTime < 500) {
             // Skip rapid re-hydration to avoid loops
             return;
         }
         lastHydrationTime = now;
+        hydrated = false;
         try {
             ;
             Bundle result = callProvider("get_all_preferences", null);
@@ -253,8 +273,7 @@ public class ProviderSharedPreferences implements SharedPreferences {
                     }
                 }
             }
-            editor.commit();
-            ;
+            hydrated = editor.commit();
         } catch (Exception e) {
             android.util.Log.e("WAEX", "Hydration failed with exception: " + e.getMessage(), e);
         }
