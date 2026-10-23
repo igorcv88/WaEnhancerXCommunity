@@ -18,19 +18,27 @@ def smoothstep(lo, hi, x):
     t = np.clip((x-lo)/(hi-lo), 0, 1)
     return t*t*(3-2*t)
 
-def render(rgb, dark=False, alpha=1., depth=0., light=0., density=2.75):
+def render(rgb, dark=False, alpha=1., depth=0., light=0., density=2.75, contour_gain=1., stroke_scale=1.):
     rgb = np.array(rgb, dtype=float)
     body = (rgb*.82 if dark else rgb*.82+.18)*alpha
     t = min(depth/(4*density), 1.)
     env = dict(transmitted=rgb, body=body.copy(), alpha=alpha, depth=depth,
                light=light, envelope=16*t*t*(1-t)*(1-t), uHighlight=.32,
-               uStrokeW=density, dot=np.dot, float3=lambda *v: np.array(v[0] if len(v)==1 else v),
+               uStrokeW=density*stroke_scale, uContourGain=contour_gain, dot=np.dot, float3=lambda *v: np.array(v[0] if len(v)==1 else v),
                mix=lambda a,b,t:a*(1-t)+b*t, clamp=np.clip, max=np.maximum,
                exp=np.exp, smoothstep=smoothstep)
     exec(CODE, {'__builtins__': {}}, env)
     return body, env['body']
 
 class RimContrastTest(unittest.TestCase):
+    def test_app_contour_is_stronger_without_lifting_body(self):
+        for y, dark in ((0., True), (.05, True), (1., False)):
+            body, bar = render([y]*3, dark=dark)
+            _, app = render([y]*3, dark=dark, contour_gain=1.8, stroke_scale=1.25)
+            self.assertGreater(abs(app[0]-body[0]), abs(bar[0]-body[0])*1.6)
+            inner, out = render([y]*3, dark=dark, depth=30., contour_gain=1.8, stroke_scale=1.25)
+            np.testing.assert_allclose(inner, out, atol=1e-12)
+
     def test_white_and_near_white_keep_visible_contour_in_light_theme(self):
         for y in (.9, .95, 1.):
             for light in (0., .5, 1.4):

@@ -284,7 +284,7 @@ final class LiveBackdrop {
      */
     private boolean captureOneMate(int width, int height, float radiusPx, float density,
                                    GlassSpec spec, Painter painter) {
-        int padding = KyantLens.padding(density);
+        int padding = KyantLens.appPadding(density);
         Layout layout = new Layout(width, height, padding, true);
         node.setPosition(0, 0, layout.nodeWidth, layout.nodeHeight);
         RecordingCanvas canvas = node.beginRecording(layout.nodeWidth, layout.nodeHeight);
@@ -310,7 +310,7 @@ final class LiveBackdrop {
             glassNode.endRecording();
         }
         if (oneMate == null) oneMate = new KyantLens();
-        KyantLens.Params params = KyantLens.surface(spec, height, density, KyantLens.surfaceAlpha255());
+        KyantLens.Params params = KyantLens.appSurface(spec, height, density, KyantLens.surfaceAlpha255());
         boolean changed = oneMate.update(params, width, height, radiusPx, padding, padding);
         if (oneMate.effect() == null) {
             // Refused program: the next capture takes the classic path (KyantLens.isAvailable()).

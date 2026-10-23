@@ -78,7 +78,7 @@ public final class LiveBudget {
 
     /** Margin the recording carries, as {@link LiveBackdrop} computes it. */
     public static int padding(GlassOptics optics, GlassSpec spec, float density) {
-        if (optics.oneMate && KyantLens.isAvailable()) return KyantLens.padding(density);
+        if (optics.oneMate && KyantLens.isAvailable()) return KyantLens.appPadding(density);
         return optics.corrected && optics.filtering ? LensModel.padding(LensModel.sigmaPx(spec, density)) : 0;
     }
 

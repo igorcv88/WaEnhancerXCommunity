@@ -2,7 +2,22 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Current task — PR #99/#100 review follow-up, 2026-10-22
+## Current task — separate navbar, bubble and app-chrome calibration, 2026-10-22
+
+Branch `fix/app-glass-blur-and-rim-20261022`, based on `master@bf513f99`. Screenshot 80850 shows recognizable sticker structure behind the composer and a weak boundary. User requests stronger app-surface blur. Follow-up 6.28s video shows the animated bubble's contour much stronger than the bar's, superseding the earlier request to leave the navbar entirely unchanged. Filmstrip reviewed at 2fps. Do not attribute the difference to placebo or claim the wrong view was targeted: source shows recent surface changes reached `LiquidLens.applyOneMate` for the bar and `LiveBackdrop` for app chrome, while `LiquidBubble` used its separate original recipe. Actual runtime compilation/install is not proven by source inspection.
+
+Implemented three treatments:
+- Bar/GlassSurface view route: same 10dp blur and neutral body, contour gain 1.6, width 1.15dp (scroll button shares this route).
+- App chrome through LiveBackdrop (composer/header panes and drawable surfaces): 30dp blur, contour gain 1.8, width 1.25dp. Capture and LiveBudget both use appPadding. Same tint/saturation/refraction.
+- Animated bubble: existing highlight reduced from glass progress to 0.45 times glass progress. Geometry, refraction/chroma, shadow, selected-tab wash and motion unchanged.
+
+Gain participates in Params.key and is uploaded explicitly. No additional rendering pass or capture source, budget capacity, setting or animation change. Larger app blur carries larger padded work and can cost more GPU time. Large low-frequency colour fields can remain visible even at 30dp.
+
+Validation: six source-extracted numerical shader tests pass, including stronger app contour and unchanged interior. Java parameter tests updated for independent app/bar blur/padding and reduced bubble highlight; not run because the Android toolchain remains absent. A numerical comparison of shader default gain=1 against the old shader was exact for 1000 cases; this proves the uniform alone is neutral, not that the final bar profile remains unchanged (its gain is intentionally 1.6). Diff whitespace check passes. No APK, workflow dispatch, physical aesthetic acceptance or performance measurement.
+
+Next: build focused PR; compare bar at rest and bubble expanded in the same recording, verify less dominant bubble and more persistent full bar outline. Compare input over moving stickers/media with keyboard open/closed and in both themes. Review compilation and frame cost before claiming final acceptance.
+
+## Previous task — PR #99/#100 review follow-up, 2026-10-22
 
 Both PRs are merged in `master@6eacdc0a`. User explicitly authorizes corrections directly on the default branch. PR #99's completed review has no findings. PR #100 has one valid P2 (`discussion_r4353661876`): over a white light-theme body, the reflected target and body are both white, so max-only brightening cannot delimit the surface.
 

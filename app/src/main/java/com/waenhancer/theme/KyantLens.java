@@ -60,6 +60,7 @@ public final class KyantLens {
             + "uniform float uBloom;\n"
             + "uniform float uHighlight;\n"
             + "uniform float uStrokeA;\n"
+            + "uniform float uContourGain;\n"
             + "uniform float3 uLight1;\n"
             + "uniform float uLight1I;\n"
             + "uniform float3 uLight2;\n"
@@ -180,7 +181,7 @@ public final class KyantLens {
             + "        float sigma = max(uStrokeW * 0.65, 0.75);\n"
             + "        float contour = exp(-0.5 * depth * depth / (sigma * sigma));\n"
             + "        float contourGain = (0.10 + 0.16 * smoothstep(0.0, 0.75, luminance))\n"
-            + "                          * (0.85 + 0.15 * clamp(light, 0.0, 1.0));\n"
+            + "                          * (0.85 + 0.15 * clamp(light, 0.0, 1.0)) * uContourGain;\n"
             + "        float bevelGain = light * envelope * uHighlight * response;\n"
             + "        float reflection = clamp(contour * contourGain + bevelGain * 0.45, 0.0, 0.45);\n"
             + "        float3 reflected = mix(float3(1.0), transmitted, 0.15) * col.a;\n"
@@ -213,6 +214,7 @@ public final class KyantLens {
         float refractHeight, refractAmount, depth, chroma;
         int tint;
         float strokeWidth, bloom, highlight, strokeAlpha;
+        float contourGain = 1f;
         float l1x, l1y, l1z, l1i, l2x, l2y, l2z, l2i;
         float shadowRadius, shadowAlpha;
         float saturation, blurRadius;
@@ -222,7 +224,7 @@ public final class KyantLens {
                     + ":" + strokeWidth + ":" + bloom + ":" + highlight + ":" + strokeAlpha
                     + ":" + l1x + ":" + l1y + ":" + l1z + ":" + l1i + ":" + l2x + ":" + l2y
                     + ":" + l2z + ":" + l2i + ":" + shadowRadius + ":" + shadowAlpha
-                    + ":" + saturation + ":" + blurRadius;
+                    + ":" + saturation + ":" + blurRadius + ":" + contourGain;
         }
     }
 
@@ -236,6 +238,13 @@ public final class KyantLens {
      * rather than glass. 10dp gives sigma 4.5dp (~12 px at density 2.75).
      */
     static final float BLUR_DP = 10f;
+    /** App chrome needs stronger information suppression than the approved floating bar. */
+    static final float APP_BLUR_DP = 30f;
+    static final float VIEW_CONTOUR_GAIN = 1.6f;
+    static final float VIEW_STROKE_DP = 1.15f;
+    static final float BUBBLE_HIGHLIGHT_ALPHA = 0.45f;
+    static final float APP_CONTOUR_GAIN = 1.8f;
+    static final float APP_STROKE_DP = 1.25f;
     static final float SATURATION = 1f;
     /** Neutral wash at the recommended opacity; blur is calibrated independently. */
     static final float SURFACE_ALPHA = 0.18f;
@@ -303,13 +312,26 @@ public final class KyantLens {
 
     /** Blur radius to hand {@code createBlurEffect} so its sigma matches miuix's blur(BLUR_DP). */
     static float blurRadiusPx(float density) {
-        float sigma = BLUR_DP * density * RADIUS_TO_SIGMA;
+        return blurRadiusPx(density, BLUR_DP);
+    }
+
+    private static float blurRadiusPx(float density, float blurDp) {
+        float sigma = blurDp * density * RADIUS_TO_SIGMA;
         return Math.max(0f, (sigma - 0.5f) / SKIA_RADIUS_SCALE);
     }
 
     /** Recording margin the blur needs at the rim, in px. */
     static int padding(float density) {
-        float sigma = BLUR_DP * density * RADIUS_TO_SIGMA;
+        return padding(density, BLUR_DP);
+    }
+
+    /** Matches appSurface blur; used by both capture and admission accounting. */
+    static int appPadding(float density) {
+        return padding(density, APP_BLUR_DP);
+    }
+
+    private static int padding(float density, float blurDp) {
+        float sigma = blurDp * density * RADIUS_TO_SIGMA;
         return (int) Math.ceil(3f * sigma) + 1;
     }
 
@@ -325,13 +347,23 @@ public final class KyantLens {
         int neutral = SemanticTheme.relativeLuminance(spec.contentColor) > 0.5d
                 ? 0x000000 : 0xFFFFFF;
         p.tint = (surfaceAlpha255 << 24) | neutral;
-        p.strokeWidth = STROKE_DP * density;
+        p.strokeWidth = VIEW_STROKE_DP * density;
+        p.contourGain = VIEW_CONTOUR_GAIN;
         p.bloom = BLOOM_DP * density;
         p.highlight = HIGHLIGHT_ALPHA;
         p.strokeAlpha = 0f;
         setLights(p, LIGHT_PRIMARY_BAR);
         p.saturation = SATURATION;
         p.blurRadius = blurRadiusPx(density);
+        return p;
+    }
+
+    /** Non-navbar app chrome: stronger blur and contour, with the same neutral body. */
+    static Params appSurface(GlassSpec spec, int height, float density, int surfaceAlpha255) {
+        Params p = surface(spec, height, density, surfaceAlpha255);
+        p.blurRadius = blurRadiusPx(density, APP_BLUR_DP);
+        p.strokeWidth = APP_STROKE_DP * density;
+        p.contourGain = APP_CONTOUR_GAIN;
         return p;
     }
 
@@ -370,7 +402,7 @@ public final class KyantLens {
         p.tint = (Math.round(a * 255f) << 24) | rgb;
         p.strokeWidth = STROKE_DP * density;
         p.bloom = BLOOM_DP * density;
-        p.highlight = g;
+        p.highlight = BUBBLE_HIGHLIGHT_ALPHA * g;
         p.strokeAlpha = STROKE_ALPHA;
         setLights(p, LIGHT_PRIMARY_BUBBLE);
         p.shadowRadius = BUBBLE_SHADOW_DP * density * t;
@@ -442,6 +474,7 @@ public final class KyantLens {
             shader.setFloatUniform("uBloom", params.bloom);
             shader.setFloatUniform("uHighlight", params.highlight);
             shader.setFloatUniform("uStrokeA", params.strokeAlpha);
+            shader.setFloatUniform("uContourGain", params.contourGain);
             shader.setFloatUniform("uLight1", params.l1x, params.l1y, params.l1z);
             shader.setFloatUniform("uLight1I", params.l1i);
             shader.setFloatUniform("uLight2", params.l2x, params.l2y, params.l2z);
