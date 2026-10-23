@@ -107,6 +107,28 @@ public class KyantLensTest {
         }
     }
 
+    @Test
+    public void appChromeAndBarUseIndependentBlurAndContour() {
+        GlassSpec spec = GlassSpec.resolve(GlassSpec.Variant.LIQUID, true, 0, 0, 10f, true, false);
+        for (float density : new float[]{1f, 2f, 2.75f, 3.5f}) {
+            KyantLens.Params bar = KyantLens.surface(spec, 160, density, 46);
+            KyantLens.Params app = KyantLens.appSurface(spec, 160, density, 46);
+            assertEquals(10f * density * 0.45f, bar.blurRadius * 0.57735f + 0.5f, 1e-4f);
+            assertEquals(30f * density * 0.45f, app.blurRadius * 0.57735f + 0.5f, 1e-4f);
+            assertEquals(1.6f, bar.contourGain, 0f);
+            assertEquals(1.15f * density, bar.strokeWidth, 0f);
+            assertEquals(1.8f, app.contourGain, 0f);
+            assertEquals(1.25f * density, app.strokeWidth, 0f);
+            assertEquals(bar.tint, app.tint);
+            assertEquals(bar.saturation, app.saturation, 0f);
+            assertEquals(bar.refractHeight, app.refractHeight, 0f);
+            assertEquals(bar.refractAmount, app.refractAmount, 0f);
+            assertTrue(KyantLens.appPadding(density) >= 3f * 30f * density * 0.45f);
+            assertTrue(KyantLens.appPadding(density) > KyantLens.padding(density));
+            assertNotEquals(bar.key(), app.key());
+        }
+    }
+
     /** At rest the bubble is a translucent wash; pressed it is a lens with depth, dispersion and shadow. */
     @Test
     public void bubbleRisesWithPressProgress() {
@@ -125,7 +147,7 @@ public class KyantLensTest {
         assertEquals(14f * density, pressed.refractAmount, 1e-4f);
         assertEquals(1f, pressed.depth, 0f);
         assertEquals(0.5f, pressed.chroma, 0f);
-        assertEquals(1f, pressed.highlight, 0f);
+        assertEquals(0.45f, pressed.highlight, 0f);
         assertEquals(0.15f, pressed.shadowAlpha, 1e-6f);
         assertEquals(Math.round(0.03f * 255f), pressed.tint >>> 24);
         assertEquals(0, pressed.tint & 0xFFFFFF);
@@ -141,7 +163,7 @@ public class KyantLensTest {
         float density = 3f;
         KyantLens.Params rest = KyantLens.bubble(true, 0f, 0.35f, density);
         assertEquals(10f * density * 0.35f, rest.refractHeight, 1e-4f);
-        assertEquals(0.35f, rest.highlight, 0f);
+        assertEquals(0.45f * 0.35f, rest.highlight, 0f);
         assertEquals(Math.round(0.10f * 255f), rest.tint >>> 24);
         assertEquals(0f, rest.shadowAlpha, 0f);
         // The two-argument form is the old coupled behaviour.
