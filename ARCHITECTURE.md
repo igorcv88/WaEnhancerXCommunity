@@ -87,6 +87,14 @@ Non-navbar app chrome rendered by `LiveBackdrop` (including conversation compose
 
 The floating bottom bar has its own editor and preview but resolves shared glass material through the same rendering model. Bottom sheets can opt into glass through the shared dialog helper.
 
+### Separate conversation chrome and message bubble glass (2026-10-30)
+
+`liquid_glass_toolbars` controls the home/other-page toolbar resource targets and `HomeGlassChrome`. `liquid_glass_conversation_header` controls only the floating contact header in `ConversationGlassPanes`, keeping the existing message-list overlap and layout restoration. A missing conversation-header preference inherits the former toolbar value for upgrades; opening the Liquid Glass settings screen writes that inherited value so the two switches become independent. The generic toolbar binder skips descendants of `search_fragment_and_toolbar_holder` even when the contact-header switch is off.
+
+Bubble glass keeps the historical `liquid_glass_bubbles` boolean for migration and adds the public string `liquid_glass_bubble_scope`: `off`, `outgoing`, `incoming`, or `both`. Missing scope inherits `both` only when the old boolean was on; an invalid value fails closed. `AppLiquidGlass` resolves the same direction-bearing drawable factory as `BubbleColors` (direction 3 is outgoing), and discovers the returned `GlassMaterialDrawable` whether it is a direct background or nested in a selector/layer/inset, foreground or image. The host is attached after native installation; the shared `BehindRecorder` source ordering, `LiveBudget`, material fallback and original drawable mask remain unchanged. Nested wrappers are disabled in place, without replacing the native container.
+
+The bubble tint uses the existing `bubble_left`/`bubble_right` preferences or CSS override only when enabled. The glass optics match the composer; only an explicitly chosen bubble colour replaces the OneMate neutral wash. TextViews within the bubble owner choose black or white from the custom colour and restore their native ColorStateList when the effect is removed or a row is recycled. This is a palette-based contrast choice, not per-frame contrast measurement against moving wallpaper pixels; rich-text spans with their own foreground colour and nonstandard message layouts still require physical review. The original quoted-reply surface switch remains separate. The native factory's use, attachment route and readable text should be verified on the installed WhatsApp build before the feature is considered visually accepted.
+
 ## Deleted data and backups
 
 `Deleted for Me` uses a private SQLite store with incremental migrations. Preserved media is stored through a private vault with integrity metadata and quotas.

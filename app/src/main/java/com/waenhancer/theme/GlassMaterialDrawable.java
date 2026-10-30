@@ -29,7 +29,7 @@ import java.util.function.Supplier;
  */
 public final class GlassMaterialDrawable extends Drawable implements Drawable.Callback {
     private Drawable original;
-    private final WeakReference<View> owner;
+    private WeakReference<View> owner;
     private Supplier<GlassSpec> spec;
     private final float radiusDp;
     private final boolean nativeMask;
@@ -123,6 +123,10 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     }
 
     public void attachMaterial(Supplier<GlassSpec> material) { spec = material; }
+
+    /** A factory drawable may be nested inside a LayerDrawable instead of being the view's
+     * direct background. The owning row is discovered after native attachment. */
+    public void attachOwner(View host) { owner = new WeakReference<>(host); }
 
     /**
      * Records what lies beneath {@code host}, whose background this is, for the next draw.

@@ -346,7 +346,10 @@ public final class KyantLens {
         // recorded backdrop supplies all hue. Content colour selects dark/light.
         int neutral = SemanticTheme.relativeLuminance(spec.contentColor) > 0.5d
                 ? 0x000000 : 0xFFFFFF;
-        p.tint = (surfaceAlpha255 << 24) | neutral;
+        // Only explicit bubble customisation adds pigment. All existing app chrome stays
+        // neutral, including the composer whose appearance is already approved.
+        p.tint = (surfaceAlpha255 << 24)
+                | (spec.bubbleTint ? spec.fillColor & 0x00FFFFFF : neutral);
         p.strokeWidth = VIEW_STROKE_DP * density;
         p.contourGain = VIEW_CONTOUR_GAIN;
         p.bloom = BLOOM_DP * density;

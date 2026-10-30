@@ -39,10 +39,12 @@ public final class LiquidGlassSettings {
 
     /** The round scroll-to-bottom button that floats over the message list. */
     public static final String SCROLL_BUTTON = "liquid_glass_scroll_button";
+    public static final String BUBBLE_SCOPE = "liquid_glass_bubble_scope";
 
     /** Independently enabled, opt-in surfaces. The bottom bar keeps its existing style picker. */
     public enum Surface {
-        TOOLBARS("toolbars", "Headers and selection toolbar"),
+        TOOLBARS("toolbars", "Home and other headers"),
+        CONVERSATION_HEADER("conversation_header", "Contact header in conversations"),
         SEARCH("search", "Search fields and filters"),
         FAB("fab", "Floating action buttons"),
         COMPOSER("composer", "Message input and send button"),
@@ -63,10 +65,54 @@ public final class LiquidGlassSettings {
     public static boolean isEnabled(SharedPreferences prefs, Surface surface) {
         if (prefs == null || surface == null) return false;
         try {
+            if (surface == Surface.CONVERSATION_HEADER
+                    && !prefs.contains(surface.key)) {
+                // Existing installations had one switch for both headers. A missing new key
+                // inherits its old value until the separate preference is saved.
+                return prefs.getBoolean(Surface.TOOLBARS.key, false);
+            }
+            if (surface == Surface.BUBBLES) return bubbleScope(prefs) != BubbleScope.OFF;
             return prefs.getBoolean(surface.key, false);
         } catch (ClassCastException ignored) {
             return false;
         }
+    }
+
+    /** Factory direction 3 is the outgoing/right bubble in WhatsApp's drawable resolver. */
+    public enum BubbleScope {
+        OFF("off", "Off"), OUTGOING("outgoing", "My messages only"),
+        INCOMING("incoming", "Received messages only"), BOTH("both", "Both sides");
+
+        public final String key;
+        public final String title;
+        BubbleScope(String key, String title) { this.key = key; this.title = title; }
+    }
+
+    public static BubbleScope bubbleScope(SharedPreferences prefs) {
+        if (prefs == null) return BubbleScope.OFF;
+        try {
+            String value = readString(prefs, BUBBLE_SCOPE, null);
+            if (value != null) {
+                for (BubbleScope scope : BubbleScope.values()) {
+                    if (scope.key.equals(value)) return scope;
+                }
+                return BubbleScope.OFF; // Malformed values fail closed.
+            }
+            // Prior releases used an undirected boolean; an enabled existing setting means both.
+            return prefs.getBoolean(Surface.BUBBLES.key, false) ? BubbleScope.BOTH : BubbleScope.OFF;
+        } catch (RuntimeException ignored) { return BubbleScope.OFF; }
+    }
+
+    public static boolean bubbleEnabled(SharedPreferences prefs, boolean outgoing) {
+        BubbleScope scope = bubbleScope(prefs);
+        return scope == BubbleScope.BOTH
+                || (outgoing ? scope == BubbleScope.OUTGOING : scope == BubbleScope.INCOMING);
+    }
+
+    public static void setBubbleScope(SharedPreferences prefs, BubbleScope scope) {
+        if (prefs == null || scope == null) return;
+        prefs.edit().putString(BUBBLE_SCOPE, scope.key)
+                .putBoolean(Surface.BUBBLES.key, scope != BubbleScope.OFF).apply();
     }
 
     public static boolean hasAppSurfaces(SharedPreferences prefs) {

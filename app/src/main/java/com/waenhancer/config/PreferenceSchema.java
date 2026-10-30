@@ -180,11 +180,13 @@ public final class PreferenceSchema {
         // LiquidGlassSettings.Surface keys. AppLiquidGlass reads them inside WhatsApp, so they must
         // cross the HookProvider bridge; LiquidGlassSettingsTest enforces this for every Surface.
         add(entries, "liquid_glass_toolbars", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "liquid_glass_conversation_header", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_search", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_fab", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_composer", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_quotes", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_bubbles", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "liquid_glass_bubble_scope", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_cards", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_panels", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         // LiquidGlassOptics: experimental optical corrections, read by AppLiquidGlass in WhatsApp.

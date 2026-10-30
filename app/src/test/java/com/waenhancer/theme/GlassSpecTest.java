@@ -23,6 +23,33 @@ public class GlassSpecTest {
         return (argb >>> 24) & 0xFF;
     }
 
+    @Test public void explicitBubbleColoursDoNotModifyTheSharedComposerMaterial() {
+        GlassSpec original = resolve(GlassSpec.Variant.LIQUID, true, true);
+        GlassSpec darkBubble = original.withBubbleTint(0xFF101820);
+        GlassSpec brightBubble = original.withBubbleTint(0xFFFFCB42);
+        assertFalse(original.bubbleTint);
+        assertTrue(darkBubble.bubbleTint);
+        assertTrue(brightBubble.bubbleTint);
+        assertEquals(0x101820, darkBubble.fillColor & 0x00FFFFFF);
+        assertEquals(0xFFCB42, brightBubble.fillColor & 0x00FFFFFF);
+        assertEquals(0xFFFFFFFF, darkBubble.contentColor);
+        assertEquals(0xFF000000, brightBubble.contentColor);
+        assertEquals(original.blurRadius, darkBubble.blurRadius, 0f);
+        assertEquals(original.rimWidthDp, brightBubble.rimWidthDp, 0f);
+        assertEquals(original, resolve(GlassSpec.Variant.LIQUID, true, true));
+        assertNotEquals(darkBubble, brightBubble);
+    }
+
+    @Test public void transparentBubbleColourKeepsNeutralMaterialAndTintedFallback() {
+        GlassSpec original = resolve(GlassSpec.Variant.LIQUID, true, true);
+        assertEquals(original, original.withBubbleTint(0));
+        GlassSpec tinted = original.withBubbleTint(0xFF002020);
+        GlassSpec fallback = tinted.neutralFallback(true);
+        assertEquals(0x002020, fallback.fillColor & 0x00FFFFFF);
+        assertTrue(alphaOf(fallback.fillColor) >= Math.round(GlassSpec.NO_BLUR_MIN_OPACITY * 255f));
+        assertTrue(fallback.bubbleTint);
+    }
+
     // ---- adaptive contrast ------------------------------------------------------------------
 
     /** Every variant, in both themes, must clear the contrast floor the engine advertises. */

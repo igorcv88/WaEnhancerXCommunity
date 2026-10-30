@@ -48,7 +48,7 @@ public final class GlassSurfaceCatalog {
         return switch (surface) {
             case FAB, COMPOSER, SEARCH -> 1000f;
             case BUBBLES, QUOTES -> 16f;
-            case TOOLBARS -> 22f;
+            case TOOLBARS, CONVERSATION_HEADER -> 22f;
             case CARDS, PANELS -> 24f;
         };
     }

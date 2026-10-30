@@ -47,6 +47,10 @@ public class LiquidGlassActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        if (!prefs.contains(LiquidGlassSettings.Surface.CONVERSATION_HEADER.key)) {
+            prefs.edit().putBoolean(LiquidGlassSettings.Surface.CONVERSATION_HEADER.key,
+                    LiquidGlassSettings.isEnabled(prefs, LiquidGlassSettings.Surface.TOOLBARS)).apply();
+        }
         if (savedInstanceState != null) pendingOpticsFile = savedInstanceState.getString("optics_export");
         setContentView(buildContent());
     }
@@ -87,15 +91,27 @@ public class LiquidGlassActivity extends AppCompatActivity {
 
         addSection("Home");
         addBarRow();
+        addSurfaceRow("Main header",
+                "The WhatsApp home header and toolbars on other pages. Independent of the contact header inside chats.",
+                LiquidGlassSettings.Surface.TOOLBARS.key);
 
         addSection("Conversation");
+        addSwitchRow("Contact header in conversations",
+                "Keeps the existing floating contact-name capsule, with messages passing behind it while scrolling.",
+                LiquidGlassSettings.isEnabled(prefs, LiquidGlassSettings.Surface.CONVERSATION_HEADER),
+                checked -> prefs.edit().putBoolean(
+                        LiquidGlassSettings.Surface.CONVERSATION_HEADER.key, checked).apply());
         addSurfaceRow("Scroll-to-bottom button",
                 "The round button that floats over the messages. Bubbles and wallpaper move behind "
                         + "it as you scroll, which is what the material is made of.",
                 LiquidGlassSettings.SCROLL_BUTTON);
+        addBubbleScopeRow();
 
         addSection("Across WhatsApp");
         for (LiquidGlassSettings.Surface surface : LiquidGlassSettings.Surface.values()) {
+            if (surface == LiquidGlassSettings.Surface.TOOLBARS
+                    || surface == LiquidGlassSettings.Surface.CONVERSATION_HEADER
+                    || surface == LiquidGlassSettings.Surface.BUBBLES) continue;
             addSurfaceRow(surface.title, surfaceSummary(surface), surface.key);
         }
 
@@ -118,12 +134,13 @@ public class LiquidGlassActivity extends AppCompatActivity {
 
     private String surfaceSummary(LiquidGlassSettings.Surface surface) {
         return switch (surface) {
-            case TOOLBARS -> "Chat header with messages scrolling behind it, and the other page headers.";
+            case TOOLBARS -> "Main WhatsApp header and selection toolbars.";
+            case CONVERSATION_HEADER -> "Contact header, with messages scrolling behind the glass.";
             case SEARCH -> "Search capsules and conversation filter controls.";
             case FAB -> "New chat, new broadcast and other named floating buttons.";
             case COMPOSER -> "The message input as live glass, with messages scrolling behind it. The keyboard stays native.";
             case QUOTES -> "Reply previews, quoted message frames and voice-note drafts.";
-            case BUBBLES -> "Keeps native bubble shape and padding. Requires a compatible bubble resolver; use a wallpaper for visible detail.";
+            case BUBBLES -> "Keeps native shape and padding; the tint follows the custom left/right bubble colours.";
             case CARDS -> "Named information and action cards. Lists keep their native scrolling and row layout.";
             case PANELS -> "Native popup menus, dialogs and sheets. Buttons and dismissal gestures stay native.";
         };
@@ -143,6 +160,33 @@ public class LiquidGlassActivity extends AppCompatActivity {
                         + "Liquid style there; turning it off puts back the previous one.",
                 LiquidGlassSettings.isBarLiquid(prefs),
                 checked -> LiquidGlassSettings.setBarLiquid(prefs, checked));
+    }
+
+    private void addBubbleScopeRow() {
+        MaterialButton scope = new MaterialButton(this, null,
+                com.google.android.material.R.attr.materialButtonOutlinedStyle);
+        Runnable refresh = () -> scope.setText("Message bubble glass: "
+                + LiquidGlassSettings.bubbleScope(prefs).title);
+        refresh.run();
+        scope.setOnClickListener(v -> {
+            LiquidGlassSettings.BubbleScope[] options = LiquidGlassSettings.BubbleScope.values();
+            String[] labels = new String[options.length];
+            for (int i = 0; i < options.length; i++) labels[i] = options[i].title;
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle("Liquid Glass on message bubbles")
+                    .setSingleChoiceItems(labels, LiquidGlassSettings.bubbleScope(prefs).ordinal(),
+                            (dialog, which) -> {
+                                LiquidGlassSettings.setBubbleScope(prefs, options[which]);
+                                refresh.run();
+                                notifyChanged();
+                                dialog.dismiss();
+                            })
+                    .setNegativeButton(android.R.string.cancel, null).show();
+        });
+        controls.addView(scope);
+        addCaption("Off, my messages, received messages or both. Uses the message input's glass "
+                + "material and the colours under Customization > Change Bubble Colors when set. "
+                + "Text colour follows the resulting bubble tint. Default colours keep the neutral glass material.");
     }
 
     /**
