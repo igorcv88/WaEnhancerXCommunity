@@ -6,6 +6,7 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.content.res.ColorStateList;
 import android.os.Build;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -99,6 +100,8 @@ final class ConversationGlassPanes {
         final WeakHashMap<ImageView, ColorStateList> replyIconTints = new WeakHashMap<>();
         boolean voiceRecording;
         String voiceGeometryKey;
+        long voiceSignalUntil;
+        final WeakHashMap<View, Float> duplicateReplyAlpha = new WeakHashMap<>();
         Integer listHostBottomMargin;
         Integer floatedFooterHeight;
         Float footerTranslationY;
@@ -152,6 +155,33 @@ final class ConversationGlassPanes {
         screen.suspended = suspended;
         if (screen.capsule != null) screen.capsule.setSuspended(suspended);
         if (screen.composer != null) screen.composer.setSuspended(suspended);
+    }
+
+    /** Native recorder visibility/timer transitions precede global layout on some builds. */
+    void onRecorderSignal(View changed) {
+        if (changed == null || !host.composerEnabled()) return;
+        Screen screen = screens.get(changed.getRootView());
+        if (screen == null || !screen.footerOn || screen.suspended) return;
+        ViewGroup footer = screen.footer.get();
+        if (footer == null || !isAncestor(footer, changed)) return;
+        boolean recorder = false;
+        for (View node = changed; node != footer && node != null; node = parentView(node)) {
+            String name = resourceName(node);
+            if ("voice_note_stub".equals(name) || "voice_note_draft_layout_v2".equals(name)) {
+                recorder = true;
+                break;
+            }
+        }
+        if (!recorder || (changed instanceof TextView
+                && !isElapsedTime(((TextView) changed).getText()))) return;
+        screen.voiceSignalUntil = SystemClock.uptimeMillis() + 900L;
+        // Geometry is already known for the footer. Reuse its one persistent pane now;
+        // the one-shot next-frame retry covers native ViewStub inflation/first measurement.
+        syncFooter(screen);
+        footer.postOnAnimation(() -> {
+            if (screen.footerOn && screen.footer.get() == footer && !screen.suspended) syncFooter(screen);
+        });
+        host.report("voice-recorder-signal", "voice glass synchronized from native recording UI signal");
     }
 
     /** Called on every global layout of a window; cheap when nothing changed. */
@@ -389,6 +419,11 @@ final class ConversationGlassPanes {
         syncListPadding(screen);
         View input = findById(footer, "input_layout");
         ViewGroup voice = findVoicePanel(footer, input);
+        if (voice == null && SystemClock.uptimeMillis() <= screen.voiceSignalUntil) {
+            // At record start WhatsApp has not populated the elapsed-time label yet. The
+            // recorder's named stub is visible before that first timer text/layout pass.
+            voice = signaledVoicePanel(footer, input);
+        }
         if (voice != null || input == null || !input.isShown()
                 || goneAbove(input, footer) || input.getWidth() <= 0) {
             restoreReplyContrast(screen);
@@ -396,6 +431,7 @@ final class ConversationGlassPanes {
                 if (voice == null) host.report("voice-panel-route-missing",
                         "voice recorder panel not resolved; " + describeFooter(footer));
                 restoreVoiceBackgrounds(screen);
+                restoreDuplicateReply(screen);
                 if (screen.composer != null) place(screen.composer, 0, 0, 0, 0, 0f);
                 return;
             }
@@ -425,6 +461,7 @@ final class ConversationGlassPanes {
                 footer.addView(screen.composer, 0, new FrameLayout.LayoutParams(0, 0));
             }
             clearVoiceBackgrounds(screen, voice);
+            suppressDuplicateReply(screen, footer);
             screen.composer.setSource(screen.listHost.get());
             screen.composer.setUnderlay(wallpaperOf(screen));
             place(screen.composer, l, t, r, b, Math.min((b - t) / 2f, COMPOSE_MAX_RADIUS_DP * d));
@@ -440,6 +477,7 @@ final class ConversationGlassPanes {
             return;
         }
         restoreVoiceBackgrounds(screen);
+        restoreDuplicateReply(screen);
         clearBackground(screen, input);
         syncComposerIcons(screen, footer);
         syncReplyContrast(screen, footer);
@@ -503,6 +541,7 @@ final class ConversationGlassPanes {
         screen.floatedFooterHeight = null;
         screen.footerTranslationY = null;
         restoreVoiceBackgrounds(screen);
+        restoreDuplicateReply(screen);
         restoreReplyContrast(screen);
         for (java.util.Map.Entry<ImageView, ColorStateList> icon :
                 new ArrayList<>(screen.originalInputIconTints.entrySet())) {
@@ -591,6 +630,44 @@ final class ConversationGlassPanes {
         if (footer.getWidth() <= 0) return null;
         float density = footer.getResources().getDisplayMetrics().density;
         return voicePanelIn(footer, footer, input, 0, density);
+    }
+
+    private static ViewGroup signaledVoicePanel(ViewGroup footer, View input) {
+        View voice = findById(footer, "voice_note_stub");
+        if (!(voice instanceof ViewGroup) || !voice.isShown()
+                || (input != null && isAncestor(voice, input))) return null;
+        float d = footer.getResources().getDisplayMetrics().density;
+        return voice.getWidth() >= footer.getWidth() * 0.65f
+                && voice.getHeight() >= 24f * d ? (ViewGroup) voice : null;
+    }
+
+    /** The draft recorder and ordinary composer can both show the same quoted message.
+     * Keep the composer's actionable preview; hide only the duplicate draft pixels and
+     * restore their original alpha as soon as recording ends. Neither view is removed. */
+    private static void suppressDuplicateReply(Screen screen, ViewGroup footer) {
+        View draft = findById(footer, "voice_note_draft_quoted_message_frame");
+        View ordinary = findById(footer, "quoted_message_preview_container_v2");
+        if (ordinary == null) ordinary = findById(footer, "quoted_message_preview_container");
+        if (ordinary == null) ordinary = findById(footer, "composer_quoted_message_frame");
+        if (draft == null || ordinary == null || draft == ordinary
+                || isAncestor(draft, ordinary) || isAncestor(ordinary, draft)
+                || !draft.isShown() || !ordinary.isShown()) {
+            restoreDuplicateReply(screen);
+            return;
+        }
+        if (!screen.duplicateReplyAlpha.containsKey(draft)) {
+            screen.duplicateReplyAlpha.put(draft, draft.getAlpha());
+        }
+        if (draft.getAlpha() != 0f) draft.setAlpha(0f);
+    }
+
+    private static void restoreDuplicateReply(Screen screen) {
+        for (java.util.Map.Entry<View, Float> entry :
+                new ArrayList<>(screen.duplicateReplyAlpha.entrySet())) {
+            View view = entry.getKey();
+            if (view != null && view.getAlpha() == 0f) view.setAlpha(entry.getValue());
+        }
+        screen.duplicateReplyAlpha.clear();
     }
 
     private static ViewGroup voicePanelIn(ViewGroup parent, ViewGroup footer, View input,

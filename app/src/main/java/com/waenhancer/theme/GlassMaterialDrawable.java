@@ -43,6 +43,8 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     private Boolean presentedLive;
     private String budgetStatus = "unassigned";
     private final int[] location = new int[2];
+    /** Optional local subregion for full-width WhatsApp rows with narrow bubble silhouettes. */
+    private Rect materialRegion;
     private Consumer<View> onHostResolved;
     private Runnable onHostMissing;
     private boolean notifiedHost;
@@ -77,17 +79,19 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         GlassSpec material = spec.get();
         Rect b = getBounds();
         if (view == null || material == null || b.isEmpty()) { drawOriginal(canvas); return; }
+        Rect area = materialArea(b);
+        if (area.isEmpty()) return;
         int save = canvas.save();
-        canvas.translate(b.left, b.top);
+        canvas.translate(b.left + area.left, b.top + area.top);
         int layer = -1;
         if (nativeMask && original != null) {
-            layer = canvas.saveLayer(0, 0, b.width(), b.height(), null);
+            layer = canvas.saveLayer(0, 0, area.width(), area.height(), null);
         }
         try {
             int fade = alpha < 255 && live != null
-                    ? canvas.saveLayerAlpha(0, 0, b.width(), b.height(), alpha) : -1;
+                    ? canvas.saveLayerAlpha(0, 0, area.width(), area.height(), alpha) : -1;
             boolean drewLive = live != null && LiveBackdrop.wantsLive(material)
-                    && live.draw(canvas, b.width(), b.height());
+                    && live.draw(canvas, area.width(), area.height());
             if (!LiveBackdrop.isCapturing()) GlassTrace.presented(view.getRootView(), this, view.getRootView(), drewLive);
             if (!LiveBackdrop.isCapturing() && (presentedLive == null || presentedLive != drewLive)) {
                 presentedLive = drewLive;
@@ -99,8 +103,8 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
             if (drewLive && layer >= 0) {
                 // Isolate the native silhouette before DST_IN; drawing a sparse mask directly
                 // would leave the parts it never touched intact, including square corners.
-                int mask = canvas.saveLayer(0, 0, b.width(), b.height(), maskPaint);
-                canvas.translate(-b.left, -b.top);
+                int mask = canvas.saveLayer(0, 0, area.width(), area.height(), maskPaint);
+                canvas.translate(-b.left - area.left, -b.top - area.top);
                 drawOriginal(canvas);
                 canvas.restoreToCount(mask);
             }
@@ -115,6 +119,24 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     }
 
     public void attachMaterial(Supplier<GlassSpec> material) { spec = material; }
+
+    /** Constrain a message-row recording to its bubble bounds, not the entire 1440px row. */
+    public void setMaterialRegion(Rect region) {
+        if (region == null ? materialRegion == null : region.equals(materialRegion)) return;
+        materialRegion = region == null ? null : new Rect(region);
+        releaseLive();
+        invalidateSelf();
+    }
+
+    private Rect materialArea(Rect bounds) {
+        if (materialRegion == null) return new Rect(0, 0, bounds.width(), bounds.height());
+        Rect area = new Rect(materialRegion);
+        if (!area.intersect(0, 0, bounds.width(), bounds.height())) area.setEmpty();
+        return area;
+    }
+
+    public int captureRegionWidth() { return materialRegion == null ? -1 : materialRegion.width(); }
+    public int captureRegionHeight() { return materialRegion == null ? -1 : materialRegion.height(); }
 
     /**
      * A factory result can become nested under a selector after creation, or be drawn before
@@ -156,19 +178,21 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         }
         Rect b = getBounds();
         if (material == null || b.isEmpty() || !host.isAttachedToWindow() || !host.isShown()) return false;
+        Rect area = materialArea(b);
+        if (area.isEmpty()) return false;
         if (live == null) live = new LiveBackdrop();
         if (!live.available()) return false;
         float density = host.getResources().getDisplayMetrics().density;
-        float radius = Math.min(radiusDp * density, Math.min(b.width(), b.height()) / 2f);
-        int w = b.width(), h = b.height();
+        float radius = Math.min(radiusDp * density, Math.min(area.width(), area.height()) / 2f);
+        int w = area.width(), h = area.height();
         GlassOptics optics = GlassOptics.current();
         if (optics.corrected && optics.geometry) {
-            int left = b.left, top = b.top;
+            int left = b.left + area.left, top = b.top + area.top;
             return live.capture(w, h, radius, density, material,
                     (canvas, padding) -> BehindRecorder.paintExact(canvas, host, left, top, w, h, padding));
         }
         host.getLocationOnScreen(location);
-        int x = location[0] + b.left, y = location[1] + b.top;
+        int x = location[0] + b.left + area.left, y = location[1] + b.top + area.top;
         return live.capture(w, h, radius, density, material,
                 (canvas, padding) -> BehindRecorder.paint(canvas, host, x, y, w, h));
     }
