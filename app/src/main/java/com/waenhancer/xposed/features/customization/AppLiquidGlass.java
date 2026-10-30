@@ -105,6 +105,7 @@ public final class AppLiquidGlass extends Feature {
                 Session session = sessionFor(decor);
                 if (session != null) session.close();
             } else if (state == WppCore.ActivityChangeState.ChangeType.RESUMED) {
+                conversation.setActivityWindow(decor, activity.getWindow());
                 reloadPrefs();
                 refreshBubblePalette();
                 publishOptics();
@@ -527,8 +528,9 @@ public final class AppLiquidGlass extends Feature {
         return id == 0 ? null : root.findViewById(id);
     }
 
-    /** Verified on the user's WhatsApp build: full-width row, native Fyn bubble mask,
-     * with the actual speech bubble positioned by the bounded main_layout child. */
+    /** The native row must expose a Fyn background and a bounded main_layout child. The
+     * text/voice routes are verified on device; other conversation_row_* types (including
+     * photos and captions) use the same strict runtime checks before binding. */
     private static final class BubblePlacement {
         final boolean outgoing;
         final Rect region;
@@ -540,7 +542,7 @@ public final class AppLiquidGlass extends Feature {
 
     private static BubblePlacement nativeRowPlacement(View row) {
         String name = resourceName(row);
-        if (!("conversation_row_text".equals(name) || "conversation_row_voice_note".equals(name))
+        if (!name.startsWith("conversation_row_")
                 || row.getWidth() <= 0 || row.getHeight() <= 0) return null;
         View content = findByName(row, "main_layout", row.getContext().getPackageName());
         if (content == null || !content.isShown() || content.getWidth() <= 0
@@ -673,6 +675,9 @@ public final class AppLiquidGlass extends Feature {
         private final WeakHashMap<View, Boolean> refused = new WeakHashMap<>();
         private int bubbleRowsInspected;
         private final Set<View> pendingDiscovery = java.util.Collections.newSetFromMap(new WeakHashMap<>());
+        /** Native Fyn rows can be discovered before their main_layout measures. Retain only
+         * those incomplete rows for the next global layout, not the entire list tree. */
+        private final Set<View> pendingNativeBubbleRows = java.util.Collections.newSetFromMap(new WeakHashMap<>());
         private boolean discoveryPosted;
         private boolean discovered;
         private boolean installing;
@@ -886,8 +891,14 @@ public final class AppLiquidGlass extends Feature {
                         binding.recovery.revalidate();
                         binding.glass.releaseLive();
                     }
-                    // Top to bottom, then left to right; the index rides in the low bits.
-                    long top = Math.max(-(1L << 19), Math.min((1L << 19) - 1, visibleRect.top)) + (1L << 19);
+                    // Chrome drawables keep priority. For a conversation's many recyclable
+                    // bubbles, admit from the visible bottom upward: otherwise old rows at
+                    // the top spend the entire ledger and the messages next to the composer
+                    // remain BUDGET_REFUSED (confirmed by PR #104 device trace).
+                    long top = binding.rowBased
+                            ? (1L << 19) + Math.max(0L, Math.min((1L << 19) - 1,
+                                    view.getHeight() - visibleRect.bottom))
+                            : Math.max(0L, Math.min((1L << 19) - 1, visibleRect.top));
                     long left = Math.max(0L, Math.min((1L << 20) - 1, visibleRect.left));
                     areas[count] = (long) visibleRect.width() * visibleRect.height();
                     order[count] = (top << 40) | (left << 20) | count;
@@ -971,7 +982,14 @@ public final class AppLiquidGlass extends Feature {
                         trace(binding, before, "capture-published");
                         live++;
                         used += area;
-                        if (invalidateNow) target.invalidate();
+                        // The first live GPU capture does not automatically dirty an Android
+                        // background display list. Explicitly invalidate that row until its
+                        // drawable reports its first live presentation. This also lets the
+                        // next device trace distinguish a hidden/overpainted bubble from an
+                        // otherwise valid recording that was never presented.
+                        if (invalidateNow || binding.rowBased && !binding.glass.hasPresentedLive()) {
+                            target.invalidate();
+                        }
                     } else {
                         binding.recovery.failed(now, binding.glass.capturePermanentlyUnavailable());
                         binding.glass.releaseLive(RecordingState.TEMPORARILY_UNAVAILABLE);
@@ -1051,12 +1069,24 @@ public final class AppLiquidGlass extends Feature {
                     } else if (binding.nested) {
                         // The wrapper is a child of WhatsApp's native background, not the view's
                         // background itself. Never replace the whole selector with the child.
-                        if (bubbleFor(target) != binding.glass
-                                && !(binding.callbackOwned && binding.glass.callbackOwner() == target)) {
+                        GlassMaterialDrawable mounted = bubbleOn(target);
+                        GlassMaterialDrawable replacement = mounted != null ? mounted : bubbleFor(target);
+                        boolean stillOwned = mounted == binding.glass
+                                || (mounted == null && binding.callbackOwned
+                                    && binding.glass.callbackOwner() == target
+                                    && replacement == binding.glass);
+                        if (!stillOwned) {
                             releaseBudget(binding);
                             binding.restore(target);
                             restoreBubbleText(target);
                             bindings.remove(target);
+                            // The previous binding blocked walk() earlier in this scan. Adopt
+                            // WhatsApp's replacement now, instead of waiting for another tree
+                            // discovery event after a recycled row changes its drawable.
+                            if (replacement != null && replacement != binding.glass
+                                    && bubbleDirections.containsKey(replacement)) {
+                                adopt(target, replacement);
+                            }
                         } else updateBubbleText(target, binding);
                     } else if (binding.outgoing != null && target.getBackground() != binding.glass) {
                         releaseBudget(binding);
@@ -1089,6 +1119,21 @@ public final class AppLiquidGlass extends Feature {
                     View candidate = entry.getKey();
                     if (candidate != null && candidate.isAttachedToWindow() && candidate.getRootView() == view
                             && LiquidGlassSettings.isEnabled(prefs, entry.getValue())) bind(candidate, entry.getValue(), false);
+                }
+                // A row first walked at 0x0 has no bubble placement yet. Layout reconciliation
+                // must retry it even though the one-time discovery flag is now true.
+                for (View row : new ArrayList<>(pendingNativeBubbleRows)) {
+                    if (row == null || !row.isAttachedToWindow() || row.getRootView() != view
+                            || !LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)) {
+                        pendingNativeBubbleRows.remove(row);
+                        continue;
+                    }
+                    if (!bindings.containsKey(row)) bindNativeBubbleRow(row);
+                    View content = findByName(row, "main_layout", row.getContext().getPackageName());
+                    if (bindings.containsKey(row) || (row.getWidth() > 0 && row.getHeight() > 0
+                            && content != null && content.getWidth() > 0 && content.getHeight() > 0)) {
+                        pendingNativeBubbleRows.remove(row);
+                    }
                 }
                 for (Map.Entry<View, Binding> entry : bindings.entrySet()) {
                     if (entry.getValue().outgoing != null) updateBubbleText(entry.getKey(), entry.getValue());
@@ -1126,8 +1171,7 @@ public final class AppLiquidGlass extends Feature {
             if (depth > 24 || view == null || GlassSurface.isGlassHost(view) || view instanceof GlassPane) return;
             if (bubbleRowsInspected < 3 && view.getId() != View.NO_ID
                     && LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)
-                    && ("conversation_row_text".equals(resourceName(view))
-                        || "conversation_row_voice_note".equals(resourceName(view)))) {
+                    && resourceName(view).startsWith("conversation_row_")) {
                 int index = bubbleRowsInspected++;
                 report("bubble-row-structure-" + index, "bubble row routing=" + describe(view)
                         + " descendants=" + bubbleStructure(view, 0));
@@ -1141,7 +1185,21 @@ public final class AppLiquidGlass extends Feature {
                     bubble.attachMaterial(() -> null);
                 }
             }
-            if (bubble == null && !bindings.containsKey(view)) bindNativeBubbleRow(view);
+            if (bubble == null && !bindings.containsKey(view)) {
+                String rowName = resourceName(view);
+                Drawable rowBackground = view.getBackground();
+                if (rowName.startsWith("conversation_row_")
+                        && rowBackground != null
+                        && "Fyn".equals(rowBackground.getClass().getSimpleName())
+                        && LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)) {
+                    View content = findByName(view, "main_layout", view.getContext().getPackageName());
+                    if (view.getWidth() <= 0 || view.getHeight() <= 0
+                            || content == null || content.getWidth() <= 0 || content.getHeight() <= 0) {
+                        pendingNativeBubbleRows.add(view);
+                    }
+                }
+                bindNativeBubbleRow(view);
+            }
             Surface surface = surfaceFor(view);
             if (surface != null) {
                 candidates.put(view, surface);
@@ -1154,8 +1212,8 @@ public final class AppLiquidGlass extends Feature {
         }
 
         /** The factory drawable is Canvas-owned on this build (no callback View), but the
-         * verified native row background itself is a drawable and retains the bubble mask.
-         * Bind only those two observed row types, using geometry for direction and cropping. */
+         * native row background itself is a drawable and retains the bubble mask. Only bind
+         * when the Fyn mask, asymmetric bounded main_layout and direction all agree. */
         private void bindNativeBubbleRow(View row) {
             if (!LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES) || bindings.containsKey(row)) return;
             BubblePlacement placement = nativeRowPlacement(row);
@@ -1328,7 +1386,7 @@ public final class AppLiquidGlass extends Feature {
                 entry.getValue().restore(target);
                 restoreBubbleText(target);
             }
-            bindings.clear(); candidates.clear(); pendingDiscovery.clear();
+            bindings.clear(); candidates.clear(); pendingDiscovery.clear(); pendingNativeBubbleRows.clear();
             restoreAllBubbleText();
         }
         @Override public void onViewAttachedToWindow(View view) { }

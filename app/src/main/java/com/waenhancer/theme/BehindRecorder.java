@@ -184,7 +184,8 @@ final class BehindRecorder {
                         ? canvas.saveLayerAlpha(null, Math.round(child.getAlpha() * 255))
                         : canvas.save();
                 canvas.concat(PLACED);
-                canvas.translate(-child.getScrollX(), -child.getScrollY());
+                // place() incorporates ancestor scroll. View.draw() itself handles the
+                // child's own content scroll; a second translation shifts the whole view.
                 child.draw(canvas);
                 canvas.restoreToCount(save);
                 drew = true;

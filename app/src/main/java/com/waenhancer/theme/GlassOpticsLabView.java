@@ -59,7 +59,10 @@ public final class GlassOpticsLabView extends View {
             RecordingCanvas input = source.beginRecording(w + 2*padding, h + 2*padding);
             try {
                 input.translate(padding, padding);
-                pattern(input, w, h);
+                // The synthetic capture has the same padded source dimensions as a real
+                // conversation capture. Continue the pattern to its margins instead of
+                // sampling a flat/transparent border at the lens rim (review #84).
+                pattern(input, w, h, padding);
             } finally { source.endRecording(); }
             lens.update(spec, w, h, Math.min(h/2f, 28f*density), density,
                     optics, padding, true);
@@ -79,24 +82,33 @@ public final class GlassOpticsLabView extends View {
 
     /** Native-pixel bars 1/2/4/8, diagonal, ESF, grey/color fields; no antialias or resize. */
     private void pattern(Canvas c, int w, int h) {
+        pattern(c, w, h, 0);
+    }
+
+    private void pattern(Canvas c, int w, int h, int padding) {
         c.drawColor(0xFF808080);
         paint.setAntiAlias(false);
         for (int section = 0; section < 4; section++) {
             int period = 1 << section;
             int start = section*w/4, end = (section+1)*w/4;
+            if (section == 0 && padding > 0) {
+                start = -((padding + 2*period - 1)/(2*period)) * (2*period);
+            }
+            if (section == 3) end += padding;
             for (int x = start; x < end; x += 2*period) {
                 paint.setColor(0xFFFFFFFF);
-                c.drawRect(x, 0, Math.min(x+period,end), h/3f, paint);
+                c.drawRect(x, -padding, Math.min(x+period,end), h/3f, paint);
                 paint.setColor(0xFF000000);
-                c.drawRect(Math.min(x+period,end), 0, Math.min(x+2*period,end), h/3f, paint);
+                c.drawRect(Math.min(x+period,end), -padding, Math.min(x+2*period,end), h/3f, paint);
             }
         }
-        paint.setColor(0xFF000000); c.drawRect(0,h/3f,w/2f,h*2/3f,paint);
-        paint.setColor(0xFFFFFFFF); c.drawRect(w/2f,h/3f,w,h*2/3f,paint);
+        paint.setColor(0xFF000000); c.drawRect(-padding,h/3f,w/2f,h*2/3f,paint);
+        paint.setColor(0xFFFFFFFF); c.drawRect(w/2f,h/3f,w+padding,h*2/3f,paint);
         int[] colors = {0xFF202020,0xFF808080,0xFFF0F0F0,0xFFFF4040,0xFF40C080,0xFF4080FF};
         for (int i=0;i<colors.length;i++) {
             paint.setColor(colors[i]);
-            c.drawRect(i*w/6f,h*2/3f,(i+1)*w/6f,h,paint);
+            c.drawRect(i == 0 ? -padding : i*w/6f,h*2/3f,
+                    i == colors.length - 1 ? w+padding : (i+1)*w/6f,h+padding,paint);
         }
         paint.setColor(0xFF101010);
         paint.setStrokeWidth(2f);
