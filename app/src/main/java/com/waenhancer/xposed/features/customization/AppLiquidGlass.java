@@ -190,6 +190,7 @@ public final class AppLiquidGlass extends Feature {
             optics = LiquidGlassOptics.read(prefs);
             com.waenhancer.theme.KyantLens.publishOpacity(LiquidGlassSettings.opacityPercent(prefs),
                     LiquidGlassSettings.MATERIAL.recommendedOpacityPercent());
+            com.waenhancer.theme.KyantLens.publishRimIntensity(LiquidGlassSettings.rimIntensity(prefs));
         } catch (Throwable error) {
             optics = GlassOptics.LEGACY;
             report("optics-read", "optics switches unreadable; original renderer: " + error);
@@ -622,7 +623,8 @@ public final class AppLiquidGlass extends Feature {
                 if (optics.clearProfile) resolved = resolved.clearProfile();
                 // Temporal group: keep the previous object when nothing changed, so effects keyed
                 // on it stay put. Legacy re-resolves a new object every second, as before.
-                if (!(optics.corrected && optics.temporal) || !resolved.equals(cachedMaterial)) {
+                if (!((optics.corrected && optics.temporal) || optics.oneMate)
+                        || !resolved.equals(cachedMaterial)) {
                     cachedMaterial = resolved;
                 }
                 materialAt = now;
@@ -735,7 +737,9 @@ public final class AppLiquidGlass extends Feature {
                     fresh |= binding.glass.needsFreshCapture(eligible && mayCapture);
                 }
                 GlassOptics optics = GlassOptics.current();
-                boolean temporal = optics.corrected && optics.temporal;
+                // OneMate is the user-facing live renderer: it must always use sticky admissions
+                // and damage-driven captures. It is not gated by the experimental classic switch.
+                boolean temporal = (optics.corrected && optics.temporal) || optics.oneMate;
                 int decision = scheduler.decide(now, temporal, fresh, retryDue);
                 View view = root.get();
                 if (view == null) return true;

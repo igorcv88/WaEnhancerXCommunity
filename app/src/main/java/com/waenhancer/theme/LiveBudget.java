@@ -16,8 +16,8 @@ import java.util.WeakHashMap;
  *
  * <p>Capacity is {@link #CAPACITY_PASSES} × window area. Panes (the conversation header and
  * composer) are admitted first, in the order they record, and are refused like anything else once
- * the window is spent; drawables get what panes leave. A refused surface paints its static
- * material.</p>
+ * the window is spent; drawables get what panes leave. A refused Liquid surface remains
+ * transparent until it can record safely; there is no static replacement.</p>
  *
  * <p>Admission is sticky. A surface that is live keeps its slot for as long as it stays visible;
  * only surfaces asking for the first time can be refused. The first version re-admitted every

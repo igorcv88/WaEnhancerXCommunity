@@ -29,6 +29,8 @@ public final class LiquidGlassSettings {
     public static final String BAR_VARIANT = "floating_bottom_bar_glass_variant";
     /** Opacity of the glass material, app-wide. Still stored under the bar's key; see {@link #opacityPercent}. */
     public static final String BAR_OPACITY = "floating_bottom_bar_glass_opacity";
+    /** OneMate's shared live rim, percent: 0 disables the rim, 100 is the calibrated baseline. */
+    public static final String RIM_INTENSITY = "liquid_glass_rim_intensity";
     /**
      * The style the bar had before Liquid was switched on, so switching it off is reversible.
      *
@@ -197,6 +199,15 @@ public final class LiquidGlassSettings {
         } catch (Throwable ignored) {
             return MATERIAL.recommendedOpacityPercent();
         }
+    }
+
+    /** Adjustable light on the single live lens. Clamped before publishing to the shader. */
+    public static float rimIntensity(SharedPreferences prefs) {
+        if (prefs == null) return 1f;
+        try {
+            float value = prefs.getFloat(RIM_INTENSITY, 1f);
+            return Float.isFinite(value) ? Math.max(0f, Math.min(2f, value)) : 1f;
+        } catch (RuntimeException ignored) { return 1f; }
     }
 
     /**

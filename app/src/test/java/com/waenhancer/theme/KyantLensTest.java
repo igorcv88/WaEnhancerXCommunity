@@ -16,6 +16,7 @@ public class KyantLensTest {
     @After
     public void tearDown() {
         KyantLens.publishOpacity(10f, 10);
+        KyantLens.publishRimIntensity(1f);
     }
 
     /** Kyant's circle map: full displacement at the outline, none at the band's inner edge. */
@@ -76,7 +77,7 @@ public class KyantLensTest {
         float density = 3f;
         KyantLens.Params tall = KyantLens.surface(spec, 400, density, 102);
         assertEquals(24f * density, tall.refractHeight, 1e-4f);
-        assertEquals(24f * density, tall.refractAmount, 1e-4f);
+        assertEquals(24f * density * 0.65f, tall.refractAmount, 1e-4f);
         KyantLens.Params small = KyantLens.surface(spec, 100, density, 102);
         assertEquals(50f, small.refractHeight, 1e-4f);
         assertEquals(102, small.tint >>> 24);
@@ -127,6 +128,25 @@ public class KyantLensTest {
             assertTrue(KyantLens.appPadding(density) > KyantLens.padding(density));
             assertNotEquals(bar.key(), app.key());
         }
+    }
+
+    @Test
+    public void rimControlScalesBothSurfaceFamiliesWithoutChangingGlassBody() {
+        GlassSpec spec = GlassSpec.resolve(GlassSpec.Variant.LIQUID, true, 0, 0, 10f, true, false);
+        KyantLens.Params baseline = KyantLens.surface(spec, 140, 3f, 46);
+        KyantLens.Params baselineApp = KyantLens.appSurface(spec, 140, 3f, 46);
+        KyantLens.publishRimIntensity(0f);
+        KyantLens.Params off = KyantLens.surface(spec, 140, 3f, 46);
+        assertEquals(0f, off.contourGain, 0f);
+        assertEquals(0f, off.highlight, 0f);
+        assertEquals(baseline.tint, off.tint);
+        assertEquals(baseline.blurRadius, off.blurRadius, 0f);
+        assertEquals(baseline.refractAmount, off.refractAmount, 0f);
+        KyantLens.publishRimIntensity(2f);
+        KyantLens.Params bright = KyantLens.appSurface(spec, 140, 3f, 46);
+        assertEquals(baselineApp.contourGain * 2f, bright.contourGain, 1e-5f);
+        assertEquals(baselineApp.highlight * 2f, bright.highlight, 1e-5f);
+        assertEquals(baselineApp.blurRadius, bright.blurRadius, 0f);
     }
 
     /** At rest the bubble is a translucent wash; pressed it is a lens with depth, dispersion and shadow. */

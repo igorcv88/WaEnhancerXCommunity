@@ -4,6 +4,7 @@ import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.content.res.ColorStateList;
 import android.os.Build;
 import android.view.Gravity;
 import android.view.View;
@@ -12,6 +13,7 @@ import android.view.ViewParent;
 import android.view.ViewTreeObserver;
 import android.widget.AbsListView;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 
 import com.waenhancer.theme.GlassMaterialDrawable;
 import com.waenhancer.theme.GlassPane;
@@ -87,6 +89,8 @@ final class ConversationGlassPanes {
         Float holderZ;
         final WeakHashMap<View, Drawable> clearedBackgrounds = new WeakHashMap<>();
         final WeakHashMap<View, Drawable> clearedForegrounds = new WeakHashMap<>();
+        /** The native icon tint, restored exactly when the composer glass is disabled. */
+        final WeakHashMap<ImageView, ColorStateList> originalInputIconTints = new WeakHashMap<>();
         Integer listHostBottomMargin;
         Float footerTranslationY;
         int[] listPadding;
@@ -364,6 +368,7 @@ final class ConversationGlassPanes {
             return;
         }
         clearBackground(screen, input);
+        syncComposerIcons(screen, footer);
         if (!rectIn(footer, input)) return;
         float d = footer.getResources().getDisplayMetrics().density;
         int pad = Math.round(COMPOSE_PAD_DP * d);
@@ -422,11 +427,82 @@ final class ConversationGlassPanes {
         screen.footerListener = null;
         screen.listHostBottomMargin = null;
         screen.footerTranslationY = null;
+        for (java.util.Map.Entry<ImageView, ColorStateList> icon :
+                new ArrayList<>(screen.originalInputIconTints.entrySet())) {
+            if (icon.getKey() != null) icon.getKey().setImageTintList(icon.getValue());
+        }
+        screen.originalInputIconTints.clear();
         restoreUnder(screen, footer);
         syncListPadding(screen);
     }
 
     // ── List ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Attachment and camera are WhatsApp-owned ImageViews, not part of the glass shader. Their
+     * original grey tint can lose contrast when the opaque input background is removed. Follow
+     * the native microphone's current tint when exposed, or the resolved glass content colour.
+     * Restrict discovery to semantic resource names inside the composer: never recolour message
+     * thumbnails, emoji, send, microphone or arbitrary neighbouring controls.
+     */
+    private void syncComposerIcons(Screen screen, ViewGroup footer) {
+        View micButton = findById(footer, "conversation_entry_action_button");
+        ImageView mic = firstImage(micButton, 0);
+        ColorStateList microphoneTint = mic == null ? null : mic.getImageTintList();
+        GlassSpec material = host.material(screen.root.get());
+        int contentColor = material == null ? Color.WHITE : material.contentColor;
+        int color = microphoneTint == null
+                ? contentColor : microphoneTint.getColorForState(
+                        mic.getDrawableState(), microphoneTint.getDefaultColor());
+        int matched = tintComposerIcons(screen, footer, color, 0);
+        if (matched != 3) host.report("composer-icon-routing-" + matched,
+                "composer icons resolved=" + matched + " (attachment=1, camera=2); "
+                        + "inspect footer resource names on this WhatsApp build if either is absent");
+    }
+
+    private static ImageView firstImage(View view, int depth) {
+        if (view instanceof ImageView) return (ImageView) view;
+        if (!(view instanceof ViewGroup) || depth > 5) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            ImageView icon = firstImage(group.getChildAt(i), depth + 1);
+            if (icon != null) return icon;
+        }
+        return null;
+    }
+
+    private static int tintComposerIcons(Screen screen, View view, int color, int depth) {
+        if (view == null || depth > 9) return 0;
+        String name = null;
+        if (view.getId() != View.NO_ID) {
+            try { name = view.getResources().getResourceEntryName(view.getId()); }
+            catch (android.content.res.Resources.NotFoundException ignored) { }
+        }
+        boolean namedIcon = name != null && (name.contains("attach") || name.contains("camera"));
+        if (namedIcon) {
+            ImageView image = firstImage(view, 0);
+            if (image != null) {
+                if (!screen.originalInputIconTints.containsKey(image)) {
+                    screen.originalInputIconTints.put(image, image.getImageTintList());
+                }
+                if (image.getImageTintList() == null
+                        || image.getImageTintList().getDefaultColor() != color) {
+                    image.setImageTintList(ColorStateList.valueOf(color));
+                }
+                return (name.contains("attach") ? 1 : 0) | (name.contains("camera") ? 2 : 0);
+            }
+            return 0;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            int resolved = 0;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                resolved |= tintComposerIcons(screen, group.getChildAt(i), color, depth + 1);
+            }
+            return resolved;
+        }
+        return 0;
+    }
 
     /** Padding parks messages clear of the chrome; clipToPadding=false lets them scroll behind it. */
     private void syncListPadding(Screen screen) {

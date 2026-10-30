@@ -180,10 +180,16 @@ public final class KyantLens {
             // unlike its compositor-only popup overlay we can modulate live pixels here.
             + "        float sigma = max(uStrokeW * 0.65, 0.75);\n"
             + "        float contour = exp(-0.5 * depth * depth / (sigma * sigma));\n"
-            + "        float contourGain = (0.10 + 0.16 * smoothstep(0.0, 0.75, luminance))\n"
+            + "        float contourGain = (0.10 + 0.20 * smoothstep(0.0, 0.75, luminance))\n"
             + "                          * (0.85 + 0.15 * clamp(light, 0.0, 1.0)) * uContourGain;\n"
             + "        float bevelGain = light * envelope * uHighlight * response;\n"
-            + "        float reflection = clamp(contour * contourGain + bevelGain * 0.45, 0.0, 0.45);\n"
+            // A bright message/photo moving behind one segment increases the local grazing
+            // glint, while the opposite segment retains its own lower luminance. Only the live
+            // backdrop pixel is sampled; this is never a fixed decorative stroke.
+            + "        float whiteEdge = smoothstep(0.42, 0.98, luminance);\n"
+            + "        float glint = whiteEdge * whiteEdge * exp(-depth / max(uBloom * 1.6, 1.0))\n"
+            + "                    * 0.14 * uContourGain;\n"
+            + "        float reflection = clamp(contour * contourGain + bevelGain * 0.45 + glint, 0.0, 0.62);\n"
             + "        float3 reflected = mix(float3(1.0), transmitted, 0.15) * col.a;\n"
             // Keep #100's dark-background result exactly. Only the narrow contour
             // changes polarity when the composited body is too bright to illuminate.
@@ -296,6 +302,7 @@ public final class KyantLens {
 
     /** Surface tint alpha, 0-255, published from the opacity slider; 18% until then. */
     private static volatile int surfaceAlpha255 = Math.round(SURFACE_ALPHA * 255f);
+    private static volatile float rimIntensity = 1f;
 
     /**
      * Publishes the user's opacity slider. Called by the hooks that own the preference (no
@@ -304,6 +311,11 @@ public final class KyantLens {
      */
     public static void publishOpacity(float opacityPercent, int recommendedPercent) {
         surfaceAlpha255 = Math.round(surfaceAlpha(opacityPercent, recommendedPercent) * 255f);
+    }
+
+    /** Applied by the app hook on resume; both bar and app chrome share this optical strength. */
+    public static void publishRimIntensity(float value) {
+        rimIntensity = Float.isFinite(value) ? Math.max(0f, Math.min(2f, value)) : 1f;
     }
 
     static int surfaceAlpha255() {
@@ -340,7 +352,8 @@ public final class KyantLens {
         Params p = new Params();
         float half = height / 2f;
         p.refractHeight = Math.min(REFRACTION_DP * density, half);
-        p.refractAmount = REFRACTION_DP * density;
+        // A thinner edge than the original 24dp displacement; retain a sharp, readable core.
+        p.refractAmount = REFRACTION_DP * density * 0.65f;
         // The theme surface is blue-grey, and adaptTo can tint it again. Neither is
         // a pigment in clear glass. Keep only a neutral readability wash; the
         // recorded backdrop supplies all hue. Content colour selects dark/light.
@@ -351,9 +364,9 @@ public final class KyantLens {
         p.tint = (surfaceAlpha255 << 24)
                 | (spec.bubbleTint ? spec.fillColor & 0x00FFFFFF : neutral);
         p.strokeWidth = VIEW_STROKE_DP * density;
-        p.contourGain = VIEW_CONTOUR_GAIN;
+        p.contourGain = VIEW_CONTOUR_GAIN * rimIntensity;
         p.bloom = BLOOM_DP * density;
-        p.highlight = HIGHLIGHT_ALPHA;
+        p.highlight = HIGHLIGHT_ALPHA * rimIntensity;
         p.strokeAlpha = 0f;
         setLights(p, LIGHT_PRIMARY_BAR);
         p.saturation = SATURATION;
@@ -366,7 +379,7 @@ public final class KyantLens {
         Params p = surface(spec, height, density, surfaceAlpha255);
         p.blurRadius = blurRadiusPx(density, APP_BLUR_DP);
         p.strokeWidth = APP_STROKE_DP * density;
-        p.contourGain = APP_CONTOUR_GAIN;
+        p.contourGain = APP_CONTOUR_GAIN * rimIntensity;
         return p;
     }
 

@@ -158,6 +158,18 @@ public class LiquidGlassSettingsTest {
         assertTrue(LiquidGlassSettings.isScrollButtonEnabled(prefs));
     }
 
+    @Test public void rimIntensityIsClampedAndDefaultsToTheSingleLiveMaterial() {
+        assertEquals(1f, LiquidGlassSettings.rimIntensity(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.RIM_INTENSITY, 1.4f).apply();
+        assertEquals(1.4f, LiquidGlassSettings.rimIntensity(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.RIM_INTENSITY, 99f).apply();
+        assertEquals(2f, LiquidGlassSettings.rimIntensity(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.RIM_INTENSITY, -1f).apply();
+        assertEquals(0f, LiquidGlassSettings.rimIntensity(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.RIM_INTENSITY, Float.NaN).apply();
+        assertEquals(1f, LiquidGlassSettings.rimIntensity(prefs), 0f);
+    }
+
     @Test public void existingBubbleToggleMigratesToBothDirections() {
         prefs.edit().putBoolean(LiquidGlassSettings.Surface.BUBBLES.key, true).apply();
         assertEquals(LiquidGlassSettings.BubbleScope.BOTH, LiquidGlassSettings.bubbleScope(prefs));
