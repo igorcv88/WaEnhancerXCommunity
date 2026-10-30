@@ -100,6 +100,7 @@ final class ConversationGlassPanes {
         boolean voiceRecording;
         String voiceGeometryKey;
         Integer listHostBottomMargin;
+        Integer floatedFooterHeight;
         Float footerTranslationY;
         int[] listPadding;
         Boolean listClipToPadding;
@@ -290,6 +291,7 @@ final class ConversationGlassPanes {
         View source = screen.headerSource.get();
         if (screen.capsule == null || screen.capsule.getParent() != holder) {
             screen.capsule = newPane(screen, holder, source, wallpaperOf(screen));
+            screen.capsule.setTopWashStrength(0.12f);
             screen.capsule.setSourceResolver(() -> {
                 View root = screen.root.get();
                 ViewGroup footer = root == null ? null : find(root, "footer");
@@ -351,15 +353,27 @@ final class ConversationGlassPanes {
 
     /** The list host grows under the footer; the footer rides up off the bottom edge. */
     private void floatFooter(Screen screen, ViewGroup footer) {
-        if (screen.listHostBottomMargin != null) return;
         ViewGroup listHost = screen.listHost.get();
         int h = footer.getHeight();
         if (listHost == null || h <= 0
                 || !(listHost.getLayoutParams() instanceof ViewGroup.MarginLayoutParams)) return;
+        if (screen.listHostBottomMargin != null) {
+            // A quoted reply or locked voice recording increases the footer's height. The
+            // message-list host must extend behind the *new* height, including the strip next
+            // to the action disc. Only adjust on a measured height transition: reacting to a
+            // stale top/margin on every layout caused oscillation in the old home chrome.
+            if (screen.floatedFooterHeight != null && screen.floatedFooterHeight == h) return;
+            ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) listHost.getLayoutParams();
+            lp.bottomMargin = -h;
+            screen.floatedFooterHeight = h;
+            listHost.setLayoutParams(lp);
+            return;
+        }
         AbsListView list = screen.list.get();
         boolean atEnd = list != null && restsAtEnd(list);
         ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) listHost.getLayoutParams();
         screen.listHostBottomMargin = lp.bottomMargin;
+        screen.floatedFooterHeight = h;
         screen.footerTranslationY = footer.getTranslationY();
         lp.bottomMargin = -h;
         listHost.setLayoutParams(lp);
@@ -385,13 +399,24 @@ final class ConversationGlassPanes {
                 if (screen.composer != null) place(screen.composer, 0, 0, 0, 0, 0f);
                 return;
             }
-            Rect voiceRect = new Rect(rect);
             float d = footer.getResources().getDisplayMetrics().density;
             int pad = Math.round(COMPOSE_PAD_DP * d);
-            int l = Math.max(0, voiceRect.left + pad);
-            int t = Math.max(0, voiceRect.top + pad);
-            int r = Math.min(footer.getWidth(), voiceRect.right - pad);
-            int b = Math.min(footer.getHeight(), voiceRect.bottom - pad);
+            // voice_note_stub initially measures as a short strip. Using its bounds made only
+            // that strip glass, while the full recorder remained opaque for ~1.7 seconds on
+            // the captured device trace. Glass already belongs to the footer, so cover its
+            // stable envelope from the first timer-bearing recording frame.
+            int l = pad, t = pad;
+            int r = footer.getWidth() - pad;
+            int b = footer.getHeight() - pad;
+            View action = findById(footer, "conversation_entry_action_button");
+            if (action != null && action.isShown()
+                    && action.getWidth() <= 72f * d && action.getHeight() <= 72f * d
+                    && rectIn(footer, action)) {
+                int[] edges = ComposerGeometry.separate(l, r, t, b,
+                        rect.left, rect.right, rect.top, rect.bottom,
+                        Math.max(1, Math.round(2f * d)));
+                l = edges[0]; r = edges[1];
+            }
             if (r <= l || b <= t) return;
             // Keep the same GlassPane and the same safe recording source as the normal input.
             // Only its mask geometry changes: waveform, elapsed time and buttons stay native.
@@ -475,6 +500,7 @@ final class ConversationGlassPanes {
         }
         screen.footerListener = null;
         screen.listHostBottomMargin = null;
+        screen.floatedFooterHeight = null;
         screen.footerTranslationY = null;
         restoreVoiceBackgrounds(screen);
         restoreReplyContrast(screen);
@@ -639,7 +665,19 @@ final class ConversationGlassPanes {
     private static void clearVoiceBackgrounds(Screen screen, ViewGroup recorder) {
         clearVoiceBackground(screen, recorder);
         ViewGroup footer = screen.footer.get();
-        if (footer != null && footer != recorder) clearVoiceBackground(screen, footer);
+        // WhatsApp may put the opaque fill on edit_layout / emoji_popup_anchor rather than on
+        // voice_note_stub itself. Clear only the full-area chain leading to this known recorder;
+        // unrelated action discs, waveform children and message content remain untouched.
+        if (footer != null) {
+            for (View ancestor = parentView(recorder); ancestor != null && ancestor != footer;
+                    ancestor = parentView(ancestor)) {
+                if (ancestor.getWidth() >= footer.getWidth() * 0.8f
+                        && ancestor.getHeight() >= footer.getHeight() * 0.8f) {
+                    clearVoiceBackground(screen, ancestor);
+                }
+            }
+            if (footer != recorder) clearVoiceBackground(screen, footer);
+        }
         for (int i = 0; i < recorder.getChildCount(); i++) {
             View child = recorder.getChildAt(i);
             if (child instanceof ViewGroup && child.getWidth() >= recorder.getWidth() * 0.9f

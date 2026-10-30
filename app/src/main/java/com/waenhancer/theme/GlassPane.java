@@ -2,10 +2,14 @@ package com.waenhancer.theme;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Outline;
+import android.graphics.Paint;
 import android.graphics.RecordingCanvas;
 import android.graphics.Rect;
+import android.graphics.Shader;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
@@ -97,6 +101,36 @@ public final class GlassPane extends FrameLayout {
                 outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius());
             }
         });
+    }
+
+    /** Header-only neutral veil inside the *live* lens; never used as an unavailable fallback. */
+    private float topWashStrength;
+    private final Paint topWashPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private int topWashHeight = -1, topWashColor;
+    private float topWashApplied = -1f;
+
+    public void setTopWashStrength(float strength) {
+        float next = Math.max(0f, Math.min(0.22f, strength));
+        if (topWashStrength == next) return;
+        topWashStrength = next;
+        topWashHeight = -1;
+        invalidate();
+    }
+
+    private void drawTopWash(Canvas canvas, GlassSpec material) {
+        if (topWashStrength <= 0f || getHeight() <= 0) return;
+        int rgb = SemanticTheme.relativeLuminance(material.contentColor) > 0.5d
+                ? Color.BLACK : Color.WHITE;
+        if (topWashHeight != getHeight() || topWashColor != rgb || topWashApplied != topWashStrength) {
+            topWashHeight = getHeight();
+            topWashColor = rgb;
+            topWashApplied = topWashStrength;
+            int top = (Math.round(255f * topWashStrength) << 24) | (rgb & 0xFFFFFF);
+            int bottom = (Math.round(255f * topWashStrength * 0.25f) << 24) | (rgb & 0xFFFFFF);
+            topWashPaint.setShader(new LinearGradient(0f, 0f, 0f, getHeight(),
+                    top, bottom, Shader.TileMode.CLAMP));
+        }
+        canvas.drawRect(0, 0, getWidth(), getHeight(), topWashPaint);
     }
 
     /** Main thread only: whether any live glass is recording right now. Guards hold back touch feedback. */
@@ -479,7 +513,10 @@ public final class GlassPane extends FrameLayout {
                         "draw-result", "captureContent=" + captureContent + " " + backdrop.status());
             }
         }
-        if (live) return;
+        if (live) {
+            drawTopWash(canvas, material);
+            return;
+        }
         if (!suspended && recovery.state() == SurfaceRecovery.State.LIVE && backdrop.wasDropped()) {
             failed(SystemClock.uptimeMillis(), false, "display-list-lost");
         }

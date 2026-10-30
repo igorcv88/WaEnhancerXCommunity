@@ -13,6 +13,7 @@ import android.graphics.drawable.Drawable;
 import android.view.View;
 
 import java.lang.ref.WeakReference;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -42,6 +43,10 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     private Boolean presentedLive;
     private String budgetStatus = "unassigned";
     private final int[] location = new int[2];
+    private Consumer<View> onHostResolved;
+    private Runnable onHostMissing;
+    private boolean notifiedHost;
+    private boolean reportedMissingHost;
 
     public GlassMaterialDrawable(View owner, Drawable original, Supplier<GlassSpec> spec,
                                  float radiusDp, boolean nativeMask) {
@@ -61,7 +66,14 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
 
     @Override public void draw(Canvas canvas) {
         View view = owner.get();
-        if (view == null && getCallback() instanceof View) view = (View) getCallback();
+        if (view == null) view = callbackOwner();
+        if (view != null && onHostResolved != null && !notifiedHost) {
+            notifiedHost = true;
+            onHostResolved.accept(view);
+        } else if (view == null && onHostMissing != null && !reportedMissingHost) {
+            reportedMissingHost = true;
+            onHostMissing.run();
+        }
         GlassSpec material = spec.get();
         Rect b = getBounds();
         if (view == null || material == null || b.isEmpty()) { drawOriginal(canvas); return; }
@@ -103,6 +115,26 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     }
 
     public void attachMaterial(Supplier<GlassSpec> material) { spec = material; }
+
+    /**
+     * A factory result can become nested under a selector after creation, or be drawn before
+     * the window's first discovery pass. Follow native Drawable.Callback ownership when the
+     * result is actually drawn; notify the app hook once, outside its drawing/capture path.
+     */
+    public void observeHost(Consumer<View> resolved, Runnable missing) {
+        onHostResolved = resolved;
+        onHostMissing = missing;
+    }
+
+    public View callbackOwner() {
+        Drawable.Callback callback = getCallback();
+        for (int depth = 0; callback != null && depth < 10; depth++) {
+            if (callback instanceof View) return (View) callback;
+            if (!(callback instanceof Drawable)) return null;
+            callback = ((Drawable) callback).getCallback();
+        }
+        return null;
+    }
 
     /** A factory drawable may be nested inside a LayerDrawable instead of being the view's
      * direct background. The owning row is discovered after native attachment. */
