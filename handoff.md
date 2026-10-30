@@ -4,7 +4,7 @@ This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent
 
 ## Current task — independent contact header and direction-aware bubble glass, 2026-10-30
 
-Branch `feat/glass-bubble-scope-and-header-split-20261030` from `master@be2fed8` (PR #101 merged). User reports the existing global bubble-glass switch has **never worked** on their WhatsApp, though the message input glass is approved. Screenshot 86064 is the look reference: dark translucent received bubbles and blue sent bubbles. The separate quoted-reply glass control already exists and must remain independent.
+Branch `feat/glass-bubble-scope-and-header-split-20261030` from `master@be2fed8` (PR #101 merged), review-ready [PR #102](https://github.com/igorcv88/WaEnhancerXCommunity/pull/102) created at `9eedd288`. User reports the existing global bubble-glass switch has **never worked** on their WhatsApp, though the message input glass is approved. Screenshot 86064 is the look reference: dark translucent received bubbles and blue sent bubbles. The separate quoted-reply glass control already exists and must remain independent.
 
 Implementation in progress:
 - Separate `liquid_glass_conversation_header` (floating contact-name header with the existing behind-header message scrolling) from `liquid_glass_toolbars` (home/other-page header). Existing header-on installations inherit the old value until saved independently. Generic toolbar binding does not cross into the conversation holder.
@@ -16,7 +16,7 @@ Static evidence supports two possible previous failure routes: ambiguous DexKit 
 
 Validation during this task: 11 changed Java sources passed a JDK 21 parser-only check; standalone JDK 21 compilation and executable smoke checks passed for `GlassSpec`, `SemanticTheme`, `BottomBarPreferenceSchema`, `LiquidGlassSettings`, `PreferenceSchema` and fake preferences (legacy migrations, direction selection, tint choice, text colour and fallback). `git diff --check` passed. A full Gradle `:app:testWhatsappDebugUnitTest` attempt downloaded Gradle 8.14.5, first failed on Java 21 absent, then passed Java 21 toolchain configuration with a temporary JDK but stopped at **missing Android SDK (compileSdk 36)**. No APK or full unit suite was built; no CI dispatched. Tinted specs are cached by the resolved base material and colour to avoid per-frame fallback reallocation.
 
-Next: complete local Gradle/JVM and Android compilation attempts, inspect the diff and resource/settings validity, create a review-ready PR without merging or dispatching workflows. Then build/install on the S25 Ultra and test both directions, tinted and default, light/dark, recycled rows, media/quoted messages, scrolled wallpaper, text contrast and contact-header independence. If the factory marker never appears, collect targeted DexKit/WhatsApp resolver logs before widening hooks.
+Next: build/install PR #102 on the S25 Ultra and test both directions, tinted and default, light/dark, recycled rows, media/quoted messages, scrolled wallpaper, text contrast and contact-header independence. If the factory marker never appears, collect targeted DexKit/WhatsApp resolver logs before widening hooks. Do not merge before runtime validation or dispatch a GitHub Actions workflow without an explicit request.
 
 ## Current task — separate navbar, bubble and app-chrome calibration, 2026-10-22
 
