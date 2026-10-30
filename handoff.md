@@ -962,7 +962,7 @@ Verification still required on Galaxy S25 Ultra / Android 17 / currently install
 
 ## PR #102 device follow-up — recorder delay, static footer strip, rim and bubble routing — 2026-10-30
 
-Delivery note: PR #102 was merged by the user at `master@1a982af09240ef24015ce8c9daa9fa696db1595f` before these follow-up fixes were pushed. These changes must therefore be proposed separately from that master in `fix/glass-voice-bubbles-optics-20261030`, not appended to the merged PR branch. Do not treat the static code review below as an installed or validated build.
+Delivery note: PR #102 was merged by the user at `master@1a982af09240ef24015ce8c9daa9fa696db1595f` before these follow-up fixes were pushed. This work is in review-ready PR #103 (`fix/glass-voice-bubbles-optics-20261030`, base `master`), not appended to the merged branch. Do not treat the static code review below as an installed or validated build. No CI workflow was dispatched and no merge performed.
 
 Static checks for this follow-up: JDK 21 parsed six edited Java files (including the changed KyantLens unit-test source); `git diff --check` passed and the previously compiled pure-Java bubble/header/palette `Smoke` passed. Those smoke classes do not exercise the new Android hooks, recording geometry, AGSL program, or new `uAppChrome` uniform. No Android SDK / compileSdk 36 available locally; full build, GPU shader compilation and phone tests remain pending. No workflow dispatched.
 
