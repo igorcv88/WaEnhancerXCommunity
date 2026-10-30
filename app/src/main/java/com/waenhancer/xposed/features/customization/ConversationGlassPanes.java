@@ -7,6 +7,10 @@ import android.graphics.drawable.Drawable;
 import android.content.res.ColorStateList;
 import android.os.Build;
 import android.os.SystemClock;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -60,6 +64,8 @@ final class ConversationGlassPanes {
     private static final float COMPOSE_LIFT_DP = 6f;
     /** Ceiling on the composer pill's corner radius: half the single-row height. */
     private static final float COMPOSE_MAX_RADIUS_DP = 24f;
+    /** Measured stable voice panel height on the current 3x-density WhatsApp layout. */
+    private static final float VOICE_ENVELOPE_DP = 140f;
 
     interface Host {
         boolean toolbarsEnabled();
@@ -88,6 +94,12 @@ final class ConversationGlassPanes {
 
         // Originals, recorded once when first changed.
         Integer holderBottomMargin;
+        Integer holderTopMargin;
+        WeakReference<Window> window = new WeakReference<>(null);
+        boolean fullscreenOwned;
+        boolean fullscreenWasEnabled;
+        int originalCutoutMode;
+        int fullscreenTopInset;
         Float holderZ;
         final WeakHashMap<View, Drawable> clearedBackgrounds = new WeakHashMap<>();
         final WeakHashMap<View, Drawable> clearedForegrounds = new WeakHashMap<>();
@@ -102,6 +114,8 @@ final class ConversationGlassPanes {
         String voiceGeometryKey;
         long voiceSignalUntil;
         final WeakHashMap<View, Float> duplicateReplyAlpha = new WeakHashMap<>();
+        final WeakHashMap<View, Float> recordingMicOffsets = new WeakHashMap<>();
+        final WeakHashMap<ViewGroup, Boolean> recordingClipChildren = new WeakHashMap<>();
         Integer listHostBottomMargin;
         Integer floatedFooterHeight;
         Float footerTranslationY;
@@ -113,10 +127,20 @@ final class ConversationGlassPanes {
 
     private final Host host;
     private final WeakHashMap<View, Screen> screens = new WeakHashMap<>();
+    private final WeakHashMap<View, WeakReference<Window>> windows = new WeakHashMap<>();
     private final Rect rect = new Rect();
 
     ConversationGlassPanes(Host host) {
         this.host = host;
+    }
+
+    /** The lifecycle callback owns the activity/window identity; never infer it from a View. */
+    void setActivityWindow(View root, Window window) {
+        if (root == null || window == null) return;
+        WeakReference<Window> reference = new WeakReference<>(window);
+        windows.put(root, reference);
+        Screen screen = screens.get(root);
+        if (screen != null) screen.window = reference;
     }
 
     /**
@@ -140,6 +164,7 @@ final class ConversationGlassPanes {
      */
     void release(View root) {
         Screen screen = root == null ? null : screens.remove(root);
+        if (root != null) windows.remove(root);
         if (screen == null) return;
         try {
             if (screen.headerOn) disableHeader(screen);
@@ -178,6 +203,10 @@ final class ConversationGlassPanes {
         // Geometry is already known for the footer. Reuse its one persistent pane now;
         // the one-shot next-frame retry covers native ViewStub inflation/first measurement.
         syncFooter(screen);
+        // A visibility signal alone does not guarantee another frame; actively wake the
+        // existing pane's pre-draw capture while WhatsApp is inflating the recorder.
+        if (screen.composer != null) screen.composer.invalidate();
+        footer.invalidate();
         footer.postOnAnimation(() -> {
             if (screen.footerOn && screen.footer.get() == footer && !screen.suspended) syncFooter(screen);
         });
@@ -199,6 +228,8 @@ final class ConversationGlassPanes {
                 if (holder == null && footer == null) return;
                 screen = new Screen();
                 screen.root = new WeakReference<>(root);
+                WeakReference<Window> window = windows.get(root);
+                if (window != null) screen.window = window;
                 screens.put(root, screen);
             }
             screen.coordinator = new WeakReference<>(find(root, "coordinator"));
@@ -245,6 +276,7 @@ final class ConversationGlassPanes {
             screen.holder = new WeakReference<>(holder);
         }
         screen.headerOn = true;
+        enableConversationFullscreen(screen, holder);
         if (screen.holderListener == null) {
             screen.holderListener = (v, l, t, r, b, ol, ot, or, ob) -> {
                 if (screen.headerOn) syncHeader(screen);
@@ -252,6 +284,66 @@ final class ConversationGlassPanes {
             holder.addOnLayoutChangeListener(screen.holderListener);
         }
         syncHeader(screen);
+    }
+
+    /** Hide only the status bar in a glass-header conversation. WhatsApp's navigation bar,
+     * keyboard and other activities are not modified. Restore window flags on exit. */
+    private void enableConversationFullscreen(Screen screen, ViewGroup holder) {
+        View root = screen.root.get();
+        Window window = screen.window.get();
+        if (window == null || root == null) return;
+        if (!screen.fullscreenOwned) {
+            WindowManager.LayoutParams original = window.getAttributes();
+            screen.fullscreenWasEnabled = (original.flags & WindowManager.LayoutParams.FLAG_FULLSCREEN) != 0;
+            screen.originalCutoutMode = original.layoutInDisplayCutoutMode;
+            WindowInsets insets = root.getRootWindowInsets();
+            if (insets != null) {
+                screen.fullscreenTopInset = insets.getInsetsIgnoringVisibility(
+                        WindowInsets.Type.statusBars()).top;
+                if (insets.getDisplayCutout() != null) {
+                    screen.fullscreenTopInset = Math.max(screen.fullscreenTopInset,
+                            insets.getDisplayCutout().getSafeInsetTop());
+                }
+            }
+            original.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            window.setAttributes(original);
+            window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                controller.setSystemBarsBehavior(
+                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                controller.hide(WindowInsets.Type.statusBars());
+            }
+            screen.fullscreenOwned = true;
+            host.report("conversation-fullscreen", "conversation status bar hidden; navigation and IME preserved");
+        }
+        if (holder.getLayoutParams() instanceof ViewGroup.MarginLayoutParams) {
+            ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) holder.getLayoutParams();
+            if (screen.holderTopMargin == null) screen.holderTopMargin = lp.topMargin;
+            int spacing = Math.round(8f * holder.getResources().getDisplayMetrics().density);
+            int target = screen.holderTopMargin + screen.fullscreenTopInset + spacing;
+            if (lp.topMargin != target) {
+                lp.topMargin = target;
+                holder.setLayoutParams(lp);
+            }
+        }
+    }
+
+    private void restoreConversationFullscreen(Screen screen) {
+        if (!screen.fullscreenOwned) return;
+        Window window = screen.window.get();
+        if (window != null) {
+            if (!screen.fullscreenWasEnabled) {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                WindowInsetsController controller = window.getInsetsController();
+                if (controller != null) controller.show(WindowInsets.Type.statusBars());
+            }
+            WindowManager.LayoutParams attrs = window.getAttributes();
+            attrs.layoutInDisplayCutoutMode = screen.originalCutoutMode;
+            window.setAttributes(attrs);
+        }
+        screen.fullscreenOwned = false;
     }
 
     /** Negative bottom margin grows the coordinator up under the header; Z keeps rows beneath it. */
@@ -350,9 +442,17 @@ final class ConversationGlassPanes {
                 lp.bottomMargin = screen.holderBottomMargin;
                 holder.setLayoutParams(lp);
             }
+            if (screen.holderTopMargin != null
+                    && holder.getLayoutParams() instanceof ViewGroup.MarginLayoutParams) {
+                ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) holder.getLayoutParams();
+                lp.topMargin = screen.holderTopMargin;
+                holder.setLayoutParams(lp);
+            }
             if (screen.holderZ != null) holder.setTranslationZ(screen.holderZ);
         }
+        restoreConversationFullscreen(screen);
         screen.holderListener = null;
+        screen.holderTopMargin = null;
         screen.holderBottomMargin = null;
         screen.holderZ = null;
         restoreUnder(screen, holder);
@@ -431,7 +531,9 @@ final class ConversationGlassPanes {
                 if (voice == null) host.report("voice-panel-route-missing",
                         "voice recorder panel not resolved; " + describeFooter(footer));
                 restoreVoiceBackgrounds(screen);
+                restoreRecordingGlassClip(screen);
                 restoreDuplicateReply(screen);
+                restoreRecordingMic(screen);
                 if (screen.composer != null) place(screen.composer, 0, 0, 0, 0, 0f);
                 return;
             }
@@ -444,6 +546,17 @@ final class ConversationGlassPanes {
             int l = pad, t = pad;
             int r = footer.getWidth() - pad;
             int b = footer.getHeight() - pad;
+            View quote = findReplyPreview(footer);
+            int expectedHeight = Math.round(VOICE_ENVELOPE_DP * d)
+                    + (quote != null && quote.isShown() ? quote.getHeight() : 0);
+            if (footer.getHeight() < expectedHeight) {
+                // The native 115px stub becomes a ~414px recording panel only several
+                // seconds later (confirmed on the phone). Reserve its known envelope at
+                // *start*, extending the single glass pane above the short footer. Keep
+                // the recorder's actual UI geometry and touch targets under WhatsApp.
+                t -= expectedHeight - footer.getHeight();
+                allowRecordingGlassOverflow(screen, footer);
+            }
             View action = findById(footer, "conversation_entry_action_button");
             if (action != null && action.isShown()
                     && action.getWidth() <= 72f * d && action.getHeight() <= 72f * d
@@ -462,6 +575,7 @@ final class ConversationGlassPanes {
             }
             clearVoiceBackgrounds(screen, voice);
             suppressDuplicateReply(screen, footer);
+            alignRecordingMic(screen, voice);
             screen.composer.setSource(screen.listHost.get());
             screen.composer.setUnderlay(wallpaperOf(screen));
             place(screen.composer, l, t, r, b, Math.min((b - t) / 2f, COMPOSE_MAX_RADIUS_DP * d));
@@ -477,7 +591,9 @@ final class ConversationGlassPanes {
             return;
         }
         restoreVoiceBackgrounds(screen);
+        restoreRecordingGlassClip(screen);
         restoreDuplicateReply(screen);
+        restoreRecordingMic(screen);
         clearBackground(screen, input);
         syncComposerIcons(screen, footer);
         syncReplyContrast(screen, footer);
@@ -541,7 +657,9 @@ final class ConversationGlassPanes {
         screen.floatedFooterHeight = null;
         screen.footerTranslationY = null;
         restoreVoiceBackgrounds(screen);
+        restoreRecordingGlassClip(screen);
         restoreDuplicateReply(screen);
+        restoreRecordingMic(screen);
         restoreReplyContrast(screen);
         for (java.util.Map.Entry<ImageView, ColorStateList> icon :
                 new ArrayList<>(screen.originalInputIconTints.entrySet())) {
@@ -641,24 +759,107 @@ final class ConversationGlassPanes {
                 && voice.getHeight() >= 24f * d ? (ViewGroup) voice : null;
     }
 
-    /** The draft recorder and ordinary composer can both show the same quoted message.
-     * Keep the composer's actionable preview; hide only the duplicate draft pixels and
-     * restore their original alpha as soon as recording ends. Neither view is removed. */
-    private static void suppressDuplicateReply(Screen screen, ViewGroup footer) {
-        View draft = findById(footer, "voice_note_draft_quoted_message_frame");
-        View ordinary = findById(footer, "quoted_message_preview_container_v2");
-        if (ordinary == null) ordinary = findById(footer, "quoted_message_preview_container");
-        if (ordinary == null) ordinary = findById(footer, "composer_quoted_message_frame");
-        if (draft == null || ordinary == null || draft == ordinary
-                || isAncestor(draft, ordinary) || isAncestor(ordinary, draft)
-                || !draft.isShown() || !ordinary.isShown()) {
-            restoreDuplicateReply(screen);
+    /** WhatsApp may render composer and voice-draft quotes under different version-specific
+     * IDs. Identify two distinct visible quote subtrees by semantics and position, rather than
+     * assuming the older voice_note_draft_quoted_message_frame resource still exists. */
+    private void suppressDuplicateReply(Screen screen, ViewGroup footer) {
+        // In builds exposing the two known slots, the voice draft's quoted frame is the
+        // second copy. Prefer this exact structural match to visual guesses: hide only
+        // while the normal composer quote is also visible, and restore on recording exit.
+        View composerQuote = findReplyPreview(footer);
+        View voiceQuote = findById(footer, "voice_note_draft_quoted_message_frame");
+        if (composerQuote != null && voiceQuote != null && composerQuote != voiceQuote
+                && composerQuote.isShown() && voiceQuote.isShown()
+                && !isAncestor(composerQuote, voiceQuote)
+                && !isAncestor(voiceQuote, composerQuote)) {
+            if (!screen.duplicateReplyAlpha.containsKey(voiceQuote)) {
+                screen.duplicateReplyAlpha.put(voiceQuote, voiceQuote.getAlpha());
+            }
+            if (voiceQuote.getAlpha() != 0f) voiceQuote.setAlpha(0f);
+            host.report("double-voice-reply-exact", "second native voice reply frame suppressed");
             return;
         }
-        if (!screen.duplicateReplyAlpha.containsKey(draft)) {
-            screen.duplicateReplyAlpha.put(draft, draft.getAlpha());
+        ArrayList<View> previews = new ArrayList<>();
+        collectReplyPreviews(footer, previews, 0);
+        if (previews.size() < 2) {
+            restoreDuplicateReply(screen);
+            host.report("voice-reply-candidates-" + previews.size(),
+                    "voice reply candidates=" + previews.size() + " footer=" + describeFooter(footer)
+                            + " named=" + describeReplyNodes(footer, 0));
+            return;
         }
-        if (draft.getAlpha() != 0f) draft.setAlpha(0f);
+        previews.sort((left, right) -> Integer.compare(screenTop(left), screenTop(right)));
+        View keep = previews.get(0);
+        if (screen.duplicateReplyAlpha.containsKey(keep)) {
+            Float nativeAlpha = screen.duplicateReplyAlpha.remove(keep);
+            if (keep.getAlpha() == 0f) keep.setAlpha(nativeAlpha);
+        }
+        for (int i = 1; i < previews.size(); i++) {
+            View duplicate = previews.get(i);
+            if (Math.abs(screenTop(duplicate) - screenTop(keep)) < 8f
+                    * footer.getResources().getDisplayMetrics().density) continue;
+            if (!screen.duplicateReplyAlpha.containsKey(duplicate)) {
+                screen.duplicateReplyAlpha.put(duplicate, duplicate.getAlpha());
+            }
+            if (duplicate.getAlpha() != 0f) duplicate.setAlpha(0f);
+            host.report("double-voice-reply-suppressed", "duplicate voice reply pixels suppressed: "
+                    + resourceName(keep) + " / " + resourceName(duplicate)
+                    + " (same footer, separate positions)");
+        }
+    }
+
+    private static void collectReplyPreviews(View node, List<View> out, int depth) {
+        if (node == null || !node.isShown() || depth > 9) return;
+        String name = resourceName(node);
+        boolean semantic = name != null && (name.contains("quoted_message")
+                || name.contains("reply_preview") || name.contains("quoted_preview"));
+        ViewGroup footer = null;
+        for (View current = node; current != null; current = parentView(current)) {
+            if ("footer".equals(resourceName(current)) && current instanceof ViewGroup) {
+                footer = (ViewGroup) current;
+                break;
+            }
+        }
+        float d = node.getResources().getDisplayMetrics().density;
+        if (semantic && node instanceof ViewGroup && node.getHeight() >= 22f * d
+                && node.getHeight() <= 180f * d
+                && footer != null && node.getWidth() >= footer.getWidth() * 0.4f) {
+            // Keep the outermost named preview. A nested frame is the same native quote,
+            // not a second copy. Some voice-note previews have only one TextView and an
+            // ImageView, so counting text nodes was incorrectly rejecting them.
+            out.add(node);
+            return;
+        }
+        if (node instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) node;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                collectReplyPreviews(group.getChildAt(i), out, depth + 1);
+            }
+        }
+    }
+
+    /** Bounded geometry-only reply dump when the build has different semantic IDs. */
+    private static String describeReplyNodes(View node, int depth) {
+        if (node == null || depth > 6) return "";
+        String name = resourceName(node);
+        StringBuilder text = new StringBuilder();
+        if (name.contains("quote") || name.contains("reply") || name.contains("draft")) {
+            text.append('[').append(name).append(' ').append(node.getWidth()).append('x')
+                    .append(node.getHeight()).append(" top=").append(screenTop(node)).append(']');
+        }
+        if (node instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) node;
+            for (int i = 0; i < group.getChildCount() && i < 16; i++) {
+                text.append(describeReplyNodes(group.getChildAt(i), depth + 1));
+            }
+        }
+        return text.toString();
+    }
+
+    private static int screenTop(View view) {
+        int[] location = new int[2];
+        view.getLocationOnScreen(location);
+        return location[1];
     }
 
     private static void restoreDuplicateReply(Screen screen) {
@@ -668,6 +869,111 @@ final class ConversationGlassPanes {
             if (view != null && view.getAlpha() == 0f) view.setAlpha(entry.getValue());
         }
         screen.duplicateReplyAlpha.clear();
+    }
+
+    /** The WhatsApp red recording microphone sometimes keeps its compact-row position
+     * after the reply expands the recorder. Move only a named, small mic indicator to the
+     * native elapsed-time baseline; never touch the voice action disc or red trash button. */
+    private void alignRecordingMic(Screen screen, ViewGroup voice) {
+        TextView timer = findElapsedLabel(voice, 0);
+        ViewGroup footer = screen.footer.get();
+        if (timer == null || footer == null || timer.getHeight() <= 0) return;
+        View mic = findRecordingMic(footer, timer, 0);
+        if (mic == null || mic.getHeight() <= 0) {
+            host.report("voice-mic-route-missing", "voice mic not located; "
+                    + describeRecordingIcons(footer, timer, 0));
+            return;
+        }
+        if (!screen.recordingMicOffsets.containsKey(mic)) {
+            screen.recordingMicOffsets.put(mic, mic.getTranslationY());
+        }
+        int[] timerLocation = new int[2], micLocation = new int[2];
+        timer.getLocationOnScreen(timerLocation);
+        mic.getLocationOnScreen(micLocation);
+        int difference = timerLocation[1] + timer.getHeight() / 2
+                - micLocation[1] - mic.getHeight() / 2;
+        float d = voice.getResources().getDisplayMetrics().density;
+        if (Math.abs(difference) > 3f * d && Math.abs(difference) < 180f * d) {
+            mic.setTranslationY(mic.getTranslationY() + difference);
+            host.report("voice-mic-aligned", "native voice mic " + resourceName(mic)
+                    + " aligned with elapsed-time row by " + difference + "px");
+        }
+    }
+
+    private static TextView findElapsedLabel(View node, int depth) {
+        if (node == null || !node.isShown() || depth > 8) return null;
+        if (node instanceof TextView && isElapsedTime(((TextView) node).getText())) return (TextView) node;
+        if (node instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) node;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                TextView result = findElapsedLabel(group.getChildAt(i), depth + 1);
+                if (result != null) return result;
+            }
+        }
+        return null;
+    }
+
+    private static View findRecordingMic(View node, TextView timer, int depth) {
+        if (node == null || !node.isShown() || depth > 8) return null;
+        String name = resourceName(node);
+        float density = node.getResources().getDisplayMetrics().density;
+        if (node instanceof ImageView && node.getWidth() > 0 && node.getHeight() > 0
+                && node.getWidth() < 48f * density && node.getHeight() < 48f * density
+                && (name.contains("mic") || name.contains("recording_indicator"))
+                && !name.contains("action") && !name.contains("button")) {
+            return node;
+        }
+        if (node instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) node;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View result = findRecordingMic(group.getChildAt(i), timer, depth + 1);
+                if (result != null) return result;
+            }
+        }
+        // Obfuscated IDs are common for the tiny blinking red mic. A bounded positional
+        // fallback targets an ImageView just below and beside the native recording timer;
+        // the large delete/send controls and waveform are outside these bounds.
+        if (node instanceof ImageView && node.getWidth() >= 6f * density
+                && node.getWidth() < 28f * density && node.getHeight() >= 6f * density
+                && node.getHeight() < 28f * density && node != timer) {
+            int[] label = new int[2], icon = new int[2];
+            timer.getLocationOnScreen(label);
+            node.getLocationOnScreen(icon);
+            int xDiff = Math.abs((icon[0] + node.getWidth() / 2)
+                    - (label[0] + timer.getWidth() / 2));
+            int yDiff = icon[1] - label[1];
+            if (xDiff <= 55f * density && yDiff >= -8f * density
+                    && yDiff <= 58f * density) return node;
+        }
+        return null;
+    }
+
+    private static String describeRecordingIcons(View node, TextView timer, int depth) {
+        if (node == null || depth > 5) return "";
+        StringBuilder out = new StringBuilder();
+        if (node instanceof ImageView && node.isShown()) {
+            int[] pos = new int[2];
+            node.getLocationOnScreen(pos);
+            out.append('[').append(resourceName(node)).append(' ')
+                    .append(node.getWidth()).append('x').append(node.getHeight())
+                    .append(" y=").append(pos[1] - screenTop(timer)).append(']');
+        }
+        if (node instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) node;
+            for (int i = 0; i < group.getChildCount() && i < 12; i++) {
+                out.append(describeRecordingIcons(group.getChildAt(i), timer, depth + 1));
+            }
+        }
+        return out.toString();
+    }
+
+    private static void restoreRecordingMic(Screen screen) {
+        for (java.util.Map.Entry<View, Float> entry :
+                new ArrayList<>(screen.recordingMicOffsets.entrySet())) {
+            View view = entry.getKey();
+            if (view != null) view.setTranslationY(entry.getValue());
+        }
+        screen.recordingMicOffsets.clear();
     }
 
     private static ViewGroup voicePanelIn(ViewGroup parent, ViewGroup footer, View input,
@@ -787,6 +1093,30 @@ final class ConversationGlassPanes {
         screen.voiceClearDrawables.clear();
         screen.voiceRecording = false;
         screen.voiceGeometryKey = null;
+    }
+
+    /** ViewGroups clip children by default even when a short recorder stub draws its larger
+     * animation outside the footer. Change only the small ancestor chain and restore on exit. */
+    private static void allowRecordingGlassOverflow(Screen screen, ViewGroup footer) {
+        ViewGroup listHost = screen.listHost.get();
+        View node = footer;
+        for (int depth = 0; depth < 4 && node instanceof ViewGroup && node != listHost;
+                depth++, node = parentView(node)) {
+            ViewGroup group = (ViewGroup) node;
+            if (!screen.recordingClipChildren.containsKey(group)) {
+                screen.recordingClipChildren.put(group, group.getClipChildren());
+            }
+            if (group.getClipChildren()) group.setClipChildren(false);
+        }
+    }
+
+    private static void restoreRecordingGlassClip(Screen screen) {
+        for (java.util.Map.Entry<ViewGroup, Boolean> entry :
+                new ArrayList<>(screen.recordingClipChildren.entrySet())) {
+            ViewGroup group = entry.getKey();
+            if (group != null) group.setClipChildren(entry.getValue());
+        }
+        screen.recordingClipChildren.clear();
     }
 
     /** Keep quoted reply text readable over the translucent composer without losing hierarchy. */
@@ -912,7 +1242,9 @@ final class ConversationGlassPanes {
         int gap = Math.round(CHROME_GAP_DP * list.getResources().getDisplayMetrics().density);
         ViewGroup holder = screen.holder.get();
         ViewGroup footerView = screen.footer.get();
-        int top = header && holder != null ? holder.getHeight() + gap : screen.listPadding[1];
+        int top = header && holder != null
+                ? holder.getHeight() + (screen.fullscreenOwned ? screen.fullscreenTopInset : 0) + gap
+                : screen.listPadding[1];
         int bottom = footer && footerView != null
                 ? footerView.getHeight() + Math.round(-footerView.getTranslationY()) + gap
                 : screen.listPadding[3];

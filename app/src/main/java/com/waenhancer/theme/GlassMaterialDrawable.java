@@ -138,6 +138,9 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     public int captureRegionWidth() { return materialRegion == null ? -1 : materialRegion.width(); }
     public int captureRegionHeight() { return materialRegion == null ? -1 : materialRegion.height(); }
 
+    /** A successful background capture alone does not prove the row display list repainted. */
+    public boolean hasPresentedLive() { return Boolean.TRUE.equals(presentedLive); }
+
     /**
      * A factory result can become nested under a selector after creation, or be drawn before
      * the window's first discovery pass. Follow native Drawable.Callback ownership when the
