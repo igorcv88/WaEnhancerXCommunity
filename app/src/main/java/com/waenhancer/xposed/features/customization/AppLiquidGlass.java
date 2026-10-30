@@ -234,7 +234,8 @@ public final class AppLiquidGlass extends Feature {
                             () -> bubbleMaterial(outgoing, material(Surface.BUBBLES)), 16f, true);
                     bubbleDirections.put(glass, outgoing);
                     param.setResult(glass);
-                    report("bubble-factory", "semantic bubble hook triggered");
+                    report("bubble-factory-" + (outgoing ? "out" : "in"),
+                            "bubble-factory side=" + (outgoing ? "outgoing" : "incoming") + " wrapped");
                 }
             });
         } catch (Throwable error) {
@@ -1039,8 +1040,7 @@ public final class AppLiquidGlass extends Feature {
             if (!nested && view.getBackgroundTintList() != null) view.setBackgroundTintList(null);
             updateBubbleText(view, binding);
             report("bubble-attached-" + (outgoing ? "out" : "in") + (nested ? "-nested" : "-direct"),
-                    "bubble glass attached to a "
-                    + (nested ? "nested" : "direct") + " background; side="
+                    "bubble-attached host=" + (nested ? "nested" : "direct") + " side="
                     + (outgoing ? "outgoing" : "incoming"));
         }
 
