@@ -97,7 +97,9 @@ final class ConversationGlassPanes {
         Integer holderTopMargin;
         WeakReference<Window> window = new WeakReference<>(null);
         boolean fullscreenOwned;
-        boolean fullscreenWasEnabled;
+        boolean statusBarWasVisible = true;
+        int originalSystemBarsBehavior;
+        boolean systemBarsBehaviorChanged;
         int originalCutoutMode;
         int fullscreenTopInset;
         Float holderZ;
@@ -294,10 +296,10 @@ final class ConversationGlassPanes {
         if (window == null || root == null) return;
         if (!screen.fullscreenOwned) {
             WindowManager.LayoutParams original = window.getAttributes();
-            screen.fullscreenWasEnabled = (original.flags & WindowManager.LayoutParams.FLAG_FULLSCREEN) != 0;
             screen.originalCutoutMode = original.layoutInDisplayCutoutMode;
             WindowInsets insets = root.getRootWindowInsets();
             if (insets != null) {
+                screen.statusBarWasVisible = insets.isVisible(WindowInsets.Type.statusBars());
                 screen.fullscreenTopInset = insets.getInsetsIgnoringVisibility(
                         WindowInsets.Type.statusBars()).top;
                 if (insets.getDisplayCutout() != null) {
@@ -308,9 +310,12 @@ final class ConversationGlassPanes {
             original.layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
             window.setAttributes(original);
-            window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            // FLAG_FULLSCREEN ignores SOFT_INPUT_ADJUST_RESIZE on Android. The chat composer
+            // needs native IME resizing, so hide the status bar via insets only.
             WindowInsetsController controller = window.getInsetsController();
             if (controller != null) {
+                screen.originalSystemBarsBehavior = controller.getSystemBarsBehavior();
+                screen.systemBarsBehaviorChanged = true;
                 controller.setSystemBarsBehavior(
                         WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
                 controller.hide(WindowInsets.Type.statusBars());
@@ -334,15 +339,18 @@ final class ConversationGlassPanes {
         if (!screen.fullscreenOwned) return;
         Window window = screen.window.get();
         if (window != null) {
-            if (!screen.fullscreenWasEnabled) {
-                window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-                WindowInsetsController controller = window.getInsetsController();
-                if (controller != null) controller.show(WindowInsets.Type.statusBars());
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                if (screen.statusBarWasVisible) controller.show(WindowInsets.Type.statusBars());
+                if (screen.systemBarsBehaviorChanged) {
+                    controller.setSystemBarsBehavior(screen.originalSystemBarsBehavior);
+                }
             }
             WindowManager.LayoutParams attrs = window.getAttributes();
             attrs.layoutInDisplayCutoutMode = screen.originalCutoutMode;
             window.setAttributes(attrs);
         }
+        screen.systemBarsBehaviorChanged = false;
         screen.fullscreenOwned = false;
     }
 

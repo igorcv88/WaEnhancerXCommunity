@@ -493,7 +493,9 @@ public final class GlassPane extends FrameLayout {
                 ? canvas.saveLayerAlpha(null, Math.round(alpha * 255))
                 : canvas.save();
         canvas.concat(other);
-        canvas.translate(-view.getScrollX(), -view.getScrollY());
+        // View.draw() draws its own scrolled subtree. The global matrix already positions
+        // its origin after ancestor scrolling; subtracting this view's scroll again displaced
+        // the captured background and clipped scrolled children (review #73).
         view.draw(canvas);
         canvas.restoreToCount(save);
         return true;
