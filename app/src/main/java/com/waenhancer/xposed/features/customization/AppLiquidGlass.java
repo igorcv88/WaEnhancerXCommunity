@@ -4,6 +4,7 @@ import android.app.Dialog;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.graphics.Canvas;
+import android.graphics.Rect;
 import android.graphics.drawable.ClipDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.InsetDrawable;
@@ -15,6 +16,7 @@ import android.widget.AbsListView;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
+import android.view.ViewStub;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -119,6 +121,7 @@ public final class AppLiquidGlass extends Feature {
         });
         installCaptureGuards();
         installDiscoveryHooks();
+        installVoiceActivationHooks();
         installTintObserver();
         installBubbleHook();
         XposedBridge.hookAllMethods(Dialog.class, "show", new XC_MethodHook() {
@@ -362,6 +365,7 @@ public final class AppLiquidGlass extends Feature {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     if (GlassPane.isCapturing()) return;
                     View child = (View) param.args[0];
+                    if (child != null && isRecorderAnchor(child)) conversation.onRecorderSignal(child);
                     Session session = sessionFor(((View) param.thisObject).getRootView());
                     if (session != null && child != null) session.discoverLater(child);
                 }
@@ -404,6 +408,52 @@ public final class AppLiquidGlass extends Feature {
             });
         } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
             report("discovery-hook-missing", "incremental discovery unavailable: " + error);
+        }
+    }
+
+    private static boolean isRecorderAnchor(View view) {
+        if (view == null || view.getId() == View.NO_ID || view.getId() == 0) return false;
+        String name = resourceName(view);
+        return "voice_note_stub".equals(name) || "voice_note_draft_layout_v2".equals(name);
+    }
+
+    /** A recording can begin without a global layout or touch-driven redraw. The native
+     * recorder's visibility/inflation and first timer tick explicitly wake the existing pane. */
+    private void installVoiceActivationHooks() {
+        try {
+            XposedBridge.hookMethod(View.class.getDeclaredMethod("setVisibility", int.class),
+                    new XC_MethodHook() {
+                        @Override protected void afterHookedMethod(MethodHookParam param) {
+                            if (((Integer) param.args[0]) != View.VISIBLE || GlassPane.isCapturing()) return;
+                            View view = (View) param.thisObject;
+                            if (isRecorderAnchor(view)) conversation.onRecorderSignal(view);
+                        }
+                    });
+            XposedBridge.hookMethod(ViewStub.class.getDeclaredMethod("inflate"), new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    if (GlassPane.isCapturing()) return;
+                    Object result = param.getResult();
+                    if (result instanceof View && isRecorderAnchor((View) result)) {
+                        conversation.onRecorderSignal((View) result);
+                    }
+                }
+            });
+            XposedBridge.hookMethod(TextView.class.getDeclaredMethod("setText",
+                    CharSequence.class, TextView.BufferType.class), new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    if (GlassPane.isCapturing()) return;
+                    TextView view = (TextView) param.thisObject;
+                    CharSequence content = view.getText();
+                    // A cheap lexical gate; the conversation adapter verifies the recorder
+                    // ancestor and timer grammar without ever recording text in diagnostics.
+                    if (content == null || content.length() < 4 || content.length() > 8
+                            || (content.charAt(1) != ':' && content.charAt(2) != ':')) return;
+                    conversation.onRecorderSignal(view);
+                }
+            });
+            report("voice-event-hooks", "recorder visibility, inflation and timer hooks installed");
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
+            report("voice-event-hook-missing", "voice activation hooks unavailable: " + error);
         }
     }
 
@@ -475,6 +525,42 @@ public final class AppLiquidGlass extends Feature {
     private static View findByName(View root, String name, String pkg) {
         int id = root.getResources().getIdentifier(name, "id", pkg);
         return id == 0 ? null : root.findViewById(id);
+    }
+
+    /** Verified on the user's WhatsApp build: full-width row, native Fyn bubble mask,
+     * with the actual speech bubble positioned by the bounded main_layout child. */
+    private static final class BubblePlacement {
+        final boolean outgoing;
+        final Rect region;
+        BubblePlacement(boolean outgoing, Rect region) {
+            this.outgoing = outgoing;
+            this.region = region;
+        }
+    }
+
+    private static BubblePlacement nativeRowPlacement(View row) {
+        String name = resourceName(row);
+        if (!("conversation_row_text".equals(name) || "conversation_row_voice_note".equals(name))
+                || row.getWidth() <= 0 || row.getHeight() <= 0) return null;
+        View content = findByName(row, "main_layout", row.getContext().getPackageName());
+        if (content == null || !content.isShown() || content.getWidth() <= 0
+                || content.getHeight() <= 0) return null;
+        int[] rowLocation = new int[2], contentLocation = new int[2];
+        row.getLocationOnScreen(rowLocation);
+        content.getLocationOnScreen(contentLocation);
+        int left = contentLocation[0] - rowLocation[0];
+        int top = contentLocation[1] - rowLocation[1];
+        int right = left + content.getWidth();
+        int bottom = top + content.getHeight();
+        float density = row.getResources().getDisplayMetrics().density;
+        int leftGap = Math.max(0, left), rightGap = Math.max(0, row.getWidth() - right);
+        // A centric/full-width container does not reveal message direction. Fail closed:
+        // choosing the wrong side would violate the incoming/outgoing scope setting.
+        if (Math.abs(leftGap - rightGap) < 12f * density) return null;
+        int pad = Math.round(12f * density);
+        Rect region = new Rect(Math.max(0, left - pad), Math.max(0, top - pad),
+                Math.min(row.getWidth(), right + pad), Math.min(row.getHeight(), bottom + pad));
+        return region.isEmpty() ? null : new BubblePlacement(leftGap > rightGap, region);
     }
 
     /**
@@ -833,9 +919,13 @@ public final class AppLiquidGlass extends Feature {
                         if (ledger != null) ledger.releaseDrawable(binding.glass);
                         continue;
                     }
+                    int captureWidth = binding.rowBased && binding.glass.captureRegionWidth() > 0
+                            ? binding.glass.captureRegionWidth() : target.getWidth();
+                    int captureHeight = binding.rowBased && binding.glass.captureRegionHeight() > 0
+                            ? binding.glass.captureRegionHeight() : target.getHeight();
                     long area = temporal && material != null
-                            ? LiveBudget.cost(target.getWidth(), target.getHeight(), material, density, optics)
-                            : areas[i];
+                            ? LiveBudget.cost(captureWidth, captureHeight, material, density, optics)
+                            : (long) captureWidth * captureHeight;
                     if (binding.width != target.getWidth() || binding.height != target.getHeight()) {
                         binding.width = target.getWidth(); binding.height = target.getHeight();
                         binding.recovery.revalidate();
@@ -931,13 +1021,33 @@ public final class AppLiquidGlass extends Feature {
                         restoreBubbleText(target);
                         bindings.remove(target);
                     } else if (!LiquidGlassSettings.isEnabled(prefs, binding.surface)
-                            || (binding.outgoing != null && !LiquidGlassSettings.bubbleEnabled(prefs, binding.outgoing))
+                            || (binding.outgoing != null && !binding.rowBased
+                                && !LiquidGlassSettings.bubbleEnabled(prefs, binding.outgoing))
                             || !target.isAttachedToWindow()
                             || conversation.owns(target)) {
                         releaseBudget(binding);
                         binding.restore(target);
                         restoreBubbleText(target);
                         bindings.remove(target);
+                    } else if (binding.rowBased) {
+                        BubblePlacement location = nativeRowPlacement(target);
+                        if (location == null || !LiquidGlassSettings.bubbleEnabled(prefs, location.outgoing)
+                                || target.getBackground() != binding.glass) {
+                            releaseBudget(binding);
+                            binding.restore(target);
+                            restoreBubbleText(target);
+                            bindings.remove(target);
+                            if (target.isAttachedToWindow()) bindNativeBubbleRow(target);
+                        } else {
+                            if (binding.outgoing == null || binding.outgoing != location.outgoing) {
+                                restoreBubbleText(target);
+                                binding.outgoing = location.outgoing;
+                                final boolean side = location.outgoing;
+                                binding.glass.attachMaterial(() -> bubbleMaterial(side, resolvedMaterial()));
+                            }
+                            binding.glass.setMaterialRegion(location.region);
+                            updateBubbleText(target, binding);
+                        }
                     } else if (binding.nested) {
                         // The wrapper is a child of WhatsApp's native background, not the view's
                         // background itself. Never replace the whole selector with the child.
@@ -1031,6 +1141,7 @@ public final class AppLiquidGlass extends Feature {
                     bubble.attachMaterial(() -> null);
                 }
             }
+            if (bubble == null && !bindings.containsKey(view)) bindNativeBubbleRow(view);
             Surface surface = surfaceFor(view);
             if (surface != null) {
                 candidates.put(view, surface);
@@ -1040,6 +1151,31 @@ public final class AppLiquidGlass extends Feature {
                 ViewGroup group = (ViewGroup) view;
                 for (int i = 0; i < group.getChildCount(); i++) walk(group.getChildAt(i), depth + 1);
             }
+        }
+
+        /** The factory drawable is Canvas-owned on this build (no callback View), but the
+         * verified native row background itself is a drawable and retains the bubble mask.
+         * Bind only those two observed row types, using geometry for direction and cropping. */
+        private void bindNativeBubbleRow(View row) {
+            if (!LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES) || bindings.containsKey(row)) return;
+            BubblePlacement placement = nativeRowPlacement(row);
+            if (placement == null || !LiquidGlassSettings.bubbleEnabled(prefs, placement.outgoing)) return;
+            Drawable original = row.getBackground();
+            if (original == null || original instanceof GlassMaterialDrawable
+                    || !"Fyn".equals(original.getClass().getSimpleName())) return;
+            bind(row, Surface.BUBBLES, true);
+            Binding binding = bindings.get(row);
+            if (binding == null) return;
+            binding.rowBased = true;
+            binding.outgoing = placement.outgoing;
+            binding.glass.setMaterialRegion(placement.region);
+            final boolean side = placement.outgoing;
+            binding.glass.attachMaterial(() -> bubbleMaterial(side, resolvedMaterial()));
+            updateBubbleText(row, binding);
+            report("bubble-attached-row-" + (side ? "out" : "in"),
+                    "native WhatsApp bubble mask adopted on " + resourceName(row)
+                            + " side=" + (side ? "outgoing" : "incoming")
+                            + " crop=" + placement.region.toShortString());
         }
 
         /** Bounded diagnostics for an unknown WhatsApp row: IDs/classes only, never text/media. */
@@ -1219,6 +1355,7 @@ public final class AppLiquidGlass extends Feature {
         Boolean outgoing;
         boolean nested;
         boolean callbackOwned;
+        boolean rowBased;
         final SurfaceRecovery recovery = new SurfaceRecovery();
         Binding(View view, Drawable original, Surface surface, boolean nativeMask) {
             this.original = original;
