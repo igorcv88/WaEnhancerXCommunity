@@ -4,6 +4,7 @@ import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.content.res.ColorStateList;
 import android.os.Build;
 import android.view.Gravity;
 import android.view.View;
@@ -12,6 +13,8 @@ import android.view.ViewParent;
 import android.view.ViewTreeObserver;
 import android.widget.AbsListView;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.TextView;
 
 import com.waenhancer.theme.GlassMaterialDrawable;
 import com.waenhancer.theme.GlassPane;
@@ -87,6 +90,15 @@ final class ConversationGlassPanes {
         Float holderZ;
         final WeakHashMap<View, Drawable> clearedBackgrounds = new WeakHashMap<>();
         final WeakHashMap<View, Drawable> clearedForegrounds = new WeakHashMap<>();
+        /** The native icon tint, restored exactly when the composer glass is disabled. */
+        final WeakHashMap<ImageView, ColorStateList> originalInputIconTints = new WeakHashMap<>();
+        final WeakHashMap<View, Drawable> voiceBackgrounds = new WeakHashMap<>();
+        final WeakHashMap<View, Drawable> voiceClearDrawables = new WeakHashMap<>();
+        final WeakHashMap<TextView, ColorStateList> replyTextColors = new WeakHashMap<>();
+        final WeakHashMap<TextView, Integer> replyAppliedColors = new WeakHashMap<>();
+        final WeakHashMap<ImageView, ColorStateList> replyIconTints = new WeakHashMap<>();
+        boolean voiceRecording;
+        String voiceGeometryKey;
         Integer listHostBottomMargin;
         Float footerTranslationY;
         int[] listPadding;
@@ -113,6 +125,7 @@ final class ConversationGlassPanes {
             if (screen.headerOn && view == screen.holder.get()) return true;
             if (screen.footerOn && view == screen.footer.get()) return true;
             if (screen.clearedBackgrounds.containsKey(view)) return true;
+            if (screen.voiceBackgrounds.containsKey(view)) return true;
         }
         return false;
     }
@@ -148,7 +161,9 @@ final class ConversationGlassPanes {
             if (screen == null && !host.toolbarsEnabled() && !host.composerEnabled()) return;
             ViewGroup holder = find(root, "search_fragment_and_toolbar_holder");
             ViewGroup footer = find(root, "footer");
-            if (footer != null && findById(footer, "input_layout") == null) footer = null;
+            if (footer != null && findById(footer, "input_layout") == null
+                    && !(screen != null && screen.footer.get() == footer)
+                    && findVoicePanel(footer, null) == null) footer = null;
             if (screen == null) {
                 if (holder == null && footer == null) return;
                 screen = new Screen();
@@ -359,11 +374,50 @@ final class ConversationGlassPanes {
         floatFooter(screen, footer);
         syncListPadding(screen);
         View input = findById(footer, "input_layout");
-        if (input == null || goneAbove(input, footer) || input.getWidth() <= 0) {
-            if (screen.composer != null) place(screen.composer, 0, 0, 0, 0, 0f);
+        ViewGroup voice = findVoicePanel(footer, input);
+        if (voice != null || input == null || !input.isShown()
+                || goneAbove(input, footer) || input.getWidth() <= 0) {
+            restoreReplyContrast(screen);
+            if (voice == null || !rectIn(footer, voice)) {
+                if (voice == null) host.report("voice-panel-route-missing",
+                        "voice recorder panel not resolved; " + describeFooter(footer));
+                restoreVoiceBackgrounds(screen);
+                if (screen.composer != null) place(screen.composer, 0, 0, 0, 0, 0f);
+                return;
+            }
+            Rect voiceRect = new Rect(rect);
+            float d = footer.getResources().getDisplayMetrics().density;
+            int pad = Math.round(COMPOSE_PAD_DP * d);
+            int l = Math.max(0, voiceRect.left + pad);
+            int t = Math.max(0, voiceRect.top + pad);
+            int r = Math.min(footer.getWidth(), voiceRect.right - pad);
+            int b = Math.min(footer.getHeight(), voiceRect.bottom - pad);
+            if (r <= l || b <= t) return;
+            // Keep the same GlassPane and the same safe recording source as the normal input.
+            // Only its mask geometry changes: waveform, elapsed time and buttons stay native.
+            if (screen.composer == null || screen.composer.getParent() != footer) {
+                screen.composer = newPane(screen, footer, screen.listHost.get(), wallpaperOf(screen));
+                footer.addView(screen.composer, 0, new FrameLayout.LayoutParams(0, 0));
+            }
+            clearVoiceBackgrounds(screen, voice);
+            screen.composer.setSource(screen.listHost.get());
+            screen.composer.setUnderlay(wallpaperOf(screen));
+            place(screen.composer, l, t, r, b, Math.min((b - t) / 2f, COMPOSE_MAX_RADIUS_DP * d));
+            String geometry = l + ":" + t + ":" + r + ":" + b;
+            if (!screen.voiceRecording || !geometry.equals(screen.voiceGeometryKey)) {
+                screen.voiceGeometryKey = geometry;
+                screen.voiceRecording = true;
+                host.report("voice-glass-bound", "voice panel glass follows native recording UI; "
+                        + "panel=" + resourceName(voice) + " geometry=" + geometry);
+                GlassTrace.event(screen.root.get(), screen.composer, voice, "VOICE_RECORDING",
+                        "panel-bound", "geometry=" + geometry);
+            }
             return;
         }
+        restoreVoiceBackgrounds(screen);
         clearBackground(screen, input);
+        syncComposerIcons(screen, footer);
+        syncReplyContrast(screen, footer);
         if (!rectIn(footer, input)) return;
         float d = footer.getResources().getDisplayMetrics().density;
         int pad = Math.round(COMPOSE_PAD_DP * d);
@@ -422,11 +476,308 @@ final class ConversationGlassPanes {
         screen.footerListener = null;
         screen.listHostBottomMargin = null;
         screen.footerTranslationY = null;
+        restoreVoiceBackgrounds(screen);
+        restoreReplyContrast(screen);
+        for (java.util.Map.Entry<ImageView, ColorStateList> icon :
+                new ArrayList<>(screen.originalInputIconTints.entrySet())) {
+            if (icon.getKey() != null) icon.getKey().setImageTintList(icon.getValue());
+        }
+        screen.originalInputIconTints.clear();
         restoreUnder(screen, footer);
         syncListPadding(screen);
     }
 
     // ── List ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Attachment and camera are WhatsApp-owned ImageViews, not part of the glass shader. Their
+     * original grey tint can lose contrast when the opaque input background is removed. Follow
+     * the native microphone's current tint when exposed, or the resolved glass content colour.
+     * Restrict discovery to semantic resource names inside the composer: never recolour message
+     * thumbnails, emoji, send, microphone or arbitrary neighbouring controls.
+     */
+    private void syncComposerIcons(Screen screen, ViewGroup footer) {
+        View micButton = findById(footer, "conversation_entry_action_button");
+        ImageView mic = firstImage(micButton, 0);
+        ColorStateList microphoneTint = mic == null ? null : mic.getImageTintList();
+        GlassSpec material = host.material(screen.root.get());
+        int contentColor = material == null ? Color.WHITE : material.contentColor;
+        int color = microphoneTint == null
+                ? contentColor : microphoneTint.getColorForState(
+                        mic.getDrawableState(), microphoneTint.getDefaultColor());
+        int matched = tintComposerIcons(screen, footer, color, 0);
+        if (matched != 3) host.report("composer-icon-routing-" + matched,
+                "composer icons resolved=" + matched + " (attachment=1, camera=2); "
+                        + "inspect footer resource names on this WhatsApp build if either is absent");
+    }
+
+    private static ImageView firstImage(View view, int depth) {
+        if (view instanceof ImageView) return (ImageView) view;
+        if (!(view instanceof ViewGroup) || depth > 5) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            ImageView icon = firstImage(group.getChildAt(i), depth + 1);
+            if (icon != null) return icon;
+        }
+        return null;
+    }
+
+    private static int tintComposerIcons(Screen screen, View view, int color, int depth) {
+        if (view == null || depth > 9) return 0;
+        String name = null;
+        if (view.getId() != View.NO_ID) {
+            try { name = view.getResources().getResourceEntryName(view.getId()); }
+            catch (android.content.res.Resources.NotFoundException ignored) { }
+        }
+        boolean namedIcon = name != null && (name.contains("attach") || name.contains("camera"));
+        if (namedIcon) {
+            ImageView image = firstImage(view, 0);
+            if (image != null) {
+                if (!screen.originalInputIconTints.containsKey(image)) {
+                    screen.originalInputIconTints.put(image, image.getImageTintList());
+                }
+                if (image.getImageTintList() == null
+                        || image.getImageTintList().getDefaultColor() != color) {
+                    image.setImageTintList(ColorStateList.valueOf(color));
+                }
+                return (name.contains("attach") ? 1 : 0) | (name.contains("camera") ? 2 : 0);
+            }
+            return 0;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            int resolved = 0;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                resolved |= tintComposerIcons(screen, group.getChildAt(i), color, depth + 1);
+            }
+            return resolved;
+        }
+        return 0;
+    }
+
+    /**
+     * The voice recorder replaces the input row with a wide native panel. Match a visible
+     * elapsed-time label under a sibling of input_layout, rather than any obfuscated class pin
+     * or the microphone's expanding action button. No message text is logged or retained.
+     * A missing match leaves the native recording UI alone and never manufactures a fallback.
+     */
+    private ViewGroup findVoicePanel(ViewGroup footer, View input) {
+        if (footer.getWidth() <= 0) return null;
+        float density = footer.getResources().getDisplayMetrics().density;
+        return voicePanelIn(footer, footer, input, 0, density);
+    }
+
+    private static ViewGroup voicePanelIn(ViewGroup parent, ViewGroup footer, View input,
+                                          int depth, float density) {
+        if (depth > 4) return null;
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View child = parent.getChildAt(i);
+            if (!(child instanceof ViewGroup) || child instanceof GlassPane || !child.isShown()
+                    || child == input || (input != null && isAncestor(input, child))) continue;
+            ViewGroup group = (ViewGroup) child;
+            // A shared footer wrapper may contain both the regular input and the recorder;
+            // never enlarge the voice lens to cover that whole wrapper.
+            boolean wrapsInput = input != null && isAncestor(group, input);
+            if (!wrapsInput && group.getWidth() >= footer.getWidth() * 0.65f
+                    && group.getHeight() >= 40f * density
+                    && group.getHeight() <= 280f * density
+                    && containsRecordingTimer(group, 0)) return group;
+            ViewGroup nested = voicePanelIn(group, footer, input, depth + 1, density);
+            if (nested != null) return nested;
+        }
+        return null;
+    }
+
+    private static boolean containsRecordingTimer(View view, int depth) {
+        if (!view.isShown() || depth > 8) return false;
+        if (view instanceof TextView && isElapsedTime(((TextView) view).getText())) return true;
+        if (!(view instanceof ViewGroup)) return false;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            if (containsRecordingTimer(group.getChildAt(i), depth + 1)) return true;
+        }
+        return false;
+    }
+
+    /** One or two hours/minutes/seconds separators; reject free text and message timestamps. */
+    private static boolean isElapsedTime(CharSequence value) {
+        if (value == null || value.length() < 4 || value.length() > 8) return false;
+        int separators = 0, digits = 0, sinceSeparator = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch == ':') {
+                if (sinceSeparator < 1 || sinceSeparator > 2 || ++separators > 2) return false;
+                sinceSeparator = 0;
+            } else if (ch >= '0' && ch <= '9') {
+                digits++;
+                sinceSeparator++;
+                if (sinceSeparator > 2) return false;
+            } else return false;
+        }
+        return separators >= 1 && sinceSeparator == 2 && digits >= 3;
+    }
+
+    /** Diagnostic IDs and dimensions only: never include a TextView's content or message data. */
+    private static String describeFooter(ViewGroup footer) {
+        StringBuilder out = new StringBuilder("footer=").append(resourceName(footer))
+                .append('(').append(footer.getWidth()).append('x')
+                .append(footer.getHeight()).append(") children=");
+        for (int i = 0; i < footer.getChildCount() && i < 12; i++) {
+            View child = footer.getChildAt(i);
+            out.append('[').append(resourceName(child)).append(' ')
+                    .append(child.getClass().getSimpleName()).append(' ')
+                    .append(child.getWidth()).append('x').append(child.getHeight())
+                    .append(" visibility=").append(child.getVisibility()).append(']');
+        }
+        return out.toString();
+    }
+
+    /**
+     * Remove only the recorder's own backing fill and an optional full-bleed immediate wrapper.
+     * Waveform, timer, buttons, images and hit targets keep their native views and backgrounds.
+     */
+    private static void clearVoiceBackgrounds(Screen screen, ViewGroup recorder) {
+        clearVoiceBackground(screen, recorder);
+        ViewGroup footer = screen.footer.get();
+        if (footer != null && footer != recorder) clearVoiceBackground(screen, footer);
+        for (int i = 0; i < recorder.getChildCount(); i++) {
+            View child = recorder.getChildAt(i);
+            if (child instanceof ViewGroup && child.getWidth() >= recorder.getWidth() * 0.9f
+                    && child.getHeight() >= recorder.getHeight() * 0.9f) {
+                clearVoiceBackground(screen, child);
+            }
+        }
+    }
+
+    private static void clearVoiceBackground(Screen screen, View view) {
+        Drawable original = view.getBackground();
+        if (original == screen.voiceClearDrawables.get(view)) return;
+        if (original == null) return;
+        if (original instanceof GlassMaterialDrawable) {
+            original = ((GlassMaterialDrawable) original).original();
+        }
+        screen.voiceBackgrounds.put(view, original);
+        ColorDrawable cleared = new ColorDrawable(Color.TRANSPARENT);
+        screen.voiceClearDrawables.put(view, cleared);
+        view.setBackground(cleared);
+    }
+
+    private static void restoreVoiceBackgrounds(Screen screen) {
+        for (View view : new ArrayList<>(screen.voiceClearDrawables.keySet())) {
+            if (view != null && view.getBackground() == screen.voiceClearDrawables.get(view)) {
+                view.setBackground(screen.voiceBackgrounds.get(view));
+            }
+        }
+        screen.voiceBackgrounds.clear();
+        screen.voiceClearDrawables.clear();
+        screen.voiceRecording = false;
+        screen.voiceGeometryKey = null;
+    }
+
+    /** Keep quoted reply text readable over the translucent composer without losing hierarchy. */
+    private void syncReplyContrast(Screen screen, ViewGroup footer) {
+        View preview = findReplyPreview(footer);
+        if (preview == null) {
+            restoreReplyContrast(screen);
+            return;
+        }
+        GlassSpec material = host.material(screen.root.get());
+        int contentColor = material == null ? Color.WHITE : material.contentColor;
+        tintReplyChildren(screen, preview, contentColor, 0, new int[1]);
+    }
+
+    private static View findReplyPreview(ViewGroup footer) {
+        String[] names = {"quoted_message_preview_container_v2", "quoted_message_preview_container",
+                "composer_quoted_message_frame", "quoted_message_frame"};
+        for (String name : names) {
+            View candidate = findById(footer, name);
+            if (candidate != null && candidate.isShown()) return candidate;
+        }
+        return findSemanticReply(footer, 0);
+    }
+
+    private static View findSemanticReply(View view, int depth) {
+        if (!(view instanceof ViewGroup) || depth > 7) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (!child.isShown()) continue;
+            String name = resourceName(child);
+            if (name != null && (name.contains("quoted") || name.contains("reply_preview"))
+                    && child instanceof ViewGroup && replyTextCount(child, 0) >= 2) return child;
+            View nested = findSemanticReply(child, depth + 1);
+            if (nested != null) return nested;
+        }
+        return null;
+    }
+
+    private static String resourceName(View view) {
+        if (view == null || view.getId() == View.NO_ID) return "no-id";
+        try { return view.getResources().getResourceEntryName(view.getId()); }
+        catch (android.content.res.Resources.NotFoundException ignored) { return "unknown-id"; }
+    }
+
+    private static int replyTextCount(View view, int depth) {
+        if (view instanceof TextView) return 1;
+        if (!(view instanceof ViewGroup) || depth > 5) return 0;
+        ViewGroup group = (ViewGroup) view;
+        int count = 0;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            count += replyTextCount(group.getChildAt(i), depth + 1);
+            if (count >= 2) return count;
+        }
+        return count;
+    }
+
+    private static void tintReplyChildren(Screen screen, View view, int rgb, int depth,
+                                          int[] textIndex) {
+        if (!view.isShown() || depth > 7) return;
+        if (view instanceof TextView) {
+            TextView text = (TextView) view;
+            if (!screen.replyTextColors.containsKey(text)) {
+                screen.replyTextColors.put(text, text.getTextColors());
+            }
+            float opacity = textIndex[0]++ == 0 ? 0.96f : 0.86f;
+            int color = Color.argb(Math.round(255f * opacity),
+                    Color.red(rgb), Color.green(rgb), Color.blue(rgb));
+            if (text.getCurrentTextColor() != color) text.setTextColor(color);
+            screen.replyAppliedColors.put(text, color);
+            return;
+        }
+        if (view instanceof ImageView) {
+            String id = resourceName(view);
+            if (id != null && (id.contains("close") || id.contains("dismiss"))) {
+                ImageView icon = (ImageView) view;
+                if (!screen.replyIconTints.containsKey(icon)) {
+                    screen.replyIconTints.put(icon, icon.getImageTintList());
+                }
+                icon.setImageTintList(ColorStateList.valueOf(Color.argb(225,
+                        Color.red(rgb), Color.green(rgb), Color.blue(rgb))));
+            }
+            return;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                tintReplyChildren(screen, group.getChildAt(i), rgb, depth + 1, textIndex);
+            }
+        }
+    }
+
+    private static void restoreReplyContrast(Screen screen) {
+        for (TextView view : new ArrayList<>(screen.replyTextColors.keySet())) {
+            if (view != null && screen.replyAppliedColors.containsKey(view)
+                    && view.getCurrentTextColor() == screen.replyAppliedColors.get(view)) {
+                view.setTextColor(screen.replyTextColors.get(view));
+            }
+        }
+        screen.replyTextColors.clear();
+        screen.replyAppliedColors.clear();
+        for (ImageView view : new ArrayList<>(screen.replyIconTints.keySet())) {
+            if (view != null) view.setImageTintList(screen.replyIconTints.get(view));
+        }
+        screen.replyIconTints.clear();
+    }
 
     /** Padding parks messages clear of the chrome; clipToPadding=false lets them scroll behind it. */
     private void syncListPadding(Screen screen) {

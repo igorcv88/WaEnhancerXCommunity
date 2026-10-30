@@ -4,9 +4,17 @@ import android.app.Dialog;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.graphics.Canvas;
+import android.graphics.drawable.ClipDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.InsetDrawable;
+import android.graphics.drawable.LayerDrawable;
+import android.graphics.drawable.RotateDrawable;
+import android.graphics.drawable.ScaleDrawable;
 import android.os.SystemClock;
 import android.widget.AbsListView;
+import android.widget.EditText;
+import android.widget.ImageView;
+import android.widget.TextView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -46,8 +54,6 @@ import java.util.WeakHashMap;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 
-import org.luckypray.dexkit.query.FindMethod;
-import org.luckypray.dexkit.query.matchers.MethodMatcher;
 
 /** App-wide presentation adapters. Keeps native hierarchy, IDs, listeners, IME and scrolling. */
 public final class AppLiquidGlass extends Feature {
@@ -55,6 +61,12 @@ public final class AppLiquidGlass extends Feature {
     private final Map<Integer, Surface> resourceSurfaces = new java.util.HashMap<>();
     private final Set<Integer> unknownResources = new HashSet<>();
     private final Set<String> reported = new HashSet<>();
+    /** Direction metadata survives factory creation until the native row installs the drawable. */
+    private final Map<GlassMaterialDrawable, Boolean> bubbleDirections =
+            java.util.Collections.synchronizedMap(new WeakHashMap<>());
+    /** Keep a stable tinted spec across draw frames so fallbacks/shaders are not rebuilt. */
+    private final Map<GlassSpec, Map<Integer, GlassSpec>> tintedMaterials = new WeakHashMap<>();
+    private volatile BubbleColors.Palette bubblePalette = new BubbleColors.Palette(0, 0, false);
     private WeakReference<Session> foreground = new WeakReference<>(null);
     private final HomeGlassChrome home = new HomeGlassChrome(new HomeGlassChrome.Host() {
         @Override public boolean toolbarsEnabled() { return LiquidGlassSettings.isEnabled(prefs, Surface.TOOLBARS); }
@@ -62,7 +74,7 @@ public final class AppLiquidGlass extends Feature {
         @Override public void report(String key, String message) { AppLiquidGlass.this.report(key, message); }
     });
     private final ConversationGlassPanes conversation = new ConversationGlassPanes(new ConversationGlassPanes.Host() {
-        @Override public boolean toolbarsEnabled() { return LiquidGlassSettings.isEnabled(prefs, Surface.TOOLBARS); }
+        @Override public boolean toolbarsEnabled() { return LiquidGlassSettings.isEnabled(prefs, Surface.CONVERSATION_HEADER); }
         @Override public boolean composerEnabled() { return LiquidGlassSettings.isEnabled(prefs, Surface.COMPOSER); }
         @Override public GlassSpec material(View root) {
             Session session = sessionFor(root);
@@ -76,6 +88,7 @@ public final class AppLiquidGlass extends Feature {
     }
 
     @Override public void doHook() {
+        refreshBubblePalette();
         // Always register lifecycle: switches can be enabled after WhatsApp has started.
         WppCore.addListenerActivity((activity, state) -> {
             if (activity == null || activity.getWindow() == null) return;
@@ -89,6 +102,7 @@ public final class AppLiquidGlass extends Feature {
                 if (session != null) session.close();
             } else if (state == WppCore.ActivityChangeState.ChangeType.RESUMED) {
                 reloadPrefs();
+                refreshBubblePalette();
                 publishOptics();
                 Session session = watch(decor);
                 foreground = new WeakReference<>(session);
@@ -145,6 +159,25 @@ public final class AppLiquidGlass extends Feature {
         XposedBridge.hookAllMethods(PopupWindow.class, "showAsDropDown", popupHook);
     }
 
+    private void refreshBubblePalette() {
+        try { bubblePalette = BubbleColors.resolvePalette(prefs); }
+        catch (RuntimeException error) {
+            bubblePalette = new BubbleColors.Palette(0, 0, false);
+            report("bubble-palette", "custom bubble palette unavailable: " + error);
+        }
+        synchronized (tintedMaterials) { tintedMaterials.clear(); }
+    }
+
+    private GlassSpec bubbleMaterial(boolean outgoing, GlassSpec base) {
+        if (base == null || !LiquidGlassSettings.bubbleEnabled(prefs, outgoing)) return null;
+        int tint = bubblePalette.forSide(outgoing);
+        if (tint == 0 || (tint >>> 24) == 0) return base;
+        synchronized (tintedMaterials) {
+            return tintedMaterials.computeIfAbsent(base, ignored -> new java.util.HashMap<>())
+                    .computeIfAbsent(tint, base::withBubbleTint);
+        }
+    }
+
     /**
      * Publishes the optical-correction switches to every glass surface in this process, the
      * floating bar included. Read on every resume, so a change made in the module app applies
@@ -157,6 +190,7 @@ public final class AppLiquidGlass extends Feature {
             optics = LiquidGlassOptics.read(prefs);
             com.waenhancer.theme.KyantLens.publishOpacity(LiquidGlassSettings.opacityPercent(prefs),
                     LiquidGlassSettings.MATERIAL.recommendedOpacityPercent());
+            com.waenhancer.theme.KyantLens.publishRimIntensity(LiquidGlassSettings.rimIntensity(prefs));
         } catch (Throwable error) {
             optics = GlassOptics.LEGACY;
             report("optics-read", "optics switches unreadable; original renderer: " + error);
@@ -179,32 +213,68 @@ public final class AppLiquidGlass extends Feature {
 
     private void installBubbleHook() {
         try {
-            // Same semantic anchor used by WaThemer. A reused anchor with several matches
-            // disables only bubble glass instead of attaching to an arbitrary first result.
-            var dexkit = Unobfuscator.getDexKit();
-            if (dexkit == null) throw new IllegalStateException("DexKit not initialized");
-            var candidates = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
-                    .addUsingString("Unreachable code: direction=").returnType(Drawable.class)));
-            if (candidates.size() != 1) {
-                throw new IllegalStateException("expected one bubble factory, found " + candidates.size());
+            // Use the same cached factory resolver as the already-working BubbleColors hook.
+            // Requiring a unique broad DexKit string match here disabled glass on builds where
+            // other, unrelated methods share that string.
+            Method method = Unobfuscator.loadBubbleDrawableMethod(classLoader);
+            if (!Drawable.class.isAssignableFrom(method.getReturnType())
+                    || method.getParameterCount() == 0 || method.getParameterTypes()[0] != int.class) {
+                throw new IllegalStateException("bubble factory signature changed");
             }
-            Method method = candidates.get(0).getMethodInstance(classLoader);
-            if (!Drawable.class.isAssignableFrom(method.getReturnType())) return;
             XposedBridge.hookMethod(method, new XC_MethodHook(XC_MethodHook.PRIORITY_HIGHEST) {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
-                    if (!LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)) return;
+                    if (param.args.length == 0 || !(param.args[0] instanceof Integer)) return;
+                    // Identical direction convention to BubbleColors: 3 is my/right bubble.
+                    boolean outgoing = ((Integer) param.args[0]) == 3;
+                    if (!LiquidGlassSettings.bubbleEnabled(prefs, outgoing)) return;
                     Object value = param.getResult();
                     if (!(value instanceof Drawable) || value instanceof GlassMaterialDrawable) return;
                     // No row or activity captured by a global factory hook. Its callback resolves
                     // the owner after WhatsApp installs the returned drawable on the row.
-                    param.setResult(new GlassMaterialDrawable(null, (Drawable) value,
-                            () -> material(Surface.BUBBLES), 16f, true));
-                    report("bubble-factory", "semantic bubble hook triggered");
+                    GlassMaterialDrawable glass = new GlassMaterialDrawable(null, (Drawable) value,
+                            () -> bubbleMaterial(outgoing, material(Surface.BUBBLES)), 16f, true);
+                    bubbleDirections.put(glass, outgoing);
+                    param.setResult(glass);
+                    report("bubble-factory-" + (outgoing ? "out" : "in"),
+                            "bubble-factory side=" + (outgoing ? "outgoing" : "incoming") + " wrapped");
                 }
             });
         } catch (Throwable error) {
             report("bubble-missing", "bubble resolver unavailable; bubbles keep native backgrounds: " + error);
         }
+    }
+
+    /** Find glass wrapped by WhatsApp's selector, inset, layer or ripple background. */
+    private static GlassMaterialDrawable nestedBubble(Drawable drawable, int depth) {
+        if (drawable == null || depth > 8) return null;
+        if (drawable instanceof GlassMaterialDrawable) return (GlassMaterialDrawable) drawable;
+        if (drawable instanceof LayerDrawable) {
+            LayerDrawable layers = (LayerDrawable) drawable;
+            for (int i = 0; i < layers.getNumberOfLayers(); i++) {
+                GlassMaterialDrawable found = nestedBubble(layers.getDrawable(i), depth + 1);
+                if (found != null) return found;
+            }
+        }
+        Drawable inner = null;
+        if (drawable instanceof InsetDrawable) inner = ((InsetDrawable) drawable).getDrawable();
+        else if (drawable instanceof ClipDrawable) inner = ((ClipDrawable) drawable).getDrawable();
+        else if (drawable instanceof ScaleDrawable) inner = ((ScaleDrawable) drawable).getDrawable();
+        else if (drawable instanceof RotateDrawable) inner = ((RotateDrawable) drawable).getDrawable();
+        else {
+            Drawable current = drawable.getCurrent();
+            if (current != drawable) inner = current;
+        }
+        return nestedBubble(inner, depth + 1);
+    }
+
+    private static GlassMaterialDrawable bubbleOn(View view) {
+        if (view == null) return null;
+        GlassMaterialDrawable glass = nestedBubble(view.getBackground(), 0);
+        if (glass == null) glass = nestedBubble(view.getForeground(), 0);
+        if (glass == null && view instanceof ImageView) {
+            glass = nestedBubble(((ImageView) view).getDrawable(), 0);
+        }
+        return glass;
     }
 
     private GlassSpec material(Surface surface) {
@@ -289,6 +359,27 @@ public final class AppLiquidGlass extends Feature {
                     if (session != null && !session.installing) session.discoverLater(target);
                 }
             });
+            XposedBridge.hookMethod(View.class.getDeclaredMethod("setForeground", Drawable.class),
+                    new XC_MethodHook() {
+                        @Override protected void afterHookedMethod(MethodHookParam param) {
+                            if (GlassPane.isCapturing()) return;
+                            View target = (View) param.thisObject;
+                            Session session = sessionFor(target.getRootView());
+                            if (session != null && !session.installing
+                                    && (nestedBubble((Drawable) param.args[0], 0) != null
+                                        || session.bindings.containsKey(target))) session.discoverLater(target);
+                        }
+                    });
+            XposedBridge.hookAllMethods(ImageView.class, "setImageDrawable", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    if (GlassPane.isCapturing()) return;
+                    ImageView target = (ImageView) param.thisObject;
+                    Session session = sessionFor(target.getRootView());
+                    if (session != null && !session.installing
+                            && (nestedBubble((Drawable) param.args[0], 0) != null
+                                || session.bindings.containsKey(target))) session.discoverLater(target);
+                }
+            });
         } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
             report("discovery-hook-missing", "incremental discovery unavailable: " + error);
         }
@@ -336,6 +427,15 @@ public final class AppLiquidGlass extends Feature {
         catch (android.content.res.Resources.NotFoundException e) { return Integer.toHexString(id); }
     }
 
+    private static boolean insideConversationHeader(View view) {
+        for (View current = view; current != null; ) {
+            if ("search_fragment_and_toolbar_holder".equals(resourceName(current))) return true;
+            android.view.ViewParent parent = current.getParent();
+            current = parent instanceof View ? (View) parent : null;
+        }
+        return false;
+    }
+
     /** Resource name, size and the nearest named ancestors (the tab page shows up among them). */
     private static String describe(View view) {
         StringBuilder out = new StringBuilder("name=").append(resourceName(view))
@@ -369,6 +469,98 @@ public final class AppLiquidGlass extends Feature {
         private final WeakReference<View> root;
         private final WeakHashMap<View, Binding> bindings = new WeakHashMap<>();
         private final WeakHashMap<View, Surface> candidates = new WeakHashMap<>();
+        private final WeakHashMap<TextView, BubbleTextState> bubbleTexts = new WeakHashMap<>();
+
+        private final class BubbleTextState {
+            ColorStateList nativeColors;
+            int applied;
+            WeakReference<View> bubbleOwner;
+            BubbleTextState(ColorStateList colors, int applied, View owner) {
+                nativeColors = colors; this.applied = applied;
+                bubbleOwner = new WeakReference<>(owner);
+            }
+        }
+
+        private void updateBubbleText(View bubble, Binding binding) {
+            if (bubble == null || binding.outgoing == null) return;
+            GlassSpec material = bubbleMaterial(binding.outgoing, resolvedMaterial());
+            if (material == null) return;
+            recolorBubbleText(bubble, bubble, material.contentColor, 0);
+        }
+
+        private void recolorBubbleText(View owner, View node, int color, int depth) {
+            if (node == null || depth > 8) return;
+            if (depth > 0 && node.getBackground() instanceof GlassMaterialDrawable) return;
+            if (node instanceof TextView && !(node instanceof EditText)) {
+                TextView text = (TextView) node;
+                if (text.getText() != null && text.getText().length() > 0) {
+                    BubbleTextState state = bubbleTexts.get(text);
+                    if (state == null) {
+                        state = new BubbleTextState(text.getTextColors(), color, owner);
+                        bubbleTexts.put(text, state);
+                    } else if (text.getCurrentTextColor() != state.applied) {
+                        // WhatsApp recycled or restyled this TextView since our last pass.
+                        state.nativeColors = text.getTextColors();
+                    }
+                    state.bubbleOwner = new WeakReference<>(owner);
+                    state.applied = color;
+                    if (text.getCurrentTextColor() != color) text.setTextColor(color);
+                }
+            }
+            if (node instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) node;
+                for (int i = 0; i < group.getChildCount(); i++) {
+                    recolorBubbleText(owner, group.getChildAt(i), color, depth + 1);
+                }
+            }
+        }
+
+        private void restoreBubbleText(View node) {
+            if (node == null) return;
+            restoreBubbleText(node, 0);
+        }
+
+        private void restoreBubbleText(View node, int depth) {
+            if (depth > 8) return;
+            if (node instanceof TextView) {
+                TextView text = (TextView) node;
+                BubbleTextState state = bubbleTexts.remove(text);
+                if (state != null && text.getCurrentTextColor() == state.applied) {
+                    text.setTextColor(state.nativeColors);
+                }
+            }
+            if (node instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) node;
+                for (int i = 0; i < group.getChildCount(); i++) {
+                    restoreBubbleText(group.getChildAt(i), depth + 1);
+                }
+            }
+        }
+
+        private void restoreAllBubbleText() {
+            for (Map.Entry<TextView, BubbleTextState> entry : new ArrayList<>(bubbleTexts.entrySet())) {
+                TextView text = entry.getKey();
+                BubbleTextState state = entry.getValue();
+                if (text != null && state != null && text.getCurrentTextColor() == state.applied) {
+                    text.setTextColor(state.nativeColors);
+                }
+            }
+            bubbleTexts.clear();
+        }
+
+        private void restoreDetachedBubbleText() {
+            for (Map.Entry<TextView, BubbleTextState> entry : new ArrayList<>(bubbleTexts.entrySet())) {
+                TextView text = entry.getKey();
+                BubbleTextState state = entry.getValue();
+                View owner = state == null ? null : state.bubbleOwner.get();
+                if (text == null || state == null) continue;
+                Binding binding = owner == null ? null : bindings.get(owner);
+                if (binding != null && binding.outgoing != null
+                        && (owner == text || isAncestorOf(owner, text))) continue;
+                if (text.getCurrentTextColor() == state.applied) text.setTextColor(state.nativeColors);
+                bubbleTexts.remove(text);
+            }
+        }
         /** Views that ignore setBackground (Material FABs); never retried in this window. */
         private final WeakHashMap<View, Boolean> refused = new WeakHashMap<>();
         private final Set<View> pendingDiscovery = java.util.Collections.newSetFromMap(new WeakHashMap<>());
@@ -431,7 +623,8 @@ public final class AppLiquidGlass extends Feature {
                 if (optics.clearProfile) resolved = resolved.clearProfile();
                 // Temporal group: keep the previous object when nothing changed, so effects keyed
                 // on it stay put. Legacy re-resolves a new object every second, as before.
-                if (!(optics.corrected && optics.temporal) || !resolved.equals(cachedMaterial)) {
+                if (!((optics.corrected && optics.temporal) || optics.oneMate)
+                        || !resolved.equals(cachedMaterial)) {
                     cachedMaterial = resolved;
                 }
                 materialAt = now;
@@ -483,6 +676,9 @@ public final class AppLiquidGlass extends Feature {
             if (closed) return;
             boolean returning = suspended;
             suspended = false;
+            // A changed bubble scope may need to adopt an existing nested factory drawable.
+            // Rediscover once after leaving settings, never on every frame.
+            discovered = false;
             observe(true);
             conversation.setSuspended(root.get(), false);
             if (returning) for (Binding binding : bindings.values()) {
@@ -541,7 +737,9 @@ public final class AppLiquidGlass extends Feature {
                     fresh |= binding.glass.needsFreshCapture(eligible && mayCapture);
                 }
                 GlassOptics optics = GlassOptics.current();
-                boolean temporal = optics.corrected && optics.temporal;
+                // OneMate is the user-facing live renderer: it must always use sticky admissions
+                // and damage-driven captures. It is not gated by the experimental classic switch.
+                boolean temporal = (optics.corrected && optics.temporal) || optics.oneMate;
                 int decision = scheduler.decide(now, temporal, fresh, retryDue);
                 View view = root.get();
                 if (view == null) return true;
@@ -707,12 +905,32 @@ public final class AppLiquidGlass extends Feature {
                     if (target.getRootView() != view) {
                         releaseBudget(binding);
                         binding.restore(target);
+                        restoreBubbleText(target);
                         bindings.remove(target);
-                    } else if (!LiquidGlassSettings.isEnabled(prefs, binding.surface) || !target.isAttachedToWindow()
+                    } else if (!LiquidGlassSettings.isEnabled(prefs, binding.surface)
+                            || (binding.outgoing != null && !LiquidGlassSettings.bubbleEnabled(prefs, binding.outgoing))
+                            || !target.isAttachedToWindow()
                             || conversation.owns(target)) {
                         releaseBudget(binding);
                         binding.restore(target);
+                        restoreBubbleText(target);
                         bindings.remove(target);
+                    } else if (binding.nested) {
+                        // The wrapper is a child of WhatsApp's native background, not the view's
+                        // background itself. Never replace the whole selector with the child.
+                        if (bubbleOn(target) != binding.glass) {
+                            releaseBudget(binding);
+                            binding.restore(target);
+                            restoreBubbleText(target);
+                            bindings.remove(target);
+                        } else updateBubbleText(target, binding);
+                    } else if (binding.outgoing != null && target.getBackground() != binding.glass) {
+                        releaseBudget(binding);
+                        binding.restore(target);
+                        restoreBubbleText(target);
+                        bindings.remove(target);
+                        GlassMaterialDrawable next = bubbleOn(target);
+                        if (next != null && bubbleDirections.containsKey(next)) adopt(target, next);
                     } else if (target.getBackground() != binding.glass
                             && !(target.getBackground() instanceof GlassMaterialDrawable)
                             && keepGlass(target, binding)) {
@@ -725,6 +943,7 @@ public final class AppLiquidGlass extends Feature {
                         // an old drawable over whatever WhatsApp just changed.
                         releaseBudget(binding);
                         binding.restore(target);
+                        restoreBubbleText(target);
                         bindings.remove(target);
                         if (target.getBackground() instanceof GlassMaterialDrawable) adopt(target, (GlassMaterialDrawable) target.getBackground());
                         else bind(target, binding.surface, binding.nativeMask);
@@ -737,6 +956,10 @@ public final class AppLiquidGlass extends Feature {
                     if (candidate != null && candidate.isAttachedToWindow() && candidate.getRootView() == view
                             && LiquidGlassSettings.isEnabled(prefs, entry.getValue())) bind(candidate, entry.getValue(), false);
                 }
+                for (Map.Entry<View, Binding> entry : bindings.entrySet()) {
+                    if (entry.getValue().outgoing != null) updateBubbleText(entry.getKey(), entry.getValue());
+                }
+                restoreDetachedBubbleText();
             } catch (Throwable error) {
                 report("scan-error", "surface scan skipped: " + error);
             }
@@ -767,13 +990,13 @@ public final class AppLiquidGlass extends Feature {
 
         private void walk(View view, int depth) {
             if (depth > 24 || view == null || GlassSurface.isGlassHost(view) || view instanceof GlassPane) return;
-            if (view.getBackground() instanceof GlassMaterialDrawable && !bindings.containsKey(view)) {
-                GlassMaterialDrawable glass = (GlassMaterialDrawable) view.getBackground();
-                if (LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)) {
-                    adopt(view, glass);
+            GlassMaterialDrawable bubble = bubbleOn(view);
+            if (bubble != null && bubbleDirections.containsKey(bubble) && !bindings.containsKey(view)) {
+                Boolean outgoing = bubbleDirections.get(bubble);
+                if (outgoing != null && LiquidGlassSettings.bubbleEnabled(prefs, outgoing)) {
+                    adopt(view, bubble);
                 } else {
-                    glass.restoreCallback();
-                    view.setBackground(glass.original());
+                    bubble.attachMaterial(() -> null);
                 }
             }
             Surface surface = surfaceFor(view);
@@ -808,10 +1031,21 @@ public final class AppLiquidGlass extends Feature {
         }
 
         private void adopt(View view, GlassMaterialDrawable glass) {
-            Binding binding = new Binding(view, glass.original(), Surface.BUBBLES, true);
+            Boolean outgoing = bubbleDirections.get(glass);
+            if (outgoing == null) return;
+            boolean nested = view.getBackground() != glass;
+            Binding binding = new Binding(view, nested ? view.getBackground() : glass.original(), Surface.BUBBLES, true);
             binding.glass = glass;
+            binding.nested = nested;
+            binding.outgoing = outgoing;
             bindings.put(view, binding);
-            glass.attachMaterial(() -> LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES) ? resolvedMaterial() : null);
+            glass.attachOwner(view);
+            glass.attachMaterial(() -> bubbleMaterial(outgoing, resolvedMaterial()));
+            if (!nested && view.getBackgroundTintList() != null) view.setBackgroundTintList(null);
+            updateBubbleText(view, binding);
+            report("bubble-attached-" + (outgoing ? "out" : "in") + (nested ? "-nested" : "-direct"),
+                    "bubble-attached host=" + (nested ? "nested" : "direct") + " side="
+                    + (outgoing ? "outgoing" : "incoming"));
         }
 
         /** A binding going away gives its slot back at once rather than when the GC notices. */
@@ -825,6 +1059,9 @@ public final class AppLiquidGlass extends Feature {
                     || view.getWidth() < 1 || view.getHeight() < 1
                     || view == root.get() || GlassSurface.isGlassHost(view) || view instanceof GlassPane
                     || conversation.owns(view)) return;
+            // The home-header switch must not colour the conversation toolbar when its own
+            // separate glass capsule is off. The latter owns this entire header subtree.
+            if (surface == Surface.TOOLBARS && insideConversationHeader(view)) return;
             // One pane per surface, innermost wins: WhatsApp nests ids of one surface (my_search_bar
             // holds search_bar), and binding both drew a glass pill inside a second glass pill.
             for (Map.Entry<View, Binding> entry : new ArrayList<>(bindings.entrySet())) {
@@ -899,8 +1136,10 @@ public final class AppLiquidGlass extends Feature {
                 if (target == null) continue;
                 releaseBudget(entry.getValue());
                 entry.getValue().restore(target);
+                restoreBubbleText(target);
             }
             bindings.clear(); candidates.clear(); pendingDiscovery.clear();
+            restoreAllBubbleText();
         }
         @Override public void onViewAttachedToWindow(View view) { }
         @Override public void onViewDetachedFromWindow(View view) { close(); }
@@ -923,6 +1162,8 @@ public final class AppLiquidGlass extends Feature {
         boolean tintChanged;
         int width, height;
         boolean visible;
+        Boolean outgoing;
+        boolean nested;
         final SurfaceRecovery recovery = new SurfaceRecovery();
         Binding(View view, Drawable original, Surface surface, boolean nativeMask) {
             this.original = original;
@@ -935,6 +1176,12 @@ public final class AppLiquidGlass extends Feature {
         void restore(View view) {
             recovery.release();
             glass.releaseLive();
+            if (nested) {
+                // The native container still references this factory wrapper; make it paint its
+                // original child until WhatsApp replaces the whole background.
+                glass.attachMaterial(() -> null);
+                return;
+            }
             if (view.getBackground() == glass) {
                 glass.restoreCallback();
                 // Preserve native padding/tint updates made while glass was active.

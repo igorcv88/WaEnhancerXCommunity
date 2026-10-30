@@ -23,6 +23,33 @@ import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 
 public class BubbleColors extends Feature {
+    /** Shared colour source for the native bubbles and the optional glass material. */
+    static final class Palette {
+        final int incoming, outgoing;
+        final boolean enabled;
+        Palette(int incoming, int outgoing, boolean enabled) {
+            this.incoming = incoming; this.outgoing = outgoing; this.enabled = enabled;
+        }
+        int forSide(boolean outgoingSide) { return outgoingSide ? outgoing : incoming; }
+    }
+
+    static Palette resolvePalette(SharedPreferences prefs) {
+        boolean enabled = prefs.getBoolean("bubble_color", false);
+        Properties properties = Utils.getPropertiesFromText(
+                CssSafetyManager.effectiveCss(prefs), prefs.getBoolean("custom_filters", false));
+        boolean css = Objects.equals(properties.getProperty("bubble_colors"), "true");
+        if (!enabled && !css) return new Palette(0, 0, false);
+        try {
+            int left = enabled ? prefs.getInt("bubble_left", 0)
+                    : Color.parseColor(DesignUtils.checkSystemColor(properties.getProperty("bubble_left", "#00000000")));
+            int right = enabled ? prefs.getInt("bubble_right", 0)
+                    : Color.parseColor(DesignUtils.checkSystemColor(properties.getProperty("bubble_right", "#00000000")));
+            return new Palette(left, right, true);
+        } catch (RuntimeException error) {
+            return new Palette(0, 0, false);
+        }
+    }
+
     public BubbleColors(ClassLoader loader, SharedPreferences preferences) {
         super(loader, preferences);
     }
@@ -30,16 +57,13 @@ public class BubbleColors extends Feature {
     @Override
     public void doHook() throws Exception {
 
-        Properties properties = Utils.getPropertiesFromText(
-                CssSafetyManager.effectiveCss(prefs), prefs.getBoolean("custom_filters", false));
-
-        boolean bubbleColor = prefs.getBoolean("bubble_color", false);
-
-        if (!bubbleColor && !Objects.equals(properties.getProperty("bubble_colors"), "true"))
+        Palette palette = resolvePalette(prefs);
+        if (!palette.enabled)
             return;
 
-        int bubbleLeftColor = bubbleColor ? prefs.getInt("bubble_left", 0) : Color.parseColor(DesignUtils.checkSystemColor(properties.getProperty("bubble_left", "#00000000")));
-        int bubbleRightColor = bubbleColor ? prefs.getInt("bubble_right", 0) : Color.parseColor(DesignUtils.checkSystemColor(properties.getProperty("bubble_right", "#00000000")));
+        boolean bubbleColor = prefs.getBoolean("bubble_color", false);
+        int bubbleLeftColor = palette.incoming;
+        int bubbleRightColor = palette.outgoing;
 
         var dateWrapper = Unobfuscator.loadBallonDateDrawable(classLoader);
 

@@ -21,11 +21,17 @@ public final class GlassSurfaceCatalog {
                 "fab", "extended_mini_fab", "fab_second", "create_new_broadcast_button", "community_navigation_add_group_button",
                 "empty_community_row_button", "community_nux_next_button");
         put(targets, LiquidGlassSettings.Surface.COMPOSER,
-                "input_layout", "conversation_entry_action_button", "voice_note_lock_container");
+                // The native microphone/action button expands to a screen-sized circle as
+                // recording starts. Glass on that animated drawable becomes a giant lensed
+                // sphere; only the stationary composer capsule belongs to this surface.
+                "input_layout");
         put(targets, LiquidGlassSettings.Surface.QUOTES,
                 "quoted_message_preview_container", "quoted_message_preview_container_v2",
                 "quoted_message_frame", "bubble_quoted_message_frame", "composer_quoted_message_frame",
-                "voice_note_draft_quoted_message_frame", "voice_note_draft_layout_v2");
+                // Voice-draft containers can animate and resize as recording begins. Only their
+                // nested quoted-message preview is a drawable target; the recording panel is
+                // instead backed by the persistent conversation GlassPane.
+                "voice_note_draft_quoted_message_frame");
         put(targets, LiquidGlassSettings.Surface.CARDS,
                 "contact_details_card", "group_details_card", "newsletter_details_card",
                 "business_details_card", "participants_card", "call_controls_card", "card_container",
@@ -48,7 +54,7 @@ public final class GlassSurfaceCatalog {
         return switch (surface) {
             case FAB, COMPOSER, SEARCH -> 1000f;
             case BUBBLES, QUOTES -> 16f;
-            case TOOLBARS -> 22f;
+            case TOOLBARS, CONVERSATION_HEADER -> 22f;
             case CARDS, PANELS -> 24f;
         };
     }

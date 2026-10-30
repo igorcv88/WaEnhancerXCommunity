@@ -6,7 +6,6 @@ import android.graphics.Matrix;
 import android.graphics.Outline;
 import android.graphics.RecordingCanvas;
 import android.graphics.Rect;
-import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
@@ -35,8 +34,8 @@ import java.util.function.Supplier;
  * recovered content. Without that guard HWUI recurses on the
  * RenderThread and the host process dies natively.</p>
  *
- * <p>Below Android 13 or when the lens fails, the pane paints the static
- * material and records nothing.</p>
+ * <p>If a safe live recording is not ready, the pane remains transparent. Static replacement
+ * fills flash on navigation and are never used, including on old or power-saving devices.</p>
  */
 public final class GlassPane extends FrameLayout {
 
@@ -74,11 +73,6 @@ public final class GlassPane extends FrameLayout {
     private Supplier<GlassSpec> spec = () -> null;
     private float cornerRadiusPx;
 
-    private Drawable fallback;
-    private GlassSpec fallbackSpec;
-    private boolean fallbackPermanent;
-    private int fallbackWidth = -1, fallbackHeight = -1;
-    private float fallbackRadius = -1f;
 
     private int lastScreenX = Integer.MIN_VALUE, lastScreenY = Integer.MIN_VALUE;
     private View refusedFor;
@@ -115,7 +109,7 @@ public final class GlassPane extends FrameLayout {
         return LIVE;
     }
 
-    /** Every live surface falls back to the static material. */
+    /** Disable unsafe recording; panes then present no glass pixels. */
     public static void disableCapture() {
         LiveBackdrop.disableCapture();
     }
@@ -306,7 +300,9 @@ public final class GlassPane extends FrameLayout {
                 scheduler.activity(now);
             }
             GlassOptics optics = GlassOptics.current();
-            boolean damageDriven = optics.corrected && optics.temporal;
+            // The OneMate material shares the persistent per-window ledger with drawables;
+            // otherwise navigation/scroll changes could alternate live and unavailable panes.
+            boolean damageDriven = (optics.corrected && optics.temporal) || optics.oneMate;
             // Only unexpected loss is urgent. Initial/released/refused pixels follow normal
             // scheduling; transient failures have their own retry deadline.
             View src = safeSource();
@@ -479,7 +475,7 @@ public final class GlassPane extends FrameLayout {
             GlassTrace.presented(getRootView(), this, source, live && captureContent == CaptureContent.CAPTURE_LIVE_CONTENT);
             if (presentedLive == null || presentedLive != live) {
                 presentedLive = live;
-                GlassTrace.event(getRootView(), this, source, live ? "PRESENTING_LIVE" : "PRESENTING_FALLBACK",
+                GlassTrace.event(getRootView(), this, source, live ? "PRESENTING_LIVE" : "PRESENTING_TRANSPARENT",
                         "draw-result", "captureContent=" + captureContent + " " + backdrop.status());
             }
         }
@@ -487,23 +483,7 @@ public final class GlassPane extends FrameLayout {
         if (!suspended && recovery.state() == SurfaceRecovery.State.LIVE && backdrop.wasDropped()) {
             failed(SystemClock.uptimeMillis(), false, "display-list-lost");
         }
-        drawFallback(canvas, material);
-    }
-
-    private void drawFallback(Canvas canvas, GlassSpec material) {
-        float radius = radius();
-        boolean permanent = material.usingFallback || !backdrop.available() || recovery.state() == SurfaceRecovery.State.DISABLED;
-        if (fallback == null || fallbackSpec != material || fallbackWidth != getWidth()
-                || fallbackHeight != getHeight() || fallbackRadius != radius || fallbackPermanent != permanent) {
-            fallbackPermanent = permanent;
-            fallback = GlassRenderer.background(material.neutralFallback(permanent), radius,
-                    getResources().getDisplayMetrics().density);
-            fallbackSpec = material;
-            fallbackWidth = getWidth();
-            fallbackHeight = getHeight();
-            fallbackRadius = radius;
-        }
-        fallback.setBounds(0, 0, getWidth(), getHeight());
-        fallback.draw(canvas);
+        // A new activity, source, or geometry must be recaptured before presentation. Drawing
+        // nothing is safer than retaining unrelated chat pixels or flashing a static slab.
     }
 }

@@ -24,22 +24,18 @@ import java.util.function.Supplier;
  * this drawable again. An earlier design recorded the whole window, including the host's own
  * cached background node, and that display-list cycle crashed the RenderThread natively.</p>
  *
- * <p>Otherwise, and whenever the lens is unavailable, it paints {@link GlassSpec#withoutOptics()}
- * in the view's own shape.</p>
+ * <p>When no recording is safe to present, the glass layer remains transparent. In particular,
+ * a transient capture failure must not flash a flat tinted replacement over the conversation.
+ * We never reuse backdrop pixels after an activity/source epoch changes.</p>
  */
 public final class GlassMaterialDrawable extends Drawable implements Drawable.Callback {
     private Drawable original;
-    private final WeakReference<View> owner;
+    private WeakReference<View> owner;
     private Supplier<GlassSpec> spec;
     private final float radiusDp;
     private final boolean nativeMask;
     private final Paint maskPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private Drawable fallback;
-    private GlassSpec appliedMaterial;
-    private int materialWidth, materialHeight;
-    private boolean fallbackPermanent;
     private boolean captureDisabled;
-    private float materialRadius, materialDensity;
     private int alpha = 255;
     private LiveBackdrop live;
     private RecordingState recordingState = RecordingState.UNINITIALIZED;
@@ -69,17 +65,6 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         GlassSpec material = spec.get();
         Rect b = getBounds();
         if (view == null || material == null || b.isEmpty()) { drawOriginal(canvas); return; }
-        float density = view.getResources().getDisplayMetrics().density;
-        float radius = Math.min(radiusDp * density, Math.min(b.width(), b.height()) / 2f);
-        boolean permanent = material.usingFallback || capturePermanentlyUnavailable();
-        if (fallback == null || appliedMaterial != material || materialWidth != b.width()
-                || materialHeight != b.height() || materialRadius != radius || materialDensity != density
-                || fallbackPermanent != permanent) {
-            fallbackPermanent = permanent;
-            appliedMaterial = material; materialWidth = b.width(); materialHeight = b.height();
-            materialRadius = radius; materialDensity = density;
-            fallback = GlassRenderer.background(material.neutralFallback(permanent), radius, density);
-        }
         int save = canvas.save();
         canvas.translate(b.left, b.top);
         int layer = -1;
@@ -95,16 +80,11 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
             if (!LiveBackdrop.isCapturing() && (presentedLive == null || presentedLive != drewLive)) {
                 presentedLive = drewLive;
                 GlassTrace.event(view.getRootView(), this, view.getRootView(),
-                        drewLive ? "PRESENTING_LIVE" : "PRESENTING_FALLBACK", "draw-result",
+                        drewLive ? "PRESENTING_LIVE" : "PRESENTING_TRANSPARENT", "draw-result",
                         "specKey=" + Integer.toHexString(material.hashCode()) + " " + captureStatus());
             }
             if (fade >= 0) canvas.restoreToCount(fade);
-            if (!drewLive) {
-                fallback.setBounds(0, 0, b.width(), b.height());
-                fallback.setAlpha(alpha);
-                fallback.draw(canvas);
-            }
-            if (layer >= 0) {
+            if (drewLive && layer >= 0) {
                 // Isolate the native silhouette before DST_IN; drawing a sparse mask directly
                 // would leave the parts it never touched intact, including square corners.
                 int mask = canvas.saveLayer(0, 0, b.width(), b.height(), maskPaint);
@@ -124,9 +104,13 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
 
     public void attachMaterial(Supplier<GlassSpec> material) { spec = material; }
 
+    /** A factory drawable may be nested inside a LayerDrawable instead of being the view's
+     * direct background. The owning row is discovered after native attachment. */
+    public void attachOwner(View host) { owner = new WeakReference<>(host); }
+
     /**
      * Records what lies beneath {@code host}, whose background this is, for the next draw.
-     * Main thread, from a pre-draw pass. False leaves the static material in place.
+     * Main thread, from a pre-draw pass. False leaves this layer transparent while retrying.
      */
     public boolean captureBehind(View host) {
         if (host == null || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return false;
@@ -181,7 +165,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         return live == null ? recordingState : live.recordingState();
     }
 
-    /** Drops the live recording; the static material is painted until the next capture. */
+    /** Drops live pixels; the surface is transparent until the next safe capture. */
     public void releaseLive() {
         releaseLive(RecordingState.INTENTIONALLY_RELEASED);
     }

@@ -2,6 +2,7 @@ package com.waenhancer.config;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.waenhancer.testing.FakeSharedPreferences;
@@ -158,6 +159,63 @@ public class LiquidGlassSettingsTest {
         assertTrue(LiquidGlassSettings.isScrollButtonEnabled(prefs));
     }
 
+    @Test public void rimIntensityIsClampedAndDefaultsToTheSingleLiveMaterial() {
+        assertEquals(1f, LiquidGlassSettings.rimIntensity(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.RIM_INTENSITY, 1.4f).apply();
+        assertEquals(1.4f, LiquidGlassSettings.rimIntensity(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.RIM_INTENSITY, 99f).apply();
+        assertEquals(2f, LiquidGlassSettings.rimIntensity(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.RIM_INTENSITY, -1f).apply();
+        assertEquals(0f, LiquidGlassSettings.rimIntensity(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.RIM_INTENSITY, Float.NaN).apply();
+        assertEquals(1f, LiquidGlassSettings.rimIntensity(prefs), 0f);
+    }
+
+    @Test public void existingBubbleToggleMigratesToBothDirections() {
+        prefs.edit().putBoolean(LiquidGlassSettings.Surface.BUBBLES.key, true).apply();
+        assertEquals(LiquidGlassSettings.BubbleScope.BOTH, LiquidGlassSettings.bubbleScope(prefs));
+        assertTrue(LiquidGlassSettings.bubbleEnabled(prefs, false));
+        assertTrue(LiquidGlassSettings.bubbleEnabled(prefs, true));
+    }
+
+    @Test public void messageDirectionsAreIndependentAndPersisted() {
+        LiquidGlassSettings.setBubbleScope(prefs, LiquidGlassSettings.BubbleScope.OUTGOING);
+        assertTrue(LiquidGlassSettings.bubbleEnabled(prefs, true));
+        assertFalse(LiquidGlassSettings.bubbleEnabled(prefs, false));
+        assertTrue(LiquidGlassSettings.isEnabled(prefs, LiquidGlassSettings.Surface.BUBBLES));
+        LiquidGlassSettings.setBubbleScope(prefs, LiquidGlassSettings.BubbleScope.INCOMING);
+        assertFalse(LiquidGlassSettings.bubbleEnabled(prefs, true));
+        assertTrue(LiquidGlassSettings.bubbleEnabled(prefs, false));
+        LiquidGlassSettings.setBubbleScope(prefs, LiquidGlassSettings.BubbleScope.OFF);
+        assertFalse(LiquidGlassSettings.isEnabled(prefs, LiquidGlassSettings.Surface.BUBBLES));
+    }
+
+    @Test public void invalidBubbleScopeDoesNotApplyGlassToAnUnknownSide() {
+        prefs.edit().putBoolean(LiquidGlassSettings.Surface.BUBBLES.key, true)
+                .putString(LiquidGlassSettings.BUBBLE_SCOPE, "everything").apply();
+        assertFalse(LiquidGlassSettings.bubbleEnabled(prefs, true));
+        assertFalse(LiquidGlassSettings.bubbleEnabled(prefs, false));
+    }
+
+    @Test public void oldHeaderSettingIsInheritedUntilSeparatelySaved() {
+        prefs.edit().putBoolean(LiquidGlassSettings.Surface.TOOLBARS.key, true).apply();
+        assertTrue(LiquidGlassSettings.isEnabled(prefs, LiquidGlassSettings.Surface.CONVERSATION_HEADER));
+        prefs.edit().putBoolean(LiquidGlassSettings.Surface.CONVERSATION_HEADER.key, false).apply();
+        assertTrue(LiquidGlassSettings.isEnabled(prefs, LiquidGlassSettings.Surface.TOOLBARS));
+        assertFalse(LiquidGlassSettings.isEnabled(prefs, LiquidGlassSettings.Surface.CONVERSATION_HEADER));
+    }
+
+    /** A resizing microphone control must not inherit a 1000dp composer lens mask. */
+    @Test public void voiceControlsNeverBindGenericGlassDrawables() {
+        assertEquals(LiquidGlassSettings.Surface.COMPOSER,
+                GlassSurfaceCatalog.surface("input_layout"));
+        assertNull(GlassSurfaceCatalog.surface("conversation_entry_action_button"));
+        assertNull(GlassSurfaceCatalog.surface("voice_note_lock_container"));
+        assertNull(GlassSurfaceCatalog.surface("voice_note_draft_layout_v2"));
+        assertEquals(LiquidGlassSettings.Surface.QUOTES,
+                GlassSurfaceCatalog.surface("voice_note_draft_quoted_message_frame"));
+    }
+
     // ---- the material ----------------------------------------------------------------------
 
     /** One opacity for every themed surface, read through the schema that clamps it. */
@@ -206,7 +264,7 @@ public class LiquidGlassSettingsTest {
         }
         for (String key : new String[]{LiquidGlassSettings.BAR_GLASS, LiquidGlassSettings.BAR_VARIANT,
                 LiquidGlassSettings.BAR_OPACITY, LiquidGlassSettings.BAR_PREVIOUS_VARIANT,
-                LiquidGlassSettings.SCROLL_BUTTON}) {
+                LiquidGlassSettings.SCROLL_BUTTON, LiquidGlassSettings.BUBBLE_SCOPE}) {
             PreferenceSchema.Entry entry = PreferenceSchema.entry(key);
             if (entry == null || entry.store != PreferenceSchema.Store.PUBLIC) broken.add(key);
         }

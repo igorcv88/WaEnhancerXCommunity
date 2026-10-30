@@ -188,12 +188,24 @@ public final class GlassSpec {
     public final boolean adaptive;
     /** Whether the surface may morph and stretch under interaction. */
     public final boolean morphing;
+    /** Explicit user bubble tint, distinct from theme-derived app chrome colours. */
+    public final boolean bubbleTint;
 
     private GlassSpec(int fillColor, float blurRadius, int strokeColor, float strokeWidthDp,
                       int highlightColor, int refractionColor, int contentColor,
                       boolean animate, boolean usingFallback,
                       float lensStrength, float rimWidthDp, float dispersion, float specular,
                       float innerShadow, boolean adaptive, boolean morphing) {
+        this(fillColor, blurRadius, strokeColor, strokeWidthDp, highlightColor,
+                refractionColor, contentColor, animate, usingFallback, lensStrength, rimWidthDp,
+                dispersion, specular, innerShadow, adaptive, morphing, false);
+    }
+
+    private GlassSpec(int fillColor, float blurRadius, int strokeColor, float strokeWidthDp,
+                      int highlightColor, int refractionColor, int contentColor,
+                      boolean animate, boolean usingFallback,
+                      float lensStrength, float rimWidthDp, float dispersion, float specular,
+                      float innerShadow, boolean adaptive, boolean morphing, boolean bubbleTint) {
         this.fillColor = fillColor;
         this.blurRadius = blurRadius;
         this.strokeColor = strokeColor;
@@ -210,6 +222,18 @@ public final class GlassSpec {
         this.innerShadow = innerShadow;
         this.adaptive = adaptive;
         this.morphing = morphing;
+        this.bubbleTint = bubbleTint;
+    }
+
+    /** Retains the input's optical recipe but changes the colour of a custom message bubble. */
+    public GlassSpec withBubbleTint(int color) {
+        if ((color >>> 24) == 0) return this;
+        int rgb = color & 0x00FFFFFF;
+        int content = SemanticTheme.bestTextColor(0xFF000000 | rgb);
+        int tintedFill = (Math.max(fillColor >>> 24, Math.round(0.18f * 255f)) << 24) | rgb;
+        return new GlassSpec(tintedFill, blurRadius, strokeColor, strokeWidthDp,
+                highlightColor, refractionColor, content, animate, usingFallback,
+                lensStrength, rimWidthDp, dispersion, specular, innerShadow, adaptive, morphing, true);
     }
 
     /**
@@ -327,7 +351,7 @@ public final class GlassSpec {
 
         return new GlassSpec(adaptedFill, blurRadius, adaptedStroke, strokeWidthDp,
                 highlightColor, refractionColor, adaptedContent, animate, usingFallback,
-                lensStrength, rimWidthDp, dispersion, specular, innerShadow, adaptive, morphing);
+                lensStrength, rimWidthDp, dispersion, specular, innerShadow, adaptive, morphing, bubbleTint);
     }
 
     /**
@@ -338,7 +362,7 @@ public final class GlassSpec {
         int fill = (Math.max(fillColor >>> 24, Math.round(NO_BLUR_MIN_OPACITY * 255f)) << 24)
                 | (fillColor & 0x00FFFFFF);
         return new GlassSpec(fill, 0f, strokeColor, strokeWidthDp, highlightColor,
-                0, contentColor, animate, true, 0f, 0f, 0f, 0f, 0f, false, false);
+                0, contentColor, animate, true, 0f, 0f, 0f, 0f, 0f, false, false, bubbleTint);
     }
 
     /** Temporary capture fallback: neutral fill, independent of the sampled/accent hue. */
@@ -348,6 +372,13 @@ public final class GlassSpec {
 
     /** Permanent capability loss keeps the existing opacity floor; transient gaps use lighter tint. */
     public GlassSpec neutralFallback(boolean permanent) {
+        if (bubbleTint) {
+            int opacity = Math.max(fillColor >>> 24,
+                    Math.round((permanent ? NO_BLUR_MIN_OPACITY : 0.32f) * 255f));
+            return new GlassSpec((opacity << 24) | (fillColor & 0x00FFFFFF), 0f,
+                    strokeColor, strokeWidthDp, highlightColor, 0, contentColor,
+                    animate, true, 0f, 0f, 0f, 0f, 0f, false, false, true);
+        }
         int opacity = permanent ? withoutOptics().fillColor >>> 24
                 : Math.max(Math.round(0.18f * 255f), Math.min(fillColor >>> 24, Math.round(0.32f * 255f)));
         int rgb = SemanticTheme.relativeLuminance(contentColor) > 0.5d ? 0x202020 : 0xFFFFFF;
@@ -370,7 +401,7 @@ public final class GlassSpec {
         return new GlassSpec(fill, Math.min(blurRadius, CLEAR_PROFILE_BLUR), strokeColor,
                 strokeWidthDp, highlightColor, refractionColor, contentColor, animate, usingFallback,
                 lensStrength, rimWidthDp, 0f, Math.min(specular, CLEAR_PROFILE_SPECULAR),
-                innerShadow * 0.5f, adaptive, morphing);
+                innerShadow * 0.5f, adaptive, morphing, bubbleTint);
     }
 
     /** Clear profile: tint ceiling (fraction), blur ceiling (library units) and rim strength. */
@@ -392,7 +423,7 @@ public final class GlassSpec {
                 && Float.compare(dispersion, o.dispersion) == 0
                 && Float.compare(specular, o.specular) == 0
                 && Float.compare(innerShadow, o.innerShadow) == 0
-                && adaptive == o.adaptive && morphing == o.morphing;
+                && adaptive == o.adaptive && morphing == o.morphing && bubbleTint == o.bubbleTint;
     }
 
     @Override public int hashCode() {
@@ -404,7 +435,7 @@ public final class GlassSpec {
         h = 31 * h + Float.floatToIntBits(rimWidthDp);
         h = 31 * h + Float.floatToIntBits(dispersion);
         h = 31 * h + Float.floatToIntBits(specular);
-        return 31 * h + (usingFallback ? 1 : 0);
+        return 31 * (31 * h + (usingFallback ? 1 : 0)) + (bubbleTint ? 1 : 0);
     }
 
     private float baseEdgeAlpha() {

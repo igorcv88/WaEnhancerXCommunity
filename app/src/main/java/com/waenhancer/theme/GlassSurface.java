@@ -524,7 +524,10 @@ public final class GlassSurface {
         paintKey = key;
 
         float density = density();
-        if (lensedNow) {
+        // A Liquid surface waiting for its shader must not switch to the legacy opaque
+        // GradientDrawable. The blur library's unmasked rectangle must not leak through either.
+        boolean liveMaterial = spec.lensStrength > 0f && !spec.usingFallback;
+        if (lensedNow || liveMaterial) {
             // The shader owns the fill, the rim and the shape's own antialiased coverage, so
             // nothing else may paint them. A background here would be a flat wash with no detail
             // in it, and the lens would spend itself refracting that instead of the backdrop —
@@ -533,6 +536,7 @@ public final class GlassSurface {
             blurView.setBackground(null);
             blurView.setOverlayColor(Color.TRANSPARENT);
             blurView.setClipToOutline(false);
+            blurView.setBlurEnabled(lensedNow);
         } else {
             // The layered stack already carries the fill in its base, and it is drawn over the
             // blurred capture. Setting the overlay to the same colour applies it a second time,
@@ -541,11 +545,12 @@ public final class GlassSurface {
             blurView.setBackground(GlassRenderer.background(spec, cornerRadiusPx(), density));
             blurView.setOverlayColor(Color.TRANSPARENT);
             blurView.setClipToOutline(true);
+            blurView.setBlurEnabled(true);
         }
 
         if (config.takeOverTargetBackground) {
             target.setBackgroundTintList(null);
-            target.setBackground(targetBackground(spec, lensedNow, density));
+            target.setBackground(targetBackground(spec, lensedNow || liveMaterial, density));
             target.setClipToOutline(false);
             target.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
             takeOverFullBleedDescendants();
