@@ -2,6 +2,7 @@ package com.waenhancer.config;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.waenhancer.testing.FakeSharedPreferences;
@@ -202,6 +203,17 @@ public class LiquidGlassSettingsTest {
         prefs.edit().putBoolean(LiquidGlassSettings.Surface.CONVERSATION_HEADER.key, false).apply();
         assertTrue(LiquidGlassSettings.isEnabled(prefs, LiquidGlassSettings.Surface.TOOLBARS));
         assertFalse(LiquidGlassSettings.isEnabled(prefs, LiquidGlassSettings.Surface.CONVERSATION_HEADER));
+    }
+
+    /** A resizing microphone control must not inherit a 1000dp composer lens mask. */
+    @Test public void voiceControlsNeverBindGenericGlassDrawables() {
+        assertEquals(LiquidGlassSettings.Surface.COMPOSER,
+                GlassSurfaceCatalog.surface("input_layout"));
+        assertNull(GlassSurfaceCatalog.surface("conversation_entry_action_button"));
+        assertNull(GlassSurfaceCatalog.surface("voice_note_lock_container"));
+        assertNull(GlassSurfaceCatalog.surface("voice_note_draft_layout_v2"));
+        assertEquals(LiquidGlassSettings.Surface.QUOTES,
+                GlassSurfaceCatalog.surface("voice_note_draft_quoted_message_frame"));
     }
 
     // ---- the material ----------------------------------------------------------------------
