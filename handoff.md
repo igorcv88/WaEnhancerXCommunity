@@ -978,7 +978,7 @@ Still unverified: whether the callback-owned bubble route attaches on this Whats
 
 ## Post-merge #103 follow-up — recorder event, duplicate quoted preview, native row bubbles, release selector — 2026-10-30
 
-PR #103 was merged at `master@b003dac6631eed61f6c0571f74341a761277b34c` before these edits. Create a **new review-ready PR from this master**, rather than updating the merged PR. No Actions workflow was dispatched. The new PR number/head must be recorded once published.
+PR #103 was merged at `master@b003dac6631eed61f6c0571f74341a761277b34c` before these edits. New review-ready **PR #104** (`fix/voice-start-reply-bubbles-release-20261030`, initial head `348bc25b2c4af68ea51081c2968577bd8a8a6039`) targets `master`, independent of merged #103. This handoff update is the final documentation follow-up on the same branch. No Actions workflow was dispatched or merge performed.
 
 User video `86153.mp4` (21.07s) and `WaEX_Glass103_20261030_200225.txt`: recorder glass eventually appears, but only after subsequent screen updates; when recording while replying, two native copies of the same quoted preview appear vertically (the lower one overlaps the elapsed-time/waveform section). Scrolling behind the expanded footer, header, bright rim and app-profile refraction are now approved and must stay unchanged. Bubble glass remains absent.
 
