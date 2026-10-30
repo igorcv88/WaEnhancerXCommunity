@@ -64,6 +64,8 @@ public final class AppLiquidGlass extends Feature {
     /** Direction metadata survives factory creation until the native row installs the drawable. */
     private final Map<GlassMaterialDrawable, Boolean> bubbleDirections =
             java.util.Collections.synchronizedMap(new WeakHashMap<>());
+    /** Callback-owned factory drawables that never entered a View background/foreground slot. */
+    private final WeakHashMap<View, GlassMaterialDrawable> callbackBubbles = new WeakHashMap<>();
     /** Keep a stable tinted spec across draw frames so fallbacks/shaders are not rebuilt. */
     private final Map<GlassSpec, Map<Integer, GlassSpec>> tintedMaterials = new WeakHashMap<>();
     private volatile BubbleColors.Palette bubblePalette = new BubbleColors.Palette(0, 0, false);
@@ -234,6 +236,19 @@ public final class AppLiquidGlass extends Feature {
                     GlassMaterialDrawable glass = new GlassMaterialDrawable(null, (Drawable) value,
                             () -> bubbleMaterial(outgoing, material(Surface.BUBBLES)), 16f, true);
                     bubbleDirections.put(glass, outgoing);
+                    // The factory can be called before the row belongs to a watched window.
+                    // Its drawable may also be nested inside a selector without a later
+                    // View.setBackground call. Follow the real native callback chain when the
+                    // wrapper draws, then adopt it on the next UI turn (never during capture).
+                    glass.observeHost(host -> host.post(() -> {
+                        callbackBubbles.put(host, glass);
+                        Session session = sessionFor(host.getRootView());
+                        if (session != null && !session.closed && !session.bindings.containsKey(host)) {
+                            session.adopt(host, glass);
+                        }
+                    }), () -> report("bubble-no-host-" + (outgoing ? "out" : "in"),
+                            "bubble factory drawable was drawn without a View callback; "
+                                    + "native bubble renderer may not expose a view background"));
                     param.setResult(glass);
                     report("bubble-factory-" + (outgoing ? "out" : "in"),
                             "bubble-factory side=" + (outgoing ? "outgoing" : "incoming") + " wrapped");
@@ -275,6 +290,13 @@ public final class AppLiquidGlass extends Feature {
             glass = nestedBubble(((ImageView) view).getDrawable(), 0);
         }
         return glass;
+    }
+
+    private GlassMaterialDrawable bubbleFor(View view) {
+        GlassMaterialDrawable glass = bubbleOn(view);
+        if (glass != null) return glass;
+        glass = callbackBubbles.get(view);
+        return glass != null && glass.callbackOwner() == view ? glass : null;
     }
 
     private GlassSpec material(Surface surface) {
@@ -563,6 +585,7 @@ public final class AppLiquidGlass extends Feature {
         }
         /** Views that ignore setBackground (Material FABs); never retried in this window. */
         private final WeakHashMap<View, Boolean> refused = new WeakHashMap<>();
+        private int bubbleRowsInspected;
         private final Set<View> pendingDiscovery = java.util.Collections.newSetFromMap(new WeakHashMap<>());
         private boolean discoveryPosted;
         private boolean discovered;
@@ -918,7 +941,8 @@ public final class AppLiquidGlass extends Feature {
                     } else if (binding.nested) {
                         // The wrapper is a child of WhatsApp's native background, not the view's
                         // background itself. Never replace the whole selector with the child.
-                        if (bubbleOn(target) != binding.glass) {
+                        if (bubbleFor(target) != binding.glass
+                                && !(binding.callbackOwned && binding.glass.callbackOwner() == target)) {
                             releaseBudget(binding);
                             binding.restore(target);
                             restoreBubbleText(target);
@@ -929,7 +953,7 @@ public final class AppLiquidGlass extends Feature {
                         binding.restore(target);
                         restoreBubbleText(target);
                         bindings.remove(target);
-                        GlassMaterialDrawable next = bubbleOn(target);
+                        GlassMaterialDrawable next = bubbleFor(target);
                         if (next != null && bubbleDirections.containsKey(next)) adopt(target, next);
                     } else if (target.getBackground() != binding.glass
                             && !(target.getBackground() instanceof GlassMaterialDrawable)
@@ -990,7 +1014,15 @@ public final class AppLiquidGlass extends Feature {
 
         private void walk(View view, int depth) {
             if (depth > 24 || view == null || GlassSurface.isGlassHost(view) || view instanceof GlassPane) return;
-            GlassMaterialDrawable bubble = bubbleOn(view);
+            if (bubbleRowsInspected < 3 && view.getId() != View.NO_ID
+                    && LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)
+                    && ("conversation_row_text".equals(resourceName(view))
+                        || "conversation_row_voice_note".equals(resourceName(view)))) {
+                int index = bubbleRowsInspected++;
+                report("bubble-row-structure-" + index, "bubble row routing=" + describe(view)
+                        + " descendants=" + bubbleStructure(view, 0));
+            }
+            GlassMaterialDrawable bubble = bubbleFor(view);
             if (bubble != null && bubbleDirections.containsKey(bubble) && !bindings.containsKey(view)) {
                 Boolean outgoing = bubbleDirections.get(bubble);
                 if (outgoing != null && LiquidGlassSettings.bubbleEnabled(prefs, outgoing)) {
@@ -1008,6 +1040,24 @@ public final class AppLiquidGlass extends Feature {
                 ViewGroup group = (ViewGroup) view;
                 for (int i = 0; i < group.getChildCount(); i++) walk(group.getChildAt(i), depth + 1);
             }
+        }
+
+        /** Bounded diagnostics for an unknown WhatsApp row: IDs/classes only, never text/media. */
+        private String bubbleStructure(View view, int depth) {
+            if (view == null || depth > 3) return "";
+            StringBuilder out = new StringBuilder();
+            out.append('[').append(resourceName(view)).append(':')
+                    .append(view.getClass().getSimpleName());
+            Drawable background = view.getBackground();
+            if (background != null) out.append(" bg=").append(background.getClass().getSimpleName());
+            out.append(']');
+            if (view instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) view;
+                for (int i = 0; i < group.getChildCount() && i < 8; i++) {
+                    out.append(bubbleStructure(group.getChildAt(i), depth + 1));
+                }
+            }
+            return out.toString();
         }
 
         /** Puts the existing glass back over a replaced native background; false if refused. */
@@ -1033,10 +1083,13 @@ public final class AppLiquidGlass extends Feature {
         private void adopt(View view, GlassMaterialDrawable glass) {
             Boolean outgoing = bubbleDirections.get(glass);
             if (outgoing == null) return;
+            boolean callbackOwned = bubbleOn(view) != glass && glass.callbackOwner() == view;
+            if (bubbleOn(view) != glass && !callbackOwned) return;
             boolean nested = view.getBackground() != glass;
             Binding binding = new Binding(view, nested ? view.getBackground() : glass.original(), Surface.BUBBLES, true);
             binding.glass = glass;
             binding.nested = nested;
+            binding.callbackOwned = callbackOwned;
             binding.outgoing = outgoing;
             bindings.put(view, binding);
             glass.attachOwner(view);
@@ -1045,7 +1098,8 @@ public final class AppLiquidGlass extends Feature {
             updateBubbleText(view, binding);
             report("bubble-attached-" + (outgoing ? "out" : "in") + (nested ? "-nested" : "-direct"),
                     "bubble-attached host=" + (nested ? "nested" : "direct") + " side="
-                    + (outgoing ? "outgoing" : "incoming"));
+                    + (outgoing ? "outgoing" : "incoming")
+                    + " callbackOwner=" + callbackOwned + " " + describe(view));
         }
 
         /** A binding going away gives its slot back at once rather than when the GC notices. */
@@ -1164,6 +1218,7 @@ public final class AppLiquidGlass extends Feature {
         boolean visible;
         Boolean outgoing;
         boolean nested;
+        boolean callbackOwned;
         final SurfaceRecovery recovery = new SurfaceRecovery();
         Binding(View view, Drawable original, Surface surface, boolean nativeMask) {
             this.original = original;

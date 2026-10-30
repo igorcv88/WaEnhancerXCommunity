@@ -123,7 +123,10 @@ public class KyantLensTest {
             assertEquals(bar.tint, app.tint);
             assertEquals(bar.saturation, app.saturation, 0f);
             assertEquals(bar.refractHeight, app.refractHeight, 0f);
-            assertEquals(bar.refractAmount, app.refractAmount, 0f);
+            assertEquals(0f, bar.appChrome, 0f);
+            assertEquals(1f, app.appChrome, 0f);
+            assertEquals(0.65f * 24f * density, bar.refractAmount, 0.001f);
+            assertEquals(0.95f * 24f * density, app.refractAmount, 0.001f);
             assertTrue(KyantLens.appPadding(density) >= 3f * 30f * density * 0.45f);
             assertTrue(KyantLens.appPadding(density) > KyantLens.padding(density));
             assertNotEquals(bar.key(), app.key());

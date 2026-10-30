@@ -61,6 +61,7 @@ public final class KyantLens {
             + "uniform float uHighlight;\n"
             + "uniform float uStrokeA;\n"
             + "uniform float uContourGain;\n"
+            + "uniform float uAppChrome;\n"
             + "uniform float3 uLight1;\n"
             + "uniform float uLight1I;\n"
             + "uniform float3 uLight2;\n"
@@ -182,6 +183,9 @@ public final class KyantLens {
             + "        float contour = exp(-0.5 * depth * depth / (sigma * sigma));\n"
             + "        float contourGain = (0.10 + 0.20 * smoothstep(0.0, 0.75, luminance))\n"
             + "                          * (0.85 + 0.15 * clamp(light, 0.0, 1.0)) * uContourGain;\n"
+            + "        if (uAppChrome > 0.5) contourGain =\n"
+            + "                (0.08 + 0.42 * smoothstep(0.08, 0.85, luminance))\n"
+            + "                * (0.85 + 0.15 * clamp(light, 0.0, 1.0)) * uContourGain;\n"
             + "        float bevelGain = light * envelope * uHighlight * response;\n"
             // A bright message/photo moving behind one segment increases the local grazing
             // glint, while the opposite segment retains its own lower luminance. Only the live
@@ -189,15 +193,22 @@ public final class KyantLens {
             + "        float whiteEdge = smoothstep(0.42, 0.98, luminance);\n"
             + "        float glint = whiteEdge * whiteEdge * exp(-depth / max(uBloom * 1.6, 1.0))\n"
             + "                    * 0.14 * uContourGain;\n"
-            + "        float reflection = clamp(contour * contourGain + bevelGain * 0.45 + glint, 0.0, 0.62);\n"
-            + "        float3 reflected = mix(float3(1.0), transmitted, 0.15) * col.a;\n"
-            // Keep #100's dark-background result exactly. Only the narrow contour
-            // changes polarity when the composited body is too bright to illuminate.
-            + "        float bodyLuma = dot(col.rgb / max(col.a, 0.0001), float3(0.2126, 0.7152, 0.0722));\n"
-            + "        float bright = smoothstep(0.65, 0.95, bodyLuma);\n"
-            + "        float contourShare = contour * contourGain / max(contour * contourGain + bevelGain * 0.45, 0.0001);\n"
-            + "        float3 target = mix(max(col.rgb, reflected), col.rgb * 0.55, bright * contourShare);\n"
-            + "        col.rgb = mix(col.rgb, target, reflection);\n"
+            + "        if (uAppChrome > 0.5) {\n"
+            // Screen app-chrome rims towards white, tinted slightly by the local backdrop.
+            // Keep the approved floating navbar's previous contour calculation unchanged.
+            + "            float reflection = clamp(contour * contourGain + bevelGain * 0.5\n"
+            + "                    + glint * (0.18 / 0.14), 0.0, 0.82);\n"
+            + "            float3 reflected = mix(float3(1.0), transmitted, 0.12) * col.a;\n"
+            + "            col.rgb += max(reflected - col.rgb, float3(0.0)) * reflection;\n"
+            + "        } else {\n"
+            + "            float reflection = clamp(contour * contourGain + bevelGain * 0.45 + glint, 0.0, 0.62);\n"
+            + "            float3 reflected = mix(float3(1.0), transmitted, 0.15) * col.a;\n"
+            + "            float bodyLuma = dot(col.rgb / max(col.a, 0.0001), float3(0.2126, 0.7152, 0.0722));\n"
+            + "            float bright = smoothstep(0.65, 0.95, bodyLuma);\n"
+            + "            float contourShare = contour * contourGain / max(contour * contourGain + bevelGain * 0.45, 0.0001);\n"
+            + "            float3 target = mix(max(col.rgb, reflected), col.rgb * 0.55, bright * contourShare);\n"
+            + "            col.rgb = mix(col.rgb, target, reflection);\n"
+            + "        }\n"
             + "    } else if (uHighlight > 0.0) {\n"
             + "        float bigR = max(r, uBloom);\n"
             + "        float2 xa = abs(p);\n"
@@ -221,6 +232,7 @@ public final class KyantLens {
         int tint;
         float strokeWidth, bloom, highlight, strokeAlpha;
         float contourGain = 1f;
+        float appChrome;
         float l1x, l1y, l1z, l1i, l2x, l2y, l2z, l2i;
         float shadowRadius, shadowAlpha;
         float saturation, blurRadius;
@@ -230,7 +242,7 @@ public final class KyantLens {
                     + ":" + strokeWidth + ":" + bloom + ":" + highlight + ":" + strokeAlpha
                     + ":" + l1x + ":" + l1y + ":" + l1z + ":" + l1i + ":" + l2x + ":" + l2y
                     + ":" + l2z + ":" + l2i + ":" + shadowRadius + ":" + shadowAlpha
-                    + ":" + saturation + ":" + blurRadius + ":" + contourGain;
+                    + ":" + saturation + ":" + blurRadius + ":" + contourGain + ":" + appChrome;
         }
     }
 
@@ -244,7 +256,7 @@ public final class KyantLens {
      * rather than glass. 10dp gives sigma 4.5dp (~12 px at density 2.75).
      */
     static final float BLUR_DP = 10f;
-    /** App chrome needs stronger information suppression than the approved floating bar. */
+    /** Keep strong information suppression in the header and composer. */
     static final float APP_BLUR_DP = 30f;
     static final float VIEW_CONTOUR_GAIN = 1.6f;
     static final float VIEW_STROKE_DP = 1.15f;
@@ -377,7 +389,11 @@ public final class KyantLens {
     /** Non-navbar app chrome: stronger blur and contour, with the same neutral body. */
     static Params appSurface(GlassSpec spec, int height, float density, int surfaceAlpha255) {
         Params p = surface(spec, height, density, surfaceAlpha255);
+        p.appChrome = 1f;
         p.blurRadius = blurRadiusPx(density, APP_BLUR_DP);
+        // The former 15.6dp displacement acted on an already 30dp-blurred recording: its
+        // refraction was nearly invisible. This remains inward-only and bounded to 24dp.
+        p.refractAmount = REFRACTION_DP * density * 0.95f;
         p.strokeWidth = APP_STROKE_DP * density;
         p.contourGain = APP_CONTOUR_GAIN * rimIntensity;
         return p;
@@ -491,6 +507,7 @@ public final class KyantLens {
             shader.setFloatUniform("uHighlight", params.highlight);
             shader.setFloatUniform("uStrokeA", params.strokeAlpha);
             shader.setFloatUniform("uContourGain", params.contourGain);
+            shader.setFloatUniform("uAppChrome", params.appChrome);
             shader.setFloatUniform("uLight1", params.l1x, params.l1y, params.l1z);
             shader.setFloatUniform("uLight1I", params.l1i);
             shader.setFloatUniform("uLight2", params.l2x, params.l2y, params.l2z);
