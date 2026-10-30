@@ -230,6 +230,9 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     }
     public void releaseLive(RecordingState reason) {
         recordingState = reason;
+        // A new capture after a scroll/recycled row must repaint its background even if an
+        // older capture had already been presented in the same drawable instance.
+        presentedLive = null;
         if (live != null) live.release(reason);
     }
     public Drawable original() { return original; }
