@@ -12,6 +12,7 @@ import android.graphics.Rect;
 import android.graphics.Shader;
 import android.os.SystemClock;
 import android.util.Log;
+import android.view.animation.AnimationUtils;
 import android.view.View;
 import android.view.ViewOutlineProvider;
 import android.view.ViewParent;
@@ -90,6 +91,10 @@ public final class GlassPane extends FrameLayout {
     private long opticsRevision = -1;
     private GlassSpec captureMaterial;
     private String budgetStatus = "unassigned";
+    /** A geometry/material/source epoch released the recording in this pre-draw: recapture now. */
+    private boolean captureNow;
+    /** Choreographer frame of the last completed capture; dedupes a same-frame second call. */
+    private long capturedFrame = Long.MIN_VALUE;
     private final Runnable retryFrame = () -> { if (!suspended && isAttachedToWindow()) invalidate(); };
 
     public GlassPane(Context context) {
@@ -131,6 +136,57 @@ public final class GlassPane extends FrameLayout {
                     top, bottom, Shader.TileMode.CLAMP));
         }
         canvas.drawRect(0, 0, getWidth(), getHeight(), topWashPaint);
+    }
+
+    /** Whether a complete live recording for the current geometry is ready to present. */
+    public boolean hasLiveRecording() {
+        return !suspended && backdrop.hasRecording() && captureWidth == getWidth()
+                && captureHeight == getHeight();
+    }
+
+    /**
+     * Places this pane in its {@link FrameLayout} parent within the current pre-draw: the layout
+     * params are updated for later parent layouts, the pane is measured and laid out directly
+     * (no {@code requestLayout}, so a native size animation does not get one extra traversal
+     * per frame), and the backdrop is recaptured for the new size in the same frame so the
+     * resize cannot present a transparent frame. Returns false if the parent cannot host it.
+     */
+    public boolean placeNow(int left, int top, int right, int bottom, float radius) {
+        if (!(getLayoutParams() instanceof FrameLayout.LayoutParams)) return false;
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) getLayoutParams();
+        int w = Math.max(0, right - left), h = Math.max(0, bottom - top);
+        boolean radiusChanged = cornerRadiusPx != radius;
+        setCornerRadius(radius);
+        boolean paramsChanged = lp.width != w || lp.height != h || lp.leftMargin != left
+                || lp.topMargin != top || lp.gravity != (android.view.Gravity.TOP | android.view.Gravity.START);
+        lp.width = w;
+        lp.height = h;
+        lp.leftMargin = left;
+        lp.topMargin = top;
+        lp.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
+        View parent = getParent() instanceof View ? (View) getParent() : null;
+        if (parent == null || !isAttachedToWindow() || !parent.isLaidOut()) {
+            if (paramsChanged) setLayoutParams(lp);
+            return true;
+        }
+        boolean frameChanged = getLeft() != left || getTop() != top || getWidth() != w || getHeight() != h;
+        if (frameChanged) {
+            measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY));
+            layout(left, top, left + w, top + h);
+        }
+        // A new size or radius released the recording; recapture before this frame draws.
+        if ((frameChanged || radiusChanged) && !suspended && observing) onPreDrawCapture();
+        return true;
+    }
+
+    /**
+     * Choreographer locks the animation clock to the vsync frame time for the duration of a
+     * frame (including the traversal that dispatches pre-draw), so equal values identify the same
+     * frame. Outside a frame it is uptime, which only dedupes calls in the same millisecond.
+     */
+    private static long frameToken() {
+        return AnimationUtils.currentAnimationTimeMillis();
     }
 
     /** Main thread only: whether any live glass is recording right now. Guards hold back touch feedback. */
@@ -252,6 +308,9 @@ public final class GlassPane extends FrameLayout {
     private void revalidate(String reason) {
         SurfaceRecovery.State before = recovery.state();
         backdrop.release();
+        // The released pixels cannot be presented: the next permitted pre-draw recaptures
+        // instead of waiting for the rest gap, which would otherwise draw a transparent frame.
+        captureNow = true;
         if (!suspended) recovery.revalidate();
         trace(before, reason);
     }
@@ -288,6 +347,9 @@ public final class GlassPane extends FrameLayout {
         // thread on every frame.
         try {
             if (suspended || !isAttachedToWindow() || isCapturing()) return true;
+            long frame = frameToken();
+            if (frame != Long.MIN_VALUE && frame == capturedFrame && backdrop.hasRecording()
+                    && captureWidth == getWidth() && captureHeight == getHeight()) return true;
             boolean visible = isShown() && getWidth() > 0 && getHeight() > 0 && getGlobalVisibleRect(visibleRect);
             if (!visible) {
                 if (captureVisible || backdrop.hasRecording()) backdrop.release();
@@ -362,11 +424,18 @@ public final class GlassPane extends FrameLayout {
             for (View view : underlay) if (view != null && view.isDirty()) sourceDamage = true;
             // Content invalidation is damage, not a 350ms motion burst. In particular a
             // bubble publishing its texture must not keep every chrome pane active.
-            if (damageDriven && !sourceDamage && !scheduler.moving(now)
+            if (damageDriven && !sourceDamage && !captureNow && !scheduler.moving(now)
                     && backdrop.hasRecording() && !recovery.retryDue(now)
                     && !scheduler.hasPendingCapture()) return true;
-            int decision = scheduler.decide(now, damageDriven,
-                    backdrop.recordingState().requestsImmediateRecovery(recovery.mayCapture(now)), recovery.retryDue(now));
+            int decision;
+            if (captureNow) {
+                // One capture for the new epoch; no motion burst and no heartbeat follow it.
+                captureNow = false;
+                decision = CaptureScheduler.CAPTURE;
+            } else {
+                decision = scheduler.decide(now, damageDriven,
+                        backdrop.recordingState().requestsImmediateRecovery(recovery.mayCapture(now)), recovery.retryDue(now));
+            }
             if ((decision & CaptureScheduler.CAPTURE) == 0) {
                 if ((decision & CaptureScheduler.INVALIDATE_LATER) != 0) scheduleFrame(scheduler.delayMs());
                 return true;
@@ -394,6 +463,7 @@ public final class GlassPane extends FrameLayout {
             boolean captured = backdrop.capture(getWidth(), getHeight(), radius(), density, material,
                     (canvas, padding) -> exact ? paintExact(canvas, captureSource) : paint(canvas, captureSource));
             if (captured) {
+                capturedFrame = frame;
                 SurfaceRecovery.State before = recovery.state();
                 recovery.ready();
                 if (captureContent == CaptureContent.CAPTURE_LIVE_CONTENT) GlassTrace.captured(getRootView(), this, src);

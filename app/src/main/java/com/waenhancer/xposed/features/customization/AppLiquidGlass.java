@@ -460,10 +460,21 @@ public final class AppLiquidGlass extends Feature {
         }
     }
 
+    /** Resolved once per process: this gate runs inside every app-wide setVisibility call. */
+    private static int recorderStubId = -1, recorderDraftId = -1;
+
     private static boolean isRecorderAnchor(View view) {
-        if (view == null || view.getId() == View.NO_ID || view.getId() == 0) return false;
-        String name = resourceName(view);
-        return "voice_note_stub".equals(name) || "voice_note_draft_layout_v2".equals(name);
+        if (view == null) return false;
+        int id = view.getId();
+        if (id == View.NO_ID || id == 0) return false;
+        if (recorderStubId == -1) {
+            android.content.res.Resources resources = view.getResources();
+            String pkg = view.getContext().getPackageName();
+            recorderStubId = resources.getIdentifier("voice_note_stub", "id", pkg);
+            recorderDraftId = resources.getIdentifier("voice_note_draft_layout_v2", "id", pkg);
+        }
+        // An integer comparison instead of a resource-name lookup and String per visibility change.
+        return (recorderStubId != 0 && id == recorderStubId) || (recorderDraftId != 0 && id == recorderDraftId);
     }
 
     /** A recording can begin without a global layout or touch-driven redraw. The native

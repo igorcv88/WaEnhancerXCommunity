@@ -12,31 +12,77 @@ public class ConversationGlassChecks {
         if (!value) throw new AssertionError(message);
     }
     public static void main(String[] args) {
+        final int P = ComposerTransition.PRESENT, R = ComposerTransition.RESERVE;
+        final ComposerTransition.Route IN = ComposerTransition.Route.INPUT,
+                VO = ComposerTransition.Route.VOICE, UN = ComposerTransition.Route.UNRESOLVED;
         ComposerTransition state = new ComposerTransition();
-        check(!state.sample(false, "input:170", 0), "first mixed layout must not publish");
-        check(!state.sample(false, "input:180", 16), "changed first layout must not publish");
-        check(state.sample(false, "input:180", 32), "two coherent frames publish input");
+        check(state.sample(IN, "170", 0) == 0, "first mixed layout must not publish");
+        check(state.sample(IN, "180", 16) == 0, "changed first layout must not publish");
+        check(state.sample(IN, "180", 32) == (P | R), "two coherent frames publish and reserve input");
+        check(state.sample(IN, "180", 48) == 0, "unchanged input is idle");
         long now = 100;
         int[] steps = {12,16,6,20};
+        // Logged PR #107 device geometries: no quote and quote.
+        int[][] growth = {{155, 429, 444}, {323, 609, 624}};
         for (int round = 0; round < 20; round++) {
-            check(state.sample(true, "voice:420", now), "first measured recorder is immediate");
-            check(state.state() == ComposerTransition.State.RECORDING_START, "start state");
-            check(state.sample(true, "voice:420", now + 90), "voice settles");
-            check(state.state() == ComposerTransition.State.RECORDING_STABLE, "stable recorder");
-            now += 120;
+            long epoch = state.epoch();
+            check(state.signal(true, now), "native start opens an epoch");
+            check(!state.signal(true, now + 1), "timer tick in the same epoch wakes nothing");
+            check(state.state() == ComposerTransition.State.RECORD_START_SIGNAL, "start signal state");
+            // Native swap not laid out yet: the still-measured input is presented, not reserved.
+            check((state.sample(IN, "180", now + 2) & R) == 0, "input before swap is not reserved");
+            check(state.state() == ComposerTransition.State.RECORD_START_SIGNAL, "signal survives old route");
+            check(state.sample(UN, null, now + 8) == ComposerTransition.HOLD, "unresolved frame holds the pane");
+            int[] g = growth[round % 2];
+            check((state.sample(VO, "v" + g[0], now + 16) & P) != 0, "first measured recorder presents immediately");
+            check(state.state() == ComposerTransition.State.RECORD_LAYOUT_PENDING, "layout pending");
+            check(state.startToMeasuredMs() == 16, "start-to-measured timing");
+            check((state.sample(VO, "v" + g[1], now + 153) & P) != 0, "expansion presents in the same frame");
+            check((state.sample(VO, "v" + g[1], now + 169) & R) == 0, "expansion not yet quiet");
+            check(state.sample(VO, "v" + g[1], now + 233) == R, "settled expansion reserves once");
+            check(state.state() == ComposerTransition.State.RECORD_STABLE, "stable recorder");
+            check((state.sample(VO, "v" + g[2], now + 1268) & P) != 0, "late growth presents");
+            check(state.sample(VO, "v" + g[2], now + 1350) == R, "late growth reserves");
+            check(state.epoch() == epoch + 1, "one epoch per recording");
+            now += 1400;
+            check(state.signal(false, now), "native end opens an epoch");
+            // Exit animation: recorder still measurable, then unresolved swap frames.
+            check((state.sample(VO, "v" + g[2], now + 4) & R) == 0, "recorder during exit is not reserved");
+            check(state.sample(UN, null, now + 12) == ComposerTransition.HOLD, "cancel never blanks the pane");
+            now += 20;
             for (int i = 0; i < steps[round % steps.length]; i++, now += 30) {
-                check(!state.sample(false, "input:" + (420-i*15), now), "cancel must freeze list reservation");
-                check(state.state() == ComposerTransition.State.RECORDING_END, "ending state");
+                int flags = state.sample(IN, "" + (420 - i * 15), now);
+                check((flags & P) != 0, "normal pill follows each measured cancel frame");
+                check((flags & R) == 0, "cancel must freeze list reservation");
             }
-            check(!state.sample(false, "input:180", now), "last geometry still needs quiet interval");
-            check(!state.sample(false, "input:180", now + 79), "no early commit");
-            check(state.sample(false, "input:180", now + 80), "single final geometry within 200ms");
+            check(state.endToNormalMs() >= 0 && state.endToNormalMs() <= 40, "end-to-normal timing");
+            check((state.sample(IN, "180", now) & P) != 0, "final input presented at once");
+            check(state.sample(IN, "180", now + 79) == 0, "no early reservation");
+            check(state.sample(IN, "180", now + 80) == R, "single final reservation within 200ms");
             check(state.state() == ComposerTransition.State.NORMAL, "normal after cancel");
             now += 200;
         }
+        // A build whose recorder is never identified: bounded bridge, then decoration removed.
+        check(state.sample(UN, null, now) == ComposerTransition.HOLD, "bridge starts");
+        check(state.sample(UN, null, now + ComposerTransition.BRIDGE_MAX_MS) == ComposerTransition.HOLD, "bridge bound inclusive");
+        check(state.sample(UN, null, now + ComposerTransition.BRIDGE_MAX_MS + 1) == ComposerTransition.HIDE, "bridge expires");
+        check(state.sample(UN, null, now + 2000) == 0, "nothing left to hold");
         state.detach();
         check(state.state() == ComposerTransition.State.DETACHED, "teardown state");
-        check(!state.sample(false, "new-chat", now), "detached chat cannot reuse prior geometry");
+        check(state.sample(IN, "new-chat", now) == 0, "detached chat cannot reuse prior geometry");
+        // Recorder lanes: mic packs before the timer when the timer occupies the slot before
+        // the waveform; never overlaps timer/trash; RTL mirrors.
+        int[] wave = {300, 100, 1200, 244}, timer = {200, 150, 290, 190}, trash = {20, 140, 80, 200};
+        int[] mic = {1230, 160, 1260, 190};
+        int[] off = RecorderLayout.micOffset(mic, wave, new int[][]{timer, trash}, new int[]{0, 0, 1440, 444}, 4, 6, false);
+        check(off != null, "mic placeable");
+        int[] placed = {mic[0] + off[0], mic[1] + off[1], mic[2] + off[0], mic[3] + off[1]};
+        check(placed[2] + 4 <= wave[0], "mic left of waveform");
+        check(!RecorderLayout.intersects(placed, timer) && !RecorderLayout.intersects(placed, trash), "no overlap");
+        check(Math.abs((placed[1] + placed[3]) / 2 - (wave[1] + wave[3]) / 2) <= 6, "mic centred on row");
+        check(RecorderLayout.micOffset(mic, wave, new int[][]{{0, 0, 1440, 444}}, new int[]{0, 0, 1440, 444}, 4, 6, false) == null,
+                "no valid slot keeps native layout");
+        check(!RecorderLayout.quoteAbove(new int[]{10, 90, 1200, 160}, wave, timer, 4), "overlapping quote lane detected");
         PresentationRetry retry = new PresentationRetry();
         for (int i=0; i<3; i++) {
             check(retry.mayCapture(i*16, false), "three initial presentation attempts");
@@ -53,7 +99,7 @@ public class ConversationGlassChecks {
         check(scheduler.hasPendingCapture(), "pending damage cannot be skipped by idle gate");
         check((scheduler.decide(33, true, false) & CaptureScheduler.CAPTURE) != 0, "last damage captured");
         check(!scheduler.hasPendingCapture(), "no idle heartbeat after trailing capture");
-        System.out.println("PASS: 20 cancel/reply-shaped sequences, initial geometry, detach, presentation backoff, trailing damage");
+        System.out.println("PASS: 20 signal/record/cancel sequences with logged 155-429-444 and 323-609-624 growth, unresolved bridge, initial geometry, detach, mic lanes, presentation backoff, trailing damage");
     }
 }
 '''
@@ -62,7 +108,7 @@ with tempfile.TemporaryDirectory(prefix='waex-glass-') as directory:
     harness = tmp / 'ConversationGlassChecks.java'
     harness.write_text(HARNESS)
     sources = [ROOT / 'app/src/main/java/com/waenhancer/theme' / (name + '.java')
-               for name in ('ComposerTransition', 'PresentationRetry', 'CaptureScheduler')]
+               for name in ('ComposerTransition', 'PresentationRetry', 'CaptureScheduler', 'RecorderLayout')]
     subprocess.run(['java', 'com.sun.tools.javac.Main', '-d', str(tmp),
                     *map(str, sources), str(harness)], check=True)
     subprocess.run(['java', '-cp', str(tmp), 'ConversationGlassChecks'], check=True)
