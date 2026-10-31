@@ -34,8 +34,7 @@ public final class GlassProbe {
             windowStart = now;
             count = 0;
             eventCounts.clear();
-            // INFO is independently visible: if DEBUG filtering fails again, this identifies
-            // an active probe and distinguishes a logger problem from an absent hook.
+            // INFO is independently visible and distinguishes an active probe from an absent hook.
             Log.i(TAG, "t=" + now + " event=PROBE_ACTIVE cap=" + MAX_EVENTS_PER_MINUTE
                     + " debugGate=true");
         }
@@ -43,7 +42,10 @@ public final class GlassProbe {
         if (count >= MAX_EVENTS_PER_MINUTE || repetitions >= MAX_PER_EVENT_PER_MINUTE) return;
         eventCounts.put(type, repetitions + 1);
         count++;
-        Log.d(TAG, "t=" + now + " event=" + type + " view=" + describe(view) + " " + details);
+        // Do not rely on Android forwarding DEBUG messages from an injected release process:
+        // device PR #111 showed debugGate=true but zero DEBUG entries. The explicit opt-in above
+        // already limits INFO events to the operator's short measurement window.
+        Log.i(TAG, "t=" + now + " event=" + type + " view=" + describe(view) + " " + details);
     }
 
     public static String drawable(Drawable drawable) {
