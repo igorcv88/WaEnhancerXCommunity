@@ -785,9 +785,12 @@ final class ConversationGlassPanes {
             screen.decorationPending = true;
             screen.decorationAttempts = 0;
         }
+        // Quote slots and the mic can change without changing the recorder envelope. This runs
+        // on every sampled frame (already gated by layout generation and footer fingerprint),
+        // not only while the backdrop publication below is pending.
+        suppressDuplicateReply(screen, footer);
+        layoutRecordingMic(screen, footer, voice, quoteRect, actionRect, d);
         if (screen.decorationPending) {
-            suppressDuplicateReply(screen, footer);
-            layoutRecordingMic(screen, footer, voice, quoteRect, actionRect, d);
             // Clear WhatsApp's opaque recorder backing only once replacement glass is live for
             // this geometry; until then the native backing stays (no transparent hole, no slab).
             if (screen.composer.hasLiveRecording()) {
@@ -931,6 +934,7 @@ final class ConversationGlassPanes {
         hash = mix(hash, screen, findById(footer, "voice_note_stub"));
         hash = mix(hash, screen, findById(footer, "voice_note_draft_layout_v2"));
         hash = mix(hash, screen, findById(footer, "composer_quoted_message_frame"));
+        hash = mix(hash, screen, findById(footer, "voice_note_draft_quoted_message_frame"));
         return hash;
     }
 
