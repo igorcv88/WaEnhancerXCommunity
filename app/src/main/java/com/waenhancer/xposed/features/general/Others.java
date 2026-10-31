@@ -831,41 +831,47 @@ public class Others extends Feature {
             return;
         }
 
+        // Dev4Mod/WaEnhancer@dcda601,b0a8681: never intercept View.invalidate() for an
+        // ID-based visibility filter. It is a high-frequency rendering path, particularly
+        // with live glass. Observe attachment once and prevent subsequent visibility resets.
         try {
-            XposedHelpers.findAndHookMethod(View.class, "invalidate", boolean.class, new XC_MethodHook() {
-                private final ThreadLocal<Boolean> inHook = ThreadLocal.withInitial(() -> false);
-
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    if (inHook.get()) {
-                        return;
-                    }
-                    inHook.set(true);
-                    try {
-                        var view = (View) param.thisObject;
-                        var id = view.getId();
-                        if (id > 0 && targetMap.containsKey(id)) {
-                            FilterItem item = targetMap.get(id);
-                            if (item == null) {
-                                return;
-                            }
-                            switch (item.behavior) {
-                                case FilterItem.BEHAVIOR_GONE:
-                                    if (view.getVisibility() == View.VISIBLE) {
-                                        view.setVisibility(View.GONE);
-                                    }
-                                    break;
-                                default:
-                                    break;
-                            }
-                        }
-                    } finally {
-                        inHook.set(false);
+            XposedBridge.hookMethod(View.class.getDeclaredMethod("onAttachedToWindow"), new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    View view = (View) param.thisObject;
+                    FilterItem item = targetMap.get(view.getId());
+                    if (item != null && FilterItem.BEHAVIOR_GONE.equals(item.behavior)
+                            && view.getVisibility() != View.GONE) view.setVisibility(View.GONE);
+                }
+            });
+        } catch (Throwable error) {
+            XposedBridge.log("[WAEX] Filtered view attachment hook unavailable: " + error);
+        }
+        XC_MethodHook visibilityFilter = new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                View view = (View) param.thisObject;
+                FilterItem item = targetMap.get(view.getId());
+                if (item == null || !FilterItem.BEHAVIOR_GONE.equals(item.behavior)) return;
+                // setFlags(flags,mask) receives just the bits being set by this call.
+                final int visibilityMask = 0x0000000C;
+                int mask = (Integer) param.args[1];
+                if ((mask & visibilityMask) == 0) return;
+                int flags = (Integer) param.args[0];
+                param.args[0] = (flags & ~visibilityMask) | View.GONE;
+            }
+        };
+        try {
+            XposedBridge.hookMethod(View.class.getDeclaredMethod("setFlags", int.class, int.class), visibilityFilter);
+        } catch (Throwable error) {
+            XposedBridge.log("[WAEX] View.setFlags unavailable; using setVisibility filter: " + error);
+            XposedBridge.hookAllMethods(View.class, "setVisibility", new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam param) {
+                    View view = (View) param.thisObject;
+                    FilterItem item = targetMap.get(view.getId());
+                    if (item != null && FilterItem.BEHAVIOR_GONE.equals(item.behavior)) {
+                        param.args[0] = View.GONE;
                     }
                 }
             });
-        } catch (Throwable t) {
-            XposedBridge.log("[WAEX] Failed to hook View.invalidate(boolean) for item filtering: " + t.toString());
         }
     }
 

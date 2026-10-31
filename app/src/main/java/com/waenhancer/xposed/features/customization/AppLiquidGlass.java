@@ -235,11 +235,22 @@ public final class AppLiquidGlass extends Feature {
                             param.setObjectExtra("waex-row-scope", Boolean.TRUE);
                             param.setObjectExtra("waex-row-previous", GlassMaterialDrawable.enterRowDraw(
                                     host, (Canvas) param.args[0]));
+                            param.setObjectExtra("waex-row-frame", GlassMaterialDrawable.currentRowDraw());
                         }
                         @Override protected void afterHookedMethod(MethodHookParam param) {
                             if (param.getObjectExtra("waex-row-scope") != null) {
+                                GlassMaterialDrawable.DrawHost frame = (GlassMaterialDrawable.DrawHost)
+                                        param.getObjectExtra("waex-row-frame");
                                 GlassMaterialDrawable.leaveRowDraw((GlassMaterialDrawable.DrawHost)
                                         param.getObjectExtra("waex-row-previous"));
+                                // Only the outermost draw() establishes that the native row
+                                // really stopped painting the previously adopted factory.
+                                if ("draw".equals(method.getName()) && frame != null
+                                        && !frame.isNestedFor((View) param.thisObject)) {
+                                    View host = (View) param.thisObject;
+                                    Session session = sessionFor(host.getRootView());
+                                    if (session != null) session.reconcileCanvasDraw(host, frame);
+                                }
                             }
                         }
                     });
@@ -617,6 +628,38 @@ public final class AppLiquidGlass extends Feature {
         private final WeakHashMap<View, Binding> bindings = new WeakHashMap<>();
         private final WeakHashMap<View, Surface> candidates = new WeakHashMap<>();
         private final WeakHashMap<TextView, BubbleTextState> bubbleTexts = new WeakHashMap<>();
+        private final WeakHashMap<View, Boolean> pendingCanvasChecks = new WeakHashMap<>();
+
+        /** A recycled row may stop drawing its factory bubble without changing its View.
+         * The old canvas-owned binding then survives every scan, incorrectly retaining text
+         * colours and GPU budget. Validate against the native draw itself, not elapsed time:
+         * stationary rows legitimately draw infrequently. */
+        void reconcileCanvasDraw(View row, GlassMaterialDrawable.DrawHost frame) {
+            Binding binding = bindings.get(row);
+            if (closed || suspended || binding == null || !binding.canvasOwned
+                    || frame.saw(binding.glass) || pendingCanvasChecks.containsKey(row)) return;
+            pendingCanvasChecks.put(row, Boolean.TRUE);
+            // Do not modify the row background or traverse its children from inside draw().
+            row.post(() -> {
+                pendingCanvasChecks.remove(row);
+                if (closed || suspended || !row.isAttachedToWindow()
+                        || row.getRootView() != root.get() || bindings.get(row) != binding) return;
+                releaseBudget(binding);
+                binding.restore(row);
+                restoreBubbleText(row);
+                bindings.remove(row);
+                GlassTrace.event(root.get(), binding.glass, row, "UNBOUND",
+                        "canvas-factory-displaced", "role=BUBBLES row=" + resourceName(row));
+                bindNativeBubbleRow(row);
+                Drawable nativeBackground = row.getBackground();
+                if (!bindings.containsKey(row) && resourceName(row).startsWith("conversation_row_")
+                        && nativeBackground != null
+                        && "Fyn".equals(nativeBackground.getClass().getSimpleName())) {
+                    pendingNativeBubbleRows.add(row);
+                }
+                row.invalidate();
+            });
+        }
 
         private final class BubbleTextState {
             ColorStateList nativeColors;
@@ -1351,6 +1394,9 @@ public final class AppLiquidGlass extends Feature {
             binding.canvasOwned = canvasOwned;
             binding.outgoing = outgoing;
             bindings.put(view, binding);
+            if (canvasOwned && resourceName(view).startsWith("conversation_row_")) {
+                observeNativeRowDraw(view);
+            }
             glass.attachOwner(view);
             glass.attachMaterial(() -> bubbleMaterial(outgoing, resolvedMaterial()));
             view.invalidate();
