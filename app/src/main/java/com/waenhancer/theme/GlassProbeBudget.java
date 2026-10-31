@@ -50,18 +50,19 @@ public final class GlassProbeBudget {
         // Same-view captures are sampled across the test rather than consuming the budget on
         // each frame. A changed route/geometry snapshot is still emitted without delay.
         String identity = type + "@" + ownerIdentity;
+        String signature = isCaptureEvent(type)
+                ? details.replaceAll("(captureId|captureGeneration)=\\d+", "$1=*") : details;
         Long previousAt = lastEmittedAt.get(identity);
         if (previousAt != null) {
             long elapsed = now - previousAt;
-            if (isCaptureEvent(type) && elapsed < CAPTURE_SAMPLE_INTERVAL_MS) return false;
-            if (elapsed < REPEAT_SAMPLE_INTERVAL_MS
-                    && Objects.equals(details, lastEmittedDetails.get(identity))) return false;
+            long interval = isCaptureEvent(type) ? CAPTURE_SAMPLE_INTERVAL_MS : REPEAT_SAMPLE_INTERVAL_MS;
+            if (elapsed < interval && Objects.equals(signature, lastEmittedDetails.get(identity))) return false;
         }
         eventCounts.put(type, repetitions + 1);
         count++;
         if (!transition) backgroundCount++;
         lastEmittedAt.put(identity, now);
-        lastEmittedDetails.put(identity, details);
+        lastEmittedDetails.put(identity, signature);
         return true;
     }
 
@@ -87,25 +88,9 @@ public final class GlassProbeBudget {
 
     private static boolean isTransitionEvent(String type) {
         switch (type) {
-            case "NATIVE_VISIBILITY_HOOK":
-            case "NATIVE_INFLATE_HOOK":
-            case "RECORDER_SIGNAL":
-            case "RECORDER_WAKE":
-            case "FOOTER_SAMPLE":
-            case "ROUTE_VOICE":
-            case "ROUTE_UNRESOLVED":
-            case "VOICE_GEOMETRY":
-            case "INPUT_GEOMETRY":
+            case "RECORDER_MODE_CHANGED":
             case "VOICE_RESTORE_BEFORE":
             case "VOICE_RESTORE_AFTER":
-            case "VOICE_BACKING_GATE":
-            case "INPUT_BACKING_GATE":
-            case "PANE_COMMIT_BEFORE":
-            case "PANE_COMMIT_AFTER":
-            case "VOICE_BG_CLEARED":
-            case "VOICE_BG_RESTORED":
-            case "INPUT_BG_CLEARED":
-            case "INPUT_BG_RESTORED":
                 return true;
             default:
                 return false;

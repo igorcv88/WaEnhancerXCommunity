@@ -12,6 +12,17 @@ public class ConversationGlassChecks {
         if (!value) throw new AssertionError(message);
     }
     public static void main(String[] args) {
+        for (int cycle = 0; cycle < 5; cycle++) {
+            check(ComposerRoute.resolve(false, true, true) == ComposerRoute.Panel.INPUT, "residual stub cannot block restored editor");
+            check(ComposerRoute.resolve(false, false, true) == ComposerRoute.Panel.STUB, "initial recorder");
+            check(ComposerRoute.resolve(true, false, true) == ComposerRoute.Panel.DRAFT, "draft replaces stub in same epoch");
+            check(ComposerRoute.resolve(true, true, true) == ComposerRoute.Panel.DRAFT, "draft owns native recording controls");
+            check(ComposerRoute.resolve(false, false, false) == ComposerRoute.Panel.UNRESOLVED, "layout gap is unresolved");
+        }
+        int[] nearTrash = {90,157,120,187};
+        int[] offsetNearTrash = RecorderLayout.micOffset(nearTrash, new int[]{300,100,1200,244},
+                new int[0][], new int[]{0,0,1440,444}, 4, 6, false);
+        check(offsetNearTrash != null && offsetNearTrash[0] > 0, "mic cannot remain far from waveform beside trash");
         final int P = ComposerTransition.PRESENT, R = ComposerTransition.RESERVE;
         final ComposerTransition.Route IN = ComposerTransition.Route.INPUT,
                 VO = ComposerTransition.Route.VOICE, UN = ComposerTransition.Route.UNRESOLVED;
@@ -122,7 +133,7 @@ with tempfile.TemporaryDirectory(prefix='waex-glass-') as directory:
     harness = tmp / 'ConversationGlassChecks.java'
     harness.write_text(HARNESS)
     sources = [ROOT / 'app/src/main/java/com/waenhancer/theme' / (name + '.java')
-               for name in ('ComposerTransition', 'PresentationRetry', 'CaptureScheduler', 'RecorderLayout')]
+               for name in ('ComposerTransition', 'PresentationRetry', 'CaptureScheduler', 'RecorderLayout', 'ComposerRoute')]
     subprocess.run(['java', 'com.sun.tools.javac.Main', '-d', str(tmp),
                     *map(str, sources), str(harness)], check=True)
     subprocess.run(['java', '-cp', str(tmp), 'ConversationGlassChecks'], check=True)

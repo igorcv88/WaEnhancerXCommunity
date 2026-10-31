@@ -70,6 +70,11 @@ public class GlassProbeBudgetChecks {
         check(probe.allow("FOOTER_SAMPLE", 3, "state=NORMAL_LAYOUT_PENDING", 32021), "state changes bypass deduplication");
         check(probe.allow("FOOTER_SAMPLE", 3, "state=RECORD_STABLE", 32022), "return to a prior state is visible");
         check(!probe.allow("FOOTER_SAMPLE", 3, "state=RECORD_STABLE", 32023), "same state does not flood");
+        check(probe.allow("PANE_DRAW", 9, "captureId=1 drawnLive=true size=100x100", 33000), "first live draw");
+        check(probe.allow("PANE_DRAW", 9, "captureId=2 drawnLive=false size=100x100", 33001), "first failed draw is never sampled out");
+        check(probe.allow("PANE_DRAW", 9, "captureId=3 drawnLive=true size=100x100", 33002), "recovery is immediate");
+        check(!probe.allow("PANE_DRAW", 9, "captureId=4 drawnLive=true size=100x100", 33003), "generation alone is not a state change");
+        check(probe.allow("PANE_DRAW", 9, "captureId=5 drawnLive=true size=100x200", 33004), "new geometry is immediate");
         check(probe.beginWindow(60100), "new minute reopens every type's budget");
         check(probe.allow("NATIVE_TIMER_CANDIDATE", 1, "length=5", 60100), "noisy budget resets");
 
@@ -80,7 +85,9 @@ public class GlassProbeBudgetChecks {
             if (reserve.allow("PASSIVE_" + i, i, "changed", 100 + i)) ordinary++;
         }
         check(ordinary == 300, "150 slots are reserved from passive event floods");
-        check(reserve.allow("RECORDER_SIGNAL", 1, "shown=true", 900), "reserved transition slot works");
+        check(reserve.allow("RECORDER_MODE_CHANGED", 1, "shown=true", 900), "reserved transition slot works");
+        check(!reserve.allow("FOOTER_SAMPLE", 1, "changed", 900), "samples cannot consume semantic reserve");
+        check(!reserve.allow("VOICE_GEOMETRY", 1, "changed", 900), "geometry cannot consume semantic reserve");
         check(reserve.allow("VOICE_RESTORE_AFTER", 1, "done", 901), "restoration remains visible");
         System.out.println("PASS: noise limits, distributed capture samples, native start/end, restore, deduplication and reserved transitions");
     }
