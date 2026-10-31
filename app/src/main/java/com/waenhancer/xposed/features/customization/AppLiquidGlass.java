@@ -1559,6 +1559,7 @@ public final class AppLiquidGlass extends Feature {
                 // The native container still references this factory wrapper; make it paint its
                 // original child until WhatsApp replaces the whole background.
                 glass.attachMaterial(() -> null);
+                if (canvasOwned) glass.rearmCanvasHost();
                 return;
             }
             if (view.getBackground() == glass) {

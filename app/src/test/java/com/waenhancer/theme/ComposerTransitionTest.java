@@ -54,6 +54,25 @@ public class ComposerTransitionTest {
         assertEquals(0, t.sample(Route.UNRESOLVED, null, 2000));
     }
 
+    @Test public void newRecorderEpochDoesNotInheritOldUnresolvedTimeout() {
+        ComposerTransition t = settledInput();
+        assertEquals(HOLD, t.sample(Route.UNRESOLVED, null, 100));
+        assertTrue(t.signal(true, 795));
+        assertEquals(HOLD, t.sample(Route.UNRESOLVED, null, 805));
+        assertEquals(HOLD, t.sample(Route.UNRESOLVED, null, 1200));
+        assertEquals(PRESENT, t.sample(Route.VOICE, "400", 1216));
+    }
+
+    @Test public void cancelSignalStartsIndependentBridgeAfterRecordStart() {
+        ComposerTransition t = settledInput();
+        t.signal(true, 100);
+        assertEquals(HOLD, t.sample(Route.UNRESOLVED, null, 110));
+        t.signal(false, 805);
+        assertEquals(HOLD, t.sample(Route.UNRESOLVED, null, 815));
+        assertEquals(PRESENT, t.sample(Route.INPUT, "190", 830));
+        assertEquals(25, t.endToNormalMs());
+    }
+
     @Test public void signalBeforeSwapDoesNotReverseOnStaleInputFrame() {
         ComposerTransition t = settledInput();
         long epoch = t.epoch();
