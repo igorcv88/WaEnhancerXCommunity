@@ -1076,7 +1076,7 @@ Not addressed (needs device evidence or a product decision): bubble intermittenc
 
 Validation in this session:
 - Android SDK platform 36 + build-tools 36 installed in the container. `./gradlew :app:compileWhatsappDebugJavaWithJavac` **passes** on the unmodified baseline (clean worktree at `6216b3c`) and on this branch. This is the first full Android Java compile for this work line; it is type/link checking, not runtime.
-- `./gradlew :app:testWhatsappDebugUnitTest`: see the PR/final report for the result (Maven Central returned repeated HTTP 429 through the proxy; retries are needed).
+- `./gradlew :app:testWhatsappDebugUnitTest`: **PASS**, 502 tests in 67 classes, 0 failures/errors/skips (after retrying Maven Central HTTP 429 rate limits through the proxy; no repository/mirror change).
 - `python3 tools/test_conversation_glass.py`: PASS — 20 signal/record/cancel sequences using the logged 155-429-444 and 323-609-624 growth, unresolved bridge and expiry, initial geometry, detach, mic lane placement, quote-lane detection, presentation backoff, trailing damage. Logical simulation, not device recordings.
 - `python3 tools/test_app_only_runtime.py`: PASS (4). `git diff --check`: clean.
 - New JUnit: `ComposerTransitionTest` (8), `RecorderLayoutTest` (7).
