@@ -2,6 +2,7 @@ package com.waenhancer.theme;
 
 import android.content.res.ColorStateList;
 import android.graphics.Canvas;
+import android.graphics.Matrix;
 import android.graphics.ColorFilter;
 import android.graphics.Outline;
 import android.graphics.Paint;
@@ -30,6 +31,32 @@ import java.util.function.Supplier;
  * We never reuse backdrop pixels after an activity/source epoch changes.</p>
  */
 public final class GlassMaterialDrawable extends Drawable implements Drawable.Callback {
+    // A factory drawable may be Canvas-owned, with no Drawable.Callback at all. Resolve it
+    // only inside a verified native row draw, never during backdrop or alpha-mask recording.
+    private static final ThreadLocal<DrawHost> DRAW_HOST = new ThreadLocal<>();
+    private static final ThreadLocal<Boolean> MASK_DRAW = new ThreadLocal<>();
+    public static final class DrawHost {
+        final View view;
+        final Canvas canvas;
+        final Matrix matrix = new Matrix();
+        DrawHost(View view, Canvas canvas) {
+            this.view = view;
+            this.canvas = canvas;
+            canvas.getMatrix(matrix);
+        }
+    }
+    public static DrawHost enterRowDraw(View view, Canvas canvas) {
+        DrawHost previous = DRAW_HOST.get();
+        DRAW_HOST.set(new DrawHost(view, canvas));
+        return previous;
+    }
+    public static void leaveRowDraw(DrawHost previous) {
+        if (previous == null) DRAW_HOST.remove(); else DRAW_HOST.set(previous);
+    }
+    private boolean canvasOwned;
+    private int canvasOffsetX, canvasOffsetY;
+    private String guardReason;
+    private boolean drawReported;
     private Drawable original;
     private WeakReference<View> owner;
     private Supplier<GlassSpec> spec;
@@ -67,8 +94,32 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     }
 
     @Override public void draw(Canvas canvas) {
+        if (Boolean.TRUE.equals(MASK_DRAW.get())) { drawOriginal(canvas); return; }
         View view = owner.get();
         if (view == null) view = callbackOwner();
+        DrawHost context = DRAW_HOST.get();
+        if (onHostResolved != null && context != null && context.canvas == canvas
+                && !LiveBackdrop.isCapturing() && callbackOwner() == null) {
+            Matrix inverse = new Matrix(), current = new Matrix();
+            float[] values = new float[9];
+            canvas.getMatrix(current);
+            if (context.matrix.invert(inverse)) {
+                current.postConcat(inverse);
+                current.getValues(values);
+                // Translations are exact; reject scaled/rotated native sub-canvases rather
+                // than capture a different region and distort message content.
+                if (Math.abs(values[0] - 1f) < .001f && Math.abs(values[4] - 1f) < .001f
+                        && Math.abs(values[1]) < .001f && Math.abs(values[3]) < .001f) {
+                    if (view != context.view) { notifiedHost = false; releaseLive(); }
+                    view = context.view;
+                    owner = new WeakReference<>(view);
+                    canvasOwned = true;
+                    int x = Math.round(values[2]), y = Math.round(values[5]);
+                    if (x != canvasOffsetX || y != canvasOffsetY) releaseLive();
+                    canvasOffsetX = x; canvasOffsetY = y;
+                }
+            }
+        }
         if (view != null && onHostResolved != null && !notifiedHost) {
             notifiedHost = true;
             onHostResolved.accept(view);
@@ -78,9 +129,19 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         }
         GlassSpec material = spec.get();
         Rect b = getBounds();
-        if (view == null || material == null || b.isEmpty()) { drawOriginal(canvas); return; }
+        if (view == null || material == null || b.isEmpty()) {
+            traceGuard(view, view == null ? "owner-missing" : material == null ? "material-disabled" : "bounds-empty");
+            drawOriginal(canvas);
+            return;
+        }
         Rect area = materialArea(b);
-        if (area.isEmpty()) return;
+        if (area.isEmpty()) { traceGuard(view, "material-area-empty"); return; }
+        guardReason = null;
+        if (!LiveBackdrop.isCapturing() && !drawReported) {
+            drawReported = true;
+            GlassTrace.event(view.getRootView(), this, view, "DRAW", "native-drawable",
+                    "canvasOwned=" + canvasOwned + " area=" + area.toShortString());
+        }
         int save = canvas.save();
         canvas.translate(b.left + area.left, b.top + area.top);
         int layer = -1;
@@ -115,8 +176,21 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     }
 
     private void drawOriginal(Canvas canvas) {
-        if (original != null) { original.setBounds(getBounds()); original.draw(canvas); }
+        if (original == null) return;
+        Boolean previous = MASK_DRAW.get();
+        MASK_DRAW.set(true);
+        try { original.setBounds(getBounds()); original.draw(canvas); }
+        finally { if (previous == null) MASK_DRAW.remove(); else MASK_DRAW.set(previous); }
     }
+
+    private void traceGuard(View view, String reason) {
+        if (LiveBackdrop.isCapturing() || reason.equals(guardReason)) return;
+        guardReason = reason;
+        if (view != null) GlassTrace.event(view.getRootView(), this, view, "DRAW_SKIPPED", reason,
+                "bounds=" + getBounds().toShortString());
+    }
+
+    public boolean isCanvasOwnedBy(View view) { return canvasOwned && owner.get() == view; }
 
     public void attachMaterial(Supplier<GlassSpec> material) { spec = material; }
 
@@ -170,13 +244,14 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
      * Main thread, from a pre-draw pass. False leaves this layer transparent while retrying.
      */
     public boolean captureBehind(View host) {
+        if (canvasOwned && owner.get() != host) return false;
         if (host == null || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return false;
         GlassSpec material = spec.get();
         // A background gets its bounds only when the view first draws it, after this pre-draw
         // pass: every new or re-bound drawable failed its first capture and showed the fallback
         // for a frame (24 of 27 binds in the device log). A view's background always spans the
         // view, so take that size now; the view's own draw sets the same bounds.
-        if (getBounds().isEmpty() && host.getWidth() > 0 && host.getHeight() > 0) {
+        if (!canvasOwned && getBounds().isEmpty() && host.getWidth() > 0 && host.getHeight() > 0) {
             setBounds(0, 0, host.getWidth(), host.getHeight());
         }
         Rect b = getBounds();
@@ -190,12 +265,12 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         int w = area.width(), h = area.height();
         GlassOptics optics = GlassOptics.current();
         if (optics.corrected && optics.geometry) {
-            int left = b.left + area.left, top = b.top + area.top;
+            int left = canvasOffsetX + b.left + area.left, top = canvasOffsetY + b.top + area.top;
             return live.capture(w, h, radius, density, material,
                     (canvas, padding) -> BehindRecorder.paintExact(canvas, host, left, top, w, h, padding));
         }
         host.getLocationOnScreen(location);
-        int x = location[0] + b.left + area.left, y = location[1] + b.top + area.top;
+        int x = location[0] + canvasOffsetX + b.left + area.left, y = location[1] + canvasOffsetY + b.top + area.top;
         return live.capture(w, h, radius, density, material,
                 (canvas, padding) -> BehindRecorder.paint(canvas, host, x, y, w, h));
     }
@@ -233,6 +308,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         // A new capture after a scroll/recycled row must repaint its background even if an
         // older capture had already been presented in the same drawable instance.
         presentedLive = null;
+        drawReported = false;
         if (live != null) live.release(reason);
     }
     public Drawable original() { return original; }

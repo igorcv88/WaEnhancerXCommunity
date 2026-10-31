@@ -49,6 +49,8 @@ public final class CaptureScheduler {
         return nowMs - lastActivityMs < ACTIVE_WINDOW_MS;
     }
 
+    public boolean hasPendingCapture() { return trailingPending; }
+
     /** The delay for {@link #INVALIDATE_LATER}. */
     public long delayMs() {
         return delayMs;

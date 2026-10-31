@@ -360,7 +360,11 @@ public final class GlassPane extends FrameLayout {
             }
             boolean sourceDamage = src != null && src.isDirty();
             for (View view : underlay) if (view != null && view.isDirty()) sourceDamage = true;
-            if (sourceDamage) scheduler.activity(now);
+            // Content invalidation is damage, not a 350ms motion burst. In particular a
+            // bubble publishing its texture must not keep every chrome pane active.
+            if (damageDriven && !sourceDamage && !scheduler.moving(now)
+                    && backdrop.hasRecording() && !recovery.retryDue(now)
+                    && !scheduler.hasPendingCapture()) return true;
             int decision = scheduler.decide(now, damageDriven,
                     backdrop.recordingState().requestsImmediateRecovery(recovery.mayCapture(now)), recovery.retryDue(now));
             if ((decision & CaptureScheduler.CAPTURE) == 0) {

@@ -9,6 +9,8 @@ import java.lang.ref.WeakReference;
 
 /** Wallpaper continuity beneath a capsule: no blur, refraction, border or optical budget. */
 public final class WallpaperUnderlay extends View {
+    private boolean fillViewport;
+    public void setFillViewport(boolean fill) { fillViewport = fill; invalidate(); }
     private WeakReference<View> wallpaper = new WeakReference<>(null);
     private final Matrix local = new Matrix(), inverse = new Matrix(), placement = new Matrix();
     public WallpaperUnderlay(Context context) {
@@ -48,8 +50,13 @@ public final class WallpaperUnderlay extends View {
         placement.reset(); view.transformMatrixToGlobal(placement); placement.postConcat(inverse);
         int saved = canvas.save();
         try {
-            canvas.concat(placement);
-            canvas.translate(-view.getScrollX(), -view.getScrollY());
+            if (fillViewport && view.getWidth() > 0 && view.getHeight() > 0) {
+                float scale = Math.max((float) getWidth() / view.getWidth(),
+                        (float) getHeight() / view.getHeight());
+                canvas.translate((getWidth() - view.getWidth() * scale) / 2f,
+                        (getHeight() - view.getHeight() * scale) / 2f);
+                canvas.scale(scale, scale);
+            } else canvas.concat(placement);
             view.draw(canvas);
         } finally { canvas.restoreToCount(saved); }
     }

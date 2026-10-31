@@ -27,6 +27,7 @@ import com.waenhancer.theme.GlassSpec;
 import com.waenhancer.theme.WallpaperUnderlay;
 import com.waenhancer.theme.ComposerGeometry;
 import com.waenhancer.theme.GlassTrace;
+import com.waenhancer.theme.ComposerTransition;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
@@ -64,8 +65,6 @@ final class ConversationGlassPanes {
     private static final float COMPOSE_LIFT_DP = 6f;
     /** Ceiling on the composer pill's corner radius: half the single-row height. */
     private static final float COMPOSE_MAX_RADIUS_DP = 24f;
-    /** Measured stable voice panel height on the current 3x-density WhatsApp layout. */
-    private static final float VOICE_ENVELOPE_DP = 140f;
 
     interface Host {
         boolean toolbarsEnabled();
@@ -89,6 +88,18 @@ final class ConversationGlassPanes {
         GlassPane capsule, composer;
         WeakReference<View> root = new WeakReference<>(null);
         boolean suspended;
+        boolean syncingFooter;
+        final ComposerTransition transition = new ComposerTransition();
+        ViewTreeObserver.OnPreDrawListener footerPreDraw;
+        final Rect committedPane = new Rect();
+        final Rect candidatePane = new Rect();
+        int committedFooterHeight;
+        String micGeometry;
+        int originalSystemUiVisibility;
+        int originalFitInsetsTypes;
+        int originalFitInsetsSides;
+        boolean originalFitInsetsIgnoringVisibility;
+        final WeakHashMap<ViewGroup, Boolean> recordingClipPadding = new WeakHashMap<>();
         String geometryKey;
         View.OnLayoutChangeListener holderListener, footerListener;
 
@@ -201,17 +212,9 @@ final class ConversationGlassPanes {
         }
         if (!recorder || (changed instanceof TextView
                 && !isElapsedTime(((TextView) changed).getText()))) return;
-        screen.voiceSignalUntil = SystemClock.uptimeMillis() + 900L;
-        // Geometry is already known for the footer. Reuse its one persistent pane now;
-        // the one-shot next-frame retry covers native ViewStub inflation/first measurement.
-        syncFooter(screen);
-        // A visibility signal alone does not guarantee another frame; actively wake the
-        // existing pane's pre-draw capture while WhatsApp is inflating the recorder.
-        if (screen.composer != null) screen.composer.invalidate();
-        footer.invalidate();
-        footer.postOnAnimation(() -> {
-            if (screen.footerOn && screen.footer.get() == footer && !screen.suspended) syncFooter(screen);
-        });
+        screen.voiceSignalUntil = changed.isShown() ? SystemClock.uptimeMillis() + 900L : 0L;
+        // Decoration never runs on the native visibility/inflation stack or consumes touch.
+        footer.postInvalidateOnAnimation();
         host.report("voice-recorder-signal", "voice glass synchronized from native recording UI signal");
     }
 
@@ -296,6 +299,16 @@ final class ConversationGlassPanes {
         if (window == null || root == null) return;
         if (!screen.fullscreenOwned) {
             WindowManager.LayoutParams original = window.getAttributes();
+            screen.originalSystemUiVisibility = window.getDecorView().getSystemUiVisibility();
+            screen.originalFitInsetsTypes = original.getFitInsetsTypes();
+            screen.originalFitInsetsSides = original.getFitInsetsSides();
+            screen.originalFitInsetsIgnoringVisibility = original.isFitInsetsIgnoringVisibility();
+            // Explicit top-only edge-to-edge policy. Keeping navigation/IME fitting native
+            // avoids replacing WhatsApp's inset listener or breaking adjustResize.
+            original.setFitInsetsTypes(screen.originalFitInsetsTypes
+                    & ~WindowInsets.Type.statusBars() & ~WindowInsets.Type.displayCutout());
+            window.getDecorView().setSystemUiVisibility(screen.originalSystemUiVisibility
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
             screen.originalCutoutMode = original.layoutInDisplayCutoutMode;
             WindowInsets insets = root.getRootWindowInsets();
             if (insets != null) {
@@ -323,11 +336,17 @@ final class ConversationGlassPanes {
             screen.fullscreenOwned = true;
             host.report("conversation-fullscreen", "conversation status bar hidden; navigation and IME preserved");
         }
+        WindowInsets currentInsets = root.getRootWindowInsets();
+        if (currentInsets != null) {
+            screen.fullscreenTopInset = currentInsets.getDisplayCutout() == null ? 0
+                    : currentInsets.getDisplayCutout().getSafeInsetTop();
+        }
         if (holder.getLayoutParams() instanceof ViewGroup.MarginLayoutParams) {
             ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) holder.getLayoutParams();
             if (screen.holderTopMargin == null) screen.holderTopMargin = lp.topMargin;
-            int spacing = Math.round(8f * holder.getResources().getDisplayMetrics().density);
-            int target = screen.holderTopMargin + screen.fullscreenTopInset + spacing;
+            int spacing = Math.round(3f * holder.getResources().getDisplayMetrics().density);
+            int parentTop = holder.getParent() instanceof View ? screenTop((View) holder.getParent()) : 0;
+            int target = screen.holderTopMargin + Math.max(0, screen.fullscreenTopInset - parentTop) + spacing;
             if (lp.topMargin != target) {
                 lp.topMargin = target;
                 holder.setLayoutParams(lp);
@@ -348,6 +367,10 @@ final class ConversationGlassPanes {
             }
             WindowManager.LayoutParams attrs = window.getAttributes();
             attrs.layoutInDisplayCutoutMode = screen.originalCutoutMode;
+            attrs.setFitInsetsTypes(screen.originalFitInsetsTypes);
+            attrs.setFitInsetsSides(screen.originalFitInsetsSides);
+            attrs.setFitInsetsIgnoringVisibility(screen.originalFitInsetsIgnoringVisibility);
+            window.getDecorView().setSystemUiVisibility(screen.originalSystemUiVisibility);
             window.setAttributes(attrs);
         }
         screen.systemBarsBehaviorChanged = false;
@@ -356,13 +379,17 @@ final class ConversationGlassPanes {
 
     /** Negative bottom margin grows the coordinator up under the header; Z keeps rows beneath it. */
     private void floatHeader(Screen screen, ViewGroup holder) {
-        if (screen.holderBottomMargin != null) return;
         int h = holder.getHeight();
         if (h <= 0 || !(holder.getLayoutParams() instanceof ViewGroup.MarginLayoutParams)) return;
         ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) holder.getLayoutParams();
-        screen.holderBottomMargin = lp.bottomMargin;
-        screen.holderZ = holder.getTranslationZ();
-        lp.bottomMargin = -h;
+        if (screen.holderBottomMargin == null) {
+            screen.holderBottomMargin = lp.bottomMargin;
+            screen.holderZ = holder.getTranslationZ();
+        }
+        if (lp.bottomMargin == -h - lp.topMargin) return;
+        // Offset the complete header reservation, including its safe-area margin. The list
+        // then starts at the parent's origin and gets one coordinate-derived resting pad.
+        lp.bottomMargin = -h - lp.topMargin;
         holder.setLayoutParams(lp);
         if (holder.getTranslationZ() < 1f) holder.setTranslationZ(1f);
         host.report("conv-header-float", "conversation header floated (h=" + h + ")");
@@ -411,13 +438,20 @@ final class ConversationGlassPanes {
                 toolbar.setForeground(null);
             }
         }
-        // Plain wallpaper continuity; only the capsule owns an optical contour.
-        if (screen.band == null || screen.band.getParent() != holder) {
-            screen.band = new WallpaperUnderlay(holder.getContext());
-            holder.addView(screen.band, 0, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        // The continuity layer is behind the entire conversation, never inside the header
+        // in front of scrolling messages. It draws the current native wallpaper, not a tint.
+        View content = screen.root.get() == null ? null : screen.root.get().findViewById(android.R.id.content);
+        if (content instanceof FrameLayout && screen.wallpaper.get() != null) {
+            FrameLayout backgroundHost = (FrameLayout) content;
+            if (screen.band == null || screen.band.getParent() != backgroundHost) {
+                removePane(screen.band);
+                screen.band = new WallpaperUnderlay(backgroundHost.getContext());
+                screen.band.setFillViewport(true);
+                backgroundHost.addView(screen.band, 0, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+            screen.band.setWallpaper(screen.wallpaper.get());
         }
-        screen.band.setWallpaper(screen.wallpaper.get());
         View source = screen.headerSource.get();
         if (screen.capsule == null || screen.capsule.getParent() != holder) {
             screen.capsule = newPane(screen, holder, source, wallpaperOf(screen));
@@ -428,7 +462,7 @@ final class ConversationGlassPanes {
                 return footer != null && footer.getParent() instanceof ViewGroup
                         ? listHost((ViewGroup) footer.getParent()) : null;
             });
-            holder.addView(screen.capsule, 1, new FrameLayout.LayoutParams(0, 0));
+            holder.addView(screen.capsule, 0, new FrameLayout.LayoutParams(0, 0));
         }
         screen.capsule.setSource(source);
         screen.capsule.setUnderlay(wallpaperOf(screen));
@@ -482,11 +516,16 @@ final class ConversationGlassPanes {
         screen.footerOn = true;
         if (screen.footerListener == null) {
             screen.footerListener = (v, l, t, r, b, ol, ot, or, ob) -> {
-                if (screen.footerOn) syncFooter(screen);
+                if (screen.footerOn && !screen.syncingFooter) footer.postInvalidateOnAnimation();
             };
+            screen.footerPreDraw = () -> {
+                if (screen.footerOn && !screen.suspended) syncFooter(screen);
+                return true;
+            };
+            footer.getViewTreeObserver().addOnPreDrawListener(screen.footerPreDraw);
             footer.addOnLayoutChangeListener(screen.footerListener);
         }
-        syncFooter(screen);
+        // The pre-draw observer samples all native controls in the same layout epoch.
     }
 
     /** The list host grows under the footer; the footer rides up off the bottom edge. */
@@ -521,10 +560,22 @@ final class ConversationGlassPanes {
     }
 
     private void syncFooter(Screen screen) {
+        if (screen.syncingFooter || screen.suspended || !screen.footerOn) return;
+        screen.syncingFooter = true;
+        try {
+            syncFooterFrame(screen);
+        } catch (Throwable error) {
+            // Only decoration is rolled back; native recording and its gestures are untouched.
+            disableFooter(screen);
+            host.report("voice-decoration-failed", "native composer retained: " + error);
+        } finally {
+            screen.syncingFooter = false;
+        }
+    }
+
+    private void syncFooterFrame(Screen screen) {
         ViewGroup footer = screen.footer.get();
         if (footer == null || footer.getWidth() <= 0 || footer.getHeight() <= 0) return;
-        floatFooter(screen, footer);
-        syncListPadding(screen);
         View input = findById(footer, "input_layout");
         ViewGroup voice = findVoicePanel(footer, input);
         if (voice == null && SystemClock.uptimeMillis() <= screen.voiceSignalUntil) {
@@ -542,29 +593,17 @@ final class ConversationGlassPanes {
                 restoreRecordingGlassClip(screen);
                 restoreDuplicateReply(screen);
                 restoreRecordingMic(screen);
-                if (screen.composer != null) place(screen.composer, 0, 0, 0, 0, 0f);
+                if (screen.composer != null) screen.composer.setVisibility(View.INVISIBLE);
                 return;
             }
             float d = footer.getResources().getDisplayMetrics().density;
             int pad = Math.round(COMPOSE_PAD_DP * d);
-            // voice_note_stub initially measures as a short strip. Using its bounds made only
-            // that strip glass, while the full recorder remained opaque for ~1.7 seconds on
-            // the captured device trace. Glass already belongs to the footer, so cover its
-            // stable envelope from the first timer-bearing recording frame.
-            int l = pad, t = pad;
+            // Use measured native screen-space bounds, never a guessed 140dp rectangle.
+            Rect voiceBounds = new Rect(rect);
+            int l = pad, t = Math.min(pad, voiceBounds.top);
             int r = footer.getWidth() - pad;
-            int b = footer.getHeight() - pad;
-            View quote = findReplyPreview(footer);
-            int expectedHeight = Math.round(VOICE_ENVELOPE_DP * d)
-                    + (quote != null && quote.isShown() ? quote.getHeight() : 0);
-            if (footer.getHeight() < expectedHeight) {
-                // The native 115px stub becomes a ~414px recording panel only several
-                // seconds later (confirmed on the phone). Reserve its known envelope at
-                // *start*, extending the single glass pane above the short footer. Keep
-                // the recorder's actual UI geometry and touch targets under WhatsApp.
-                t -= expectedHeight - footer.getHeight();
-                allowRecordingGlassOverflow(screen, footer);
-            }
+            int b = Math.max(footer.getHeight() - pad, voiceBounds.bottom);
+            if (t < 0 || b > footer.getHeight()) allowRecordingGlassOverflow(screen, footer);
             View action = findById(footer, "conversation_entry_action_button");
             if (action != null && action.isShown()
                     && action.getWidth() <= 72f * d && action.getHeight() <= 72f * d
@@ -575,20 +614,24 @@ final class ConversationGlassPanes {
                 l = edges[0]; r = edges[1];
             }
             if (r <= l || b <= t) return;
+            boolean commit = acceptFooterGeometry(screen, footer, true, l, t, r, b);
             // Keep the same GlassPane and the same safe recording source as the normal input.
             // Only its mask geometry changes: waveform, elapsed time and buttons stay native.
             if (screen.composer == null || screen.composer.getParent() != footer) {
                 screen.composer = newPane(screen, footer, screen.listHost.get(), wallpaperOf(screen));
                 footer.addView(screen.composer, 0, new FrameLayout.LayoutParams(0, 0));
             }
+            screen.composer.setVisibility(View.VISIBLE);
             clearVoiceBackgrounds(screen, voice);
             suppressDuplicateReply(screen, footer);
             alignRecordingMic(screen, voice);
             screen.composer.setSource(screen.listHost.get());
             screen.composer.setUnderlay(wallpaperOf(screen));
-            place(screen.composer, l, t, r, b, Math.min((b - t) / 2f, COMPOSE_MAX_RADIUS_DP * d));
+            if (commit) commitFooterGeometry(screen, footer, d);
+            else followFooterTranslation(screen, footer);
+
             String geometry = l + ":" + t + ":" + r + ":" + b;
-            if (!screen.voiceRecording || !geometry.equals(screen.voiceGeometryKey)) {
+            if (commit && (!screen.voiceRecording || !geometry.equals(screen.voiceGeometryKey))) {
                 screen.voiceGeometryKey = geometry;
                 screen.voiceRecording = true;
                 host.report("voice-glass-bound", "voice panel glass follows native recording UI; "
@@ -602,9 +645,6 @@ final class ConversationGlassPanes {
         restoreRecordingGlassClip(screen);
         restoreDuplicateReply(screen);
         restoreRecordingMic(screen);
-        clearBackground(screen, input);
-        syncComposerIcons(screen, footer);
-        syncReplyContrast(screen, footer);
         if (!rectIn(footer, input)) return;
         float d = footer.getResources().getDisplayMetrics().density;
         int pad = Math.round(COMPOSE_PAD_DP * d);
@@ -613,7 +653,9 @@ final class ConversationGlassPanes {
         Rect actionRect = null;
         View send = findById(footer, "conversation_entry_action_button");
         Rect inputRect = new Rect(rect);
-        if (send != null && send.getWidth() > 0 && rectIn(footer, send)) {
+        if (send == null || !send.isShown() || send.getWidth() <= 0 || send.getHeight() <= 0
+                || input.isLayoutRequested() || send.isLayoutRequested() || footer.isLayoutRequested()) return;
+        if (rectIn(footer, send)) {
             actionRect = new Rect(rect);
             sideFloor = Math.max(0, Math.min(rect.left, footer.getWidth() - rect.right));
         }
@@ -626,7 +668,15 @@ final class ConversationGlassPanes {
                     actionRect.top, actionRect.bottom, Math.max(1, Math.round(2f * d)));
             l = edges[0]; r = edges[1];
         }
-        if (r <= l || b <= t) return;
+        if (r <= l || b <= t || !new Rect(0, 0, footer.getWidth(), footer.getHeight()).contains(inputRect)
+                || actionRect == null || Rect.intersects(new Rect(l, t, r, b), actionRect)) return;
+        if (!acceptFooterGeometry(screen, footer, false, l, t, r, b)) {
+            followFooterTranslation(screen, footer);
+            return;
+        }
+        clearBackground(screen, input);
+        syncComposerIcons(screen, footer);
+        syncReplyContrast(screen, footer);
         String geometryKey = l + ":" + t + ":" + r + ":" + b + ":" + actionRect;
         if (!geometryKey.equals(screen.geometryKey)) {
             screen.geometryKey = geometryKey;
@@ -641,11 +691,41 @@ final class ConversationGlassPanes {
         }
         screen.composer.setSource(screen.listHost.get());
         screen.composer.setUnderlay(wallpaperOf(screen));
-        place(screen.composer, l, t, r, b, Math.min((b - t) / 2f, COMPOSE_MAX_RADIUS_DP * d));
+        commitFooterGeometry(screen, footer, d);
+    }
+
+    private boolean acceptFooterGeometry(Screen screen, ViewGroup footer, boolean voice,
+                                          int l, int t, int r, int b) {
+        screen.candidatePane.set(l, t, r, b);
+        String key = footer.getWidth() + ":" + footer.getHeight() + ":" + screen.candidatePane;
+        boolean commit = screen.transition.sample(voice, key, SystemClock.uptimeMillis());
+        if (!commit && screen.transition.pending()) footer.postInvalidateOnAnimation();
+        return commit;
+    }
+
+    private void commitFooterGeometry(Screen screen, ViewGroup footer, float density) {
+        Rect bounds = screen.candidatePane;
+        screen.composer.setVisibility(View.VISIBLE);
+        screen.composer.setTranslationY(0f);
+        place(screen.composer, bounds.left, bounds.top, bounds.right, bounds.bottom,
+                Math.min(bounds.height() / 2f, COMPOSE_MAX_RADIUS_DP * density));
+        screen.committedPane.set(bounds);
+        screen.committedFooterHeight = footer.getHeight();
+        floatFooter(screen, footer);
+        syncListPadding(screen);
+    }
+
+    /** Native height animations move the bottom-anchored mask without requesting layout. */
+    private static void followFooterTranslation(Screen screen, ViewGroup footer) {
+        if (screen.composer != null && screen.committedFooterHeight > 0) {
+            screen.composer.setTranslationY(footer.getHeight() - screen.committedFooterHeight);
+        }
     }
 
     private void disableFooter(Screen screen) {
         screen.footerOn = false;
+        screen.transition.detach();
+        screen.committedFooterHeight = 0;
         ViewGroup footer = screen.footer.get();
         removePane(screen.composer);
         screen.composer = null;
@@ -658,9 +738,13 @@ final class ConversationGlassPanes {
         }
         if (footer != null) {
             if (screen.footerListener != null) footer.removeOnLayoutChangeListener(screen.footerListener);
+            if (screen.footerPreDraw != null && footer.getViewTreeObserver().isAlive()) {
+                footer.getViewTreeObserver().removeOnPreDrawListener(screen.footerPreDraw);
+            }
             if (screen.footerTranslationY != null) footer.setTranslationY(screen.footerTranslationY);
         }
         screen.footerListener = null;
+        screen.footerPreDraw = null;
         screen.listHostBottomMargin = null;
         screen.floatedFooterHeight = null;
         screen.footerTranslationY = null;
@@ -759,12 +843,13 @@ final class ConversationGlassPanes {
     }
 
     private static ViewGroup signaledVoicePanel(ViewGroup footer, View input) {
-        View voice = findById(footer, "voice_note_stub");
+        View voice = findById(footer, "voice_note_draft_layout_v2");
+        if (!(voice instanceof ViewGroup) || !voice.isShown()) voice = findById(footer, "voice_note_stub");
         if (!(voice instanceof ViewGroup) || !voice.isShown()
                 || (input != null && isAncestor(voice, input))) return null;
         float d = footer.getResources().getDisplayMetrics().density;
         return voice.getWidth() >= footer.getWidth() * 0.65f
-                && voice.getHeight() >= 24f * d ? (ViewGroup) voice : null;
+                && voice.getHeight() > 0 ? (ViewGroup) voice : null;
     }
 
     /** WhatsApp may render composer and voice-draft quotes under different version-specific
@@ -774,10 +859,11 @@ final class ConversationGlassPanes {
         // In builds exposing the two known slots, the voice draft's quoted frame is the
         // second copy. Prefer this exact structural match to visual guesses: hide only
         // while the normal composer quote is also visible, and restore on recording exit.
-        View composerQuote = findReplyPreview(footer);
+        View composerQuote = findById(footer, "composer_quoted_message_frame");
         View voiceQuote = findById(footer, "voice_note_draft_quoted_message_frame");
         if (composerQuote != null && voiceQuote != null && composerQuote != voiceQuote
-                && composerQuote.isShown() && voiceQuote.isShown()
+                && composerQuote.isShown() && composerQuote.getAlpha() > 0f
+                && composerQuote.getHeight() > 0 && voiceQuote.isShown() && voiceQuote.getHeight() > 0
                 && !isAncestor(composerQuote, voiceQuote)
                 && !isAncestor(voiceQuote, composerQuote)) {
             if (!screen.duplicateReplyAlpha.containsKey(voiceQuote)) {
@@ -885,7 +971,10 @@ final class ConversationGlassPanes {
     private void alignRecordingMic(Screen screen, ViewGroup voice) {
         TextView timer = findElapsedLabel(voice, 0);
         ViewGroup footer = screen.footer.get();
-        if (timer == null || footer == null || timer.getHeight() <= 0) return;
+        if (timer == null || footer == null || timer.getHeight() <= 0) {
+            host.report("voice-mic-await-layout", "voice indicator awaits measured native timer");
+            return;
+        }
         View mic = findRecordingMic(footer, timer, 0);
         if (mic == null || mic.getHeight() <= 0) {
             host.report("voice-mic-route-missing", "voice mic not located; "
@@ -898,6 +987,10 @@ final class ConversationGlassPanes {
         int[] timerLocation = new int[2], micLocation = new int[2];
         timer.getLocationOnScreen(timerLocation);
         mic.getLocationOnScreen(micLocation);
+        String geometry = timerLocation[1] + ":" + timer.getHeight() + ":"
+                + (micLocation[1] - Math.round(mic.getTranslationY())) + ":" + mic.getHeight();
+        if (geometry.equals(screen.micGeometry)) return;
+        screen.micGeometry = geometry;
         int difference = timerLocation[1] + timer.getHeight() / 2
                 - micLocation[1] - mic.getHeight() / 2;
         float d = voice.getResources().getDisplayMetrics().density;
@@ -938,21 +1031,6 @@ final class ConversationGlassPanes {
                 if (result != null) return result;
             }
         }
-        // Obfuscated IDs are common for the tiny blinking red mic. A bounded positional
-        // fallback targets an ImageView just below and beside the native recording timer;
-        // the large delete/send controls and waveform are outside these bounds.
-        if (node instanceof ImageView && node.getWidth() >= 6f * density
-                && node.getWidth() < 28f * density && node.getHeight() >= 6f * density
-                && node.getHeight() < 28f * density && node != timer) {
-            int[] label = new int[2], icon = new int[2];
-            timer.getLocationOnScreen(label);
-            node.getLocationOnScreen(icon);
-            int xDiff = Math.abs((icon[0] + node.getWidth() / 2)
-                    - (label[0] + timer.getWidth() / 2));
-            int yDiff = icon[1] - label[1];
-            if (xDiff <= 55f * density && yDiff >= -8f * density
-                    && yDiff <= 58f * density) return node;
-        }
         return null;
     }
 
@@ -982,6 +1060,7 @@ final class ConversationGlassPanes {
             if (view != null) view.setTranslationY(entry.getValue());
         }
         screen.recordingMicOffsets.clear();
+        screen.micGeometry = null;
     }
 
     private static ViewGroup voicePanelIn(ViewGroup parent, ViewGroup footer, View input,
@@ -1115,6 +1194,10 @@ final class ConversationGlassPanes {
                 screen.recordingClipChildren.put(group, group.getClipChildren());
             }
             if (group.getClipChildren()) group.setClipChildren(false);
+            if (!screen.recordingClipPadding.containsKey(group)) {
+                screen.recordingClipPadding.put(group, group.getClipToPadding());
+            }
+            if (group.getClipToPadding()) group.setClipToPadding(false);
         }
     }
 
@@ -1125,6 +1208,11 @@ final class ConversationGlassPanes {
             if (group != null) group.setClipChildren(entry.getValue());
         }
         screen.recordingClipChildren.clear();
+        for (java.util.Map.Entry<ViewGroup, Boolean> entry :
+                new ArrayList<>(screen.recordingClipPadding.entrySet())) {
+            if (entry.getKey() != null) entry.getKey().setClipToPadding(entry.getValue());
+        }
+        screen.recordingClipPadding.clear();
     }
 
     /** Keep quoted reply text readable over the translucent composer without losing hierarchy. */
@@ -1251,10 +1339,11 @@ final class ConversationGlassPanes {
         ViewGroup holder = screen.holder.get();
         ViewGroup footerView = screen.footer.get();
         int top = header && holder != null
-                ? holder.getHeight() + (screen.fullscreenOwned ? screen.fullscreenTopInset : 0) + gap
+                ? Math.max(0, screenTop(holder) + holder.getHeight() - screenTop(list)) + gap
                 : screen.listPadding[1];
         int bottom = footer && footerView != null
-                ? footerView.getHeight() + Math.round(-footerView.getTranslationY()) + gap
+                ? (screen.floatedFooterHeight == null ? footerView.getHeight() : screen.floatedFooterHeight)
+                        + Math.round(-footerView.getTranslationY()) + gap
                 : screen.listPadding[3];
         if (list.getClipToPadding()) list.setClipToPadding(false);
         if (list.getPaddingTop() != top || list.getPaddingBottom() != bottom) {
@@ -1370,13 +1459,14 @@ final class ConversationGlassPanes {
 
     /** {@link #rect} = {@code child}'s bounds in {@code parent}'s coordinates. */
     private boolean rectIn(ViewGroup parent, View child) {
-        rect.set(0, 0, child.getWidth(), child.getHeight());
-        try {
-            parent.offsetDescendantRectToMyCoords(child, rect);
-            return true;
-        } catch (IllegalArgumentException notDescendant) {
-            return false;
-        }
+        if (child != parent && !isAncestor(parent, child)) return false;
+        int[] parentLocation = new int[2], childLocation = new int[2];
+        parent.getLocationOnScreen(parentLocation);
+        child.getLocationOnScreen(childLocation);
+        rect.set(childLocation[0] - parentLocation[0], childLocation[1] - parentLocation[1],
+                childLocation[0] - parentLocation[0] + child.getWidth(),
+                childLocation[1] - parentLocation[1] + child.getHeight());
+        return true;
     }
 
     /** GONE between a view and the footer is the composer removed; INVISIBLE is its animation. */
