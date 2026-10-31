@@ -1122,7 +1122,7 @@ Static checks in this instrumentation session: `python3 tools/test_conversation_
 
 ### PR #110 diagnostic logger correction after device feedback — 2026-10-31
 
-Follow-up branch `diag/glass-probe-tag-fix-20261031` from `master@6a19b8a` (merged #110). A separate review-ready PR is required because #110 is already merged.
+Follow-up branch `diag/glass-probe-tag-fix-20261031` from `master@6a19b8a` (merged #110); review-ready PR #111 is open, without merge or workflow dispatch.
 
 Two physical logs from release 0.0.34 after #110 (15:36 and 15:42) contain `GlassState` but **zero** `WaEnhancerX/GlassDiag` DEBUG events, despite the user's confirmed installation of the PR #110 build and successful property activation. The collected `gfxinfo` has 2,870 frames, 161 missed frame deadlines (5.61%), p99 UI frame 57 ms, p99 GPU 8 ms; aggregate counters cannot attribute individual glitches. The 15:42 run includes five accepted `RECORD_START_SIGNAL` events and zero `RECORD_END_SIGNAL` or `NORMAL_RESTORED` events. Existing `GlassState` reports first voice measurement after 8–16 ms but cannot establish native backing or actual screen presentation.
 
