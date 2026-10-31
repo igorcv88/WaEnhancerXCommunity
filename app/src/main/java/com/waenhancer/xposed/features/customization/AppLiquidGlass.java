@@ -32,6 +32,7 @@ import com.waenhancer.theme.CaptureScheduler;
 import com.waenhancer.theme.SurfaceRecovery;
 import com.waenhancer.theme.RecordingState;
 import com.waenhancer.theme.GlassTrace;
+import com.waenhancer.theme.GlassProbe;
 import com.waenhancer.theme.GlassMaterialDrawable;
 import com.waenhancer.theme.GlassOptics;
 import com.waenhancer.theme.LiveBudget;
@@ -431,6 +432,14 @@ public final class AppLiquidGlass extends Feature {
                     if (GlassPane.isCapturing()) return;
                     View target = (View) param.thisObject;
                     Session session = sessionFor(target.getRootView());
+                    if (GlassProbe.enabled() && session != null
+                            && (GlassProbe.composerNode(target) || conversation.owns(target))) {
+                        GlassProbe.event("BACKGROUND_HOOK", target,
+                                "new=" + GlassProbe.drawable((Drawable) param.args[0])
+                                        + " paneOwns=" + conversation.owns(target)
+                                        + " sessionInstalling=" + session.installing
+                                        + " bound=" + session.bindings.containsKey(target));
+                    }
                     if (session != null && !session.installing) session.discoverLater(target);
                 }
             });
@@ -486,7 +495,11 @@ public final class AppLiquidGlass extends Feature {
                         @Override protected void afterHookedMethod(MethodHookParam param) {
                             if (GlassPane.isCapturing()) return;
                             View view = (View) param.thisObject;
-                            if (isRecorderAnchor(view)) conversation.onRecorderSignal(view);
+                            if (isRecorderAnchor(view)) {
+                                if (GlassProbe.enabled()) GlassProbe.event("NATIVE_VISIBILITY_HOOK", view,
+                                        "requested=" + param.args[0]);
+                                conversation.onRecorderSignal(view);
+                            }
                         }
                     });
             XposedBridge.hookMethod(ViewStub.class.getDeclaredMethod("inflate"), new XC_MethodHook() {
@@ -494,6 +507,7 @@ public final class AppLiquidGlass extends Feature {
                     if (GlassPane.isCapturing()) return;
                     Object result = param.getResult();
                     if (result instanceof View && isRecorderAnchor((View) result)) {
+                        if (GlassProbe.enabled()) GlassProbe.event("NATIVE_INFLATE_HOOK", (View) result, "");
                         conversation.onRecorderSignal((View) result);
                     }
                 }
@@ -508,6 +522,8 @@ public final class AppLiquidGlass extends Feature {
                     // ancestor and timer grammar without ever recording text in diagnostics.
                     if (content == null || content.length() < 4 || content.length() > 8
                             || (content.charAt(1) != ':' && content.charAt(2) != ':')) return;
+                    if (GlassProbe.enabled()) GlassProbe.event("NATIVE_TIMER_CANDIDATE", view,
+                            "length=" + content.length());
                     conversation.onRecorderSignal(view);
                 }
             });
@@ -1267,11 +1283,17 @@ public final class AppLiquidGlass extends Feature {
         private void runDiscovery() {
             discoveryPosted = false;
             if (closed || suspended) return;
+            long probeStart = GlassProbe.enabled() ? SystemClock.uptimeMillis() : 0L;
+            if (probeStart != 0L) GlassProbe.event("DISCOVERY_START", root.get(),
+                    "pending=" + pendingDiscovery.size() + " bindings=" + bindings.size());
             for (View candidate : new ArrayList<>(pendingDiscovery)) {
                 if (candidate != null && candidate.isAttachedToWindow() && candidate.getRootView() == root.get()) walk(candidate, 0);
             }
             pendingDiscovery.clear();
             scan();
+            if (probeStart != 0L) GlassProbe.event("DISCOVERY_END", root.get(),
+                    "durationMs=" + (SystemClock.uptimeMillis() - probeStart)
+                            + " bindings=" + bindings.size());
         }
 
 
@@ -1428,6 +1450,11 @@ public final class AppLiquidGlass extends Feature {
         }
 
         void bind(View view, Surface surface, boolean nativeMask) {
+            if (GlassProbe.enabled() && GlassProbe.composerNode(view)) {
+                GlassProbe.event("BIND_ATTEMPT", view,
+                        "surface=" + surface + " paneOwns=" + conversation.owns(view)
+                                + " alreadyBound=" + bindings.containsKey(view));
+            }
             if (view == null || bindings.containsKey(view) || refused.containsKey(view)
                     || view.getWidth() < 1 || view.getHeight() < 1
                     || view == root.get() || GlassSurface.isGlassHost(view) || view instanceof GlassPane
@@ -1457,6 +1484,11 @@ public final class AppLiquidGlass extends Feature {
                 installing = true;
                 view.setBackgroundTintList(null);
                 view.setBackground(binding.glass);
+                if (GlassProbe.enabled() && GlassProbe.composerNode(view)) {
+                    GlassProbe.event("BIND_COMMIT", view,
+                            "surface=" + surface + " assigned=" + (view.getBackground() == binding.glass)
+                                    + " original=" + GlassProbe.drawable(binding.original));
+                }
                 if (binding.original != null) binding.original.setCallback(binding.glass);
                 if (view.getBackground() != binding.glass) {
                     // Material's FloatingActionButton ignores setBackground. Without this guard every

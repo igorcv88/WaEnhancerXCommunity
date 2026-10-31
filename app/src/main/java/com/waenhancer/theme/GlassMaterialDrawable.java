@@ -176,6 +176,10 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
             if (!LiveBackdrop.isCapturing()) GlassTrace.presented(view.getRootView(), this, view.getRootView(), drewLive);
             if (!LiveBackdrop.isCapturing() && (presentedLive == null || presentedLive != drewLive)) {
                 presentedLive = drewLive;
+                if (GlassProbe.enabled()) GlassProbe.event("DRAWABLE_DRAW_STATE", view,
+                        "drawable=" + GlassTrace.id(this) + " canvasOwned=" + canvasOwned
+                                + " live=" + drewLive + " area=" + area.toShortString()
+                                + " budget=" + budgetStatus + " state=" + recordingState());
                 GlassTrace.event(view.getRootView(), this, view.getRootView(),
                         drewLive ? "PRESENTING_LIVE" : "PRESENTING_TRANSPARENT", "draw-result",
                         "specKey=" + Integer.toHexString(material.hashCode()) + " " + captureStatus());
@@ -292,16 +296,27 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         float density = host.getResources().getDisplayMetrics().density;
         float radius = Math.min(radiusDp * density, Math.min(area.width(), area.height()) / 2f);
         int w = area.width(), h = area.height();
+        if (GlassProbe.enabled()) GlassProbe.event("DRAWABLE_CAPTURE_ATTEMPT", host,
+                "drawable=" + GlassTrace.id(this) + " canvasOwned=" + canvasOwned
+                        + " size=" + w + "x" + h + " budget=" + budgetStatus);
         GlassOptics optics = GlassOptics.current();
         if (optics.corrected && optics.geometry) {
             int left = canvasOffsetX + b.left + area.left, top = canvasOffsetY + b.top + area.top;
-            return live.capture(w, h, radius, density, material,
+            boolean success = live.capture(w, h, radius, density, material,
                     (canvas, padding) -> BehindRecorder.paintExact(canvas, host, left, top, w, h, padding));
+            if (GlassProbe.enabled()) GlassProbe.event("DRAWABLE_CAPTURE_RESULT", host,
+                    "drawable=" + GlassTrace.id(this) + " success=" + success
+                            + " state=" + recordingState());
+            return success;
         }
         host.getLocationOnScreen(location);
         int x = location[0] + canvasOffsetX + b.left + area.left, y = location[1] + canvasOffsetY + b.top + area.top;
-        return live.capture(w, h, radius, density, material,
+        boolean success = live.capture(w, h, radius, density, material,
                 (canvas, padding) -> BehindRecorder.paint(canvas, host, x, y, w, h));
+        if (GlassProbe.enabled()) GlassProbe.event("DRAWABLE_CAPTURE_RESULT", host,
+                "drawable=" + GlassTrace.id(this) + " success=" + success
+                        + " state=" + recordingState());
+        return success;
     }
 
     public void setBudgetStatus(String status) { budgetStatus = status; }
