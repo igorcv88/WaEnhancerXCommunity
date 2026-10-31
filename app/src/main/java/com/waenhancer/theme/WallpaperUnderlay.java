@@ -50,13 +50,10 @@ public final class WallpaperUnderlay extends View {
         placement.reset(); view.transformMatrixToGlobal(placement); placement.postConcat(inverse);
         int saved = canvas.save();
         try {
-            if (fillViewport && view.getWidth() > 0 && view.getHeight() > 0) {
-                float scale = Math.max((float) getWidth() / view.getWidth(),
-                        (float) getHeight() / view.getHeight());
-                canvas.translate((getWidth() - view.getWidth() * scale) / 2f,
-                        (getHeight() - view.getHeight() * scale) / 2f);
-                canvas.scale(scale, scale);
-            } else canvas.concat(placement);
+            if (fillViewport && WallpaperProjection.draw(canvas, view, this)) return;
+            // Unknown wallpaper renderers retain their native projection. Never stretch a
+            // custom View to cover missing insets or claim that as verified continuity.
+            canvas.concat(placement);
             view.draw(canvas);
         } finally { canvas.restoreToCount(saved); }
     }

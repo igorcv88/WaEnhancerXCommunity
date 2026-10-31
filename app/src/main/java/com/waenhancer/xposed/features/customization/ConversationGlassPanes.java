@@ -92,6 +92,12 @@ final class ConversationGlassPanes {
         boolean suspended;
         boolean syncingFooter;
         boolean recorderWakeQueued;
+        final com.waenhancer.theme.DraftRouteGuard draftGuard = new com.waenhancer.theme.DraftRouteGuard();
+        final WeakHashMap<View, Drawable> clearDrawables = new WeakHashMap<>();
+        WeakReference<View> paletteQuote = new WeakReference<>(null);
+        final com.waenhancer.theme.SurfaceContrastSampler contrastSampler = new com.waenhancer.theme.SurfaceContrastSampler();
+        Integer quoteBackground;
+        final java.util.Set<View> tintedWaveforms = java.util.Collections.newSetFromMap(new WeakHashMap<>());
         final ComposerTransition transition = new ComposerTransition();
         ViewTreeObserver.OnPreDrawListener footerPreDraw;
         final Rect committedPane = new Rect();
@@ -180,11 +186,39 @@ final class ConversationGlassPanes {
     boolean owns(View view) {
         for (Screen screen : screens.values()) {
             if (screen.headerOn && view == screen.holder.get()) return true;
-            if (screen.footerOn && view == screen.footer.get()) return true;
+            ViewGroup footer = screen.footer.get();
+            if (screen.footerOn && footer != null && (view == footer || isAncestor(footer, view))) {
+                if (view == footer || ownedComposerNode(view, footer)) return true;
+            }
             if (screen.clearedBackgrounds.containsKey(view)) return true;
             if (screen.voiceBackgrounds.containsKey(view)) return true;
         }
         return false;
+    }
+
+    private static boolean ownedComposerNode(View view, ViewGroup footer) {
+        String name = resourceName(view);
+        if ("input_layout".equals(name) || "edit_layout".equals(name)
+                || "voice_note_stub".equals(name) || "voice_note_draft_layout_v2".equals(name)) return true;
+        // Quote containers in this footer use its existing pane, not a nested glass drawable.
+        return name.contains("quoted_message") || name.contains("reply_preview");
+    }
+
+    /** Background setters only rearm the existing reconciliation pass; never clear on the
+     * native setter stack or let generic drawable discovery compete for the same slot. */
+    boolean onBackgroundChanged(View view) {
+        Screen screen = screens.get(view.getRootView());
+        ViewGroup footer = screen == null ? null : screen.footer.get();
+        if (screen == null || !screen.footerOn || footer == null
+                || (view != footer && !isAncestor(footer, view))) return false;
+        boolean owned = ownedComposerNode(view, footer) || view == footer
+                || screen.clearDrawables.containsKey(view) || screen.voiceClearDrawables.containsKey(view);
+        if (!owned) return false;
+        if (!screen.syncingFooter && !screen.suspended) {
+            screen.sampledGeneration = -1L;
+            footer.postInvalidateOnAnimation();
+        }
+        return true;
     }
 
     /**
@@ -247,7 +281,10 @@ final class ConversationGlassPanes {
         if (anchor == null || (changed instanceof TextView
                 && !isElapsedTime(((TextView) changed).getText()))) return;
         long now = SystemClock.uptimeMillis();
-        boolean shown = recorderShown(footer);
+        View draft = findById(footer, "voice_note_draft_layout_v2");
+        boolean bridgingDraft = screen.draftGuard.hold(draft, measuredDraft(draft, footer),
+                draft != null && draft.isAttachedToWindow() && draft.isShown(), now);
+        boolean shown = bridgingDraft || recorderShown(footer);
         boolean accepted = screen.transition.signal(shown, now);
         if (GlassProbe.enabled()) GlassProbe.event("RECORDER_SIGNAL", anchor,
                 "accepted=" + accepted + " shown=" + shown
@@ -786,7 +823,7 @@ final class ConversationGlassPanes {
         Object material = host.material(screen.root.get());
         int fingerprint = footerFingerprint(screen, footer, input, material);
         if (fingerprint == screen.footerFingerprint && screen.sampledGeneration == screen.layoutGeneration
-                && !screen.transition.pending() && !screen.decorationPending) return;
+                && !screen.transition.pending() && !screen.decorationPending && !screen.draftGuard.pending()) return;
         if (GlassProbe.enabled()) GlassProbe.event("FOOTER_SAMPLE", footer,
                 "epoch=" + screen.transition.epoch() + " state=" + screen.transition.state()
                         + " fingerprintChanged=" + (fingerprint != screen.footerFingerprint)
@@ -804,6 +841,13 @@ final class ConversationGlassPanes {
         }
         long now = SystemClock.uptimeMillis();
         float d = footer.getResources().getDisplayMetrics().density;
+        View draft = findById(footer, "voice_note_draft_layout_v2");
+        if (screen.draftGuard.hold(draft, measuredDraft(draft, footer),
+                draft != null && draft.isAttachedToWindow() && draft.isShown(), now)) {
+            // Keep the one committed draft mask; do not union a temporary normal-input quote.
+            footer.postInvalidateOnAnimation();
+            return;
+        }
         ViewGroup voice = activeVoicePanel(footer, input);
         if (screen.transition.signal(voice != null, now)) {
             GlassProbe.event("RECORDER_MODE_CHANGED", footer, "recording=" + (voice != null)
@@ -844,12 +888,13 @@ final class ConversationGlassPanes {
 
     /** The persistent composer pane follows the native recorder; its controls stay native. */
     private void syncVoiceFrame(Screen screen, ViewGroup footer, ViewGroup voice, long now, float d) {
-        restoreReplyContrast(screen);
         int pad = Math.round(COMPOSE_PAD_DP * d);
         // Measured native screen-space bounds mapped into the footer, never a guessed panel.
         int[] voiceRect = rectOf(footer, voice);
         suppressDuplicateReply(screen, footer);
         View quote = findReplyPreview(footer);
+        if ("voice_note_draft_layout_v2".equals(resourceName(voice))
+                && quote != null && !isAncestor(voice, quote)) quote = null;
         int[] quoteRect = quote != null && quote.getWidth() > 0 && quote.getHeight() > 0
                 ? rectOf(footer, quote) : null;
         int[] envelope = RecorderLayout.union(voiceRect, quoteRect);
@@ -922,6 +967,9 @@ final class ConversationGlassPanes {
         if (screen.composer.hasLiveRecording()) {
             clearVoiceBackgrounds(screen, voice);
             if (quote != null) clearReplyBacking(screen, footer, quote);
+            clearPlayerBacking(screen, voice);
+            syncReplyContrast(screen, footer);
+            tintWaveform(screen, voice);
         }
         if ((flags & ComposerTransition.RESERVE) != 0) reserveFooter(screen, footer);
         if (screen.transition.pending() || screen.decorationPending) footer.postInvalidateOnAnimation();
@@ -1094,6 +1142,8 @@ final class ConversationGlassPanes {
         restoreRecordingGlassClip(screen);
         restoreDuplicateReply(screen);
         restoreRecordingMic(screen);
+        for (View wave : screen.tintedWaveforms) NativeWaveformTint.remove(wave);
+        screen.tintedWaveforms.clear();
         screen.decorationPending = false;
         screen.laneKey = null;
         if (GlassProbe.enabled()) GlassProbe.event("VOICE_RESTORE_AFTER", screen.footer.get(),
@@ -1119,6 +1169,7 @@ final class ConversationGlassPanes {
         hash = mix(hash, screen, findById(footer, "voice_note_draft_quoted_message_frame"));
         hash = mix(hash, screen, findById(footer, "quoted_message_preview_container_v2"));
         hash = mix(hash, screen, findById(footer, "quoted_message_preview_container"));
+        hash = mix(hash, screen, findById(footer, "voice_note_draft_audio_visualizer"));
         return hash;
     }
 
@@ -1148,6 +1199,8 @@ final class ConversationGlassPanes {
 
     private void disableFooter(Screen screen) {
         screen.footerOn = false;
+        screen.draftGuard.reset();
+        screen.contrastSampler.invalidate();
         screen.transition.detach();
         screen.committedFooterHeight = 0;
         ViewGroup footer = screen.footer.get();
@@ -1177,6 +1230,8 @@ final class ConversationGlassPanes {
         restoreRecordingGlassClip(screen);
         restoreDuplicateReply(screen);
         restoreRecordingMic(screen);
+        for (View wave : screen.tintedWaveforms) NativeWaveformTint.remove(wave);
+        screen.tintedWaveforms.clear();
         restoreReplyContrast(screen);
         for (java.util.Map.Entry<ImageView, ColorStateList> icon :
                 new ArrayList<>(screen.originalInputIconTints.entrySet())) {
@@ -1206,7 +1261,7 @@ final class ConversationGlassPanes {
                 ? contentColor : microphoneTint.getColorForState(
                         mic.getDrawableState(), microphoneTint.getDefaultColor());
         int matched = tintComposerIcons(screen, footer, color, 0);
-        if (matched != 3) host.report("composer-icon-routing-" + matched,
+        if ((matched & 3) != 3) host.report("composer-icon-routing-" + matched,
                 "composer icons resolved=" + matched + " (attachment=1, camera=2); "
                         + "inspect footer resource names on this WhatsApp build if either is absent");
     }
@@ -1229,7 +1284,9 @@ final class ConversationGlassPanes {
             try { name = view.getResources().getResourceEntryName(view.getId()); }
             catch (android.content.res.Resources.NotFoundException ignored) { }
         }
-        boolean namedIcon = name != null && (name.contains("attach") || name.contains("camera"));
+        boolean emoji = "emoji_picker_btn".equals(name) || "emoji_picker_button".equals(name)
+                || "emoji_button".equals(name) || "emoji_btn".equals(name);
+        boolean namedIcon = name != null && (name.contains("attach") || name.contains("camera") || emoji);
         if (namedIcon) {
             ImageView image = firstImage(view, 0);
             if (image != null) {
@@ -1240,7 +1297,7 @@ final class ConversationGlassPanes {
                         || image.getImageTintList().getDefaultColor() != color) {
                     image.setImageTintList(ColorStateList.valueOf(color));
                 }
-                return (name.contains("attach") ? 1 : 0) | (name.contains("camera") ? 2 : 0);
+                return (name.contains("attach") ? 1 : 0) | (name.contains("camera") ? 2 : 0) | (emoji ? 4 : 0);
             }
             return 0;
         }
@@ -1270,9 +1327,15 @@ final class ConversationGlassPanes {
         View draft = findById(footer, "voice_note_draft_layout_v2");
         View stub = findById(footer, "voice_note_stub");
         com.waenhancer.theme.ComposerRoute.Panel panel = com.waenhancer.theme.ComposerRoute.resolve(
-                measuredPanel(draft, footer, input), hasVisibleEditor(input, 0), measuredPanel(stub, footer, input));
+                measuredDraft(draft, footer), hasVisibleEditor(input, 0), measuredPanel(stub, footer, input));
         return panel == com.waenhancer.theme.ComposerRoute.Panel.DRAFT ? (ViewGroup) draft
                 : panel == com.waenhancer.theme.ComposerRoute.Panel.STUB ? (ViewGroup) stub : null;
+    }
+
+    private static boolean measuredDraft(View draft, ViewGroup footer) {
+        // Temporary input descendants and alpha animations are not a native recorder exit.
+        return draft instanceof ViewGroup && isAncestor(footer, draft) && visuallyShown(draft)
+                && draft.getWidth() > 0 && draft.getHeight() > 0;
     }
 
     private static boolean measuredPanel(View view, ViewGroup footer, View input) {
@@ -1415,73 +1478,10 @@ final class ConversationGlassPanes {
                     + (timer == null ? "timer=none" : describeRecordingIcons(footer, timer, 0)));
             return;
         }
-        float[] original = screen.recordingMicOffsets.get(mic);
-        if (original == null) {
-            original = new float[]{mic.getTranslationX(), mic.getTranslationY()};
-            screen.recordingMicOffsets.put(mic, original);
-        }
-        int[] now = rectOf(footer, mic);
-        int shiftX = Math.round(mic.getTranslationX() - original[0]);
-        int shiftY = Math.round(mic.getTranslationY() - original[1]);
-        int[] base = {now[0] - shiftX, now[1] - shiftY, now[2] - shiftX, now[3] - shiftY};
-        View waveView = findById(voice, "voice_note_draft_audio_visualizer");
-        int[] wave = waveView != null && waveView.isShown() && waveView.getWidth() > 0
-                && waveView.getHeight() > 0 && waveView != mic ? rectOf(footer, waveView) : null;
-        int[] timerRect = timer != null && timer.getWidth() > 0 ? rectOf(footer, timer) : null;
-        ArrayList<int[]> obstacles = new ArrayList<>();
-        ArrayList<String> names = new ArrayList<>();
-        int[] voiceRect = rectOf(footer, voice);
-        collectObstacles(footer, voice, mic, waveView, voiceRect, obstacles, names, 0);
-        if (actionRect != null) { obstacles.add(actionRect); names.add("action"); }
-        if (quoteRect != null) { obstacles.add(quoteRect); names.add("quote"); }
-        int[] bounds = RecorderLayout.union(new int[]{0, 0, footer.getWidth(), footer.getHeight()}, voiceRect);
-        boolean rtl = footer.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
-        int gap = Math.max(1, Math.round(2f * d));
-        int tolerance = Math.max(1, Math.round(3f * d));
-        int[] offset;
-        if (wave != null) {
-            offset = RecorderLayout.micOffset(base, wave, obstacles.toArray(new int[0][]), bounds,
-                    gap, tolerance, rtl);
-        } else if (timerRect != null) {
-            // Without a measured waveform the horizontal slot is unknown: centre on the
-            // elapsed-time row only, and only if that vertical move is collision-free.
-            int dy = Math.abs((base[1] + base[3]) / 2 - (timerRect[1] + timerRect[3]) / 2) <= tolerance
-                    ? 0 : (timerRect[1] + timerRect[3]) / 2 - (base[1] + base[3]) / 2;
-            int[] moved = {base[0], base[1] + dy, base[2], base[3] + dy};
-            boolean free = RecorderLayout.contains(bounds, moved);
-            for (int[] obstacle : obstacles) {
-                if (obstacle != timerRect && RecorderLayout.intersects(moved, obstacle)) free = false;
-            }
-            offset = free ? new int[]{0, dy} : null;
-        } else {
-            host.report("voice-mic-await-layout", "voice indicator awaits measured waveform/timer");
-            return;
-        }
-        float targetX = offset == null ? original[0] : original[0] + offset[0];
-        float targetY = offset == null ? original[1] : original[1] + offset[1];
-        if (mic.getTranslationX() != targetX) mic.setTranslationX(targetX);
-        if (mic.getTranslationY() != targetY) mic.setTranslationY(targetY);
-        String key = RecorderLayout.describe(base) + "|" + RecorderLayout.describe(wave) + "|"
-                + RecorderLayout.describe(timerRect) + "|" + obstacles.size() + "|" + (offset == null);
-        if (key.equals(screen.laneKey)) return;
-        screen.laneKey = key;
-        StringBuilder rects = new StringBuilder();
-        for (int i = 0; i < obstacles.size(); i++) {
-            rects.append(' ').append(names.get(i)).append('=').append(RecorderLayout.describe(obstacles.get(i)));
-        }
-        boolean quoteLane = RecorderLayout.quoteAbove(quoteRect, wave, timerRect, gap);
-        GlassTrace.event(screen.root.get(), screen.composer, mic, "VOICE_LANES",
-                offset == null ? "mic-unplaceable-native-kept" : "mic-placed",
-                "epoch=" + screen.transition.epoch() + " rtl=" + rtl + " mic=" + resourceName(mic)
-                        + " M=" + RecorderLayout.describe(base)
-                        + " offset=" + (offset == null ? "none" : offset[0] + "," + offset[1])
-                        + " W=" + RecorderLayout.describe(wave) + " T=" + RecorderLayout.describe(timerRect)
-                        + " Q=" + RecorderLayout.describe(quoteRect) + " quoteAbove=" + quoteLane
-                        + " G=" + RecorderLayout.describe(new int[]{screen.committedPane.left,
-                        screen.committedPane.top, screen.committedPane.right, screen.committedPane.bottom})
-                        + rects);
-        if (!quoteLane) host.report("voice-quote-lane-overlap",
-                "voice quote overlaps recording row; native quote layout left unchanged");
+        if (mic.isClickable() || mic.isFocusable()) return;
+        // A draw-only transparent filter survives native alpha blinking without changing
+        // geometry, animator state, timer, controls or the Android system privacy indicator.
+        if (NativeWaveformTint.apply(mic, Color.TRANSPARENT)) screen.tintedWaveforms.add(mic);
     }
 
     /**
@@ -1578,6 +1578,7 @@ final class ConversationGlassPanes {
             view.setTranslationY(entry.getValue()[1]);
         }
         screen.recordingMicOffsets.clear();
+
     }
 
     /** One or two hours/minutes/seconds separators; reject free text and message timestamps. */
@@ -1640,6 +1641,40 @@ final class ConversationGlassPanes {
                 clearVoiceBackground(screen, child);
             }
         }
+    }
+
+    /** Clear only the compact backing that groups the known visualizer and native timer.
+     * Never clear the waveform/progress drawable, buttons, or the whole footer as a guess. */
+    private static void clearPlayerBacking(Screen screen, ViewGroup recorder) {
+        View wave = findById(recorder, "voice_note_draft_audio_visualizer");
+        if (wave == null || !wave.isShown()) return;
+        for (View node = parentView(wave); node != null && node != recorder; node = parentView(node)) {
+            Drawable bg = node.getBackground();
+            if (node instanceof ViewGroup && !node.isClickable()
+                    && node.getHeight() <= recorder.getHeight() * .65f
+                    && findElapsedLabel(node, 0) != null && hasPlaybackAction(node, 0)
+                    && (bg instanceof ColorDrawable || bg instanceof android.graphics.drawable.GradientDrawable
+                        || screen.voiceClearDrawables.containsKey(node))) {
+                clearVoiceBackground(screen, node);
+                return;
+            }
+        }
+    }
+
+    private static boolean hasPlaybackAction(View node, int depth) {
+        if (depth > 6 || !node.isShown()) return false;
+        String id = resourceName(node);
+        if (node instanceof ImageView && (id.contains("play") || id.contains("pause"))) return true;
+        if (node instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) node).getChildCount(); i++)
+            if (hasPlaybackAction(((ViewGroup) node).getChildAt(i), depth + 1)) return true;
+        return false;
+    }
+
+    private void tintWaveform(Screen screen, ViewGroup recorder) {
+        View wave = findById(recorder, "voice_note_draft_audio_visualizer");
+        GlassSpec material = host.material(screen.root.get());
+        if (wave == null || material == null) return;
+        if (NativeWaveformTint.apply(wave, material.contentColor)) screen.tintedWaveforms.add(wave);
     }
 
     private static void clearVoiceBackground(Screen screen, View view) {
@@ -1710,11 +1745,32 @@ final class ConversationGlassPanes {
         View preview = findReplyPreview(footer);
         if (preview == null) {
             restoreReplyContrast(screen);
+            screen.paletteQuote.clear();
+            screen.quoteBackground = null;
+            screen.contrastSampler.invalidate();
             return;
         }
         GlassSpec material = host.material(screen.root.get());
         int contentColor = material == null ? Color.WHITE : material.contentColor;
-        tintReplyChildren(screen, preview, contentColor, 0, new int[1]);
+        if (screen.paletteQuote.get() != preview) {
+            restoreReplyContrast(screen);
+            screen.paletteQuote = new WeakReference<>(preview);
+            screen.quoteBackground = null;
+            screen.contrastSampler.invalidate();
+        }
+        if (screen.quoteBackground != null) tintReplyChildren(screen, preview, contentColor, 0, new int[1]);
+        if (screen.composer == null || !screen.composer.hasLiveRecording()) return;
+        final View sampledQuote = preview;
+        final long epoch = screen.transition.epoch();
+        screen.contrastSampler.sample(screen.window.get(), preview, color -> {
+            if (!screen.footerOn || screen.suspended || screen.footer.get() != footer
+                    || screen.transition.epoch() != epoch || screen.paletteQuote.get() != sampledQuote
+                    || !isAncestor(footer, sampledQuote) || !sampledQuote.isShown()
+                    || !java.util.Objects.equals(material, host.material(screen.root.get()))) return;
+            screen.quoteBackground = color;
+            GlassSpec current = host.material(screen.root.get());
+            if (current != null) tintReplyChildren(screen, sampledQuote, current.contentColor, 0, new int[1]);
+        });
     }
 
     private static boolean visuallyShown(View view) {
@@ -1781,9 +1837,11 @@ final class ConversationGlassPanes {
             if (!screen.replyTextColors.containsKey(text)) {
                 screen.replyTextColors.put(text, text.getTextColors());
             }
-            float opacity = textIndex[0]++ == 0 ? 0.96f : 0.86f;
-            int color = Color.argb(Math.round(255f * opacity),
-                    Color.red(rgb), Color.green(rgb), Color.blue(rgb));
+            int index = textIndex[0]++;
+            int original = screen.replyTextColors.get(text).getDefaultColor();
+            int background = screen.quoteBackground == null ? Color.TRANSPARENT : screen.quoteBackground;
+            int color = com.waenhancer.theme.SemanticTheme.ensureTextContrast(
+                    index == 0 ? original : rgb, background, index == 0 ? 7.0 : 4.5);
             if (text.getCurrentTextColor() != color) text.setTextColor(color);
             screen.replyAppliedColors.put(text, color);
             return;
@@ -1928,16 +1986,14 @@ final class ConversationGlassPanes {
     /** WhatsApp's opaque fill would cover the pane; recorded so switching off restores it. */
     private static void clearBackground(Screen screen, View view) {
         Drawable current = view.getBackground();
-        if (current instanceof ColorDrawable && ((ColorDrawable) current).getColor() == Color.TRANSPARENT
-                && screen.clearedBackgrounds.containsKey(view)) return;
-        if (current == null && !screen.clearedBackgrounds.containsKey(view)) return;
-        if (!screen.clearedBackgrounds.containsKey(view)) {
-            // A static material bound before the pane took over is not WhatsApp's own fill.
-            Drawable original = current instanceof GlassMaterialDrawable
-                    ? ((GlassMaterialDrawable) current).original() : current;
-            screen.clearedBackgrounds.put(view, original);
-        }
-        setBackgroundPreservingPadding(view, new ColorDrawable(Color.TRANSPARENT));
+        if (screen.clearDrawables.containsKey(view) && current == screen.clearDrawables.get(view)) return;
+        if (current == null) return;
+        Drawable original = current instanceof GlassMaterialDrawable
+                ? ((GlassMaterialDrawable) current).original() : current;
+        screen.clearedBackgrounds.put(view, original);
+        ColorDrawable cleared = new ColorDrawable(Color.TRANSPARENT);
+        screen.clearDrawables.put(view, cleared);
+        setBackgroundPreservingPadding(view, cleared);
         if (GlassProbe.enabled()) GlassProbe.event("INPUT_BG_CLEARED", view,
                 "saved=" + GlassProbe.drawable(screen.clearedBackgrounds.get(view)));
     }
@@ -1966,7 +2022,14 @@ final class ConversationGlassPanes {
     private static void clearQuoteContainers(Screen screen, View node, int depth) {
         if (!(node instanceof ViewGroup) || depth > 8) return;
         String name = resourceName(node);
-        if (name.contains("quoted") || name.contains("reply_preview")) clearBackground(screen, node);
+        View footer = screen.footer.get();
+        View draft = footer == null ? null : findById(footer, "voice_note_draft_layout_v2");
+        boolean voiceTextWrapper = draft != null && isAncestor(draft, node) && !node.isClickable()
+                && replyTextCount(node, 0) >= 2
+                && (node.getBackground() instanceof ColorDrawable
+                    || node.getBackground() instanceof android.graphics.drawable.GradientDrawable);
+        if (name.contains("quoted") || name.contains("reply_preview") || voiceTextWrapper)
+            clearBackground(screen, node);
         ViewGroup group = (ViewGroup) node;
         for (int i = 0; i < group.getChildCount(); i++) clearQuoteContainers(screen, group.getChildAt(i), depth + 1);
     }
@@ -1976,7 +2039,9 @@ final class ConversationGlassPanes {
         if (root == null) return;
         for (View view : new ArrayList<>(screen.clearedBackgrounds.keySet())) {
             if (view != null && (view == root || isAncestor(root, view))) {
-                setBackgroundPreservingPadding(view, screen.clearedBackgrounds.remove(view));
+                Drawable original = screen.clearedBackgrounds.remove(view);
+                Drawable owned = screen.clearDrawables.remove(view);
+                if (view.getBackground() == owned) setBackgroundPreservingPadding(view, original);
                 if (GlassProbe.enabled()) GlassProbe.event("INPUT_BG_RESTORED", view,
                         "owner=" + GlassTrace.id(root));
             }
