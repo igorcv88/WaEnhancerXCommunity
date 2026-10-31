@@ -93,6 +93,9 @@ public final class GlassPane extends FrameLayout {
     private String budgetStatus = "unassigned";
     /** A geometry/material/source epoch released the recording in this pre-draw: recapture now. */
     private boolean captureNow;
+    /** One notification per capture epoch, posted after the compositor publishes live pixels. */
+    private Runnable onLiveRecordingReady;
+    private boolean liveReadyNotified;
     /** Choreographer frame of the last completed capture; dedupes a same-frame second call. */
     private long capturedFrame = Long.MIN_VALUE;
     private final Runnable retryFrame = () -> { if (!suspended && isAttachedToWindow()) invalidate(); };
@@ -142,6 +145,11 @@ public final class GlassPane extends FrameLayout {
     public boolean hasLiveRecording() {
         return !suspended && backdrop.hasRecording() && captureWidth == getWidth()
                 && captureHeight == getHeight();
+    }
+
+    /** Optional owner callback; never invoked from the middle of a native view traversal. */
+    public void setOnLiveRecordingReady(Runnable callback) {
+        onLiveRecordingReady = callback;
     }
 
     /**
@@ -308,6 +316,7 @@ public final class GlassPane extends FrameLayout {
     private void revalidate(String reason) {
         SurfaceRecovery.State before = recovery.state();
         backdrop.release();
+        liveReadyNotified = false;
         // The released pixels cannot be presented: the next permitted pre-draw recaptures
         // instead of waiting for the rest gap, which would otherwise draw a transparent frame.
         captureNow = true;
@@ -467,6 +476,14 @@ public final class GlassPane extends FrameLayout {
                 SurfaceRecovery.State before = recovery.state();
                 recovery.ready();
                 if (captureContent == CaptureContent.CAPTURE_LIVE_CONTENT) GlassTrace.captured(getRootView(), this, src);
+                // A recorder's native backing cannot be removed until live glass exists.
+                // Notify its footer when capture actually succeeds, including after the
+                // footer exhausted its bounded render retries without another layout event.
+                if (!liveReadyNotified && captureContent == CaptureContent.CAPTURE_LIVE_CONTENT
+                        && hasLiveRecording() && onLiveRecordingReady != null) {
+                    liveReadyNotified = true;
+                    post(onLiveRecordingReady);
+                }
                 trace(before, "capture-published");
                 if ((decision & CaptureScheduler.INVALIDATE_NOW) != 0) invalidate();
                 else if ((decision & CaptureScheduler.INVALIDATE_LATER) != 0) scheduleFrame(scheduler.delayMs());

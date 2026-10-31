@@ -138,7 +138,9 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
                 }
             }
         }
-        if (view != null && onHostResolved != null && !notifiedHost) {
+        if (view != null && onHostResolved != null && !notifiedHost
+                && (!canvasOwned || (context != null && context.canvas == canvas
+                    && context.view == view && !LiveBackdrop.isCapturing()))) {
             notifiedHost = true;
             onHostResolved.accept(view);
         } else if (view == null && onHostMissing != null && !reportedMissingHost) {
@@ -209,6 +211,15 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     }
 
     public boolean isCanvasOwnedBy(View view) { return canvasOwned && owner.get() == view; }
+
+    /** A native row may draw this same factory instance again after dropping its binding.
+     * Rearm the draw-host callback on release; otherwise canvas-owned factories stay inert. */
+    public void rearmCanvasHost() {
+        if (!canvasOwned) return;
+        notifiedHost = false;
+        reportedMissingHost = false;
+        drawReported = false;
+    }
 
     public void attachMaterial(Supplier<GlassSpec> material) { spec = material; }
 

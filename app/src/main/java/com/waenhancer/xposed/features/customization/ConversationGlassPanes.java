@@ -243,6 +243,14 @@ final class ConversationGlassPanes {
                 "epoch=" + screen.transition.epoch() + " anchor=" + resourceName(anchor)
                         + " nativeT=" + now);
         footer.postInvalidateOnAnimation();
+        // The native visibility hook often fires before the recorder's layout invalidates its
+        // host. Queue an immediate read on the UI loop; a touch/scroll must not be required to
+        // publish the first recording frame (or to restore the input on cancel).
+        final long signalEpoch = screen.transition.epoch();
+        footer.post(() -> {
+            if (screen.footerOn && !screen.suspended && screen.footer.get() == footer
+                    && screen.transition.epoch() == signalEpoch) syncFooter(screen);
+        });
     }
 
     private static boolean isRecorderAnchor(View view) {
@@ -802,6 +810,9 @@ final class ConversationGlassPanes {
                         + DECORATION_RETRIES + " frames; native recorder backing kept");
             }
         }
+        // Recycled native recorder holders can restore their opaque background while retaining
+        // the same geometry. A sampled native background replacement must be cleared again.
+        if (screen.composer.hasLiveRecording()) clearVoiceBackgrounds(screen, voice);
         if ((flags & ComposerTransition.RESERVE) != 0) reserveFooter(screen, footer);
         if (screen.transition.pending() || screen.decorationPending) footer.postInvalidateOnAnimation();
         if ((flags & ComposerTransition.PRESENT) != 0
@@ -828,8 +839,7 @@ final class ConversationGlassPanes {
         int sideFloor = 0;
         Rect actionRect = null;
         View send = findById(footer, "conversation_entry_action_button");
-        if (send == null || !send.isShown() || send.getWidth() <= 0 || send.getHeight() <= 0
-                || input.isLayoutRequested() || send.isLayoutRequested() || footer.isLayoutRequested()) {
+        if (send == null || !send.isShown() || send.getWidth() <= 0 || send.getHeight() <= 0) {
             return false;
         }
         if (rectIn(footer, send)) {
@@ -852,14 +862,16 @@ final class ConversationGlassPanes {
         String geometryKey = l + ":" + t + ":" + r + ":" + b + ":" + actionRect;
         int flags = screen.transition.sample(ComposerTransition.Route.INPUT,
                 footer.getWidth() + ":" + footer.getHeight() + ":" + geometryKey, now);
-        if ((flags & ComposerTransition.PRESENT) != 0) {
+        if ((flags & ComposerTransition.PRESENT) != 0
+                || (wasRecording && !screen.transition.recording())) {
             // Native recorder state goes back in the same frame the normal pill is presented.
             restoreVoiceDecoration(screen);
+        }
+        if ((flags & ComposerTransition.PRESENT) != 0) {
             ensureComposer(screen, footer);
             screen.composer.setSource(screen.listHost.get());
             screen.composer.setUnderlay(wallpaperOf(screen));
             presentComposer(screen, l, t, r, b, d);
-            clearBackground(screen, input);
             if (wasRecording) {
                 GlassTrace.event(screen.root.get(), screen.composer, input, "NORMAL_RESTORED",
                         "input-measured", "epoch=" + screen.transition.epoch()
@@ -867,7 +879,19 @@ final class ConversationGlassPanes {
                                 + " live=" + screen.composer.hasLiveRecording());
             }
         }
-        if ((flags & ComposerTransition.PRESENT) != 0 || !java.util.Objects.equals(material, screen.decoratedMaterial)) {
+        // An in-place WhatsApp background/quote rebind is independent of size. Re-clear after
+        // the new pane is live; never expose an empty hole while capture is still pending.
+        if (screen.composer != null && !screen.transition.recording()
+                && screen.composer.hasLiveRecording()
+                && screen.committedPane.left == l && screen.committedPane.top == t
+                && screen.committedPane.right == r && screen.committedPane.bottom == b) {
+            clearBackground(screen, footer);
+            clearBackground(screen, input);
+            View preview = findReplyPreview(footer);
+            if (preview != null) clearBackground(screen, preview);
+        }
+        if ((flags & ComposerTransition.PRESENT) != 0 || wasRecording
+                || !java.util.Objects.equals(material, screen.decoratedMaterial)) {
             // Icon tint and reply contrast walk the footer: only on a new geometry or material.
             screen.decoratedMaterial = material;
             syncComposerIcons(screen, footer);
@@ -890,6 +914,19 @@ final class ConversationGlassPanes {
     private void ensureComposer(Screen screen, ViewGroup footer) {
         if (screen.composer == null || screen.composer.getParent() != footer) {
             screen.composer = newPane(screen, footer, screen.listHost.get(), wallpaperOf(screen));
+            final GlassPane pane = screen.composer;
+            pane.setOnLiveRecordingReady(() -> {
+                if (!screen.footerOn || screen.suspended || screen.footer.get() != footer
+                        || screen.composer != pane || !pane.hasLiveRecording()) return;
+                // Recapture may finish after the 8-frame native-backing retry budget. Wake the
+                // footer exactly once for this capture epoch to apply pending decoration.
+                screen.sampledGeneration = -1L;
+                if (screen.transition.recording()) {
+                    screen.decorationPending = true;
+                    screen.decorationAttempts = 0;
+                }
+                footer.postInvalidateOnAnimation();
+            });
             // Index 0: WhatsApp's icons, waveform and text field keep painting on top.
             footer.addView(screen.composer, 0, new FrameLayout.LayoutParams(0, 0));
         }
@@ -935,6 +972,8 @@ final class ConversationGlassPanes {
         hash = mix(hash, screen, findById(footer, "voice_note_draft_layout_v2"));
         hash = mix(hash, screen, findById(footer, "composer_quoted_message_frame"));
         hash = mix(hash, screen, findById(footer, "voice_note_draft_quoted_message_frame"));
+        hash = mix(hash, screen, findById(footer, "quoted_message_preview_container_v2"));
+        hash = mix(hash, screen, findById(footer, "quoted_message_preview_container"));
         return hash;
     }
 
@@ -942,6 +981,8 @@ final class ConversationGlassPanes {
         if (view == null) return 31 * hash;
         boolean shown = view.isShown();
         hash = 31 * hash + (shown ? 1 : 2);
+        hash = 31 * hash + System.identityHashCode(view);
+        hash = 31 * hash + System.identityHashCode(view.getBackground());
         if (!shown) return hash;
         view.getLocationOnScreen(screen.location);
         hash = 31 * hash + view.getWidth();
@@ -965,6 +1006,7 @@ final class ConversationGlassPanes {
         screen.transition.detach();
         screen.committedFooterHeight = 0;
         ViewGroup footer = screen.footer.get();
+        if (screen.composer != null) screen.composer.setOnLiveRecordingReady(null);
         removePane(screen.composer);
         screen.composer = null;
         ViewGroup listHost = screen.listHost.get();

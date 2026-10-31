@@ -67,6 +67,20 @@ public class ConversationGlassChecks {
         check(state.sample(UN, null, now + ComposerTransition.BRIDGE_MAX_MS) == ComposerTransition.HOLD, "bridge bound inclusive");
         check(state.sample(UN, null, now + ComposerTransition.BRIDGE_MAX_MS + 1) == ComposerTransition.HIDE, "bridge expires");
         check(state.sample(UN, null, now + 2000) == 0, "nothing left to hold");
+        // Review regression: a newly signalled route must not inherit the aged unresolved
+        // bridge from the preceding input/voice epoch.
+        ComposerTransition bridge = new ComposerTransition();
+        bridge.sample(IN, "input", 0);
+        bridge.sample(IN, "input", 16);
+        check(bridge.sample(UN, null, 100) == ComposerTransition.HOLD, "old bridge begins");
+        check(bridge.signal(true, 795), "start opens an independent bridge");
+        check(bridge.sample(UN, null, 805) == ComposerTransition.HOLD, "fresh start must not hide");
+        check(bridge.sample(UN, null, 1200) == ComposerTransition.HOLD, "fresh start bridge remains");
+        check((bridge.sample(VO, "voice", 1216) & P) != 0, "voice recovers after old bridge age");
+        check(bridge.sample(UN, null, 1250) == ComposerTransition.HOLD, "cancel bridge begins");
+        check(bridge.signal(false, 1900), "cancel opens an independent bridge");
+        check(bridge.sample(UN, null, 1910) == ComposerTransition.HOLD, "fresh cancel must not hide");
+        check((bridge.sample(IN, "input", 1926) & P) != 0, "input restores after old bridge age");
         state.detach();
         check(state.state() == ComposerTransition.State.DETACHED, "teardown state");
         check(state.sample(IN, "new-chat", now) == 0, "detached chat cannot reuse prior geometry");

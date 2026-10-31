@@ -73,6 +73,9 @@ public final class ComposerTransition {
         epoch++;
         candidate = null;
         frames = 0;
+        // A previous unresolved bridge belongs to the old route epoch. Without this reset,
+        // a fresh recorder start/end could immediately hit the old 700 ms timeout.
+        bridgeSince = -1L;
         if (recorderVisible) {
             state = State.RECORD_START_SIGNAL;
             nativeStart = now;
@@ -121,6 +124,7 @@ public final class ComposerTransition {
             epoch++;
             candidate = null;
             frames = 0;
+            bridgeSince = -1L;
             if (recording) { nativeStart = now; firstMeasured = -1L; }
             else { nativeEnd = now; normalReady = -1L; }
             state = recording ? State.RECORD_LAYOUT_PENDING : State.NORMAL_LAYOUT_PENDING;
