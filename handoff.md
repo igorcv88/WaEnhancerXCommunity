@@ -1039,4 +1039,4 @@ Pending acceptance and risks: validate the existing report's scenarios on the ta
 
 Rollback: revert this branch's commits together or disable the affected conversation/bubble feature settings. Recorded native values are restored by the existing session teardown. Keep the approved OneMate/Kyant shader and floating navbar unchanged.
 
-Publication status: the user explicitly authorized publication as ready for review on 2026-10-30. Publishing branch `fix/conversation-glass-transitions` through the authenticated GitHub connector because terminal Git HTTPS credentials are unavailable. No merge or workflow dispatch is authorized or performed.
+Publication status: the user explicitly authorized publication as ready for review on 2026-10-30. Published **PR #106** (https://github.com/igorcv88/WaEnhancerXCommunity/pull/106), branch `fix/conversation-glass-transitions`, implementation commit `39179d23cdc7a97a72919e4ba33c29179edcc020`, targeting `master`, with `draft: false`. Publication used the authenticated GitHub connector because terminal Git HTTPS credentials are unavailable. No merge or workflow dispatch was performed.
