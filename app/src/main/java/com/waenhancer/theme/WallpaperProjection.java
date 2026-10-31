@@ -1,72 +1,169 @@
 package com.waenhancer.theme;
 
-import android.graphics.BitmapShader;
 import android.graphics.Canvas;
+import android.graphics.ColorFilter;
 import android.graphics.Matrix;
-import android.graphics.Paint;
+import android.graphics.PixelFormat;
 import android.graphics.Rect;
-import android.graphics.Shader;
+import android.graphics.RectF;
 import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
+import java.lang.ref.WeakReference;
 
-/** Extend a native bitmap's existing projection beyond its View's clip, without resizing it. */
+/** One cover transform shared by the continuity underlay and the native bitmap slot. */
 final class WallpaperProjection {
-    private WallpaperProjection() { }
-    static boolean draw(Canvas canvas, View wallpaper, View underlay) {
-        View source = bitmapSource(wallpaper, 0);
-        if (source == null || source.getWidth() <= 0 || source.getHeight() <= 0) return false;
-        BitmapDrawable drawable = source instanceof ImageView
-                && ((ImageView) source).getDrawable() instanceof BitmapDrawable
-                ? (BitmapDrawable) ((ImageView) source).getDrawable()
-                : (BitmapDrawable) source.getBackground();
-        // Tiled and auto-mirrored drawables retain their native renderer.
-        if (drawable.getTileModeX() != null || drawable.getTileModeY() != null
-                || drawable.isAutoMirrored()) return false;
-        if (drawable.getBitmap() == null || drawable.getBitmap().isRecycled()) return false;
-        Rect bounds = new Rect(drawable.getBounds());
-        if (bounds.isEmpty()) return false;
-        Matrix from = new Matrix(), to = new Matrix(), inverse = new Matrix();
-        source.transformMatrixToGlobal(from);
-        underlay.transformMatrixToGlobal(to);
-        if (!to.invert(inverse)) return false;
-        from.postConcat(inverse);
-        Matrix bitmap = new Matrix();
-        if (source instanceof ImageView && ((ImageView) source).getDrawable() == drawable) {
-            bitmap.setScale((float) bounds.width() / drawable.getBitmap().getWidth(),
-                    (float) bounds.height() / drawable.getBitmap().getHeight());
-            bitmap.postTranslate(bounds.left, bounds.top);
-            bitmap.postConcat(((ImageView) source).getImageMatrix());
-            bitmap.postTranslate(source.getPaddingLeft(), source.getPaddingTop());
-        } else {
-            // Match BitmapDrawable's gravity in its existing bounds, rather than fit the
-            // entire wallpaper View to the taller decor. Native crop and source scale persist.
-            Rect destination = new Rect();
-            Gravity.apply(drawable.getGravity(), drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight(),
-                    bounds, destination, source.getLayoutDirection());
-            bitmap.setScale((float) destination.width() / drawable.getBitmap().getWidth(),
-                    (float) destination.height() / drawable.getBitmap().getHeight());
-            bitmap.postTranslate(destination.left, destination.top);
+    private WeakReference<View> source = new WeakReference<>(null), target = new WeakReference<>(null);
+    private BitmapDrawable original;
+    private ProjectedDrawable installed;
+    private boolean image;
+    private final Matrix sourceToBand = new Matrix(), bandGlobal = new Matrix(), inverse = new Matrix();
+    private final Matrix drawableToBand = new Matrix(), bitmapToBand = new Matrix(), nativeMatrix = new Matrix();
+    private final Matrix projectedDrawableMatrix = new Matrix();
+    private final Rect bounds = new Rect(), destination = new Rect();
+    private final RectF effective = new RectF();
+    private final float[] cover = new float[3], values = new float[9];
+
+    /** Called on layout/rebind, never replaces a native slot from inside its draw callback. */
+    void prepare(View wallpaper, View underlay) {
+        try { prepareNativeSlot(wallpaper, underlay); }
+        catch (RuntimeException | LinkageError unsupported) {
+            release(); // Only this wallpaper adapter fails; native rendering remains available.
         }
-        bitmap.postConcat(from);
-        BitmapShader shader = new BitmapShader(drawable.getBitmap(), Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
-        shader.setLocalMatrix(bitmap);
-        Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
-        paint.setShader(shader);
-        paint.setAlpha(drawable.getAlpha());
-        paint.setColorFilter(drawable.getColorFilter());
-        canvas.drawRect(0, 0, underlay.getWidth(), underlay.getHeight(), paint);
+    }
+    private void prepareNativeSlot(View wallpaper, View underlay) {
+        View old = source.get();
+        if (old != null && slot(old) == installed && original != null && isDescendant(wallpaper, old)) {
+            target = new WeakReference<>(underlay);
+            return;
+        }
+        release();
+        View found = bitmapSource(wallpaper, 0);
+        if (found == null) return;
+        image = found instanceof ImageView && ((ImageView) found).getDrawable() instanceof BitmapDrawable;
+        BitmapDrawable bitmap = (BitmapDrawable) (image ? ((ImageView) found).getDrawable() : found.getBackground());
+        if (bitmap.getTileModeX() != null || bitmap.getTileModeY() != null || bitmap.isAutoMirrored()
+                || bitmap.getBitmap() == null || bitmap.getBitmap().isRecycled()) return;
+        source = new WeakReference<>(found);
+        target = new WeakReference<>(underlay);
+        original = bitmap;
+        installed = new ProjectedDrawable(bitmap);
+        installed.setBounds(bitmap.getBounds());
+        installed.setState(bitmap.getState());
+        installed.setLevel(bitmap.getLevel());
+        if (image) ((ImageView) found).setImageDrawable(installed);
+        else setBackground(found, installed);
+    }
+    private Drawable slot(View view) { return image ? ((ImageView) view).getDrawable() : view.getBackground(); }
+    void release() {
+        View view = source.get();
+        if (view != null && installed != null && slot(view) == installed) {
+            if (image) ((ImageView) view).setImageDrawable(original); else setBackground(view, original);
+        }
+        source.clear(); target.clear(); original = null; installed = null;
+    }
+    boolean draw(Canvas canvas) {
+        if (!update()) return false;
+        int save = canvas.save();
+        try { canvas.concat(projectedDrawableMatrix); original.draw(canvas); }
+        finally { canvas.restoreToCount(save); }
         return true;
     }
+    private boolean update() {
+        View view = source.get(), band = target.get();
+        if (view == null || band == null || original == null || slot(view) != installed
+                || original.getBitmap().isRecycled() || band.getWidth() <= 0 || band.getHeight() <= 0) return false;
+        bounds.set(installed.getBounds());
+        if (bounds.isEmpty()) return false;
+        sourceToBand.reset(); view.transformMatrixToGlobal(sourceToBand);
+        bandGlobal.reset(); band.transformMatrixToGlobal(bandGlobal);
+        if (!bandGlobal.invert(inverse)) return false;
+        sourceToBand.postConcat(inverse);
+        drawableToBand.reset();
+        if (image) {
+            drawableToBand.set(((ImageView) view).getImageMatrix());
+            drawableToBand.postTranslate(view.getPaddingLeft(), view.getPaddingTop());
+        }
+        drawableToBand.postConcat(sourceToBand);
+        if (image) destination.set(bounds);
+        else Gravity.apply(original.getGravity(), original.getIntrinsicWidth(), original.getIntrinsicHeight(),
+                bounds, destination, view.getLayoutDirection());
+        bitmapToBand.setScale((float) destination.width() / original.getBitmap().getWidth(),
+                (float) destination.height() / original.getBitmap().getHeight());
+        bitmapToBand.postTranslate(destination.left, destination.top);
+        bitmapToBand.postConcat(drawableToBand);
+        // Unknown skew/perspective or pre-existing anisotropic distortion retains native rendering.
+        bitmapToBand.getValues(values);
+        float x = (float) Math.hypot(values[0], values[3]), y = (float) Math.hypot(values[1], values[4]);
+        if (!bitmapToBand.rectStaysRect() || x <= 0 || Math.abs(x - y) > Math.max(x, y) * .001f) return false;
+        effective.set(0, 0, original.getBitmap().getWidth(), original.getBitmap().getHeight());
+        bitmapToBand.mapRect(effective);
+        if (!WallpaperCover.calculate(effective.left, effective.top, effective.right, effective.bottom,
+                band.getWidth(), band.getHeight(), cover)) return false;
+        bitmapToBand.postScale(cover[0], cover[0]);
+        bitmapToBand.postTranslate(cover[1], cover[2]);
+        projectedDrawableMatrix.set(drawableToBand);
+        projectedDrawableMatrix.postScale(cover[0], cover[0]);
+        projectedDrawableMatrix.postTranslate(cover[1], cover[2]);
+        original.setBounds(bounds);
+        return true;
+    }
+    private final class ProjectedDrawable extends Drawable {
+        private final BitmapDrawable nativeDrawable;
+        ProjectedDrawable(BitmapDrawable drawable) { nativeDrawable = drawable; }
+        @Override public void draw(Canvas canvas) {
+            if (installed == this && update() && drawableToBand.invert(inverse)) {
+                nativeMatrix.set(projectedDrawableMatrix);
+                nativeMatrix.postConcat(inverse);
+                int save = canvas.save();
+                try { canvas.concat(nativeMatrix); nativeDrawable.draw(canvas); }
+                finally { canvas.restoreToCount(save); }
+            } else {
+                nativeDrawable.setBounds(getBounds());
+                nativeDrawable.draw(canvas);
+            }
+        }
+        @Override public void invalidateSelf() {
+            super.invalidateSelf();
+            View band = target.get();
+            if (band != null) band.invalidate();
+        }
+        @Override public void setTintList(android.content.res.ColorStateList tint) {
+            nativeDrawable.setTintList(tint); invalidateSelf();
+        }
+        @Override public void setTintMode(android.graphics.PorterDuff.Mode mode) {
+            nativeDrawable.setTintMode(mode); invalidateSelf();
+        }
+        @Override public void setAlpha(int alpha) { nativeDrawable.setAlpha(alpha); invalidateSelf(); }
+        @Override public void setColorFilter(ColorFilter filter) { nativeDrawable.setColorFilter(filter); invalidateSelf(); }
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+        @Override public int getIntrinsicWidth() { return nativeDrawable.getIntrinsicWidth(); }
+        @Override public int getIntrinsicHeight() { return nativeDrawable.getIntrinsicHeight(); }
+        @Override public boolean getPadding(Rect padding) { return nativeDrawable.getPadding(padding); }
+        @Override public boolean isStateful() { return nativeDrawable.isStateful(); }
+        @Override protected boolean onStateChange(int[] state) { return nativeDrawable.setState(state); }
+        @Override protected boolean onLevelChange(int level) { return nativeDrawable.setLevel(level); }
+    }
+    private static void setBackground(View view, Drawable drawable) {
+        int l = view.getPaddingLeft(), t = view.getPaddingTop(), r = view.getPaddingRight(), b = view.getPaddingBottom();
+        view.setBackground(drawable);
+        view.setPadding(l, t, r, b);
+    }
+    private static boolean isDescendant(View root, View child) {
+        for (View node = child; node != null; node = node.getParent() instanceof View ? (View) node.getParent() : null)
+            if (node == root) return true;
+        return false;
+    }
     private static View bitmapSource(View view, int depth) {
-        if (depth > 5 || !view.isShown()) return null;
+        if (view == null || depth > 5 || !view.isShown()) return null;
         if (view instanceof ImageView && ((ImageView) view).getDrawable() instanceof BitmapDrawable) return view;
         if (view.getBackground() instanceof BitmapDrawable) return view;
         if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++) {
-            View result = bitmapSource(((ViewGroup) view).getChildAt(i), depth + 1);
-            if (result != null) return result;
+            View found = bitmapSource(((ViewGroup) view).getChildAt(i), depth + 1);
+            if (found != null) return found;
         }
         return null;
     }

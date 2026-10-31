@@ -10,6 +10,8 @@ budget = (root / "theme/GlassProbeBudget.java").read_text()
 pane = (root / "theme/GlassPane.java").read_text()
 drawable = (root / "theme/GlassMaterialDrawable.java").read_text()
 conversation = (root / "xposed/features/customization/ConversationGlassPanes.java").read_text()
+backing_probe = (root / "xposed/features/customization/ComposerBackingProbe.java").read_text()
+backing = (root / "xposed/features/customization/ComposerBacking.java").read_text()
 app = (root / "xposed/features/customization/AppLiquidGlass.java").read_text()
 
 assert 'Log.isLoggable(TAG, Log.DEBUG)' in probe
@@ -24,12 +26,12 @@ assert 'TRANSITION_RESERVE = 150' in budget
 assert 'BUDGET.beginWindow(now)' in probe
 assert 'BUDGET.allow(type,' in probe
 for forbidden in (".getText(", ".getContentDescription(", ".getAccessibilityNodeInfo("):
-    assert forbidden not in probe, f"probe unexpectedly reads private content: {forbidden}"
+    assert forbidden not in probe + backing_probe, f"probe unexpectedly reads private content: {forbidden}"
 for event in ("RECORDER_SIGNAL", "RECORDER_WAKE", "FOOTER_SAMPLE", "ROUTE_VOICE",
               "ROUTE_UNRESOLVED", "VOICE_GEOMETRY", "INPUT_GEOMETRY", "PANE_COMMIT_BEFORE",
               "PANE_COMMIT_AFTER", "INPUT_BACKING_GATE", "VOICE_RESTORE_BEFORE",
               "VOICE_RESTORE_AFTER", "VOICE_BG_CLEARED", "VOICE_BG_RESTORED"):
-    assert f'"{event}"' in conversation, f"missing composer event {event}"
+    assert f'"{event}"' in conversation + backing_probe + backing, f"missing composer event {event}"
 for event in ("NATIVE_VISIBILITY_HOOK", "NATIVE_INFLATE_HOOK", "NATIVE_TIMER_CANDIDATE",
               "BACKGROUND_HOOK", "BIND_ATTEMPT", "BIND_COMMIT", "DISCOVERY_START",
               "DISCOVERY_END"):
@@ -39,6 +41,9 @@ for event in ("PANE_PLACE", "CAPTURE_WAIT", "CAPTURE_ATTEMPT", "CAPTURE_RESULT",
 for event in ("DRAWABLE_CAPTURE_ATTEMPT", "DRAWABLE_CAPTURE_RESULT", "DRAWABLE_DRAW_STATE"):
     assert f'"{event}"' in drawable, f"missing drawable event {event}"
 assert 'if (!enabled()) return;' in probe
+assert 'SystemClock.uptimeMillis() + 1500' in backing_probe
+assert 'remaining[0]-- <= 0' in backing_probe
+assert 'GlassProbe.enabled()' in backing_probe
 HARNESS = r'''
 import com.waenhancer.theme.GlassProbeBudget;
 
