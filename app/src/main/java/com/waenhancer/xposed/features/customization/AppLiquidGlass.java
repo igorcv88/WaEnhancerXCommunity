@@ -517,6 +517,11 @@ public final class AppLiquidGlass extends Feature {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     if (GlassPane.isCapturing()) return;
                     TextView view = (TextView) param.thisObject;
+                    View ancestor = view;
+                    while (ancestor != null && !isRecorderAnchor(ancestor)) {
+                        ancestor = ancestor.getParent() instanceof View ? (View) ancestor.getParent() : null;
+                    }
+                    if (ancestor == null) return;
                     CharSequence content = view.getText();
                     // A cheap lexical gate; the conversation adapter verifies the recorder
                     // ancestor and timer grammar without ever recording text in diagnostics.
@@ -653,6 +658,7 @@ public final class AppLiquidGlass extends Feature {
             View.OnAttachStateChangeListener {
         private final WeakReference<View> root;
         private final WeakHashMap<View, Binding> bindings = new WeakHashMap<>();
+        private final WeakHashMap<View, WeakReference<GlassMaterialDrawable>> secondaryFactories = new WeakHashMap<>();
         private final WeakHashMap<View, Surface> candidates = new WeakHashMap<>();
         private final WeakHashMap<TextView, BubbleTextState> bubbleTexts = new WeakHashMap<>();
         private final WeakHashMap<View, Boolean> pendingCanvasChecks = new WeakHashMap<>();
@@ -677,7 +683,10 @@ public final class AppLiquidGlass extends Feature {
                 bindings.remove(row);
                 GlassTrace.event(root.get(), binding.glass, row, "UNBOUND",
                         "canvas-factory-displaced", "role=BUBBLES row=" + resourceName(row));
-                bindNativeBubbleRow(row);
+                WeakReference<GlassMaterialDrawable> secondary = secondaryFactories.remove(row);
+                GlassMaterialDrawable next = secondary == null ? null : secondary.get();
+                if (next != null && frame.saw(next)) adopt(row, next);
+                if (!bindings.containsKey(row)) bindNativeBubbleRow(row);
                 Drawable nativeBackground = row.getBackground();
                 if (!bindings.containsKey(row) && resourceName(row).startsWith("conversation_row_")
                         && nativeBackground != null
@@ -1414,6 +1423,15 @@ public final class AppLiquidGlass extends Feature {
             Binding previous = bindings.get(view);
             if (previous != null) {
                 if (previous.glass == glass) return;
+                // One capture owner per native row. A quote factory drawn beside the bubble
+                // cannot evict/rearm it on every draw. Promote only after native displacement.
+                if (previous.canvasOwned && canvasOwned) {
+                    secondaryFactories.put(view, new WeakReference<>(glass));
+                    callbackBubbles.put(view, previous.glass);
+                    glass.releaseLive();
+                    glass.attachMaterial(() -> null);
+                    return;
+                }
                 releaseBudget(previous);
                 previous.restore(view);
                 restoreBubbleText(view);
@@ -1427,6 +1445,7 @@ public final class AppLiquidGlass extends Feature {
             binding.canvasOwned = canvasOwned;
             binding.outgoing = outgoing;
             bindings.put(view, binding);
+            if (canvasOwned || callbackOwned) callbackBubbles.put(view, glass);
             if (canvasOwned && resourceName(view).startsWith("conversation_row_")) {
                 observeNativeRowDraw(view);
             }
@@ -1544,6 +1563,7 @@ public final class AppLiquidGlass extends Feature {
                 entry.getValue().restore(target);
                 restoreBubbleText(target);
             }
+            secondaryFactories.clear();
             bindings.clear(); candidates.clear(); pendingDiscovery.clear(); pendingNativeBubbleRows.clear();
             restoreAllBubbleText();
         }

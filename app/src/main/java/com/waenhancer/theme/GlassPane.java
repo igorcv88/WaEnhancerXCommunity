@@ -93,6 +93,11 @@ public final class GlassPane extends FrameLayout {
     private String budgetStatus = "unassigned";
     /** A geometry/material/source epoch released the recording in this pre-draw: recapture now. */
     private boolean captureNow;
+    private boolean decorationOnly;
+
+    /** Composer decoration must never determine its native WRAP_CONTENT host's size. */
+    public void setDecorationOnly(boolean value) { decorationOnly = value; }
+
     /** One notification per capture epoch, posted after the compositor publishes live pixels. */
     private Runnable onLiveRecordingReady;
     private boolean liveReadyNotified;
@@ -156,6 +161,14 @@ public final class GlassPane extends FrameLayout {
         onLiveRecordingReady = callback;
     }
 
+    /** Reapply draw bounds reset by native layout without capturing an obsolete frame. */
+    public void restoreDecorationBounds(int left, int top, int right, int bottom, float radius) {
+        if (!decorationOnly) return;
+        setCornerRadius(radius);
+        if (getLeft() != left || getTop() != top || getRight() != right || getBottom() != bottom)
+            layout(left, top, right, bottom);
+    }
+
     /**
      * Places this pane in its {@link FrameLayout} parent within the current pre-draw: the layout
      * params are updated for later parent layouts, the pane is measured and laid out directly
@@ -169,12 +182,14 @@ public final class GlassPane extends FrameLayout {
         int w = Math.max(0, right - left), h = Math.max(0, bottom - top);
         boolean radiusChanged = cornerRadiusPx != radius;
         setCornerRadius(radius);
-        boolean paramsChanged = lp.width != w || lp.height != h || lp.leftMargin != left
-                || lp.topMargin != top || lp.gravity != (android.view.Gravity.TOP | android.view.Gravity.START);
-        lp.width = w;
-        lp.height = h;
-        lp.leftMargin = left;
-        lp.topMargin = top;
+        boolean paramsChanged = lp.width != (decorationOnly ? 0 : w)
+                || lp.height != (decorationOnly ? 0 : h) || lp.leftMargin != (decorationOnly ? 0 : left)
+                || lp.topMargin != (decorationOnly ? 0 : top)
+                || lp.gravity != (android.view.Gravity.TOP | android.view.Gravity.START);
+        lp.width = decorationOnly ? 0 : w;
+        lp.height = decorationOnly ? 0 : h;
+        lp.leftMargin = decorationOnly ? 0 : left;
+        lp.topMargin = decorationOnly ? 0 : top;
         lp.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
         View parent = getParent() instanceof View ? (View) getParent() : null;
         if (parent == null || !isAttachedToWindow() || !parent.isLaidOut()) {
@@ -190,7 +205,7 @@ public final class GlassPane extends FrameLayout {
                             + " previousCapture=" + captureWidth + "x" + captureHeight);
         }
         if (frameChanged) {
-            measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
+            if (!decorationOnly) measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
                     MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY));
             layout(left, top, left + w, top + h);
         }

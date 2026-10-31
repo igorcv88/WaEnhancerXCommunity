@@ -38,6 +38,12 @@ public class RecorderLayoutTest {
         assertArrayEquals(new int[]{0, 0}, RecorderLayout.micOffset(mic, WAVE, new int[0][], BOUNDS, 4, 6, false));
     }
 
+    @Test public void micNearTrashMovesNextToWaveform() {
+        int[] mic = {90, 157, 120, 187};
+        int[] placed = moved(mic, RecorderLayout.micOffset(mic, WAVE, new int[0][], BOUNDS, 4, 6, false));
+        assertEquals(296, placed[2]);
+    }
+
     @Test public void noValidSlotLeavesNativeLayout() {
         int[] mic = {1300, 20, 1330, 50};
         assertNull(RecorderLayout.micOffset(mic, WAVE, new int[][]{{0, 0, 299, 444}}, BOUNDS, 4, 6, false));

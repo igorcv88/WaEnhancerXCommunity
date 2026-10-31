@@ -68,7 +68,8 @@ public final class RecorderLayout {
         int w = mic[2] - mic[0], h = mic[3] - mic[1];
         int cy = centerY(wave);
         int top = Math.abs(centerY(mic) - cy) <= tolerance ? mic[1] : cy - h / 2;
-        boolean sideOk = rtl ? mic[0] >= wave[2] + gap : mic[2] + gap <= wave[0];
+        int distance = rtl ? mic[0] - wave[2] : wave[0] - mic[2];
+        boolean sideOk = distance >= gap && distance <= w + gap;
         if (sideOk && top == mic[1] && clear(mic, obstacles, gap) && contains(bounds, mic)) {
             return new int[]{0, 0};
         }
