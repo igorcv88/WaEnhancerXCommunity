@@ -9,10 +9,12 @@ drawable = (root / "theme/GlassMaterialDrawable.java").read_text()
 conversation = (root / "xposed/features/customization/ConversationGlassPanes.java").read_text()
 app = (root / "xposed/features/customization/AppLiquidGlass.java").read_text()
 
-assert 'Log.isLoggable(PROPERTY_TAG, Log.DEBUG)' in probe
+assert 'Log.isLoggable(TAG, Log.DEBUG)' in probe
 assert '"WaEXGlassDiag"' in probe
+assert 'public static final String TAG = "WaEXGlassDiag"' in probe
+assert 'Log.i(TAG, "t=" + now + " event=PROBE_ACTIVE' in probe
+assert '"WaEnhancerX/GlassDiag"' not in probe
 assert 'MAX_EVENTS_PER_MINUTE = 450' in probe
-assert '"WaEnhancerX/GlassDiag"' in probe
 for forbidden in (".getText(", ".getContentDescription(", ".getAccessibilityNodeInfo("):
     assert forbidden not in probe, f"probe unexpectedly reads private content: {forbidden}"
 for event in ("RECORDER_SIGNAL", "RECORDER_WAKE", "FOOTER_SAMPLE", "ROUTE_VOICE",

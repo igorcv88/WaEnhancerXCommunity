@@ -1,7 +1,7 @@
 package com.waenhancer.theme;
 
-import android.graphics.drawable.Drawable;
 import android.content.res.Resources;
+import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
@@ -16,9 +16,8 @@ import java.util.Map;
  * All callers run on WhatsApp's UI thread; no listeners or work loops are installed.
  */
 public final class GlassProbe {
-    public static final String TAG = "WaEnhancerX/GlassDiag";
-    /** Android property names cannot contain '/', unlike logcat's display tags. */
-    private static final String PROPERTY_TAG = "WaEXGlassDiag";
+    /** The property gate and the emitted log must share this *same* Android-valid tag. */
+    public static final String TAG = "WaEXGlassDiag";
     private static final int MAX_EVENTS_PER_MINUTE = 450;
     private static final int MAX_PER_EVENT_PER_MINUTE = 55;
     private static final Map<String, Integer> eventCounts = new HashMap<>();
@@ -26,7 +25,7 @@ public final class GlassProbe {
     private static int count;
     private GlassProbe() { }
 
-    public static boolean enabled() { return Log.isLoggable(PROPERTY_TAG, Log.DEBUG); }
+    public static boolean enabled() { return Log.isLoggable(TAG, Log.DEBUG); }
 
     public static void event(String type, View view, String details) {
         if (!enabled()) return;
@@ -35,6 +34,10 @@ public final class GlassProbe {
             windowStart = now;
             count = 0;
             eventCounts.clear();
+            // INFO is independently visible: if DEBUG filtering fails again, this identifies
+            // an active probe and distinguishes a logger problem from an absent hook.
+            Log.i(TAG, "t=" + now + " event=PROBE_ACTIVE cap=" + MAX_EVENTS_PER_MINUTE
+                    + " debugGate=true");
         }
         int repetitions = eventCounts.containsKey(type) ? eventCounts.get(type) : 0;
         if (count >= MAX_EVENTS_PER_MINUTE || repetitions >= MAX_PER_EVENT_PER_MINUTE) return;
