@@ -38,18 +38,27 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     public static final class DrawHost {
         final View view;
         final Canvas canvas;
+        final DrawHost previous;
+        private final NativeBubbleDrawLedger<GlassMaterialDrawable> factoryDraws =
+                new NativeBubbleDrawLedger<>();
         final Matrix matrix = new Matrix();
-        DrawHost(View view, Canvas canvas) {
+        DrawHost(View view, Canvas canvas, DrawHost previous) {
             this.view = view;
             this.canvas = canvas;
+            this.previous = previous;
             canvas.getMatrix(matrix);
         }
+        /** Identifies the factory drawable actually rendered in this native row draw. */
+        void mark(GlassMaterialDrawable drawable) { factoryDraws.mark(drawable); }
+        public boolean saw(GlassMaterialDrawable drawable) { return factoryDraws.saw(drawable); }
+        public boolean isNestedFor(View target) { return previous != null && previous.view == target; }
     }
     public static DrawHost enterRowDraw(View view, Canvas canvas) {
         DrawHost previous = DRAW_HOST.get();
-        DRAW_HOST.set(new DrawHost(view, canvas));
+        DRAW_HOST.set(new DrawHost(view, canvas, previous));
         return previous;
     }
+    public static DrawHost currentRowDraw() { return DRAW_HOST.get(); }
     public static void leaveRowDraw(DrawHost previous) {
         if (previous == null) DRAW_HOST.remove(); else DRAW_HOST.set(previous);
     }
@@ -98,6 +107,12 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         View view = owner.get();
         if (view == null) view = callbackOwner();
         DrawHost context = DRAW_HOST.get();
+        if (context != null && context.canvas == canvas && !LiveBackdrop.isCapturing()) {
+            // draw()/onDraw()/dispatchDraw() may nest for the same row. Record the
+            // identity on the enclosing draw() frame, not only the innermost hook.
+            for (DrawHost frame = context; frame != null && frame.view == context.view;
+                    frame = frame.previous) frame.mark(this);
+        }
         if (onHostResolved != null && context != null && context.canvas == canvas
                 && !LiveBackdrop.isCapturing() && callbackOwner() == null) {
             Matrix inverse = new Matrix(), current = new Matrix();
