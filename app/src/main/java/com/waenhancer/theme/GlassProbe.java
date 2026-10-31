@@ -11,12 +11,14 @@ import java.util.Map;
 
 /**
  * Opt-in, bounded diagnostics for native view ownership and glass frame transitions.
- * Enable with {@code setprop log.tag.WaEnhancerX/GlassDiag DEBUG}. No message bodies,
+ * Enable with {@code setprop log.tag.WaEXGlassDiag DEBUG}. No message bodies,
  * contact identities, text, image data, URLs, or accessibility content are inspected.
  * All callers run on WhatsApp's UI thread; no listeners or work loops are installed.
  */
 public final class GlassProbe {
     public static final String TAG = "WaEnhancerX/GlassDiag";
+    /** Android property names cannot contain '/', unlike logcat's display tags. */
+    private static final String PROPERTY_TAG = "WaEXGlassDiag";
     private static final int MAX_EVENTS_PER_MINUTE = 450;
     private static final int MAX_PER_EVENT_PER_MINUTE = 55;
     private static final Map<String, Integer> eventCounts = new HashMap<>();
@@ -24,7 +26,7 @@ public final class GlassProbe {
     private static int count;
     private GlassProbe() { }
 
-    public static boolean enabled() { return Log.isLoggable(TAG, Log.DEBUG); }
+    public static boolean enabled() { return Log.isLoggable(PROPERTY_TAG, Log.DEBUG); }
 
     public static void event(String type, View view, String details) {
         if (!enabled()) return;
