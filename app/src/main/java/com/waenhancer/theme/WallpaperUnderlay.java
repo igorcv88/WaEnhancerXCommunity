@@ -9,8 +9,16 @@ import java.lang.ref.WeakReference;
 
 /** Wallpaper continuity beneath a capsule: no blur, refraction, border or optical budget. */
 public final class WallpaperUnderlay extends View {
-    private boolean fillViewport;
-    public void setFillViewport(boolean fill) { fillViewport = fill; invalidate(); }
+    private boolean fillViewport, projectionSuspended;
+    private final WallpaperProjection projection = new WallpaperProjection();
+    public void setFillViewport(boolean fill) { fillViewport = fill; if (!fill) projection.release(); invalidate(); }
+    public void releaseProjection() { projection.release(); }
+    public void setProjectionSuspended(boolean suspended) {
+        projectionSuspended = suspended;
+        if (suspended) projection.release();
+        else if (fillViewport && wallpaper.get() != null) projection.prepare(wallpaper.get(), this);
+        invalidate();
+    }
     private WeakReference<View> wallpaper = new WeakReference<>(null);
     private final Matrix local = new Matrix(), inverse = new Matrix(), placement = new Matrix();
     public WallpaperUnderlay(Context context) {
@@ -18,9 +26,18 @@ public final class WallpaperUnderlay extends View {
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
     }
     public void setWallpaper(View view) {
-        if (wallpaper.get() == view) return;
         wallpaper = new WeakReference<>(view);
+        if (fillViewport && !projectionSuspended && view != null) projection.prepare(view, this);
         invalidate();
+    }
+    @Override protected void onDetachedFromWindow() {
+        projection.release();
+        super.onDetachedFromWindow();
+    }
+    @Override protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        View view = wallpaper.get();
+        if (fillViewport && !projectionSuspended && view != null) projection.prepare(view, this);
     }
     /**
      * A plain {@link View} under an AT_MOST spec claims the whole offer, so MATCH_PARENT inside
@@ -50,7 +67,7 @@ public final class WallpaperUnderlay extends View {
         placement.reset(); view.transformMatrixToGlobal(placement); placement.postConcat(inverse);
         int saved = canvas.save();
         try {
-            if (fillViewport && WallpaperProjection.draw(canvas, view, this)) return;
+            if (fillViewport && !projectionSuspended && projection.draw(canvas)) return;
             // Unknown wallpaper renderers retain their native projection. Never stretch a
             // custom View to cover missing insets or claim that as verified continuity.
             canvas.concat(placement);

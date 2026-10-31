@@ -416,6 +416,7 @@ public final class AppLiquidGlass extends Feature {
                     if (GlassPane.isCapturing()) return;
                     View child = (View) param.args[0];
                     if (child != null && isRecorderAnchor(child)) conversation.onRecorderSignal(child);
+                    conversation.onBackgroundChanged((View) param.thisObject);
                     Session session = sessionFor(((View) param.thisObject).getRootView());
                     if (session != null && child != null) session.discoverLater(child);
                 }
@@ -440,7 +441,7 @@ public final class AppLiquidGlass extends Feature {
                                         + " sessionInstalling=" + session.installing
                                         + " bound=" + session.bindings.containsKey(target));
                     }
-                    boolean paneOwned = conversation.onBackgroundChanged(target);
+                    boolean paneOwned = conversation.onBackgroundChanged(target, "background");
                     if (session != null && !session.installing && !paneOwned) session.discoverLater(target);
                 }
             });
@@ -449,8 +450,10 @@ public final class AppLiquidGlass extends Feature {
                         @Override protected void afterHookedMethod(MethodHookParam param) {
                             if (GlassPane.isCapturing()) return;
                             View target = (View) param.thisObject;
+                            boolean paneOwned = conversation.onBackgroundChanged(target, "foreground");
                             Session session = sessionFor(target.getRootView());
                             if (session != null && !session.installing
+                                    && !paneOwned
                                     && (nestedBubble((Drawable) param.args[0], 0) != null
                                         || session.bindings.containsKey(target))) session.discoverLater(target);
                         }
@@ -459,6 +462,7 @@ public final class AppLiquidGlass extends Feature {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     if (GlassPane.isCapturing()) return;
                     ImageView target = (ImageView) param.thisObject;
+                    conversation.onBackgroundChanged(target);
                     Session session = sessionFor(target.getRootView());
                     if (session != null && !session.installing
                             && (nestedBubble((Drawable) param.args[0], 0) != null
@@ -543,10 +547,16 @@ public final class AppLiquidGlass extends Feature {
         XposedBridge.hookAllMethods(View.class, "setBackgroundTintList", new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
                 View view = (View) param.thisObject;
+                if (!GlassPane.isCapturing()) conversation.onBackgroundChanged(view, "tint");
                 Session session = sessionFor(view.getRootView());
                 if (session == null || session.installing) return;
                 Binding binding = session.bindings.get(view);
                 if (binding != null) binding.tintChanged = true;
+            }
+        });
+        XposedBridge.hookAllMethods(View.class, "setBackgroundTintMode", new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                if (!GlassPane.isCapturing()) conversation.onBackgroundChanged((View) param.thisObject);
             }
         });
     }

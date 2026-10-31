@@ -37,6 +37,7 @@ android {
     }
 
     defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         applicationId = "com.waenhancer.community"
         minSdk = 28
         targetSdk = 34
@@ -218,6 +219,8 @@ dependencies {
     implementation(libs.markwon.html)
 
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:runner:1.6.2")
     testImplementation("org.json:json:20260814")
     // The Xposed API is compileOnly for the APK, but unit tests exercise helper classes
     // (ReflectionUtils, argument compat) whose bytecode references XposedHelpers. Without it

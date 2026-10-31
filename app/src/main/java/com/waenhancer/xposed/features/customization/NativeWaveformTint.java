@@ -5,6 +5,7 @@ import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.view.View;
+import android.view.ViewGroup;
 import com.waenhancer.theme.GlassPane;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
@@ -20,8 +21,9 @@ final class NativeWaveformTint {
     static boolean apply(View view, int color) {
         try {
             Method method = null;
+            String drawMethod = view instanceof ViewGroup ? "dispatchDraw" : "onDraw";
             for (Class<?> type = view.getClass(); type != null; type = type.getSuperclass()) {
-                try { method = type.getDeclaredMethod("onDraw", Canvas.class); break; }
+                try { method = type.getDeclaredMethod(drawMethod, Canvas.class); break; }
                 catch (NoSuchMethodException ignored) { }
             }
             if (method == null) return false;
