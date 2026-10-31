@@ -98,6 +98,10 @@ public final class GlassPane extends FrameLayout {
     private boolean liveReadyNotified;
     /** Choreographer frame of the last completed capture; dedupes a same-frame second call. */
     private long capturedFrame = Long.MIN_VALUE;
+    /** Optional debug-only markers, never consulted by the compositor's decisions. */
+    private String probeWaitReason;
+    private long probeCaptureId;
+    private boolean probeDrawAfterCapture;
     private final Runnable retryFrame = () -> { if (!suspended && isAttachedToWindow()) invalidate(); };
 
     public GlassPane(Context context) {
@@ -178,6 +182,13 @@ public final class GlassPane extends FrameLayout {
             return true;
         }
         boolean frameChanged = getLeft() != left || getTop() != top || getWidth() != w || getHeight() != h;
+        if (GlassProbe.enabled() && (frameChanged || radiusChanged || paramsChanged)) {
+            GlassProbe.event("PANE_PLACE", this,
+                    "new=" + left + "," + top + "," + w + "," + h
+                            + " radiusChanged=" + radiusChanged
+                            + " layoutChanged=" + frameChanged + " paramsChanged=" + paramsChanged
+                            + " previousCapture=" + captureWidth + "x" + captureHeight);
+        }
         if (frameChanged) {
             measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
                     MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY));
@@ -361,6 +372,7 @@ public final class GlassPane extends FrameLayout {
                     && captureWidth == getWidth() && captureHeight == getHeight()) return true;
             boolean visible = isShown() && getWidth() > 0 && getHeight() > 0 && getGlobalVisibleRect(visibleRect);
             if (!visible) {
+                probeWait("not-visible");
                 if (captureVisible || backdrop.hasRecording()) backdrop.release();
                 captureVisible = false;
                 LiveBudget.forWindow(getRootView()).releasePane(this);
@@ -369,6 +381,7 @@ public final class GlassPane extends FrameLayout {
             }
             GlassSpec material = spec.get();
             if (material == null || !LiveBackdrop.wantsLive(material)) {
+                probeWait("no-live-material");
                 backdrop.release();
                 LiveBudget.forWindow(getRootView()).releasePane(this);
                 removeCallbacks(retryFrame);
@@ -396,8 +409,11 @@ public final class GlassPane extends FrameLayout {
             if (captureWidth != getWidth() || captureHeight != getHeight()) {
                 captureWidth = getWidth(); captureHeight = getHeight(); revalidate("size-changed");
             }
-            if (!recovery.mayCapture(now)) return true;
-            if (!backdrop.available()) { failed(now, true, "capability-unavailable"); return true; }
+            if (!recovery.mayCapture(now)) { probeWait("recovery-backoff"); return true; }
+            if (!backdrop.available()) {
+                probeWait("capability-unavailable");
+                failed(now, true, "capability-unavailable"); return true;
+            }
             getLocationOnScreen(hostLocation);
             if (hostLocation[0] != lastScreenX || hostLocation[1] != lastScreenY) {
                 lastScreenX = hostLocation[0];
@@ -426,6 +442,7 @@ public final class GlassPane extends FrameLayout {
             }
             captureContent = CaptureContent.classify(src != null, safeWallpaper);
             if (!captureContent.completesRecovery(requiresLiveContent)) {
+                probeWait("required-source-unavailable");
                 failed(now, false, "required-source-unavailable");
                 return true;
             }
@@ -435,7 +452,9 @@ public final class GlassPane extends FrameLayout {
             // bubble publishing its texture must not keep every chrome pane active.
             if (damageDriven && !sourceDamage && !captureNow && !scheduler.moving(now)
                     && backdrop.hasRecording() && !recovery.retryDue(now)
-                    && !scheduler.hasPendingCapture()) return true;
+                    && !scheduler.hasPendingCapture()) {
+                probeWait("unchanged-live-frame"); return true;
+            }
             int decision;
             if (captureNow) {
                 // One capture for the new epoch; no motion burst and no heartbeat follow it.
@@ -446,6 +465,7 @@ public final class GlassPane extends FrameLayout {
                         backdrop.recordingState().requestsImmediateRecovery(recovery.mayCapture(now)), recovery.retryDue(now));
             }
             if ((decision & CaptureScheduler.CAPTURE) == 0) {
+                probeWait("scheduler-wait");
                 if ((decision & CaptureScheduler.INVALIDATE_LATER) != 0) scheduleFrame(scheduler.delayMs());
                 return true;
             }
@@ -461,6 +481,7 @@ public final class GlassPane extends FrameLayout {
                             "budgetStatus=" + status + " capacity=" + budget.capacity());
                 }
                 if (!admitted) {
+                    probeWait("budget-refused");
                     boolean hadRecording = backdrop.hasRecording();
                     backdrop.release(RecordingState.BUDGET_REFUSED);
                     if (hadRecording) invalidate();
@@ -469,8 +490,25 @@ public final class GlassPane extends FrameLayout {
             }
             boolean exact = optics.corrected && optics.geometry;
             View captureSource = src;
+            if (GlassProbe.enabled()) {
+                probeWaitReason = null;
+                probeCaptureId++;
+                GlassProbe.event("CAPTURE_ATTEMPT", this,
+                        "captureId=" + probeCaptureId + " content=" + captureContent
+                                + " source=" + GlassTrace.id(src) + " underlayReady=" + underlayReady
+                                + " damage=" + sourceDamage + " budget=" + budgetStatus
+                                + " size=" + getWidth() + "x" + getHeight()
+                                + " recovery=" + recovery.state());
+            }
             boolean captured = backdrop.capture(getWidth(), getHeight(), radius(), density, material,
                     (canvas, padding) -> exact ? paintExact(canvas, captureSource) : paint(canvas, captureSource));
+            if (GlassProbe.enabled()) {
+                probeDrawAfterCapture = captured;
+                GlassProbe.event("CAPTURE_RESULT", this,
+                        "captureId=" + probeCaptureId + " success=" + captured
+                                + " live=" + hasLiveRecording() + " content=" + captureContent
+                                + " status=" + backdrop.status());
+            }
             if (captured) {
                 capturedFrame = frame;
                 SurfaceRecovery.State before = recovery.state();
@@ -491,10 +529,20 @@ public final class GlassPane extends FrameLayout {
                 failed(now, !backdrop.available(), "capture-not-ready");
             }
         } catch (Throwable error) {
+            probeWait("capture-exception-" + error.getClass().getSimpleName());
             failed(SystemClock.uptimeMillis(), error instanceof LinkageError, "capture-exception");
             if (recovery.failures() == 1) Log.w(TAG, "pre-draw capture failed; bounded recovery", error);
         }
         return true; // never cancel the host's frame
+    }
+
+    /** Report only changes to the blocked/waiting reason, never every idle pre-draw. */
+    private void probeWait(String reason) {
+        if (!GlassProbe.enabled() || reason.equals(probeWaitReason)) return;
+        probeWaitReason = reason;
+        GlassProbe.event("CAPTURE_WAIT", this,
+                "reason=" + reason + " live=" + hasLiveRecording()
+                        + " content=" + captureContent + " recovery=" + recovery.state());
     }
 
     private View safeSource() {
@@ -598,6 +646,14 @@ public final class GlassPane extends FrameLayout {
         // Drawn inside another surface's recording too: what this pane records is behind it, so
         // nothing that records this pane can be inside its own recording.
         boolean live = !suspended && LiveBackdrop.wantsLive(material) && backdrop.draw(canvas, getWidth(), getHeight());
+        if (!isCapturing() && GlassProbe.enabled() &&
+                (probeDrawAfterCapture || presentedLive == null || presentedLive != live)) {
+            probeDrawAfterCapture = false;
+            GlassProbe.event("PANE_DRAW", this,
+                    "captureId=" + probeCaptureId + " drawnLive=" + live
+                            + " content=" + captureContent + " size=" + getWidth() + "x" + getHeight()
+                            + " source=" + GlassTrace.id(source));
+        }
         if (!isCapturing() && !suspended) {
             GlassTrace.presented(getRootView(), this, source, live && captureContent == CaptureContent.CAPTURE_LIVE_CONTENT);
             if (presentedLive == null || presentedLive != live) {

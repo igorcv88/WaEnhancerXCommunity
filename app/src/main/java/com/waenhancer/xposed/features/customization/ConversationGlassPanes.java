@@ -27,6 +27,7 @@ import com.waenhancer.theme.GlassSpec;
 import com.waenhancer.theme.WallpaperUnderlay;
 import com.waenhancer.theme.ComposerGeometry;
 import com.waenhancer.theme.GlassTrace;
+import com.waenhancer.theme.GlassProbe;
 import com.waenhancer.theme.ComposerTransition;
 import com.waenhancer.theme.RecorderLayout;
 
@@ -221,9 +222,17 @@ final class ConversationGlassPanes {
     void onRecorderSignal(View changed) {
         if (changed == null || !host.composerEnabled()) return;
         Screen screen = screens.get(changed.getRootView());
-        if (screen == null || !screen.footerOn || screen.suspended) return;
+        if (screen == null || !screen.footerOn || screen.suspended) {
+            if (GlassProbe.enabled()) GlassProbe.event("RECORDER_SIGNAL_UNROUTED", changed,
+                    "screen=" + (screen != null) + " footerOn=" + (screen != null && screen.footerOn));
+            return;
+        }
         ViewGroup footer = screen.footer.get();
-        if (footer == null || !isAncestor(footer, changed)) return;
+        if (footer == null || !isAncestor(footer, changed)) {
+            if (GlassProbe.enabled()) GlassProbe.event("RECORDER_SIGNAL_OUTSIDE_FOOTER", changed,
+                    "footer=" + GlassTrace.id(footer));
+            return;
+        }
         View anchor = null;
         for (View node = changed; node != footer && node != null; node = parentView(node)) {
             if (isRecorderAnchor(node)) {
@@ -235,7 +244,13 @@ final class ConversationGlassPanes {
                 && !isElapsedTime(((TextView) changed).getText()))) return;
         long now = SystemClock.uptimeMillis();
         boolean shown = recorderShown(footer);
-        if (!screen.transition.signal(shown, now)) return;
+        boolean accepted = screen.transition.signal(shown, now);
+        if (GlassProbe.enabled()) GlassProbe.event("RECORDER_SIGNAL", anchor,
+                "accepted=" + accepted + " shown=" + shown
+                        + " epoch=" + screen.transition.epoch()
+                        + " state=" + screen.transition.state()
+                        + " footer=" + GlassTrace.id(footer));
+        if (!accepted) return;
         screen.decorationPending = true;
         screen.decorationAttempts = 0;
         GlassTrace.event(screen.root.get(), screen.composer, anchor,
@@ -248,6 +263,9 @@ final class ConversationGlassPanes {
         // publish the first recording frame (or to restore the input on cancel).
         final long signalEpoch = screen.transition.epoch();
         footer.post(() -> {
+            if (GlassProbe.enabled()) GlassProbe.event("RECORDER_WAKE", footer,
+                    "signalEpoch=" + signalEpoch + " currentEpoch=" + screen.transition.epoch()
+                            + " active=" + screen.footerOn + " suspended=" + screen.suspended);
             if (screen.footerOn && !screen.suspended && screen.footer.get() == footer
                     && screen.transition.epoch() == signalEpoch) syncFooter(screen);
         });
@@ -703,7 +721,11 @@ final class ConversationGlassPanes {
 
     private void syncFooterFrame(Screen screen) {
         ViewGroup footer = screen.footer.get();
-        if (footer == null || footer.getWidth() <= 0 || footer.getHeight() <= 0) return;
+        if (footer == null || footer.getWidth() <= 0 || footer.getHeight() <= 0) {
+            if (GlassProbe.enabled()) GlassProbe.event("FOOTER_UNMEASURED", footer,
+                    "epoch=" + screen.transition.epoch());
+            return;
+        }
         View input = findById(footer, "input_layout");
         // This observer runs on every frame the window draws (including list scrolling). Without
         // a layout, a native translation or a pending transition nothing here can change, so the
@@ -712,6 +734,13 @@ final class ConversationGlassPanes {
         int fingerprint = footerFingerprint(screen, footer, input, material);
         if (fingerprint == screen.footerFingerprint && screen.sampledGeneration == screen.layoutGeneration
                 && !screen.transition.pending() && !screen.decorationPending) return;
+        if (GlassProbe.enabled()) GlassProbe.event("FOOTER_SAMPLE", footer,
+                "epoch=" + screen.transition.epoch() + " state=" + screen.transition.state()
+                        + " fingerprintChanged=" + (fingerprint != screen.footerFingerprint)
+                        + " layoutChanged=" + (screen.sampledGeneration != screen.layoutGeneration)
+                        + " pending=" + screen.transition.pending()
+                        + " decorationPending=" + screen.decorationPending
+                        + " input=" + GlassProbe.describe(input));
         screen.footerFingerprint = fingerprint;
         screen.sampledGeneration = screen.layoutGeneration;
         long now = SystemClock.uptimeMillis();
@@ -723,12 +752,18 @@ final class ConversationGlassPanes {
             voice = signaledVoicePanel(footer, input);
         }
         if (voice != null && rectIn(footer, voice)) {
+            if (GlassProbe.enabled()) GlassProbe.event("ROUTE_VOICE", voice,
+                    "epoch=" + screen.transition.epoch() + " quote="
+                            + GlassProbe.describe(findReplyPreview(footer)));
             syncVoiceFrame(screen, footer, voice, now, d);
             return;
         }
         boolean inputUsable = voice == null && input != null && input.isShown()
                 && !goneAbove(input, footer) && input.getWidth() > 0 && rectIn(footer, input);
         if (inputUsable && syncInputFrame(screen, footer, input, material, now, d)) return;
+        if (GlassProbe.enabled()) GlassProbe.event("ROUTE_UNRESOLVED", footer,
+                "epoch=" + screen.transition.epoch() + " voice=" + GlassProbe.describe(voice)
+                        + " inputUsable=" + inputUsable + " input=" + GlassProbe.describe(input));
         // Neither route is measurable in this frame: WhatsApp is swapping input and recorder, or
         // this build's recorder cannot be identified. Keep the persistent pane at its last valid
         // geometry; never blank it on a transient frame (the "floating icons" after cancel).
@@ -783,6 +818,12 @@ final class ConversationGlassPanes {
         String geometry = l + ":" + t + ":" + r + ":" + b;
         int flags = screen.transition.sample(ComposerTransition.Route.VOICE,
                 footer.getWidth() + ":" + footer.getHeight() + ":" + geometry, now);
+        if (GlassProbe.enabled()) GlassProbe.event("VOICE_GEOMETRY", voice,
+                "epoch=" + screen.transition.epoch() + " flags=" + flags
+                        + " envelope=" + RecorderLayout.describe(envelope)
+                        + " quote=" + RecorderLayout.describe(quoteRect)
+                        + " action=" + RecorderLayout.describe(actionRect)
+                        + " target=" + geometry + " previous=" + screen.committedPane.toShortString());
         ensureComposer(screen, footer);
         screen.composer.setVisibility(View.VISIBLE);
         screen.composer.setSource(screen.listHost.get());
@@ -799,6 +840,10 @@ final class ConversationGlassPanes {
         suppressDuplicateReply(screen, footer);
         layoutRecordingMic(screen, footer, voice, quoteRect, actionRect, d);
         if (screen.decorationPending) {
+            if (GlassProbe.enabled()) GlassProbe.event("VOICE_BACKING_GATE", voice,
+                    "epoch=" + screen.transition.epoch() + " paneLive=" + screen.composer.hasLiveRecording()
+                            + " attempts=" + screen.decorationAttempts
+                            + " nativeCleared=" + screen.voiceClearDrawables.size());
             // Clear WhatsApp's opaque recorder backing only once replacement glass is live for
             // this geometry; until then the native backing stays (no transparent hole, no slab).
             if (screen.composer.hasLiveRecording()) {
@@ -862,6 +907,13 @@ final class ConversationGlassPanes {
         String geometryKey = l + ":" + t + ":" + r + ":" + b + ":" + actionRect;
         int flags = screen.transition.sample(ComposerTransition.Route.INPUT,
                 footer.getWidth() + ":" + footer.getHeight() + ":" + geometryKey, now);
+        if (GlassProbe.enabled()) GlassProbe.event("INPUT_GEOMETRY", input,
+                "epoch=" + screen.transition.epoch() + " flags=" + flags
+                        + " wasRecording=" + wasRecording + " reply="
+                        + GlassProbe.describe(findReplyPreview(footer))
+                        + " target=" + l + "," + t + "," + r + "," + b
+                        + " previous=" + screen.committedPane.toShortString()
+                        + " action=" + actionRect);
         if ((flags & ComposerTransition.PRESENT) != 0
                 || (wasRecording && !screen.transition.recording())) {
             // Native recorder state goes back in the same frame the normal pill is presented.
@@ -881,10 +933,16 @@ final class ConversationGlassPanes {
         }
         // An in-place WhatsApp background/quote rebind is independent of size. Re-clear after
         // the new pane is live; never expose an empty hole while capture is still pending.
-        if (screen.composer != null && !screen.transition.recording()
+        boolean mayClearInput = screen.composer != null && !screen.transition.recording()
                 && screen.composer.hasLiveRecording()
                 && screen.committedPane.left == l && screen.committedPane.top == t
-                && screen.committedPane.right == r && screen.committedPane.bottom == b) {
+                && screen.committedPane.right == r && screen.committedPane.bottom == b;
+        if (GlassProbe.enabled()) GlassProbe.event("INPUT_BACKING_GATE", input,
+                "epoch=" + screen.transition.epoch() + " mayClear=" + mayClearInput
+                        + " recorderState=" + screen.transition.recording()
+                        + " paneLive=" + (screen.composer != null && screen.composer.hasLiveRecording())
+                        + " cleared=" + screen.clearedBackgrounds.containsKey(input));
+        if (mayClearInput) {
             clearBackground(screen, footer);
             clearBackground(screen, input);
             View preview = findReplyPreview(footer);
@@ -935,11 +993,18 @@ final class ConversationGlassPanes {
     /** Same pane identity, new mask: placed in this pre-draw and recaptured for its new size. */
     private static void presentComposer(Screen screen, int l, int t, int r, int b, float density) {
         GlassPane pane = screen.composer;
+        if (GlassProbe.enabled()) GlassProbe.event("PANE_COMMIT_BEFORE", pane,
+                "epoch=" + screen.transition.epoch()
+                        + " previous=" + screen.committedPane.toShortString()
+                        + " target=" + l + "," + t + "," + r + "," + b);
         pane.setVisibility(View.VISIBLE);
         pane.setTranslationY(0f);
         float radius = Math.min((b - t) / 2f, COMPOSE_MAX_RADIUS_DP * density);
         if (!pane.placeNow(l, t, r, b, radius)) place(pane, l, t, r, b, radius);
         screen.committedPane.set(l, t, r, b);
+        if (GlassProbe.enabled()) GlassProbe.event("PANE_COMMIT_AFTER", pane,
+                "epoch=" + screen.transition.epoch() + " live=" + pane.hasLiveRecording()
+                        + " committed=" + screen.committedPane.toShortString());
     }
 
     /** List margin/padding follow only a settled footer: one layout transaction per geometry. */
@@ -950,12 +1015,22 @@ final class ConversationGlassPanes {
     }
 
     private void restoreVoiceDecoration(Screen screen) {
+        if (GlassProbe.enabled()) GlassProbe.event("VOICE_RESTORE_BEFORE", screen.footer.get(),
+                "epoch=" + screen.transition.epoch()
+                        + " backgrounds=" + screen.voiceClearDrawables.size()
+                        + " quoteAlphas=" + screen.duplicateReplyAlpha.size()
+                        + " micOffsets=" + screen.recordingMicOffsets.size());
         restoreVoiceBackgrounds(screen);
         restoreRecordingGlassClip(screen);
         restoreDuplicateReply(screen);
         restoreRecordingMic(screen);
         screen.decorationPending = false;
         screen.laneKey = null;
+        if (GlassProbe.enabled()) GlassProbe.event("VOICE_RESTORE_AFTER", screen.footer.get(),
+                "epoch=" + screen.transition.epoch()
+                        + " backgrounds=" + screen.voiceClearDrawables.size()
+                        + " quoteAlphas=" + screen.duplicateReplyAlpha.size()
+                        + " micOffsets=" + screen.recordingMicOffsets.size());
     }
 
     /** Allocation-free summary of the native footer state that decoration depends on. */
@@ -1531,12 +1606,17 @@ final class ConversationGlassPanes {
         ColorDrawable cleared = new ColorDrawable(Color.TRANSPARENT);
         screen.voiceClearDrawables.put(view, cleared);
         view.setBackground(cleared);
+        if (GlassProbe.enabled()) GlassProbe.event("VOICE_BG_CLEARED", view,
+                "original=" + GlassProbe.drawable(original)
+                        + " cleared=" + (view.getBackground() == cleared));
     }
 
     private static void restoreVoiceBackgrounds(Screen screen) {
         for (View view : new ArrayList<>(screen.voiceClearDrawables.keySet())) {
             if (view != null && view.getBackground() == screen.voiceClearDrawables.get(view)) {
                 view.setBackground(screen.voiceBackgrounds.get(view));
+                if (GlassProbe.enabled()) GlassProbe.event("VOICE_BG_RESTORED", view,
+                        "expected=" + GlassProbe.drawable(screen.voiceBackgrounds.get(view)));
             }
         }
         screen.voiceBackgrounds.clear();
@@ -1798,6 +1878,8 @@ final class ConversationGlassPanes {
             screen.clearedBackgrounds.put(view, original);
         }
         view.setBackground(new ColorDrawable(Color.TRANSPARENT));
+        if (GlassProbe.enabled()) GlassProbe.event("INPUT_BG_CLEARED", view,
+                "saved=" + GlassProbe.drawable(screen.clearedBackgrounds.get(view)));
     }
 
     /** Puts back fills and foregrounds cleared under {@code root}. */
@@ -1806,6 +1888,8 @@ final class ConversationGlassPanes {
         for (View view : new ArrayList<>(screen.clearedBackgrounds.keySet())) {
             if (view != null && (view == root || isAncestor(root, view))) {
                 view.setBackground(screen.clearedBackgrounds.remove(view));
+                if (GlassProbe.enabled()) GlassProbe.event("INPUT_BG_RESTORED", view,
+                        "owner=" + GlassTrace.id(root));
             }
         }
         for (View view : new ArrayList<>(screen.clearedForegrounds.keySet())) {
