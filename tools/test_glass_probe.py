@@ -13,6 +13,8 @@ assert 'Log.isLoggable(TAG, Log.DEBUG)' in probe
 assert '"WaEXGlassDiag"' in probe
 assert 'public static final String TAG = "WaEXGlassDiag"' in probe
 assert 'Log.i(TAG, "t=" + now + " event=PROBE_ACTIVE' in probe
+assert 'Log.i(TAG, "t=" + now + " event=" + type' in probe
+assert 'Log.d(TAG' not in probe
 assert '"WaEnhancerX/GlassDiag"' not in probe
 assert 'MAX_EVENTS_PER_MINUTE = 450' in probe
 for forbidden in (".getText(", ".getContentDescription(", ".getAccessibilityNodeInfo("):
