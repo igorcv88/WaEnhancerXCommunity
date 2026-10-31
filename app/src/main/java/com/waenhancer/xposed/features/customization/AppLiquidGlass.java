@@ -440,7 +440,8 @@ public final class AppLiquidGlass extends Feature {
                                         + " sessionInstalling=" + session.installing
                                         + " bound=" + session.bindings.containsKey(target));
                     }
-                    if (session != null && !session.installing) session.discoverLater(target);
+                    boolean paneOwned = conversation.onBackgroundChanged(target);
+                    if (session != null && !session.installing && !paneOwned) session.discoverLater(target);
                 }
             });
             XposedBridge.hookMethod(View.class.getDeclaredMethod("setForeground", Drawable.class),
