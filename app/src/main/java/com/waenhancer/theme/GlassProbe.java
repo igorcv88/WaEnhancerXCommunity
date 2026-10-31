@@ -6,8 +6,6 @@ import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewParent;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * Opt-in, bounded diagnostics for native view ownership and glass frame transitions.
@@ -18,11 +16,7 @@ import java.util.Map;
 public final class GlassProbe {
     /** The property gate and the emitted log must share this *same* Android-valid tag. */
     public static final String TAG = "WaEXGlassDiag";
-    private static final int MAX_EVENTS_PER_MINUTE = 450;
-    private static final int MAX_PER_EVENT_PER_MINUTE = 55;
-    private static final Map<String, Integer> eventCounts = new HashMap<>();
-    private static long windowStart;
-    private static int count;
+    private static final GlassProbeBudget BUDGET = new GlassProbeBudget();
     private GlassProbe() { }
 
     public static boolean enabled() { return Log.isLoggable(TAG, Log.DEBUG); }
@@ -30,18 +24,13 @@ public final class GlassProbe {
     public static void event(String type, View view, String details) {
         if (!enabled()) return;
         long now = SystemClock.uptimeMillis();
-        if (windowStart == 0L || now - windowStart >= 60_000L) {
-            windowStart = now;
-            count = 0;
-            eventCounts.clear();
+        if (BUDGET.beginWindow(now)) {
             // INFO is independently visible and distinguishes an active probe from an absent hook.
-            Log.i(TAG, "t=" + now + " event=PROBE_ACTIVE cap=" + MAX_EVENTS_PER_MINUTE
-                    + " debugGate=true");
+            Log.i(TAG, "t=" + now + " event=PROBE_ACTIVE cap="
+                    + GlassProbeBudget.MAX_EVENTS_PER_MINUTE + " reserve="
+                    + GlassProbeBudget.TRANSITION_RESERVE + " debugGate=true");
         }
-        int repetitions = eventCounts.containsKey(type) ? eventCounts.get(type) : 0;
-        if (count >= MAX_EVENTS_PER_MINUTE || repetitions >= MAX_PER_EVENT_PER_MINUTE) return;
-        eventCounts.put(type, repetitions + 1);
-        count++;
+        if (!BUDGET.allow(type, view == null ? 0 : System.identityHashCode(view), details, now)) return;
         // Do not rely on Android forwarding DEBUG messages from an injected release process:
         // device PR #111 showed debugGate=true but zero DEBUG entries. The explicit opt-in above
         // already limits INFO events to the operator's short measurement window.
