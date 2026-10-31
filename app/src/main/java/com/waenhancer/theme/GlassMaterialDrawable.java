@@ -72,6 +72,8 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     private final float radiusDp;
     private final boolean nativeMask;
     private final Paint maskPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Matrix hostInverse = new Matrix(), hostCurrent = new Matrix();
+    private final float[] hostValues = new float[9];
     private boolean captureDisabled;
     private int alpha = 255;
     private LiveBackdrop live;
@@ -115,8 +117,9 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         }
         if (onHostResolved != null && context != null && context.canvas == canvas
                 && !LiveBackdrop.isCapturing() && callbackOwner() == null) {
-            Matrix inverse = new Matrix(), current = new Matrix();
-            float[] values = new float[9];
+            // Reused: this runs for every bubble on every scrolled frame (main thread only).
+            Matrix inverse = hostInverse, current = hostCurrent;
+            float[] values = hostValues;
             canvas.getMatrix(current);
             if (context.matrix.invert(inverse)) {
                 current.postConcat(inverse);

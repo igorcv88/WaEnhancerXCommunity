@@ -28,6 +28,7 @@ import com.waenhancer.theme.WallpaperUnderlay;
 import com.waenhancer.theme.ComposerGeometry;
 import com.waenhancer.theme.GlassTrace;
 import com.waenhancer.theme.ComposerTransition;
+import com.waenhancer.theme.RecorderLayout;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
@@ -94,7 +95,6 @@ final class ConversationGlassPanes {
         final Rect committedPane = new Rect();
         final Rect candidatePane = new Rect();
         int committedFooterHeight;
-        String micGeometry;
         int originalSystemUiVisibility;
         int originalFitInsetsTypes;
         int originalFitInsetsSides;
@@ -125,9 +125,20 @@ final class ConversationGlassPanes {
         final WeakHashMap<ImageView, ColorStateList> replyIconTints = new WeakHashMap<>();
         boolean voiceRecording;
         String voiceGeometryKey;
-        long voiceSignalUntil;
         final WeakHashMap<View, Float> duplicateReplyAlpha = new WeakHashMap<>();
-        final WeakHashMap<View, Float> recordingMicOffsets = new WeakHashMap<>();
+        /** Native {translationX, translationY} of the red recording indicator before any change. */
+        final WeakHashMap<View, float[]> recordingMicOffsets = new WeakHashMap<>();
+        /** Incremented on each global layout; with the fingerprint it gates per-frame work. */
+        long layoutGeneration, sampledGeneration = -1L;
+        int footerFingerprint;
+        /** Decoration (native backing clear, quote, mic) still owed for the current geometry. */
+        boolean decorationPending;
+        int decorationAttempts;
+        Object decoratedMaterial;
+        String laneKey;
+        int topTraces;
+        String topKey;
+        final int[] location = new int[2];
         final WeakHashMap<ViewGroup, Boolean> recordingClipChildren = new WeakHashMap<>();
         Integer listHostBottomMargin;
         Integer floatedFooterHeight;
@@ -191,31 +202,60 @@ final class ConversationGlassPanes {
         Screen screen = screens.get(root);
         if (screen == null) return;
         screen.suspended = suspended;
+        if (!suspended) {
+            // A resumed (re-entered) chat measures its top continuity again.
+            screen.topTraces = 0;
+            screen.topKey = null;
+            screen.sampledGeneration = -1L;
+        }
         if (screen.capsule != null) screen.capsule.setSuspended(suspended);
         if (screen.composer != null) screen.composer.setSuspended(suspended);
     }
 
-    /** Native recorder visibility/timer transitions precede global layout on some builds. */
+    /**
+     * Native recorder visibility/inflation (and its first timer text) can precede the global
+     * layout that swaps input and recorder. Each genuine start/end opens one transition epoch and
+     * wakes exactly one decoration frame; timer ticks within an epoch wake nothing. Decoration
+     * never runs on WhatsApp's visibility/inflation stack and never consumes touch.
+     */
     void onRecorderSignal(View changed) {
         if (changed == null || !host.composerEnabled()) return;
         Screen screen = screens.get(changed.getRootView());
         if (screen == null || !screen.footerOn || screen.suspended) return;
         ViewGroup footer = screen.footer.get();
         if (footer == null || !isAncestor(footer, changed)) return;
-        boolean recorder = false;
+        View anchor = null;
         for (View node = changed; node != footer && node != null; node = parentView(node)) {
-            String name = resourceName(node);
-            if ("voice_note_stub".equals(name) || "voice_note_draft_layout_v2".equals(name)) {
-                recorder = true;
+            if (isRecorderAnchor(node)) {
+                anchor = node;
                 break;
             }
         }
-        if (!recorder || (changed instanceof TextView
+        if (anchor == null || (changed instanceof TextView
                 && !isElapsedTime(((TextView) changed).getText()))) return;
-        screen.voiceSignalUntil = changed.isShown() ? SystemClock.uptimeMillis() + 900L : 0L;
-        // Decoration never runs on the native visibility/inflation stack or consumes touch.
+        long now = SystemClock.uptimeMillis();
+        boolean shown = recorderShown(footer);
+        if (!screen.transition.signal(shown, now)) return;
+        screen.decorationPending = true;
+        screen.decorationAttempts = 0;
+        GlassTrace.event(screen.root.get(), screen.composer, anchor,
+                shown ? "RECORD_START_SIGNAL" : "RECORD_END_SIGNAL", "native-recorder-visibility",
+                "epoch=" + screen.transition.epoch() + " anchor=" + resourceName(anchor)
+                        + " nativeT=" + now);
         footer.postInvalidateOnAnimation();
-        host.report("voice-recorder-signal", "voice glass synchronized from native recording UI signal");
+    }
+
+    private static boolean isRecorderAnchor(View view) {
+        int id = view.getId();
+        return id != View.NO_ID && id != 0
+                && (id == idOf(view, "voice_note_stub") || id == idOf(view, "voice_note_draft_layout_v2"));
+    }
+
+    private static boolean recorderShown(ViewGroup footer) {
+        View stub = findById(footer, "voice_note_stub");
+        View draft = findById(footer, "voice_note_draft_layout_v2");
+        return (stub != null && stub.isShown() && !(stub instanceof android.view.ViewStub))
+                || (draft != null && draft.isShown());
     }
 
     /** Called on every global layout of a window; cheap when nothing changed. */
@@ -224,6 +264,7 @@ final class ConversationGlassPanes {
         try {
             Screen screen = screens.get(root);
             if (screen == null && !host.toolbarsEnabled() && !host.composerEnabled()) return;
+            if (screen != null) screen.layoutGeneration++;
             ViewGroup holder = find(root, "search_fragment_and_toolbar_holder");
             ViewGroup footer = find(root, "footer");
             if (footer != null && findById(footer, "input_layout") == null
@@ -248,6 +289,18 @@ final class ConversationGlassPanes {
             if (screen.listHost.get() == null && listHost != null) {
                 screen.listHost = new WeakReference<>(listHost);
                 screen.list = new WeakReference<>(firstList(listHost));
+            }
+            // A restored chat can replace its list after the first discovery. Padding a detached
+            // list leaves the live one clipped below the header until the chat is re-entered.
+            AbsListView paddedList = screen.list.get();
+            ViewGroup knownHost = screen.listHost.get();
+            if (knownHost != null && (paddedList == null || !paddedList.isAttachedToWindow())) {
+                AbsListView live = firstList(knownHost);
+                if (live != null && live != paddedList) {
+                    restoreListPadding(screen);
+                    screen.list = new WeakReference<>(live);
+                    host.report("conv-list-rebound", "conversation list replaced; padding moved to live list");
+                }
             }
 
             boolean wantHeader = host.toolbarsEnabled() && holder instanceof FrameLayout
@@ -307,8 +360,12 @@ final class ConversationGlassPanes {
             // avoids replacing WhatsApp's inset listener or breaking adjustResize.
             original.setFitInsetsTypes(screen.originalFitInsetsTypes
                     & ~WindowInsets.Type.statusBars() & ~WindowInsets.Type.displayCutout());
-            window.getDecorView().setSystemUiVisibility(screen.originalSystemUiVisibility
-                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+            // LAYOUT_STABLE is deliberately not set: with it, legacy fitsSystemWindows views are
+            // given the *hidden* status-bar height as system-window insets (stable insets), so a
+            // WhatsApp root that fits system windows keeps a top padding with nothing drawn in
+            // it: the black strip above the floating header.
+            window.getDecorView().setSystemUiVisibility((screen.originalSystemUiVisibility
+                    & ~View.SYSTEM_UI_FLAG_LAYOUT_STABLE) | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
             screen.originalCutoutMode = original.layoutInDisplayCutoutMode;
             WindowInsets insets = root.getRootWindowInsets();
             if (insets != null) {
@@ -338,8 +395,15 @@ final class ConversationGlassPanes {
         }
         WindowInsets currentInsets = root.getRootWindowInsets();
         if (currentInsets != null) {
-            screen.fullscreenTopInset = currentInsets.getDisplayCutout() == null ? 0
+            // The header stays below the line the status bar/cutout would occupy, whether or not
+            // WhatsApp's own root still pads for it. With a padded parent (the accepted build)
+            // this is the same screen position as before; with a parent at y=0 the name does
+            // not move up into the camera area.
+            int cutout = currentInsets.getDisplayCutout() == null ? 0
                     : currentInsets.getDisplayCutout().getSafeInsetTop();
+            int statusLine = currentInsets.getInsetsIgnoringVisibility(
+                    WindowInsets.Type.statusBars()).top;
+            screen.fullscreenTopInset = Math.max(cutout, statusLine);
         }
         if (holder.getLayoutParams() instanceof ViewGroup.MarginLayoutParams) {
             ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) holder.getLayoutParams();
@@ -443,6 +507,16 @@ final class ConversationGlassPanes {
         View content = screen.root.get() == null ? null : screen.root.get().findViewById(android.R.id.content);
         if (content instanceof FrameLayout && screen.wallpaper.get() != null) {
             FrameLayout backgroundHost = (FrameLayout) content;
+            // A view inside android.R.id.content can never paint above content's top. When the
+            // window still lays content out below y=0 (a native top inset), the continuity layer
+            // is hosted by the decor instead, beneath the whole content tree.
+            View decor = screen.root.get();
+            if (decor instanceof FrameLayout && decor != content
+                    && ((screen.fullscreenOwned && screenTop(content) > 0)
+                        || (screen.band != null && screen.band.getParent() == decor))) {
+                // Sticky for this screen: re-hosting on every inset change would churn views.
+                backgroundHost = (FrameLayout) decor;
+            }
             if (screen.band == null || screen.band.getParent() != backgroundHost) {
                 removePane(screen.band);
                 screen.band = new WallpaperUnderlay(backgroundHost.getContext());
@@ -467,6 +541,49 @@ final class ConversationGlassPanes {
         screen.capsule.setSource(source);
         screen.capsule.setUnderlay(wallpaperOf(screen));
         place(screen.capsule, l, t, r, b, (b - t) / 2f);
+        traceTopContinuity(screen, holder, content);
+    }
+
+    /**
+     * Geometry-only evidence for the status/cutout region, on first entry and after each
+     * re-entry (at most three distinct measurements per epoch): where decor, content, wallpaper,
+     * continuity layer, list and header actually are, the top insets, and which ancestors of the
+     * list clip. No content, names or pixels.
+     */
+    private void traceTopContinuity(Screen screen, ViewGroup holder, View content) {
+        if (screen.topTraces >= 3) return;
+        View root = screen.root.get();
+        AbsListView list = screen.list.get();
+        if (root == null || list == null || !list.isLaidOut()) return;
+        StringBuilder clips = new StringBuilder();
+        for (View node = list; node != null && node != root; node = parentView(node)) {
+            if (node instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) node;
+                clips.append(group.getClipChildren() ? 'C' : 'c').append(group.getClipToPadding() ? 'P' : 'p');
+                if (node.getPaddingTop() > 0) clips.append('^').append(node.getPaddingTop());
+                clips.append('/');
+            }
+        }
+        WindowInsets insets = root.getRootWindowInsets();
+        int status = insets == null ? -1 : insets.getInsets(WindowInsets.Type.statusBars()).top;
+        int stable = insets == null ? -1 : insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top;
+        int cutout = insets == null || insets.getDisplayCutout() == null ? 0 : insets.getDisplayCutout().getSafeInsetTop();
+        View wallpaper = screen.wallpaper.get();
+        View band = screen.band;
+        String key = "decor=" + screenTop(root) + " content=" + (content == null ? -1 : screenTop(content))
+                + "+" + (content == null ? 0 : content.getPaddingTop())
+                + " wallpaper=" + (wallpaper == null ? -1 : screenTop(wallpaper))
+                + " band=" + (band == null ? -1 : screenTop(band)) + "/" + (band == null ? 0 : band.getHeight())
+                + " bandHost=" + (band == null || band.getParent() == null ? "none"
+                        : band.getParent() == root ? "decor" : "content")
+                + " list=" + screenTop(list) + "+" + list.getPaddingTop() + " clipToPadding=" + list.getClipToPadding()
+                + " header=" + screenTop(holder) + "/" + holder.getHeight()
+                + " insets(status=" + status + " stable=" + stable + " cutout=" + cutout + ")"
+                + " anchor=" + screen.fullscreenTopInset + " ancestors=" + clips;
+        if (key.equals(screen.topKey)) return;
+        screen.topKey = key;
+        screen.topTraces++;
+        GlassTrace.event(root, screen.capsule, list, "TOP_CONTINUITY", "measured", key);
     }
 
     private void disableHeader(Screen screen) {
@@ -573,88 +690,148 @@ final class ConversationGlassPanes {
         }
     }
 
+    /** Bounded next-frame retries for decoration owed while the replacement glass is not live. */
+    private static final int DECORATION_RETRIES = 8;
+
     private void syncFooterFrame(Screen screen) {
         ViewGroup footer = screen.footer.get();
         if (footer == null || footer.getWidth() <= 0 || footer.getHeight() <= 0) return;
         View input = findById(footer, "input_layout");
+        // This observer runs on every frame the window draws (including list scrolling). Without
+        // a layout, a native translation or a pending transition nothing here can change, so the
+        // tree walks, string keys and diagnostics below are skipped.
+        Object material = host.material(screen.root.get());
+        int fingerprint = footerFingerprint(screen, footer, input, material);
+        if (fingerprint == screen.footerFingerprint && screen.sampledGeneration == screen.layoutGeneration
+                && !screen.transition.pending() && !screen.decorationPending) return;
+        screen.footerFingerprint = fingerprint;
+        screen.sampledGeneration = screen.layoutGeneration;
+        long now = SystemClock.uptimeMillis();
+        float d = footer.getResources().getDisplayMetrics().density;
         ViewGroup voice = findVoicePanel(footer, input);
-        if (voice == null && SystemClock.uptimeMillis() <= screen.voiceSignalUntil) {
-            // At record start WhatsApp has not populated the elapsed-time label yet. The
-            // recorder's named stub is visible before that first timer text/layout pass.
+        if (voice == null && screen.transition.recording()) {
+            // After a native start signal the named recorder can be measured before WhatsApp has
+            // populated the elapsed-time label.
             voice = signaledVoicePanel(footer, input);
         }
-        if (voice != null || input == null || !input.isShown()
-                || goneAbove(input, footer) || input.getWidth() <= 0) {
-            restoreReplyContrast(screen);
-            if (voice == null || !rectIn(footer, voice)) {
-                if (voice == null) host.report("voice-panel-route-missing",
-                        "voice recorder panel not resolved; " + describeFooter(footer));
-                restoreVoiceBackgrounds(screen);
-                restoreRecordingGlassClip(screen);
-                restoreDuplicateReply(screen);
-                restoreRecordingMic(screen);
-                if (screen.composer != null) screen.composer.setVisibility(View.INVISIBLE);
-                return;
-            }
-            float d = footer.getResources().getDisplayMetrics().density;
-            int pad = Math.round(COMPOSE_PAD_DP * d);
-            // Use measured native screen-space bounds, never a guessed 140dp rectangle.
-            Rect voiceBounds = new Rect(rect);
-            int l = pad, t = Math.min(pad, voiceBounds.top);
-            int r = footer.getWidth() - pad;
-            int b = Math.max(footer.getHeight() - pad, voiceBounds.bottom);
-            if (t < 0 || b > footer.getHeight()) allowRecordingGlassOverflow(screen, footer);
-            View action = findById(footer, "conversation_entry_action_button");
-            if (action != null && action.isShown()
-                    && action.getWidth() <= 72f * d && action.getHeight() <= 72f * d
-                    && rectIn(footer, action)) {
-                int[] edges = ComposerGeometry.separate(l, r, t, b,
-                        rect.left, rect.right, rect.top, rect.bottom,
-                        Math.max(1, Math.round(2f * d)));
-                l = edges[0]; r = edges[1];
-            }
-            if (r <= l || b <= t) return;
-            boolean commit = acceptFooterGeometry(screen, footer, true, l, t, r, b);
-            // Keep the same GlassPane and the same safe recording source as the normal input.
-            // Only its mask geometry changes: waveform, elapsed time and buttons stay native.
-            if (screen.composer == null || screen.composer.getParent() != footer) {
-                screen.composer = newPane(screen, footer, screen.listHost.get(), wallpaperOf(screen));
-                footer.addView(screen.composer, 0, new FrameLayout.LayoutParams(0, 0));
-            }
-            screen.composer.setVisibility(View.VISIBLE);
-            clearVoiceBackgrounds(screen, voice);
-            suppressDuplicateReply(screen, footer);
-            alignRecordingMic(screen, voice);
-            screen.composer.setSource(screen.listHost.get());
-            screen.composer.setUnderlay(wallpaperOf(screen));
-            if (commit) commitFooterGeometry(screen, footer, d);
-            else followFooterTranslation(screen, footer);
-
-            String geometry = l + ":" + t + ":" + r + ":" + b;
-            if (commit && (!screen.voiceRecording || !geometry.equals(screen.voiceGeometryKey))) {
-                screen.voiceGeometryKey = geometry;
-                screen.voiceRecording = true;
-                host.report("voice-glass-bound", "voice panel glass follows native recording UI; "
-                        + "panel=" + resourceName(voice) + " geometry=" + geometry);
-                GlassTrace.event(screen.root.get(), screen.composer, voice, "VOICE_RECORDING",
-                        "panel-bound", "geometry=" + geometry);
-            }
+        if (voice != null && rectIn(footer, voice)) {
+            syncVoiceFrame(screen, footer, voice, now, d);
             return;
         }
-        restoreVoiceBackgrounds(screen);
-        restoreRecordingGlassClip(screen);
-        restoreDuplicateReply(screen);
-        restoreRecordingMic(screen);
-        if (!rectIn(footer, input)) return;
-        float d = footer.getResources().getDisplayMetrics().density;
+        boolean inputUsable = voice == null && input != null && input.isShown()
+                && !goneAbove(input, footer) && input.getWidth() > 0 && rectIn(footer, input);
+        if (inputUsable && syncInputFrame(screen, footer, input, material, now, d)) return;
+        // Neither route is measurable in this frame: WhatsApp is swapping input and recorder, or
+        // this build's recorder cannot be identified. Keep the persistent pane at its last valid
+        // geometry; never blank it on a transient frame (the "floating icons" after cancel).
+        int flags = screen.transition.sample(ComposerTransition.Route.UNRESOLVED, null, now);
+        if ((flags & ComposerTransition.HIDE) != 0) {
+            host.report("voice-panel-route-missing",
+                    "composer route not resolved; " + describeFooter(footer));
+            restoreVoiceDecoration(screen);
+            if (screen.composer != null) screen.composer.setVisibility(View.INVISIBLE);
+            GlassTrace.event(screen.root.get(), screen.composer, footer, "COMPOSER_HIDDEN",
+                    "route-unresolved", "epoch=" + screen.transition.epoch()
+                            + " bridgeMaxMs=" + ComposerTransition.BRIDGE_MAX_MS);
+        } else if ((flags & ComposerTransition.HOLD) != 0) {
+            footer.postInvalidateOnAnimation();
+        }
+    }
+
+    /** The persistent composer pane follows the native recorder; its controls stay native. */
+    private void syncVoiceFrame(Screen screen, ViewGroup footer, ViewGroup voice, long now, float d) {
+        restoreReplyContrast(screen);
+        int pad = Math.round(COMPOSE_PAD_DP * d);
+        // Measured native screen-space bounds mapped into the footer, never a guessed panel.
+        int[] voiceRect = rectOf(footer, voice);
+        View quote = findReplyPreview(footer);
+        int[] quoteRect = quote != null && quote.getWidth() > 0 && quote.getHeight() > 0
+                ? rectOf(footer, quote) : null;
+        int[] envelope = RecorderLayout.union(voiceRect, quoteRect);
+        if (envelope == null) return;
+        int l = pad, t = Math.min(pad, envelope[1]);
+        int r = footer.getWidth() - pad;
+        int b = Math.max(footer.getHeight() - pad, envelope[3]);
+        // The recorder draft can be taller than the footer's first measurement; clamp only to
+        // the footer's parent, the extent this pane can safely draw into.
+        View parent = parentView(footer);
+        if (parent != null) {
+            int[] extent = rectOf(footer, parent);
+            t = Math.max(t, extent[1]);
+            b = Math.min(b, extent[3]);
+        }
+        View action = findById(footer, "conversation_entry_action_button");
+        int[] actionRect = null;
+        if (action != null && action.isShown()
+                && action.getWidth() <= 72f * d && action.getHeight() <= 72f * d
+                && rectIn(footer, action)) {
+            actionRect = new int[]{rect.left, rect.top, rect.right, rect.bottom};
+            int[] edges = ComposerGeometry.separate(l, r, t, b,
+                    rect.left, rect.right, rect.top, rect.bottom,
+                    Math.max(1, Math.round(2f * d)));
+            l = edges[0]; r = edges[1];
+        }
+        if (r <= l || b <= t) return;
+        String geometry = l + ":" + t + ":" + r + ":" + b;
+        int flags = screen.transition.sample(ComposerTransition.Route.VOICE,
+                footer.getWidth() + ":" + footer.getHeight() + ":" + geometry, now);
+        ensureComposer(screen, footer);
+        screen.composer.setVisibility(View.VISIBLE);
+        screen.composer.setSource(screen.listHost.get());
+        screen.composer.setUnderlay(wallpaperOf(screen));
+        if ((flags & ComposerTransition.PRESENT) != 0) {
+            if (t < 0 || b > footer.getHeight()) allowRecordingGlassOverflow(screen, footer);
+            presentComposer(screen, l, t, r, b, d);
+            screen.decorationPending = true;
+            screen.decorationAttempts = 0;
+        }
+        // Quote slots and the mic can change without changing the recorder envelope. This runs
+        // on every sampled frame (already gated by layout generation and footer fingerprint),
+        // not only while the backdrop publication below is pending.
+        suppressDuplicateReply(screen, footer);
+        layoutRecordingMic(screen, footer, voice, quoteRect, actionRect, d);
+        if (screen.decorationPending) {
+            // Clear WhatsApp's opaque recorder backing only once replacement glass is live for
+            // this geometry; until then the native backing stays (no transparent hole, no slab).
+            if (screen.composer.hasLiveRecording()) {
+                clearVoiceBackgrounds(screen, voice);
+                screen.decorationPending = false;
+            } else if (++screen.decorationAttempts > DECORATION_RETRIES) {
+                screen.decorationPending = false;
+                host.report("voice-glass-not-live", "voice glass not live after "
+                        + DECORATION_RETRIES + " frames; native recorder backing kept");
+            }
+        }
+        if ((flags & ComposerTransition.RESERVE) != 0) reserveFooter(screen, footer);
+        if (screen.transition.pending() || screen.decorationPending) footer.postInvalidateOnAnimation();
+        if ((flags & ComposerTransition.PRESENT) != 0
+                && (!screen.voiceRecording || !geometry.equals(screen.voiceGeometryKey))) {
+            screen.voiceGeometryKey = geometry;
+            screen.voiceRecording = true;
+            host.report("voice-glass-bound", "voice panel glass follows native recording UI; "
+                    + "panel=" + resourceName(voice) + " geometry=" + geometry);
+            GlassTrace.event(screen.root.get(), screen.composer, voice, "VOICE_RECORDING",
+                    "panel-present", "geometry=" + geometry + " footer=" + footer.getWidth() + "x"
+                            + footer.getHeight() + " quote=" + RecorderLayout.describe(quoteRect)
+                            + " state=" + screen.transition.state() + " epoch=" + screen.transition.epoch()
+                            + " startToMeasuredMs=" + screen.transition.startToMeasuredMs()
+                            + " live=" + screen.composer.hasLiveRecording());
+        }
+    }
+
+    /** Normal input row; returns false when it is not measurable yet (an unresolved frame). */
+    private boolean syncInputFrame(Screen screen, ViewGroup footer, View input, Object material,
+                                   long now, float d) {
+        Rect inputRect = new Rect(rect);
         int pad = Math.round(COMPOSE_PAD_DP * d);
         // The send disc's own screen margin; the pill's left edge mirrors it or the corner clips.
         int sideFloor = 0;
         Rect actionRect = null;
         View send = findById(footer, "conversation_entry_action_button");
-        Rect inputRect = new Rect(rect);
         if (send == null || !send.isShown() || send.getWidth() <= 0 || send.getHeight() <= 0
-                || input.isLayoutRequested() || send.isLayoutRequested() || footer.isLayoutRequested()) return;
+                || input.isLayoutRequested() || send.isLayoutRequested() || footer.isLayoutRequested()) {
+            return false;
+        }
         if (rectIn(footer, send)) {
             actionRect = new Rect(rect);
             sideFloor = Math.max(0, Math.min(rect.left, footer.getWidth() - rect.right));
@@ -663,63 +840,124 @@ final class ConversationGlassPanes {
         int t = Math.max(0, inputRect.top - pad);
         int r = Math.min(footer.getWidth(), inputRect.right + pad);
         int b = Math.min(footer.getHeight(), inputRect.bottom + pad);
-        if (actionRect != null && send.isShown()) {
+        if (actionRect != null) {
             int[] edges = ComposerGeometry.separate(l, r, t, b, actionRect.left, actionRect.right,
                     actionRect.top, actionRect.bottom, Math.max(1, Math.round(2f * d)));
             l = edges[0]; r = edges[1];
         }
         if (r <= l || b <= t || !new Rect(0, 0, footer.getWidth(), footer.getHeight()).contains(inputRect)
-                || actionRect == null || Rect.intersects(new Rect(l, t, r, b), actionRect)) return;
-        if (!acceptFooterGeometry(screen, footer, false, l, t, r, b)) {
-            followFooterTranslation(screen, footer);
-            return;
-        }
-        clearBackground(screen, input);
-        syncComposerIcons(screen, footer);
-        syncReplyContrast(screen, footer);
+                || actionRect == null || Rect.intersects(new Rect(l, t, r, b), actionRect)) return false;
+        boolean wasRecording = screen.voiceRecording || !screen.voiceClearDrawables.isEmpty()
+                || !screen.recordingMicOffsets.isEmpty() || !screen.duplicateReplyAlpha.isEmpty();
         String geometryKey = l + ":" + t + ":" + r + ":" + b + ":" + actionRect;
-        if (!geometryKey.equals(screen.geometryKey)) {
+        int flags = screen.transition.sample(ComposerTransition.Route.INPUT,
+                footer.getWidth() + ":" + footer.getHeight() + ":" + geometryKey, now);
+        if ((flags & ComposerTransition.PRESENT) != 0) {
+            // Native recorder state goes back in the same frame the normal pill is presented.
+            restoreVoiceDecoration(screen);
+            ensureComposer(screen, footer);
+            screen.composer.setSource(screen.listHost.get());
+            screen.composer.setUnderlay(wallpaperOf(screen));
+            presentComposer(screen, l, t, r, b, d);
+            clearBackground(screen, input);
+            if (wasRecording) {
+                GlassTrace.event(screen.root.get(), screen.composer, input, "NORMAL_RESTORED",
+                        "input-measured", "epoch=" + screen.transition.epoch()
+                                + " endToNormalMs=" + screen.transition.endToNormalMs()
+                                + " live=" + screen.composer.hasLiveRecording());
+            }
+        }
+        if ((flags & ComposerTransition.PRESENT) != 0 || !java.util.Objects.equals(material, screen.decoratedMaterial)) {
+            // Icon tint and reply contrast walk the footer: only on a new geometry or material.
+            screen.decoratedMaterial = material;
+            syncComposerIcons(screen, footer);
+            syncReplyContrast(screen, footer);
+        }
+        if ((flags & ComposerTransition.RESERVE) != 0) reserveFooter(screen, footer);
+        // A recorder signal whose recorder never became measurable owes no voice decoration;
+        // left set, it would disable the per-frame fast path for the rest of the chat.
+        if (!screen.transition.recording()) screen.decorationPending = false;
+        if (screen.transition.pending()) footer.postInvalidateOnAnimation();
+        if (!geometryKey.equals(screen.geometryKey) && (flags & ComposerTransition.PRESENT) != 0) {
             screen.geometryKey = geometryKey;
             GlassTrace.event(screen.root.get(), screen.composer, screen.listHost.get(), "GEOMETRY",
                     "composer-action-gap", "capsule=" + l + "," + t + "," + r + "," + b
-                    + " action=" + actionRect);
+                    + " action=" + actionRect + " state=" + screen.transition.state());
         }
+        return true;
+    }
+
+    private void ensureComposer(Screen screen, ViewGroup footer) {
         if (screen.composer == null || screen.composer.getParent() != footer) {
             screen.composer = newPane(screen, footer, screen.listHost.get(), wallpaperOf(screen));
-            // Index 0: WhatsApp's icons and the text field keep painting on top.
+            // Index 0: WhatsApp's icons, waveform and text field keep painting on top.
             footer.addView(screen.composer, 0, new FrameLayout.LayoutParams(0, 0));
         }
-        screen.composer.setSource(screen.listHost.get());
-        screen.composer.setUnderlay(wallpaperOf(screen));
-        commitFooterGeometry(screen, footer, d);
     }
 
-    private boolean acceptFooterGeometry(Screen screen, ViewGroup footer, boolean voice,
-                                          int l, int t, int r, int b) {
-        screen.candidatePane.set(l, t, r, b);
-        String key = footer.getWidth() + ":" + footer.getHeight() + ":" + screen.candidatePane;
-        boolean commit = screen.transition.sample(voice, key, SystemClock.uptimeMillis());
-        if (!commit && screen.transition.pending()) footer.postInvalidateOnAnimation();
-        return commit;
+    /** Same pane identity, new mask: placed in this pre-draw and recaptured for its new size. */
+    private static void presentComposer(Screen screen, int l, int t, int r, int b, float density) {
+        GlassPane pane = screen.composer;
+        pane.setVisibility(View.VISIBLE);
+        pane.setTranslationY(0f);
+        float radius = Math.min((b - t) / 2f, COMPOSE_MAX_RADIUS_DP * density);
+        if (!pane.placeNow(l, t, r, b, radius)) place(pane, l, t, r, b, radius);
+        screen.committedPane.set(l, t, r, b);
     }
 
-    private void commitFooterGeometry(Screen screen, ViewGroup footer, float density) {
-        Rect bounds = screen.candidatePane;
-        screen.composer.setVisibility(View.VISIBLE);
-        screen.composer.setTranslationY(0f);
-        place(screen.composer, bounds.left, bounds.top, bounds.right, bounds.bottom,
-                Math.min(bounds.height() / 2f, COMPOSE_MAX_RADIUS_DP * density));
-        screen.committedPane.set(bounds);
+    /** List margin/padding follow only a settled footer: one layout transaction per geometry. */
+    private void reserveFooter(Screen screen, ViewGroup footer) {
         screen.committedFooterHeight = footer.getHeight();
         floatFooter(screen, footer);
         syncListPadding(screen);
     }
 
-    /** Native height animations move the bottom-anchored mask without requesting layout. */
-    private static void followFooterTranslation(Screen screen, ViewGroup footer) {
-        if (screen.composer != null && screen.committedFooterHeight > 0) {
-            screen.composer.setTranslationY(footer.getHeight() - screen.committedFooterHeight);
-        }
+    private void restoreVoiceDecoration(Screen screen) {
+        restoreVoiceBackgrounds(screen);
+        restoreRecordingGlassClip(screen);
+        restoreDuplicateReply(screen);
+        restoreRecordingMic(screen);
+        screen.decorationPending = false;
+        screen.laneKey = null;
+    }
+
+    /** Allocation-free summary of the native footer state that decoration depends on. */
+    private static int footerFingerprint(Screen screen, ViewGroup footer, View input, Object material) {
+        int hash = 17;
+        hash = 31 * hash + footer.getWidth();
+        hash = 31 * hash + footer.getHeight();
+        hash = 31 * hash + footer.getChildCount();
+        hash = 31 * hash + (material == null ? 0 : material.hashCode());
+        hash = mix(hash, screen, footer);
+        hash = mix(hash, screen, input);
+        hash = mix(hash, screen, findById(footer, "conversation_entry_action_button"));
+        hash = mix(hash, screen, findById(footer, "voice_note_stub"));
+        hash = mix(hash, screen, findById(footer, "voice_note_draft_layout_v2"));
+        hash = mix(hash, screen, findById(footer, "composer_quoted_message_frame"));
+        hash = mix(hash, screen, findById(footer, "voice_note_draft_quoted_message_frame"));
+        return hash;
+    }
+
+    private static int mix(int hash, Screen screen, View view) {
+        if (view == null) return 31 * hash;
+        boolean shown = view.isShown();
+        hash = 31 * hash + (shown ? 1 : 2);
+        if (!shown) return hash;
+        view.getLocationOnScreen(screen.location);
+        hash = 31 * hash + view.getWidth();
+        hash = 31 * hash + view.getHeight();
+        hash = 31 * hash + screen.location[0];
+        hash = 31 * hash + screen.location[1];
+        return 31 * hash + Float.floatToIntBits(view.getAlpha());
+    }
+
+    /** {@code view}'s bounds in {@code base}'s coordinates, through screen space. */
+    private static int[] rectOf(View base, View view) {
+        int[] baseLocation = new int[2], location = new int[2];
+        base.getLocationOnScreen(baseLocation);
+        view.getLocationOnScreen(location);
+        int left = location[0] - baseLocation[0], top = location[1] - baseLocation[1];
+        return new int[]{left, top, left + view.getWidth(), top + view.getHeight()};
     }
 
     private void disableFooter(Screen screen) {
@@ -965,40 +1203,122 @@ final class ConversationGlassPanes {
         screen.duplicateReplyAlpha.clear();
     }
 
-    /** The WhatsApp red recording microphone sometimes keeps its compact-row position
-     * after the reply expands the recorder. Move only a named, small mic indicator to the
-     * native elapsed-time baseline; never touch the voice action disc or red trash button. */
-    private void alignRecordingMic(Screen screen, ViewGroup voice) {
+    /**
+     * Places the small red recording indicator on the start side of the native waveform,
+     * vertically centred on the recording row and clear of the timer, trash, pause/send, action
+     * disc and quote (see {@link RecorderLayout#micOffset}). Offsets are recomputed from the
+     * indicator's native translation every time, so repeated layouts never accumulate. Only that
+     * indicator moves; when no placement satisfies the constraints it is restored to native.
+     */
+    private void layoutRecordingMic(Screen screen, ViewGroup footer, ViewGroup voice,
+                                    int[] quoteRect, int[] actionRect, float d) {
         TextView timer = findElapsedLabel(voice, 0);
-        ViewGroup footer = screen.footer.get();
-        if (timer == null || footer == null || timer.getHeight() <= 0) {
-            host.report("voice-mic-await-layout", "voice indicator awaits measured native timer");
-            return;
-        }
         View mic = findRecordingMic(footer, timer, 0);
-        if (mic == null || mic.getHeight() <= 0) {
+        if (mic == null || mic.getWidth() <= 0 || mic.getHeight() <= 0) {
             host.report("voice-mic-route-missing", "voice mic not located; "
-                    + describeRecordingIcons(footer, timer, 0));
+                    + (timer == null ? "timer=none" : describeRecordingIcons(footer, timer, 0)));
             return;
         }
-        if (!screen.recordingMicOffsets.containsKey(mic)) {
-            screen.recordingMicOffsets.put(mic, mic.getTranslationY());
+        float[] original = screen.recordingMicOffsets.get(mic);
+        if (original == null) {
+            original = new float[]{mic.getTranslationX(), mic.getTranslationY()};
+            screen.recordingMicOffsets.put(mic, original);
         }
-        int[] timerLocation = new int[2], micLocation = new int[2];
-        timer.getLocationOnScreen(timerLocation);
-        mic.getLocationOnScreen(micLocation);
-        String geometry = timerLocation[1] + ":" + timer.getHeight() + ":"
-                + (micLocation[1] - Math.round(mic.getTranslationY())) + ":" + mic.getHeight();
-        if (geometry.equals(screen.micGeometry)) return;
-        screen.micGeometry = geometry;
-        int difference = timerLocation[1] + timer.getHeight() / 2
-                - micLocation[1] - mic.getHeight() / 2;
-        float d = voice.getResources().getDisplayMetrics().density;
-        if (Math.abs(difference) > 3f * d && Math.abs(difference) < 180f * d) {
-            mic.setTranslationY(mic.getTranslationY() + difference);
-            host.report("voice-mic-aligned", "native voice mic " + resourceName(mic)
-                    + " aligned with elapsed-time row by " + difference + "px");
+        int[] now = rectOf(footer, mic);
+        int shiftX = Math.round(mic.getTranslationX() - original[0]);
+        int shiftY = Math.round(mic.getTranslationY() - original[1]);
+        int[] base = {now[0] - shiftX, now[1] - shiftY, now[2] - shiftX, now[3] - shiftY};
+        View waveView = findById(footer, "voice_note_draft_audio_visualizer");
+        int[] wave = waveView != null && waveView.isShown() && waveView.getWidth() > 0
+                && waveView.getHeight() > 0 && waveView != mic ? rectOf(footer, waveView) : null;
+        int[] timerRect = timer != null && timer.getWidth() > 0 ? rectOf(footer, timer) : null;
+        ArrayList<int[]> obstacles = new ArrayList<>();
+        ArrayList<String> names = new ArrayList<>();
+        int[] voiceRect = rectOf(footer, voice);
+        collectObstacles(footer, voice, mic, waveView, voiceRect, obstacles, names, 0);
+        if (actionRect != null) { obstacles.add(actionRect); names.add("action"); }
+        if (quoteRect != null) { obstacles.add(quoteRect); names.add("quote"); }
+        int[] bounds = RecorderLayout.union(new int[]{0, 0, footer.getWidth(), footer.getHeight()}, voiceRect);
+        boolean rtl = footer.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
+        int gap = Math.max(1, Math.round(2f * d));
+        int tolerance = Math.max(1, Math.round(3f * d));
+        int[] offset;
+        if (wave != null) {
+            offset = RecorderLayout.micOffset(base, wave, obstacles.toArray(new int[0][]), bounds,
+                    gap, tolerance, rtl);
+        } else if (timerRect != null) {
+            // Without a measured waveform the horizontal slot is unknown: centre on the
+            // elapsed-time row only, and only if that vertical move is collision-free.
+            int dy = Math.abs((base[1] + base[3]) / 2 - (timerRect[1] + timerRect[3]) / 2) <= tolerance
+                    ? 0 : (timerRect[1] + timerRect[3]) / 2 - (base[1] + base[3]) / 2;
+            int[] moved = {base[0], base[1] + dy, base[2], base[3] + dy};
+            boolean free = RecorderLayout.contains(bounds, moved);
+            for (int[] obstacle : obstacles) {
+                if (obstacle != timerRect && RecorderLayout.intersects(moved, obstacle)) free = false;
+            }
+            offset = free ? new int[]{0, dy} : null;
+        } else {
+            host.report("voice-mic-await-layout", "voice indicator awaits measured waveform/timer");
+            return;
         }
+        float targetX = offset == null ? original[0] : original[0] + offset[0];
+        float targetY = offset == null ? original[1] : original[1] + offset[1];
+        if (mic.getTranslationX() != targetX) mic.setTranslationX(targetX);
+        if (mic.getTranslationY() != targetY) mic.setTranslationY(targetY);
+        String key = RecorderLayout.describe(base) + "|" + RecorderLayout.describe(wave) + "|"
+                + RecorderLayout.describe(timerRect) + "|" + obstacles.size() + "|" + (offset == null);
+        if (key.equals(screen.laneKey)) return;
+        screen.laneKey = key;
+        StringBuilder rects = new StringBuilder();
+        for (int i = 0; i < obstacles.size(); i++) {
+            rects.append(' ').append(names.get(i)).append('=').append(RecorderLayout.describe(obstacles.get(i)));
+        }
+        boolean quoteLane = RecorderLayout.quoteAbove(quoteRect, wave, timerRect, gap);
+        GlassTrace.event(screen.root.get(), screen.composer, mic, "VOICE_LANES",
+                offset == null ? "mic-unplaceable-native-kept" : "mic-placed",
+                "epoch=" + screen.transition.epoch() + " rtl=" + rtl + " mic=" + resourceName(mic)
+                        + " M=" + RecorderLayout.describe(base)
+                        + " offset=" + (offset == null ? "none" : offset[0] + "," + offset[1])
+                        + " W=" + RecorderLayout.describe(wave) + " T=" + RecorderLayout.describe(timerRect)
+                        + " Q=" + RecorderLayout.describe(quoteRect) + " quoteAbove=" + quoteLane
+                        + " G=" + RecorderLayout.describe(new int[]{screen.committedPane.left,
+                        screen.committedPane.top, screen.committedPane.right, screen.committedPane.bottom})
+                        + rects);
+        if (!quoteLane) host.report("voice-quote-lane-overlap",
+                "voice quote overlaps recording row; native quote layout left unchanged");
+    }
+
+    /**
+     * Visible measured leaf controls of the recorder that the indicator must not cover. Large
+     * leaves (backing images) and zero-size stubs are not controls; the waveform is the target
+     * row, not an obstacle. Resource names are kept for diagnostics only.
+     */
+    private static void collectObstacles(ViewGroup footer, View node, View mic, View wave, int[] voiceRect,
+                                         List<int[]> out, List<String> names, int depth) {
+        if (node == null || !node.isShown() || depth > 8 || out.size() >= 24) return;
+        if (node == mic || node == wave || node instanceof GlassPane) return;
+        if (isAncestor(node, mic) || (wave != null && isAncestor(node, wave))) {
+            ViewGroup group = (ViewGroup) node;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                collectObstacles(footer, group.getChildAt(i), mic, wave, voiceRect, out, names, depth + 1);
+            }
+            return;
+        }
+        boolean leaf = !(node instanceof ViewGroup) || ((ViewGroup) node).getChildCount() == 0
+                || node.isClickable();
+        if (!leaf) {
+            ViewGroup group = (ViewGroup) node;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                collectObstacles(footer, group.getChildAt(i), mic, wave, voiceRect, out, names, depth + 1);
+            }
+            return;
+        }
+        if (node.getWidth() <= 0 || node.getHeight() <= 0) return;
+        long area = (long) node.getWidth() * node.getHeight();
+        long voiceArea = (long) Math.max(1, voiceRect[2] - voiceRect[0]) * Math.max(1, voiceRect[3] - voiceRect[1]);
+        if (area * 2 > voiceArea) return;
+        out.add(rectOf(footer, node));
+        names.add(resourceName(node));
     }
 
     private static TextView findElapsedLabel(View node, int depth) {
@@ -1054,13 +1374,14 @@ final class ConversationGlassPanes {
     }
 
     private static void restoreRecordingMic(Screen screen) {
-        for (java.util.Map.Entry<View, Float> entry :
+        for (java.util.Map.Entry<View, float[]> entry :
                 new ArrayList<>(screen.recordingMicOffsets.entrySet())) {
             View view = entry.getKey();
-            if (view != null) view.setTranslationY(entry.getValue());
+            if (view == null) continue;
+            view.setTranslationX(entry.getValue()[0]);
+            view.setTranslationY(entry.getValue()[1]);
         }
         screen.recordingMicOffsets.clear();
-        screen.micGeometry = null;
     }
 
     private static ViewGroup voicePanelIn(ViewGroup parent, ViewGroup footer, View input,
@@ -1531,12 +1852,17 @@ final class ConversationGlassPanes {
     private static final java.util.Map<String, Integer> IDS = new java.util.HashMap<>();
 
     private static View findById(View root, String name) {
+        int id = idOf(root, name);
+        return id == 0 ? null : root.findViewById(id);
+    }
+
+    private static int idOf(View root, String name) {
         Integer id = IDS.get(name);
         if (id == null) {
             id = root.getResources().getIdentifier(name, "id", root.getContext().getPackageName());
             IDS.put(name, id);
         }
-        return id == 0 ? null : root.findViewById(id);
+        return id;
     }
 
     private static View parentView(View view) {
