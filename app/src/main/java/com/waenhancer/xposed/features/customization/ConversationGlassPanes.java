@@ -99,12 +99,14 @@ final class ConversationGlassPanes {
         boolean probeVoice, probeIme;
         View probeQuote;
         final ComposerBackingProbe backingProbe = new ComposerBackingProbe();
+        final ConversationDateProbe dateProbe = new ConversationDateProbe();
         final com.waenhancer.theme.DraftRouteGuard draftGuard = new com.waenhancer.theme.DraftRouteGuard();
         final WeakHashMap<View, Drawable> clearDrawables = new WeakHashMap<>();
         WeakReference<View> paletteQuote = new WeakReference<>(null);
         final com.waenhancer.theme.SurfaceContrastSampler contrastSampler = new com.waenhancer.theme.SurfaceContrastSampler();
         Integer quoteBackground;
         final java.util.Set<View> tintedWaveforms = java.util.Collections.newSetFromMap(new WeakHashMap<>());
+        final WeakHashMap<View, Integer> hiddenLegacyRecorderIndicators = new WeakHashMap<>();
         final ComposerTransition transition = new ComposerTransition();
         ViewTreeObserver.OnPreDrawListener footerPreDraw;
         final Rect committedPane = new Rect();
@@ -1214,6 +1216,7 @@ final class ConversationGlassPanes {
         restoreRecordingGlassClip(screen);
         restoreDuplicateReply(screen);
         restoreRecordingMic(screen);
+        restoreLegacyRecorderIndicators(screen);
         for (View wave : screen.tintedWaveforms) NativeWaveformTint.remove(wave);
         screen.tintedWaveforms.clear();
         screen.decorationPending = false;
@@ -1310,6 +1313,7 @@ final class ConversationGlassPanes {
         restoreRecordingGlassClip(screen);
         restoreDuplicateReply(screen);
         restoreRecordingMic(screen);
+        restoreLegacyRecorderIndicators(screen);
         for (View wave : screen.tintedWaveforms) NativeWaveformTint.remove(wave);
         screen.tintedWaveforms.clear();
         restoreReplyContrast(screen);
@@ -1551,6 +1555,12 @@ final class ConversationGlassPanes {
      */
     private void layoutRecordingMic(Screen screen, ViewGroup footer, ViewGroup voice,
                                     int[] quoteRect, int[] actionRect, float d) {
+        // The device's red blink is a legacy pulse in a footer sibling, not the hidden
+        // voice_note_flashing_recording_view inside the v2 recorder. Its paired grey
+        // voice_note_info is a duplicate of the desired white voice_note_info_v2.
+        // Hide just these two inert leaves, retaining their layout slots and native
+        // animation/timer owners; restore on route exit or module disable.
+        if (hideLegacyRecorderIndicators(screen, footer, voice)) return;
         TextView timer = findElapsedLabel(voice, 0);
         View mic = findRecordingMic(voice, timer, 0);
         if (mic == null || mic.getWidth() <= 0 || mic.getHeight() <= 0) {
@@ -1571,6 +1581,46 @@ final class ConversationGlassPanes {
         if (filtered) screen.tintedWaveforms.add(mic);
         if (GlassProbe.enabled()) GlassProbe.event("VOICE_MIC_FILTER", mic,
                 "epoch=" + screen.transition.epoch() + " applied=" + filtered);
+    }
+
+    private static boolean hideLegacyRecorderIndicators(Screen screen, ViewGroup footer,
+                                                         ViewGroup voice) {
+        View pulse = findById(footer, "voice_note_pulse");
+        View greyTimer = findById(footer, "voice_note_info");
+        View desiredTimer = findById(voice, "voice_note_info_v2");
+        if (!(pulse instanceof ImageView) || !(greyTimer instanceof TextView)
+                || !(desiredTimer instanceof TextView)
+                || pulse.getParent() == null || pulse.getParent() != greyTimer.getParent()
+                || !isAncestor(footer, pulse) || !isAncestor(footer, greyTimer)
+                || isAncestor(voice, pulse) || isAncestor(voice, greyTimer)
+                || pulse.isClickable() || pulse.isFocusable()
+                || greyTimer.isClickable() || greyTimer.isFocusable()) return false;
+        float density = footer.getResources().getDisplayMetrics().density;
+        if (pulse.getWidth() <= 0 || pulse.getWidth() > 72f * density
+                || greyTimer.getWidth() <= 0 || greyTimer.getWidth() > 160f * density
+                || Math.abs(screenTop(pulse) - screenTop(greyTimer)) > 16f * density)
+            return false;
+        hideLegacyRecorderIndicator(screen, pulse);
+        hideLegacyRecorderIndicator(screen, greyTimer);
+        return true;
+    }
+
+    private static void hideLegacyRecorderIndicator(Screen screen, View view) {
+        if (view.getVisibility() != View.VISIBLE) return;
+        screen.hiddenLegacyRecorderIndicators.putIfAbsent(view, View.VISIBLE);
+        view.setVisibility(View.INVISIBLE); // GONE would shift the native recorder geometry.
+        if (GlassProbe.enabled()) GlassProbe.event("VOICE_LEGACY_INDICATOR_HIDDEN", view,
+                "epoch=" + screen.transition.epoch());
+    }
+
+    private static void restoreLegacyRecorderIndicators(Screen screen) {
+        for (java.util.Map.Entry<View, Integer> entry :
+                new ArrayList<>(screen.hiddenLegacyRecorderIndicators.entrySet())) {
+            View view = entry.getKey();
+            if (view != null && view.getVisibility() == View.INVISIBLE)
+                view.setVisibility(entry.getValue());
+        }
+        screen.hiddenLegacyRecorderIndicators.clear();
     }
 
     /**
@@ -2041,6 +2091,11 @@ final class ConversationGlassPanes {
             list.setPadding(list.getPaddingLeft(), top, list.getPaddingRight(), bottom);
             if (atEnd) keepAtEnd(list);
         }
+        // The sticky date chip may be pinned at the list's edge-to-edge origin instead
+        // of below the floating contact header. Record its actual owner before moving it.
+        if (header && holder != null && GlassProbe.enabled())
+            screen.dateProbe.snapshot(screen.root.get(), holder, screen.listHost.get(),
+                    list, screen.fullscreenTopInset);
     }
 
     /** Puts the recorded padding back on the list it was recorded from and forgets the baseline. */

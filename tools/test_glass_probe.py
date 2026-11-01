@@ -11,6 +11,7 @@ pane = (root / "theme/GlassPane.java").read_text()
 drawable = (root / "theme/GlassMaterialDrawable.java").read_text()
 conversation = (root / "xposed/features/customization/ConversationGlassPanes.java").read_text()
 backing_probe = (root / "xposed/features/customization/ComposerBackingProbe.java").read_text()
+date_probe = (root / "xposed/features/customization/ConversationDateProbe.java").read_text()
 backing = (root / "xposed/features/customization/ComposerBacking.java").read_text()
 app = (root / "xposed/features/customization/AppLiquidGlass.java").read_text()
 
@@ -26,7 +27,13 @@ assert 'TRANSITION_RESERVE = 150' in budget
 assert 'BUDGET.beginWindow(now)' in probe
 assert 'BUDGET.allow(type,' in probe
 for forbidden in (".getText(", ".getContentDescription(", ".getAccessibilityNodeInfo("):
-    assert forbidden not in probe + backing_probe, f"probe unexpectedly reads private content: {forbidden}"
+    assert forbidden not in probe + backing_probe + date_probe, (
+        f"probe unexpectedly reads private content: {forbidden}"
+    )
+assert 'TOP_DATE_SUMMARY' in date_probe and 'TOP_DATE_CANDIDATE' in date_probe
+assert 'snapshots >= 3' in date_probe and 'int[] visits = {350}' in date_probe
+assert 'Math.min(26, candidates.size())' in date_probe
+assert 'screen.dateProbe.snapshot(screen.root.get(), holder, screen.listHost.get(),' in conversation
 for event in ("RECORDER_SIGNAL", "RECORDER_WAKE", "FOOTER_SAMPLE", "ROUTE_VOICE",
               "ROUTE_UNRESOLVED", "VOICE_GEOMETRY", "INPUT_GEOMETRY", "PANE_COMMIT_BEFORE",
               "PANE_COMMIT_AFTER", "INPUT_BACKING_GATE", "VOICE_RESTORE_BEFORE",
@@ -49,6 +56,15 @@ assert 'new int[]{160}' in backing_probe, 'recorder subtree walk must be bounded
 assert 'Math.min(34, candidates.size())' in backing_probe, 'recorder snapshot must cap emitted nodes'
 assert 'COMPOSER_VOICE_NODE' in backing_probe
 assert 'screen.backingProbe.voiceSnapshot(footer, voice,' in conversation
+assert 'hideLegacyRecorderIndicators(screen, footer, voice)' in conversation
+assert 'findById(footer, "voice_note_pulse")' in conversation
+assert 'findById(footer, "voice_note_info")' in conversation
+assert 'findById(voice, "voice_note_info_v2")' in conversation
+assert 'pulse.getParent() != greyTimer.getParent()' in conversation
+assert 'view.setVisibility(View.INVISIBLE)' in conversation
+assert conversation.count('restoreLegacyRecorderIndicators(screen);') >= 2, (
+    'legacy mic and grey timer must be restored when recording ends or the footer is disabled'
+)
 assert 'COMPOSER_LEFT_LANE_NODE' in backing_probe
 assert 'COMPOSER_LEFT_LANE_SUMMARY' in backing_probe
 assert 'voiceSnapshots >= 4' in backing_probe
