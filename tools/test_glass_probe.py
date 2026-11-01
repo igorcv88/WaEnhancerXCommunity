@@ -80,7 +80,7 @@ assert 'findById(recorder, "voice_note_draft_preview_v2")' in conversation
 assert 'if (previous.rowBased && canvasOwned)' in app, 'a canvas factory must not evict an eligible row mask'
 assert 'nativeMask && keepGlass(view, previous)' in app, 'replaced row masks must retain the same owner'
 assert 'nativeMaskRebound && keepGlass(target, binding)' in app, 'layout reconciliation must retain row glass'
-assert app.index('bindNativeBubbleRow(row);\n                if (next != null && frame.saw(next))') > 0, (
+assert app.index('bindNativeBubbleRow(row);') < app.index('if (frame.saw(next)) adopt(row, next);'), (
     'reply redraw must prefer a native row mask before replacing a canvas factory'
 )
 HARNESS = r'''

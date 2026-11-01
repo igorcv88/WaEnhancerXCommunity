@@ -92,6 +92,7 @@ final class ConversationGlassPanes {
         boolean suspended;
         boolean syncingFooter;
         boolean recorderWakeQueued;
+        final ReplyFrameForeground replyFrames = new ReplyFrameForeground();
         final ComposerBacking inputBacking = new ComposerBacking(false), audioBacking = new ComposerBacking(true);
         final com.waenhancer.theme.ComposerRebind rebind = new com.waenhancer.theme.ComposerRebind();
         boolean backingVoice;
@@ -103,8 +104,12 @@ final class ConversationGlassPanes {
         final com.waenhancer.theme.DraftRouteGuard draftGuard = new com.waenhancer.theme.DraftRouteGuard();
         final WeakHashMap<View, Drawable> clearDrawables = new WeakHashMap<>();
         WeakReference<View> paletteQuote = new WeakReference<>(null);
-        final com.waenhancer.theme.SurfaceContrastSampler contrastSampler = new com.waenhancer.theme.SurfaceContrastSampler();
-        Integer quoteBackground;
+        final com.waenhancer.theme.ComposerPalette palette = new com.waenhancer.theme.ComposerPalette();
+        ColorStateList paletteColors = ColorStateList.valueOf(com.waenhancer.theme.ComposerPalette.CURRENT_PROFILE_ICON);
+        int micSignature;
+        boolean micResolved;
+        WeakReference<View> stickyDate = new WeakReference<>(null);
+        final com.waenhancer.theme.StickyDatePosition datePosition = new com.waenhancer.theme.StickyDatePosition();
         final java.util.Set<View> tintedWaveforms = java.util.Collections.newSetFromMap(new WeakHashMap<>());
         final WeakHashMap<View, Integer> hiddenLegacyRecorderIndicators = new WeakHashMap<>();
         final ComposerTransition transition = new ComposerTransition();
@@ -139,10 +144,13 @@ final class ConversationGlassPanes {
         final WeakHashMap<View, Drawable> clearedForegrounds = new WeakHashMap<>();
         /** The native icon tint, restored exactly when the composer glass is disabled. */
         final WeakHashMap<ImageView, ColorStateList> originalInputIconTints = new WeakHashMap<>();
+        final WeakHashMap<ImageView, ColorStateList> appliedInputIconTints = new WeakHashMap<>();
+        final WeakHashMap<TextView, ColorStateList> inputTextColors = new WeakHashMap<>(), inputAppliedTextColors = new WeakHashMap<>();
+        final WeakHashMap<ImageView, ColorStateList> replyAppliedTints = new WeakHashMap<>();
         final WeakHashMap<View, Drawable> voiceBackgrounds = new WeakHashMap<>();
         final WeakHashMap<View, Drawable> voiceClearDrawables = new WeakHashMap<>();
         final WeakHashMap<TextView, ColorStateList> replyTextColors = new WeakHashMap<>();
-        final WeakHashMap<TextView, Integer> replyAppliedColors = new WeakHashMap<>();
+        final WeakHashMap<TextView, ColorStateList> replyAppliedColors = new WeakHashMap<>();
         final WeakHashMap<ImageView, ColorStateList> replyIconTints = new WeakHashMap<>();
         boolean voiceRecording;
         String voiceGeometryKey;
@@ -201,7 +209,7 @@ final class ConversationGlassPanes {
             if (screen.footerOn && footer != null && (view == footer || isAncestor(footer, view))) {
                 if (view == footer || ownedComposerNode(view, footer)) return true;
             }
-            if (screen.inputBacking.owns(view) || screen.audioBacking.owns(view)) return true;
+            if (screen.replyFrames.owns(view) || screen.inputBacking.owns(view) || screen.audioBacking.owns(view)) return true;
             if (screen.clearedBackgrounds.containsKey(view)) return true;
             if (screen.voiceBackgrounds.containsKey(view)) return true;
         }
@@ -234,9 +242,10 @@ final class ConversationGlassPanes {
         if (screen == null || !screen.footerOn || footer == null
                 || (view != footer && !isAncestor(footer, view))) return false;
         boolean owned = ownedComposerNode(view, footer) || view == footer
-                || screen.inputBacking.owns(view) || screen.audioBacking.owns(view)
+                || screen.replyFrames.owns(view) || screen.inputBacking.owns(view) || screen.audioBacking.owns(view)
                 || screen.clearDrawables.containsKey(view) || screen.voiceClearDrawables.containsKey(view);
         if (!screen.syncingFooter && !screen.suspended) {
+            if ("foreground".equals(property)) screen.replyFrames.nativeAssignment(view);
             screen.inputBacking.nativeAssignment(view, property);
             screen.audioBacking.nativeAssignment(view, property);
             screen.backingProbe.property(view);
@@ -276,6 +285,10 @@ final class ConversationGlassPanes {
         screen.suspended = suspended;
         if (screen.band != null) screen.band.setProjectionSuspended(suspended);
         if (suspended) {
+            screen.replyFrames.retain(null);
+            restoreReplyContrast(screen);
+            restoreIcons(screen.originalInputIconTints, screen.appliedInputIconTints);
+            restoreTexts(screen.inputTextColors, screen.inputAppliedTextColors);
             screen.rebind.reset();
             screen.inputBacking.restore();
             screen.audioBacking.restore();
@@ -429,10 +442,36 @@ final class ConversationGlassPanes {
             if (wantHeader) enableHeader(screen, holder); else if (screen.headerOn) disableHeader(screen);
             if (wantFooter) enableFooter(screen, footer, listHost); else if (screen.footerOn) disableFooter(screen);
             syncListPadding(screen);
+            View date = screen.headerOn ? findById(root, "date_divider_header") : null;
+            if (date != screen.stickyDate.get()) {
+                restoreStickyDate(screen);
+                screen.stickyDate = new WeakReference<>(date);
+            }
+            onFrame(root);
             if (!screen.headerOn && !screen.footerOn) screens.remove(root);
         } catch (Throwable error) {
             host.report("conv-sync-error", "conversation panes skipped: " + error);
         }
+    }
+
+    /** Uses the session's existing pre-draw; no date listener, list padding or glass style change. */
+    void onFrame(View root) {
+        Screen screen = screens.get(root);
+        if (screen == null || screen.suspended || !screen.headerOn) return;
+        View date = screen.stickyDate.get(), holder = screen.holder.get();
+        if (date == null || holder == null || !date.isAttachedToWindow()) return;
+        float current = date.getTranslationY();
+        float baseTop = screenTop(date) - current;
+        float gap = 4f * date.getResources().getDisplayMetrics().density;
+        float applied = screen.datePosition.place(current, baseTop,
+                screenTop(holder) + holder.getHeight(), screenTop(root) + screen.fullscreenTopInset, gap);
+        if (Float.compare(current, applied) != 0) date.setTranslationY(applied);
+    }
+    private static void restoreStickyDate(Screen screen) {
+        View date = screen.stickyDate.get();
+        if (date != null) date.setTranslationY(screen.datePosition.restore(date.getTranslationY()));
+        else screen.datePosition.restore(0f);
+        screen.stickyDate.clear();
     }
 
     // ── Header ────────────────────────────────────────────────────────────────────
@@ -736,6 +775,7 @@ final class ConversationGlassPanes {
     }
 
     private void disableHeader(Screen screen) {
+        restoreStickyDate(screen);
         screen.headerOn = false;
         ViewGroup holder = screen.holder.get();
         removePane(screen.band);
@@ -1028,6 +1068,7 @@ final class ConversationGlassPanes {
             clearVoiceBackgrounds(screen, voice);
             if (quote != null) clearReplyBacking(screen, footer, quote);
             clearPlayerBacking(screen, footer, voice);
+            syncComposerIcons(screen, footer);
             syncReplyContrast(screen, footer);
             tintWaveform(screen, footer, voice);
         } else {
@@ -1127,6 +1168,8 @@ final class ConversationGlassPanes {
             View edit = findById(input, "edit_layout");
             if (edit != null) clearBackingChain(screen, footer, edit);
             clearInputWrappers(screen, footer, input);
+            syncComposerIcons(screen, footer);
+            syncReplyContrast(screen, footer);
         } else if (screen.composer == null || screen.composer.getVisibility() != View.VISIBLE) {
             // A temporary size/capture revalidation is not a native-route transition. Keep
             // the previously cleared input fill owned while its existing pane is visible.
@@ -1134,10 +1177,8 @@ final class ConversationGlassPanes {
         }
         if ((flags & ComposerTransition.PRESENT) != 0 || wasRecording
                 || !java.util.Objects.equals(material, screen.decoratedMaterial)) {
-            // Icon tint and reply contrast walk the footer: only on a new geometry or material.
+            // Retain the committed decoration identity; palette updates also follow native rebinds.
             screen.decoratedMaterial = material;
-            syncComposerIcons(screen, footer);
-            syncReplyContrast(screen, footer);
         }
         if ((flags & ComposerTransition.RESERVE) != 0) reserveFooter(screen, footer);
         // A recorder signal whose recorder never became measurable owes no voice decoration;
@@ -1226,6 +1267,15 @@ final class ConversationGlassPanes {
     /** Allocation-free summary of the native footer state that decoration depends on. */
     private static int footerFingerprint(Screen screen, ViewGroup footer, View input, Object material) {
         int hash = 17;
+        ImageView mic = firstImage(findById(footer, "conversation_entry_action_button"), 0);
+        if (mic != null) {
+            Drawable current = mic.getDrawable() == null ? null : mic.getDrawable().getCurrent();
+            hash = 31 * hash + System.identityHashCode(mic.getImageTintList());
+            hash = 31 * hash + System.identityHashCode(mic.getColorFilter());
+            hash = 31 * hash + System.identityHashCode(mic.getDrawable());
+            hash = 31 * hash + java.util.Arrays.hashCode(mic.getDrawableState());
+            if (current != null) hash = 31 * hash + System.identityHashCode(current.getColorFilter());
+        }
         hash = 31 * hash + footer.getWidth();
         hash = 31 * hash + footer.getHeight();
         hash = 31 * hash + footer.getChildCount();
@@ -1271,12 +1321,12 @@ final class ConversationGlassPanes {
 
     private void disableFooter(Screen screen) {
         screen.footerOn = false;
+        screen.replyFrames.retain(null);
         screen.rebind.reset();
         screen.inputBacking.restore();
         screen.audioBacking.restore();
         screen.backingVoice = false;
         screen.draftGuard.reset();
-        screen.contrastSampler.invalidate();
         screen.transition.detach();
         screen.committedFooterHeight = 0;
         ViewGroup footer = screen.footer.get();
@@ -1312,11 +1362,9 @@ final class ConversationGlassPanes {
         for (View wave : screen.tintedWaveforms) NativeWaveformTint.remove(wave);
         screen.tintedWaveforms.clear();
         restoreReplyContrast(screen);
-        for (java.util.Map.Entry<ImageView, ColorStateList> icon :
-                new ArrayList<>(screen.originalInputIconTints.entrySet())) {
-            if (icon.getKey() != null) icon.getKey().setImageTintList(icon.getValue());
-        }
-        screen.originalInputIconTints.clear();
+        restoreIcons(screen.originalInputIconTints, screen.appliedInputIconTints);
+        restoreTexts(screen.inputTextColors, screen.inputAppliedTextColors);
+        screen.micResolved = false;
         restoreUnder(screen, footer);
         syncListPadding(screen);
     }
@@ -1326,23 +1374,56 @@ final class ConversationGlassPanes {
     /**
      * Attachment and camera are WhatsApp-owned ImageViews, not part of the glass shader. Their
      * original grey tint can lose contrast when the opaque input background is removed. Follow
-     * the native microphone's current tint when exposed, or the resolved glass content colour.
+     * the native microphone's effective glyph colour, including the explicit current-profile style.
      * Restrict discovery to semantic resource names inside the composer: never recolour message
-     * thumbnails, emoji, send, microphone or arbitrary neighbouring controls.
+     * thumbnails, message emoji, the reference microphone or arbitrary neighbouring controls.
      */
     private void syncComposerIcons(Screen screen, ViewGroup footer) {
-        View micButton = findById(footer, "conversation_entry_action_button");
-        ImageView mic = firstImage(micButton, 0);
-        ColorStateList microphoneTint = mic == null ? null : mic.getImageTintList();
-        GlassSpec material = host.material(screen.root.get());
-        int contentColor = material == null ? Color.WHITE : material.contentColor;
-        int color = microphoneTint == null
-                ? contentColor : microphoneTint.getColorForState(
-                        mic.getDrawableState(), microphoneTint.getDefaultColor());
-        int matched = tintComposerIcons(screen, footer, color, 0);
-        if ((matched & 3) != 3) host.report("composer-icon-routing-" + matched,
-                "composer icons resolved=" + matched + " (attachment=1, camera=2); "
-                        + "inspect footer resource names on this WhatsApp build if either is absent");
+        ImageView mic = firstImage(findById(footer, "conversation_entry_action_button"), 0);
+        if (mic != null) {
+            Drawable drawable = mic.getDrawable();
+            Drawable current = drawable == null ? null : drawable.getCurrent();
+            android.graphics.ColorFilter filter = mic.getColorFilter();
+            if (filter == null && current != null) filter = current.getColorFilter();
+            ColorStateList tint = mic.getImageTintList();
+            int signature = java.util.Objects.hash(System.identityHashCode(mic),
+                    System.identityHashCode(drawable), System.identityHashCode(filter),
+                    System.identityHashCode(tint), java.util.Arrays.hashCode(mic.getDrawableState()));
+            if (!screen.micResolved || signature != screen.micSignature) {
+                Integer color = null;
+                if (filter instanceof android.graphics.PorterDuffColorFilter)
+                    color = ((android.graphics.PorterDuffColorFilter) filter).getColor();
+                else if (filter instanceof android.graphics.BlendModeColorFilter)
+                    color = ((android.graphics.BlendModeColorFilter) filter).getColor();
+                else if (tint != null) color = tint.getColorForState(mic.getDrawableState(), tint.getDefaultColor());
+                else if (current instanceof ColorDrawable)
+                    color = ((ColorDrawable) current).getColor();
+                if (color == null) {
+                    color = com.waenhancer.theme.ComposerPalette.CURRENT_PROFILE_ICON;
+                    host.report("composer-mic-style-fallback", "microphone exposes no tint/filter; using current profile's white glyph style");
+                }
+                if (screen.palette.update(color)) screen.paletteColors = ColorStateList.valueOf(screen.palette.color());
+                screen.micSignature = signature;
+                screen.micResolved = true;
+            }
+        } // A temporarily absent mic keeps the last resolved reference during audio reconstruction.
+        tintComposerIcons(screen, footer, screen.palette.color(), 0);
+    }
+
+    void onComposerVisualChanged(View view) {
+        Screen screen = screens.get(view.getRootView());
+        if (screen == null || screen.syncingFooter || screen.suspended || !screen.footerOn) return;
+        ViewGroup footer = screen.footer.get();
+        if (footer != null && isAncestor(footer, view)) onBackgroundChanged(view);
+    }
+
+    private static void applyIcon(Screen screen, ImageView icon, boolean reply) {
+        WeakHashMap<ImageView, ColorStateList> originals = reply ? screen.replyIconTints : screen.originalInputIconTints;
+        WeakHashMap<ImageView, ColorStateList> applied = reply ? screen.replyAppliedTints : screen.appliedInputIconTints;
+        ColorStateList current = icon.getImageTintList();
+        if (!originals.containsKey(icon) || current != applied.get(icon)) originals.put(icon, current);
+        if (current != screen.paletteColors) icon.setImageTintList(screen.paletteColors);
+        applied.put(icon, screen.paletteColors);
     }
 
     private static ImageView firstImage(View view, int depth) {
@@ -1363,19 +1444,20 @@ final class ConversationGlassPanes {
             try { name = view.getResources().getResourceEntryName(view.getId()); }
             catch (android.content.res.Resources.NotFoundException ignored) { }
         }
+        if (name != null && (name.contains("quoted") || name.contains("reply_preview"))) return 0;
         boolean emoji = "emoji_picker_btn".equals(name) || "emoji_picker_button".equals(name)
-                || "emoji_button".equals(name) || "emoji_btn".equals(name);
-        boolean namedIcon = name != null && (name.contains("attach") || name.contains("camera") || emoji);
+                || "emoji_button".equals(name) || "emoji_btn".equals(name)
+                || "emoji_picker".equals(name) || "emoji_toggle".equals(name);
+        boolean audioControl = name != null && name.startsWith("voice_note_")
+                && (name.endsWith("_btn") || name.endsWith("_btn_v2") || name.endsWith("_button"))
+                && (name.contains("play") || name.contains("pause") || name.contains("stop")
+                    || name.contains("resume") || name.contains("delete") || name.contains("send"));
+        boolean namedIcon = name != null && (name.contains("attach") || name.contains("camera") || emoji || audioControl);
         if (namedIcon) {
+            if (audioControl && view instanceof TextView) applyText(screen, (TextView) view, false);
             ImageView image = firstImage(view, 0);
             if (image != null) {
-                if (!screen.originalInputIconTints.containsKey(image)) {
-                    screen.originalInputIconTints.put(image, image.getImageTintList());
-                }
-                if (image.getImageTintList() == null
-                        || image.getImageTintList().getDefaultColor() != color) {
-                    image.setImageTintList(ColorStateList.valueOf(color));
-                }
+                applyIcon(screen, image, false);
                 return (name.contains("attach") ? 1 : 0) | (name.contains("camera") ? 2 : 0) | (emoji ? 4 : 0);
             }
             return 0;
@@ -1858,9 +1940,8 @@ final class ConversationGlassPanes {
 
     private void tintWaveform(Screen screen, ViewGroup footer, ViewGroup recorder) {
         View wave = resolveWaveform(footer, recorder);
-        GlassSpec material = host.material(screen.root.get());
-        if (wave == null || material == null) return;
-        if (NativeWaveformTint.apply(wave, material.contentColor)) screen.tintedWaveforms.add(wave);
+        if (wave == null) return;
+        if (NativeWaveformTint.apply(wave, screen.palette.color())) screen.tintedWaveforms.add(wave);
     }
 
     private static void clearVoiceBackground(Screen screen, View view) {
@@ -1924,34 +2005,25 @@ final class ConversationGlassPanes {
     /** Keep quoted reply text readable over the translucent composer without losing hierarchy. */
     private void syncReplyContrast(Screen screen, ViewGroup footer) {
         View preview = findReplyPreview(footer);
-        if (preview == null) {
-            restoreReplyContrast(screen);
-            screen.paletteQuote.clear();
-            screen.quoteBackground = null;
-            screen.contrastSampler.invalidate();
-            return;
+        java.util.Set<View> activeFrames = new java.util.HashSet<>();
+        if (preview != null && screen.composer != null && screen.composer.hasLiveRecording()) {
+            for (String name : new String[]{"voice_note_draft_quoted_message_frame", "composer_quoted_message_frame"}) {
+                View frame = findById(footer, name);
+                if (frame == null || !visuallyShown(frame)) continue;
+                int[] bounds = rectOf(footer, frame);
+                if (!Rect.intersects(screen.committedPane, new Rect(bounds[0], bounds[1], bounds[2], bounds[3]))
+                        || !(frame == preview || isAncestor(frame, preview) || isAncestor(preview, frame))) continue;
+                activeFrames.add(frame);
+                screen.replyFrames.clear(frame, name);
+            }
         }
-        GlassSpec material = host.material(screen.root.get());
-        int contentColor = material == null ? Color.WHITE : material.contentColor;
+        screen.replyFrames.retain(activeFrames);
         if (screen.paletteQuote.get() != preview) {
             restoreReplyContrast(screen);
             screen.paletteQuote = new WeakReference<>(preview);
-            screen.quoteBackground = null;
-            screen.contrastSampler.invalidate();
         }
-        if (screen.quoteBackground != null) tintReplyChildren(screen, preview, contentColor, 0, new int[1]);
-        if (screen.composer == null || !screen.composer.hasLiveRecording()) return;
-        final View sampledQuote = preview;
-        final long epoch = screen.transition.epoch();
-        screen.contrastSampler.sample(screen.window.get(), preview, color -> {
-            if (!screen.footerOn || screen.suspended || screen.footer.get() != footer
-                    || screen.transition.epoch() != epoch || screen.paletteQuote.get() != sampledQuote
-                    || !isAncestor(footer, sampledQuote) || !sampledQuote.isShown()
-                    || !java.util.Objects.equals(material, host.material(screen.root.get()))) return;
-            screen.quoteBackground = color;
-            GlassSpec current = host.material(screen.root.get());
-            if (current != null) tintReplyChildren(screen, sampledQuote, current.contentColor, 0, new int[1]);
-        });
+        if (preview != null && screen.composer != null && screen.composer.hasLiveRecording())
+            tintReplyChildren(screen, preview, 0);
     }
 
     private static boolean visuallyShown(View view) {
@@ -2010,56 +2082,46 @@ final class ConversationGlassPanes {
         return count;
     }
 
-    private static void tintReplyChildren(Screen screen, View view, int rgb, int depth,
-                                          int[] textIndex) {
-        if (!view.isShown() || depth > 7) return;
+    private static void tintReplyChildren(Screen screen, View view, int depth) {
+        if (!view.isShown() || depth > 7 || "quoted_color".equals(resourceName(view))) return;
         if (view instanceof TextView) {
             TextView text = (TextView) view;
-            if (!screen.replyTextColors.containsKey(text)) {
-                screen.replyTextColors.put(text, text.getTextColors());
-            }
-            int index = textIndex[0]++;
-            int original = screen.replyTextColors.get(text).getDefaultColor();
-            int background = screen.quoteBackground == null ? Color.TRANSPARENT : screen.quoteBackground;
-            int color = com.waenhancer.theme.SemanticTheme.ensureTextContrast(
-                    index == 0 ? original : rgb, background, index == 0 ? 7.0 : 4.5);
-            if (text.getCurrentTextColor() != color) text.setTextColor(color);
-            screen.replyAppliedColors.put(text, color);
+            applyText(screen, text, true);
             return;
         }
         if (view instanceof ImageView) {
             String id = resourceName(view);
-            if (id != null && (id.contains("close") || id.contains("dismiss"))) {
-                ImageView icon = (ImageView) view;
-                if (!screen.replyIconTints.containsKey(icon)) {
-                    screen.replyIconTints.put(icon, icon.getImageTintList());
-                }
-                icon.setImageTintList(ColorStateList.valueOf(Color.argb(225,
-                        Color.red(rgb), Color.green(rgb), Color.blue(rgb))));
-            }
-            return;
+            if (id.contains("close") || id.contains("dismiss") || id.contains("cancel"))
+                applyIcon(screen, (ImageView) view, true);
+            return; // Media/stickers/thumbnails retain native colour.
         }
-        if (view instanceof ViewGroup) {
-            ViewGroup group = (ViewGroup) view;
-            for (int i = 0; i < group.getChildCount(); i++) {
-                tintReplyChildren(screen, group.getChildAt(i), rgb, depth + 1, textIndex);
-            }
-        }
+        if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++)
+            tintReplyChildren(screen, ((ViewGroup) view).getChildAt(i), depth + 1);
     }
 
+    private static void applyText(Screen screen, TextView text, boolean reply) {
+        WeakHashMap<TextView, ColorStateList> originals = reply ? screen.replyTextColors : screen.inputTextColors;
+        WeakHashMap<TextView, ColorStateList> applied = reply ? screen.replyAppliedColors : screen.inputAppliedTextColors;
+        ColorStateList current = text.getTextColors();
+        if (!originals.containsKey(text) || current != applied.get(text)) originals.put(text, current);
+        if (current != screen.paletteColors) text.setTextColor(screen.paletteColors);
+        applied.put(text, screen.paletteColors);
+    }
+    private static void restoreTexts(WeakHashMap<TextView, ColorStateList> originals,
+                                     WeakHashMap<TextView, ColorStateList> applied) {
+        for (TextView view : new ArrayList<>(originals.keySet()))
+            if (view != null && view.getTextColors() == applied.get(view)) view.setTextColor(originals.get(view));
+        originals.clear(); applied.clear();
+    }
+    private static void restoreIcons(WeakHashMap<ImageView, ColorStateList> originals,
+                                     WeakHashMap<ImageView, ColorStateList> applied) {
+        for (ImageView icon : new ArrayList<>(originals.keySet()))
+            if (icon != null && icon.getImageTintList() == applied.get(icon)) icon.setImageTintList(originals.get(icon));
+        originals.clear(); applied.clear();
+    }
     private static void restoreReplyContrast(Screen screen) {
-        for (TextView view : new ArrayList<>(screen.replyTextColors.keySet())) {
-            if (view != null && screen.replyAppliedColors.containsKey(view)
-                    && view.getCurrentTextColor() == screen.replyAppliedColors.get(view)) {
-                view.setTextColor(screen.replyTextColors.get(view));
-            }
-        }
-        screen.replyTextColors.clear();
-        screen.replyAppliedColors.clear();
-        for (ImageView view : new ArrayList<>(screen.replyIconTints.keySet())) {
-            if (view != null) view.setImageTintList(screen.replyIconTints.get(view));
-        }
-        screen.replyIconTints.clear();
+        restoreTexts(screen.replyTextColors, screen.replyAppliedColors);
+        restoreIcons(screen.replyIconTints, screen.replyAppliedTints);
     }
 
     /** Padding parks messages clear of the chrome; clipToPadding=false lets them scroll behind it. */
