@@ -670,6 +670,7 @@ public final class AppLiquidGlass extends Feature {
         private final WeakReference<View> root;
         private final WeakHashMap<View, Binding> bindings = new WeakHashMap<>();
         private final WeakHashMap<View, WeakReference<GlassMaterialDrawable>> secondaryFactories = new WeakHashMap<>();
+        private final WeakHashMap<View, Boolean> reportedRowOwners = new WeakHashMap<>();
         private final WeakHashMap<View, Surface> candidates = new WeakHashMap<>();
         private final WeakHashMap<TextView, BubbleTextState> bubbleTexts = new WeakHashMap<>();
         private final WeakHashMap<View, Boolean> pendingCanvasChecks = new WeakHashMap<>();
@@ -696,8 +697,11 @@ public final class AppLiquidGlass extends Feature {
                         "canvas-factory-displaced", "role=BUBBLES row=" + resourceName(row));
                 WeakReference<GlassMaterialDrawable> secondary = secondaryFactories.remove(row);
                 GlassMaterialDrawable next = secondary == null ? null : secondary.get();
+                // If WhatsApp now exposes the verified native row mask, make that the
+                // persistent owner before considering the replacement factory. A reply
+                // redraw must not promote another short-lived Canvas drawable first.
+                bindNativeBubbleRow(row);
                 if (next != null && frame.saw(next)) adopt(row, next);
-                if (!bindings.containsKey(row)) bindNativeBubbleRow(row);
                 Drawable nativeBackground = row.getBackground();
                 if (!bindings.containsKey(row) && resourceName(row).startsWith("conversation_row_")
                         && nativeBackground != null
@@ -1193,14 +1197,24 @@ public final class AppLiquidGlass extends Feature {
                         }
                     } else if (binding.rowBased) {
                         BubblePlacement location = nativeRowPlacement(target);
-                        if (location == null || !LiquidGlassSettings.bubbleEnabled(prefs, location.outgoing)
-                                || target.getBackground() != binding.glass) {
+                        Drawable mounted = target.getBackground();
+                        boolean nativeMaskRebound = mounted != binding.glass && mounted != null
+                                && "Fyn".equals(mounted.getClass().getSimpleName());
+                        boolean stillOwned = location != null
+                                && LiquidGlassSettings.bubbleEnabled(prefs, location.outgoing)
+                                && (mounted == binding.glass
+                                    || nativeMaskRebound && keepGlass(target, binding));
+                        if (!stillOwned) {
                             releaseBudget(binding);
                             binding.restore(target);
                             restoreBubbleText(target);
                             bindings.remove(target);
+                            WeakReference<GlassMaterialDrawable> deferred = secondaryFactories.remove(target);
+                            if (deferred != null && deferred.get() != null) deferred.get().rearmCanvasHost();
                             if (target.isAttachedToWindow()) bindNativeBubbleRow(target);
                         } else {
+                            if (nativeMaskRebound) GlassTrace.event(root.get(), binding.glass, target,
+                                    "RETAINED", "native-mask-rebound", "role=BUBBLES row=" + resourceName(target));
                             if (binding.outgoing == null || binding.outgoing != location.outgoing) {
                                 restoreBubbleText(target);
                                 binding.outgoing = location.outgoing;
@@ -1434,6 +1448,40 @@ public final class AppLiquidGlass extends Feature {
             Binding previous = bindings.get(view);
             if (previous != null) {
                 if (previous.glass == glass) return;
+                // On this WhatsApp build the Fyn row background and a canvas-drawn native
+                // bubble factory can both be painted in one frame. The direct row glass is
+                // already a valid live owner; adopting the late factory evicts it and leaves
+                // the row opaque until a later capture, especially during quoted replies.
+                // Keep the factory's own draw transparent while this verified native mask
+                // remains mounted. If WhatsApp removes that mask, scan() releases the row
+                // owner and re-arms the deferred factory's host callback for adoption.
+                if (previous.rowBased && canvasOwned) {
+                    Drawable mounted = view.getBackground();
+                    BubblePlacement placement = nativeRowPlacement(view);
+                    boolean nativeMask = mounted != null
+                            && "Fyn".equals(mounted.getClass().getSimpleName());
+                    boolean retained = placement != null
+                            && LiquidGlassSettings.bubbleEnabled(prefs, placement.outgoing)
+                            && (mounted == previous.glass || nativeMask && keepGlass(view, previous));
+                    if (retained) {
+                        if (previous.outgoing == null || previous.outgoing != placement.outgoing) {
+                            restoreBubbleText(view);
+                            previous.outgoing = placement.outgoing;
+                            final boolean side = placement.outgoing;
+                            previous.glass.attachMaterial(() -> bubbleMaterial(side, resolvedMaterial()));
+                        }
+                        previous.glass.setMaterialRegion(placement.region);
+                        secondaryFactories.put(view, new WeakReference<>(glass));
+                        glass.releaseLive();
+                        glass.attachMaterial(() -> bubbleMaterial(outgoing, resolvedMaterial()));
+                        if (!reportedRowOwners.containsKey(view)) {
+                            reportedRowOwners.put(view, Boolean.TRUE);
+                            GlassTrace.event(root.get(), previous.glass, view, "RETAINED",
+                                    "row-owner-preferred", "role=BUBBLES factory=" + GlassTrace.id(glass));
+                        }
+                        return;
+                    }
+                }
                 // One capture owner per native row. A quote factory drawn beside the bubble
                 // cannot evict/rearm it on every draw. Promote only after native displacement.
                 if (previous.canvasOwned && canvasOwned) {
@@ -1574,7 +1622,7 @@ public final class AppLiquidGlass extends Feature {
                 entry.getValue().restore(target);
                 restoreBubbleText(target);
             }
-            secondaryFactories.clear();
+            secondaryFactories.clear(); reportedRowOwners.clear();
             bindings.clear(); candidates.clear(); pendingDiscovery.clear(); pendingNativeBubbleRows.clear();
             restoreAllBubbleText();
         }
