@@ -180,17 +180,22 @@ public class HideSeen extends Feature {
     private boolean processReadReceiptByType(XC_MethodHook.MethodHookParam param, Object job,
                                              FMessageWpp.UserJid userJid, JSONObject privacy) {
         if (userJid.isGroup()) {
-            return processGroupReadReceipt(param, privacy);
+            return processGroupReadReceipt(param, privacy, hideDeliveredFor(privacy));
         }
         if (userJid.isStatus()) {
             processStatusReadReceipt(param, job);
             return false;
         }
-        return processDirectReadReceipt(param, privacy);
+        return processDirectReadReceipt(param, privacy, hideDeliveredFor(privacy));
     }
 
-    private boolean processGroupReadReceipt(XC_MethodHook.MethodHookParam param, JSONObject privacy) {
-        if (privacy.optBoolean("HideSeen", hideReadGroup) || ghostMode) {
+    private boolean hideDeliveredFor(JSONObject privacy) {
+        return privacy.optBoolean("HideReceipt", hideReceipt);
+    }
+
+    private boolean processGroupReadReceipt(XC_MethodHook.MethodHookParam param, JSONObject privacy,
+                                            boolean hideDelivered) {
+        if (ReceiptPolicy.suppressReadJob(privacy.optBoolean("HideSeen", hideReadGroup), hideDelivered, ghostMode)) {
             param.setResult(null);
             return true;
         }
@@ -207,9 +212,10 @@ public class HideSeen extends Feature {
         }
     }
 
-    private boolean processDirectReadReceipt(XC_MethodHook.MethodHookParam param, JSONObject privacy) {
+    private boolean processDirectReadReceipt(XC_MethodHook.MethodHookParam param, JSONObject privacy,
+                                             boolean hideDelivered) {
         boolean customHideRead = privacy.optBoolean("HideSeen", hideRead);
-        if (customHideRead || ghostMode) {
+        if (ReceiptPolicy.suppressReadJob(customHideRead, hideDelivered, ghostMode)) {
             param.setResult(null);
             return true;
         }
@@ -260,7 +266,8 @@ public class HideSeen extends Feature {
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                     diagnosticTriggered();
                     Message message = ReflectionUtils.getArg(param.args, Message.class, 0);
-                    if (message == null || (message.arg1 != 419 && message.arg1 != 89)) return;
+                    // Dev4Mod 015d446: never rewrite the read-job dispatch (89); see ReceiptPolicy.
+                    if (message == null || !ReceiptPolicy.rewritableDispatch(message.arg1)) return;
                     Object obj = message.obj;
                     if (obj == null || !finalInfoClass.isInstance(obj)) return;
 
