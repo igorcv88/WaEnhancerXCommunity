@@ -63,6 +63,10 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         if (previous == null) DRAW_HOST.remove(); else DRAW_HOST.set(previous);
     }
     private boolean canvasOwned;
+    private boolean pixelSuppressed;
+    private Runnable captureDemand;
+    private final BubbleCaptureEpoch captureEpoch = new BubbleCaptureEpoch();
+    private long capturedAt, publishedSerial;
     private int canvasOffsetX, canvasOffsetY;
     private String guardReason;
     private boolean drawReported;
@@ -128,12 +132,12 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
                 // than capture a different region and distort message content.
                 if (Math.abs(values[0] - 1f) < .001f && Math.abs(values[4] - 1f) < .001f
                         && Math.abs(values[1]) < .001f && Math.abs(values[3]) < .001f) {
-                    if (view != context.view) { notifiedHost = false; releaseLive(); }
+                    if (view != context.view) { notifiedHost = false; invalidateCapture("rowRecycled"); }
                     view = context.view;
                     owner = new WeakReference<>(view);
                     canvasOwned = true;
                     int x = Math.round(values[2]), y = Math.round(values[5]);
-                    if (x != canvasOffsetX || y != canvasOffsetY) releaseLive();
+                    if (x != canvasOffsetX || y != canvasOffsetY) invalidateCapture("canvas-offset");
                     canvasOffsetX = x; canvasOffsetY = y;
                 }
             }
@@ -147,6 +151,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
             reportedMissingHost = true;
             onHostMissing.run();
         }
+        if (pixelSuppressed) return;
         GlassSpec material = spec.get();
         Rect b = getBounds();
         if (view == null || material == null || b.isEmpty()) {
@@ -173,6 +178,12 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
                     ? canvas.saveLayerAlpha(0, 0, area.width(), area.height(), alpha) : -1;
             boolean drewLive = live != null && LiveBackdrop.wantsLive(material)
                     && live.draw(canvas, area.width(), area.height());
+            if (!LiveBackdrop.isCapturing() && drewLive && !Boolean.TRUE.equals(presentedLive)) {
+                BubbleLifecycleProbe.event("first-presented", view, this,
+                        "revision=" + captureEpoch.captured() + " serial=" + publishedSerial
+                                + " latencyMs=" + (android.os.SystemClock.uptimeMillis() - capturedAt)
+                                + " canvasOwned=" + canvasOwned + " budget=" + budgetStatus);
+            }
             if (!LiveBackdrop.isCapturing()) GlassTrace.presented(view.getRootView(), this, view.getRootView(), drewLive);
             if (!LiveBackdrop.isCapturing() && (presentedLive == null || presentedLive != drewLive)) {
                 presentedLive = drewLive;
@@ -226,13 +237,42 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     }
 
     public void attachMaterial(Supplier<GlassSpec> material) { spec = material; }
+    public void setPixelSuppressed(boolean suppressed) {
+        if (pixelSuppressed == suppressed) return;
+        pixelSuppressed = suppressed;
+        if (suppressed) releaseLive(); else invalidateCapture("factory-promoted");
+        invalidateSelf();
+    }
+    public void observeCaptureDemand(Runnable demand) { captureDemand = demand; }
+    public long damageRevision() { return captureEpoch.revision(); }
+    public boolean capturePending() { return !pixelSuppressed && captureEpoch.pending(); }
+    public boolean presentationPending() { return !pixelSuppressed && captureEpoch.captured() >= 0 && !hasPresentedLive(); }
+    public void captureAttempted() { captureEpoch.attempted(); }
+    public void invalidateCapture(String reason) {
+        captureEpoch.damage();
+        BubbleLifecycleProbe.event(reason, owner.get(), this,
+                "mask=" + GlassTrace.id(original) + " revision=" + captureEpoch.revision()
+                        + " canvasOwned=" + canvasOwned + " " + captureStatus());
+        releaseLive();
+        if (captureDemand != null) captureDemand.run();
+        invalidateSelf();
+    }
+    private boolean published(boolean success) {
+        if (success) {
+            captureEpoch.published();
+            capturedAt = android.os.SystemClock.uptimeMillis();
+            publishedSerial++;
+        }
+        return success;
+    }
 
     /** Constrain a message-row recording to its bubble bounds, not the entire 1440px row. */
     public void setMaterialRegion(Rect region) {
         if (region == null ? materialRegion == null : region.equals(materialRegion)) return;
+        if (GlassProbe.enabled()) BubbleLifecycleProbe.event("region-changed", owner.get(), this,
+                "old=" + materialRegion + " new=" + region + " mask=" + GlassTrace.id(original));
         materialRegion = region == null ? null : new Rect(region);
-        releaseLive();
-        invalidateSelf();
+        invalidateCapture("material-region");
     }
 
     private Rect materialArea(Rect bounds) {
@@ -270,13 +310,17 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
 
     /** A factory drawable may be nested inside a LayerDrawable instead of being the view's
      * direct background. The owning row is discovered after native attachment. */
-    public void attachOwner(View host) { owner = new WeakReference<>(host); }
+    public void attachOwner(View host) {
+        if (owner.get() != host) invalidateCapture("owner-changed");
+        owner = new WeakReference<>(host);
+    }
 
     /**
      * Records what lies beneath {@code host}, whose background this is, for the next draw.
      * Main thread, from a pre-draw pass. False leaves this layer transparent while retrying.
      */
     public boolean captureBehind(View host) {
+        captureAttempted();
         if (canvasOwned && owner.get() != host) return false;
         if (host == null || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return false;
         GlassSpec material = spec.get();
@@ -284,7 +328,8 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         // pass: every new or re-bound drawable failed its first capture and showed the fallback
         // for a frame (24 of 27 binds in the device log). A view's background always spans the
         // view, so take that size now; the view's own draw sets the same bounds.
-        if (!canvasOwned && getBounds().isEmpty() && host.getWidth() > 0 && host.getHeight() > 0) {
+        if (!canvasOwned && (getBounds().width() != host.getWidth() || getBounds().height() != host.getHeight())
+                && host.getWidth() > 0 && host.getHeight() > 0) {
             setBounds(0, 0, host.getWidth(), host.getHeight());
         }
         Rect b = getBounds();
@@ -307,7 +352,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
             if (GlassProbe.enabled()) GlassProbe.event("DRAWABLE_CAPTURE_RESULT", host,
                     "drawable=" + GlassTrace.id(this) + " success=" + success
                             + " state=" + recordingState());
-            return success;
+            return published(success);
         }
         host.getLocationOnScreen(location);
         int x = location[0] + canvasOffsetX + b.left + area.left, y = location[1] + canvasOffsetY + b.top + area.top;
@@ -316,7 +361,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         if (GlassProbe.enabled()) GlassProbe.event("DRAWABLE_CAPTURE_RESULT", host,
                 "drawable=" + GlassTrace.id(this) + " success=" + success
                         + " state=" + recordingState());
-        return success;
+        return published(success);
     }
 
     public void setBudgetStatus(String status) { budgetStatus = status; }
@@ -331,7 +376,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
                 || captureDisabled || live != null && !live.available();
     }
     public boolean wantsLiveCapture() {
-        return !captureDisabled && LiveBackdrop.wantsLive(spec.get());
+        return !pixelSuppressed && !captureDisabled && LiveBackdrop.wantsLive(spec.get());
     }
 
     /** Only an eligible surface that unexpectedly lost valid pixels asks for immediate recovery. */
@@ -348,7 +393,12 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         releaseLive(RecordingState.INTENTIONALLY_RELEASED);
     }
     public void releaseLive(RecordingState reason) {
+        if (GlassProbe.enabled() && (recordingState() != reason || Boolean.TRUE.equals(presentedLive)))
+            BubbleLifecycleProbe.event("release-" + reason, owner.get(), this,
+                    "revision=" + captureEpoch.revision() + " mask=" + GlassTrace.id(original)
+                            + " canvasOwned=" + canvasOwned + " " + captureStatus());
         recordingState = reason;
+        captureEpoch.released();
         // A new capture after a scroll/recycled row must repaint its background even if an
         // older capture had already been presented in the same drawable instance.
         presentedLive = null;
@@ -366,6 +416,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     public void replaceOriginal(Drawable replacement) {
         if (replacement == original || replacement == this) return;
         original = replacement;
+        if (nativeMask) invalidateCapture("nativeMaskRebound");
         if (original != null) {
             original.setCallback(this);
             original.setState(getState()); original.setLevel(getLevel());
@@ -416,7 +467,10 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         boolean changed = original != null && original.setVisible(visible, restart);
         return super.setVisible(visible, restart) || changed;
     }
-    @Override protected void onBoundsChange(Rect bounds) { if (original != null) original.setBounds(bounds); }
+    @Override protected void onBoundsChange(Rect bounds) {
+        if (original != null) original.setBounds(bounds);
+        invalidateCapture("drawable-bounds");
+    }
     @Override public void setHotspotBounds(int left, int top, int right, int bottom) {
         super.setHotspotBounds(left, top, right, bottom);
         if (original != null) original.setHotspotBounds(left, top, right, bottom);

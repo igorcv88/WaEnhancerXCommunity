@@ -19,5 +19,8 @@ public final class PresentationRetry {
         }
         return true;
     }
+    public long retryDelay(long now, boolean presented) {
+        return presented ? 0L : retryAt > now ? retryAt - now : 16L;
+    }
     public void rearm() { attempts = 0; retryAt = 0L; backoff = 1000L; }
 }

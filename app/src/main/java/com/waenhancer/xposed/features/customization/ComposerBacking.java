@@ -33,7 +33,9 @@ final class ComposerBacking {
     void clear(View view, boolean structural) {
         clearSlot(view, false, structural);
         // Never erase an unknown foreground (it may draw controls or progress).
-        clearSlot(view, true, false);
+        String role = com.waenhancer.theme.GlassProbe.role(view);
+        if (!role.equals("voice_note_draft_quoted_message_frame") && !role.equals("composer_quoted_message_frame"))
+            clearSlot(view, true, false); // The identified reply foreground has one dedicated owner.
     }
     private void clearSlot(View view, boolean foreground, boolean structural) {
         WeakHashMap<View, OwnedProperty<Drawable>> map = foreground ? foregrounds : backgrounds;

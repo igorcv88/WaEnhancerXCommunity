@@ -442,7 +442,10 @@ public final class AppLiquidGlass extends Feature {
                                         + " bound=" + session.bindings.containsKey(target));
                     }
                     boolean paneOwned = conversation.onBackgroundChanged(target, "background");
-                    if (session != null && !session.installing && !paneOwned) session.discoverLater(target);
+                    if (session != null && !session.installing && !paneOwned) {
+                        session.rowContentChanged(target);
+                        session.discoverLater(target);
+                    }
                 }
             });
             XposedBridge.hookMethod(View.class.getDeclaredMethod("setForeground", Drawable.class),
@@ -464,6 +467,7 @@ public final class AppLiquidGlass extends Feature {
                     ImageView target = (ImageView) param.thisObject;
                     conversation.onBackgroundChanged(target);
                     Session session = sessionFor(target.getRootView());
+                    if (session != null) session.rowContentChanged(target);
                     if (session != null && !session.installing
                             && (nestedBubble((Drawable) param.args[0], 0) != null
                                 || session.bindings.containsKey(target))) session.discoverLater(target);
@@ -522,6 +526,8 @@ public final class AppLiquidGlass extends Feature {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     if (GlassPane.isCapturing()) return;
                     TextView view = (TextView) param.thisObject;
+                    Session session = sessionFor(view.getRootView());
+                    if (session != null) session.rowContentChanged(view);
                     View ancestor = view;
                     while (ancestor != null && !isRecorderAnchor(ancestor)) {
                         ancestor = ancestor.getParent() instanceof View ? (View) ancestor.getParent() : null;
@@ -544,6 +550,15 @@ public final class AppLiquidGlass extends Feature {
     }
 
     private void installTintObserver() {
+        XC_MethodHook paletteChanged = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                if (!GlassPane.isCapturing()) conversation.onComposerVisualChanged((View) param.thisObject);
+            }
+        };
+        XposedBridge.hookAllMethods(ImageView.class, "setImageTintList", paletteChanged);
+        XposedBridge.hookAllMethods(ImageView.class, "setColorFilter", paletteChanged);
+        XposedBridge.hookAllMethods(ImageView.class, "drawableStateChanged", paletteChanged);
+        XposedBridge.hookAllMethods(TextView.class, "setTextColor", paletteChanged);
         XposedBridge.hookAllMethods(View.class, "setBackgroundTintList", new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
                 View view = (View) param.thisObject;
@@ -701,7 +716,11 @@ public final class AppLiquidGlass extends Feature {
                 // persistent owner before considering the replacement factory. A reply
                 // redraw must not promote another short-lived Canvas drawable first.
                 bindNativeBubbleRow(row);
-                if (next != null && frame.saw(next)) adopt(row, next);
+                if (next != null) {
+                    next.setPixelSuppressed(false);
+                    next.rearmCanvasHost();
+                    if (frame.saw(next)) adopt(row, next);
+                }
                 Drawable nativeBackground = row.getBackground();
                 if (!bindings.containsKey(row) && resourceName(row).startsWith("conversation_row_")
                         && nativeBackground != null
@@ -710,6 +729,51 @@ public final class AppLiquidGlass extends Feature {
                 }
                 row.invalidate();
             });
+        }
+
+        private void watchBubble(View row, Binding binding) {
+            if (binding.surface != Surface.BUBBLES) return;
+            WeakReference<View> rowRef = new WeakReference<>(row);
+            binding.glass.observeCaptureDemand(() -> {
+                View target = rowRef.get();
+                if (closed || suspended || target == null || bindings.get(target) != binding) return;
+                binding.presentation.rearm();
+                binding.recovery.revalidate();
+                scheduleFrame(1L);
+            });
+            binding.presentation.rearm();
+            binding.recovery.revalidate();
+            scheduleFrame(1L);
+        }
+
+        /** Native rebind signal, without inspecting message text, IDs or image bytes. */
+        void rowContentChanged(View node) {
+            if (closed || suspended || installing || GlassPane.isCapturing()) return;
+            for (View row = node; row != null; row = row.getParent() instanceof View ? (View) row.getParent() : null) {
+                Binding binding = bindings.get(row);
+                if (binding != null && binding.surface == Surface.BUBBLES) {
+                    if (!binding.contentDamagePending) {
+                        binding.contentDamagePending = true;
+                        binding.glass.invalidateCapture("rowRecycled");
+                        discoverLater(row);
+                    }
+                    return;
+                }
+            }
+        }
+
+        private void promoteDeferred(View row) {
+            WeakReference<GlassMaterialDrawable> ref = secondaryFactories.remove(row);
+            GlassMaterialDrawable next = ref == null ? null : ref.get();
+            if (next == null) return;
+            next.setPixelSuppressed(false);
+            next.rearmCanvasHost();
+            Boolean side = bubbleDirections.get(next);
+            if (row.isAttachedToWindow() && row.getRootView() == root.get() && side != null
+                    && LiquidGlassSettings.bubbleEnabled(prefs, side) && next.isCanvasOwnedBy(row)) adopt(row, next);
+            else next.attachMaterial(() -> null);
+            row.invalidate();
+            scheduleFrame(1L);
         }
 
         private final class BubbleTextState {
@@ -963,6 +1027,7 @@ public final class AppLiquidGlass extends Feature {
                 if (closed || suspended || GlassPane.isCapturing()) return true;
                 GlassTrace.frame(root.get());
                 home.frame(root.get());
+                conversation.onFrame(root.get());
                 if (bindings.isEmpty()) return true;
                 long now = SystemClock.uptimeMillis();
                 boolean fresh = false;
@@ -977,10 +1042,16 @@ public final class AppLiquidGlass extends Feature {
                             && binding.presentation.mayCapture(now, binding.glass.hasPresentedLive());
                     if (eligible && !mayCapture) {
                         long delay = binding.recovery.retryDelay(now);
-                        if (delay > 0) scheduleFrame(delay);
+                        if (delay > 0 || binding.recovery.mayCapture(now)) {
+                            if (binding.surface == Surface.BUBBLES && binding.glass.presentationPending())
+                                delay = Math.max(delay, binding.presentation.retryDelay(now, false));
+                            if (delay > 0) scheduleFrame(delay);
+                        }
                     }
-                    retryDue |= eligible && mayCapture && binding.recovery.retryDue(now);
-                    fresh |= binding.glass.needsFreshCapture(eligible && mayCapture);
+                    retryDue |= eligible && mayCapture && (binding.recovery.retryDue(now)
+                            || binding.surface == Surface.BUBBLES && binding.glass.presentationPending());
+                    fresh |= binding.glass.needsFreshCapture(eligible && mayCapture)
+                            || eligible && mayCapture && binding.glass.capturePending();
                 }
                 GlassOptics optics = GlassOptics.current();
                 // OneMate is the user-facing live renderer: it must always use sticky admissions
@@ -1100,6 +1171,7 @@ public final class AppLiquidGlass extends Feature {
                     }
                     binding.glass.setBudgetStatus(admitted ? "admitted" : "refused");
                     if (!admitted) {
+                        binding.glass.captureAttempted();
                         binding.glass.releaseLive(RecordingState.BUDGET_REFUSED);
                         if (ledger != null) ledger.releaseDrawable(binding.glass);
                         continue;
@@ -1130,7 +1202,11 @@ public final class AppLiquidGlass extends Feature {
                         if (invalidateNow || binding.surface == Surface.BUBBLES
                                 && binding.presentation.published(now, binding.glass.hasPresentedLive())) {
                             target.invalidate();
+                            com.waenhancer.theme.BubbleLifecycleProbe.event("target-invalidate", target, binding.glass,
+                                    "revision=" + binding.glass.damageRevision() + " " + binding.glass.captureStatus());
                         }
+                        if (binding.surface == Surface.BUBBLES && !binding.glass.hasPresentedLive())
+                            scheduleFrame(binding.presentation.retryDelay(now, false));
                     } else {
                         binding.recovery.failed(now, binding.glass.capturePermanentlyUnavailable());
                         binding.glass.releaseLive(RecordingState.TEMPORARILY_UNAVAILABLE);
@@ -1174,6 +1250,7 @@ public final class AppLiquidGlass extends Feature {
                     View target = entry.getKey();
                     if (target == null) continue;
                     Binding binding = entry.getValue();
+                    binding.contentDamagePending = false;
                     if (target.getRootView() != view) {
                         releaseBudget(binding);
                         binding.restore(target);
@@ -1209,9 +1286,8 @@ public final class AppLiquidGlass extends Feature {
                             binding.restore(target);
                             restoreBubbleText(target);
                             bindings.remove(target);
-                            WeakReference<GlassMaterialDrawable> deferred = secondaryFactories.remove(target);
-                            if (deferred != null && deferred.get() != null) deferred.get().rearmCanvasHost();
                             if (target.isAttachedToWindow()) bindNativeBubbleRow(target);
+                            promoteDeferred(target);
                         } else {
                             if (nativeMaskRebound) GlassTrace.event(root.get(), binding.glass, target,
                                     "RETAINED", "native-mask-rebound", "role=BUBBLES row=" + resourceName(target));
@@ -1296,6 +1372,8 @@ public final class AppLiquidGlass extends Feature {
                 for (Map.Entry<View, Binding> entry : bindings.entrySet()) {
                     if (entry.getValue().outgoing != null) updateBubbleText(entry.getKey(), entry.getValue());
                 }
+                for (View row : new ArrayList<>(secondaryFactories.keySet()))
+                    if (row != null && !bindings.containsKey(row)) promoteDeferred(row);
                 restoreDetachedBubbleText();
             } catch (Throwable error) {
                 report("scan-error", "surface scan skipped: " + error);
@@ -1390,6 +1468,7 @@ public final class AppLiquidGlass extends Feature {
             Binding binding = bindings.get(row);
             if (binding == null) return;
             binding.rowBased = true;
+            watchBubble(row, binding);
             binding.outgoing = placement.outgoing;
             binding.glass.setMaterialRegion(placement.region);
             final boolean side = placement.outgoing;
@@ -1472,7 +1551,7 @@ public final class AppLiquidGlass extends Feature {
                         }
                         previous.glass.setMaterialRegion(placement.region);
                         secondaryFactories.put(view, new WeakReference<>(glass));
-                        glass.releaseLive();
+                        glass.setPixelSuppressed(true);
                         glass.attachMaterial(() -> bubbleMaterial(outgoing, resolvedMaterial()));
                         if (!reportedRowOwners.containsKey(view)) {
                             reportedRowOwners.put(view, Boolean.TRUE);
@@ -1487,8 +1566,8 @@ public final class AppLiquidGlass extends Feature {
                 if (previous.canvasOwned && canvasOwned) {
                     secondaryFactories.put(view, new WeakReference<>(glass));
                     callbackBubbles.put(view, previous.glass);
-                    glass.releaseLive();
-                    glass.attachMaterial(() -> null);
+                    glass.setPixelSuppressed(true);
+                    glass.attachMaterial(() -> bubbleMaterial(outgoing, resolvedMaterial()));
                     return;
                 }
                 releaseBudget(previous);
@@ -1504,6 +1583,8 @@ public final class AppLiquidGlass extends Feature {
             binding.canvasOwned = canvasOwned;
             binding.outgoing = outgoing;
             bindings.put(view, binding);
+            glass.setPixelSuppressed(false);
+            watchBubble(view, binding);
             if (canvasOwned || callbackOwned) callbackBubbles.put(view, glass);
             if (canvasOwned && resourceName(view).startsWith("conversation_row_")) {
                 observeNativeRowDraw(view);
@@ -1622,6 +1703,10 @@ public final class AppLiquidGlass extends Feature {
                 entry.getValue().restore(target);
                 restoreBubbleText(target);
             }
+            for (WeakReference<GlassMaterialDrawable> ref : secondaryFactories.values()) {
+                GlassMaterialDrawable secondary = ref.get();
+                if (secondary != null) { secondary.setPixelSuppressed(false); secondary.attachMaterial(() -> null); secondary.rearmCanvasHost(); }
+            }
             secondaryFactories.clear(); reportedRowOwners.clear();
             bindings.clear(); candidates.clear(); pendingDiscovery.clear(); pendingNativeBubbleRows.clear();
             restoreAllBubbleText();
@@ -1653,6 +1738,7 @@ public final class AppLiquidGlass extends Feature {
         boolean callbackOwned;
         boolean rowBased;
         boolean canvasOwned;
+        boolean contentDamagePending;
         final com.waenhancer.theme.PresentationRetry presentation = new com.waenhancer.theme.PresentationRetry();
         final SurfaceRecovery recovery = new SurfaceRecovery();
         Binding(View view, Drawable original, Surface surface, boolean nativeMask) {
@@ -1665,6 +1751,7 @@ public final class AppLiquidGlass extends Feature {
         }
         void restore(View view) {
             recovery.release();
+            glass.observeCaptureDemand(null);
             glass.releaseLive();
             if (nested || canvasOwned) {
                 // The native container still references this factory wrapper; make it paint its
