@@ -5,6 +5,16 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+PANES = (ROOT / 'app/src/main/java/com/waenhancer/xposed/features/customization/ConversationGlassPanes.java').read_text()
+# The header and recorder may own the same ancestor simultaneously. Keep one native
+# snapshot and two ownership sets; neither release path may restore a shared group.
+for contract in ('nativeClipFlags', 'headerClipOwners', 'recordingClipOwners',
+                 'ownClipFlags(screen, group, true)', 'ownClipFlags(screen, group, false)',
+                 'releaseClipFlags(screen, true)', 'releaseClipFlags(screen, false)',
+                 'if (other.contains(group)) continue;'):
+    assert contract in PANES, f'missing shared clipping contract: {contract}'
+for obsolete in ('topClipFlags', 'recordingClipChildren', 'recordingClipPadding'):
+    assert obsolete not in PANES, f'competing native clipping snapshot remains: {obsolete}'
 HARNESS = r'''
 import com.waenhancer.theme.*;
 public class ConversationGlassChecks {

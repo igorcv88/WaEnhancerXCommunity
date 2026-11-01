@@ -178,3 +178,34 @@ For performance, compare **same exact gestures** with glass off/on: frame p50/p9
 - Local checks: all six edited/new Java files passed JDK 17 compiler **syntax parsing only**; standalone bubble-identity smoke passed; `tools/test_conversation_glass.py` passed synthetic recorder transition checks; four app-only runtime tests passed; `git diff --check` clean. Full Android compilation/JUnit requires SDK36/JDK21/Gradle, unavailable in this session.
 - These are plausible fixes for an observed race and a specific documented hot hook, **not a verified repair** of the intermittent bubbles, recording delay, microphone, status-bar strip, or visual style. The rest need physical evidence before another code iteration.
 - Community's app-only IPC and lifecycle invariants and single LSPosed entrypoint remain binding. External projects' GPL/Apache license headers and attribution must be respected if more code is ported in future.
+
+## Verification and porting handoff — 2026-11-01
+
+The historical sections above describe the **2026-10-31 audit snapshot and PR #107**, not the current master or a recommendation to replay PR #107. GitHub commit comparisons were repeated on 2026-11-01:
+
+| Source | Audited SHA vs current default-branch HEAD | Additional commits to audit |
+| --- | --- | --- |
+| `Dev4Mod/WaEnhancer` | `36c22aeda030327704b5ee0b099f060fd42c1120` = `HEAD` | **0** |
+| `WaEnhancerX/WaEnhancerX` | `8062ecda7c821bcfd6c794e6d55a25c6e5156be7` = `HEAD` | **0** |
+| `igorcv88/WaEnhancerXCommunity` | prior `380b475e77bee727b0715bc5a9eca683f0bdaae4` → merged `f77a634` (#120) | **36**, including merges and Community-specific glass changes; these are *not* new upstream commits |
+
+The original Dev4Mod ledger remains complete for its **77-commit** interval (74 non-merges above; three merges via the compare URL). The maintained X section is a **selected high-value change assessment**, **not** an exhaustive X commit ledger, because its ancestry with Community was not established. A full porting pass must inspect X's remaining commits/files separately and record explicit implemented/adapted/deferred/rejected dispositions rather than assuming this table lists everything. The older [`UPSTREAM_AUDIT_2026-10-06.md`](UPSTREAM_AUDIT_2026-10-06.md) covers Dev4Mod changes before `749c3cae`; its findings must be cross-checked against current code before replay.
+
+Recent Community integration has changed the destination code considerably: #107–#119 were merged for row-mask ownership, recorder and input transitions, wallpaper, legacy recorder indicators and date instrumentation; #120 merged a manual signed PR-preview workflow. The Galaxy user has confirmed the recorder/input and unwanted red-mic/black-strip corrections, but **message-bubble live presentation, sticky date placement and reply surfaces/foreground colours remain under a separate Work implementation request**. On this check, no related Work PR was published. Do not port upstream changes into those active compositor paths until the pending Work diff is available and reconciled; do not reimplement Community fixes based on their old status in this report.
+
+Review-comment cross-check on merged PRs #69–#120:
+
+- Earlier reported own-scroll/padded-optics (#73/#84), unmeasured-row/nested replacement (#102/#104), fullscreen IME (#105), stale canvas rearm (#107), duplicate quote (#108), and repetitive capture-probe sampling (#113) already have subsequent source repairs or tests. An unresolved GitHub thread alone does not mean its bug persists.
+- #120's preview suffix `-pr…` is incompatible with the installed-version comparators; the follow-up review branch uses SemVer build metadata `+pr…` so both comparators normalize the preview to the same base release version. This is a preview **name** fix, not proof that every future release's versionCode can upgrade a preview.
+- #114's concurrent header/recorder clipping snapshots still conflict in merged master; the follow-up review branch shares original clip flags between the two owners. Physical testing of disable/enable and recorder teardown remains outstanding.
+- #118's deferred Canvas factory on row detach, and #115's quote contrast retry, are part of the separately requested bubble/reply lifecycle fix. Do not apply both an old review patch and a Work rewrite blindly; evaluate those precise cases against its final diff and device log first.
+- #96's dead spoof controls are already absent from the embedded settings map; #97's Lite Mode emoji font has a narrow bridge fallback; #100's light-background contour got a later contrast-aware path. Do not duplicate these fixes. #91's moving native indicator/floating-bar optics need separate visual regression evidence before changing user-accepted navigation.
+
+### Cloud porting sequence and acceptance
+
+1. Begin from the **then-current merged Community master**; inspect `AGENTS.md`, `ARCHITECTURE.md`, `handoff.md`, both dated upstream audits, and any still-open Work PR. Recompare both source SHAs above against their latest default-branch HEAD before assuming the audit interval is unchanged.
+2. For each potentially useful upstream commit, record: source repo + immutable SHA, changed class/resource, current Community equivalent, WhatsApp/Business versions actually supported, compatibility risk, disposition (`already present`, `adapt`, `defer`, `reject`), and the verification needed. Prioritize versioned DexKit descriptor invalidation/negative lookup, bounded expensive reflection/bridge work, native WhatsApp 2.26.39–2.26.42 resolver changes, LID/PN and receipt authorization correctness, and safe preference/cache recovery. These priorities are candidates, not installation evidence.
+3. Preserve Community's app-only executable runtime, identity-authenticated IPC, private/public preference boundary, LSPosed entrypoint, device-accepted composer/recorder and floating bar, reversible native View state, and secure data migrations. Do not cherry-pick framework migrations, system-scope hooks, root spoofers or mere compatibility version strings. Port one coherent behavior per commit/PR with source attribution and regression tests.
+4. Validate affected resolvers against real WhatsApp and Business APK/DEX versions before enabling new compatibility claims. Run local Java/Gradle tests and build separately; leave manual GitHub Actions untouched unless requested. Treat Galaxy screenshots/logs as mandatory for actual UI/recording/bubble acceptance, and update the audit dispositions after each integration.
+
+This append-only status supersedes the prior report's *current PR* and *pending symptom* wording; it does not change its original commit inventory or historical evidence.

@@ -116,7 +116,11 @@ final class ConversationGlassPanes {
         int originalFitInsetsTypes;
         int originalFitInsetsSides;
         boolean originalFitInsetsIgnoringVisibility;
-        final WeakHashMap<ViewGroup, Boolean> recordingClipPadding = new WeakHashMap<>();
+        // Header and recorder can share clip ancestors. Snapshot the native flags once and
+        // restore them only after the last owner releases the group.
+        final WeakHashMap<ViewGroup, boolean[]> nativeClipFlags = new WeakHashMap<>();
+        final java.util.Set<ViewGroup> headerClipOwners = java.util.Collections.newSetFromMap(new WeakHashMap<>());
+        final java.util.Set<ViewGroup> recordingClipOwners = java.util.Collections.newSetFromMap(new WeakHashMap<>());
         String geometryKey;
         View.OnLayoutChangeListener holderListener, footerListener;
 
@@ -156,11 +160,9 @@ final class ConversationGlassPanes {
         int topTraces;
         String topKey;
         final int[] location = new int[2];
-        final WeakHashMap<ViewGroup, Boolean> recordingClipChildren = new WeakHashMap<>();
         Integer listHostBottomMargin;
         Integer listHostTopMargin;
         WeakReference<ViewGroup> topExtendedHost = new WeakReference<>(null);
-        final WeakHashMap<ViewGroup, boolean[]> topClipFlags = new WeakHashMap<>();
         Integer floatedFooterHeight;
         Float footerTranslationY;
         int[] listPadding;
@@ -716,10 +718,7 @@ final class ConversationGlassPanes {
         for (View node = parentView(listHost); node != null && node != root; node = parentView(node)) {
             if (!(node instanceof ViewGroup)) continue;
             ViewGroup group = (ViewGroup) node;
-            if (!screen.topClipFlags.containsKey(group)) screen.topClipFlags.put(group,
-                    new boolean[]{group.getClipChildren(), group.getClipToPadding()});
-            if (group.getClipChildren()) group.setClipChildren(false);
-            if (group.getClipToPadding()) group.setClipToPadding(false);
+            ownClipFlags(screen, group, true);
         }
     }
 
@@ -733,11 +732,7 @@ final class ConversationGlassPanes {
         }
         screen.listHostTopMargin = null;
         screen.topExtendedHost = new WeakReference<>(null);
-        for (java.util.Map.Entry<ViewGroup, boolean[]> entry : screen.topClipFlags.entrySet()) {
-            entry.getKey().setClipChildren(entry.getValue()[0]);
-            entry.getKey().setClipToPadding(entry.getValue()[1]);
-        }
-        screen.topClipFlags.clear();
+        releaseClipFlags(screen, true);
     }
 
     private void disableHeader(Screen screen) {
@@ -1894,29 +1889,36 @@ final class ConversationGlassPanes {
         for (int depth = 0; depth < 4 && node instanceof ViewGroup && node != listHost;
                 depth++, node = parentView(node)) {
             ViewGroup group = (ViewGroup) node;
-            if (!screen.recordingClipChildren.containsKey(group)) {
-                screen.recordingClipChildren.put(group, group.getClipChildren());
-            }
-            if (group.getClipChildren()) group.setClipChildren(false);
-            if (!screen.recordingClipPadding.containsKey(group)) {
-                screen.recordingClipPadding.put(group, group.getClipToPadding());
-            }
-            if (group.getClipToPadding()) group.setClipToPadding(false);
+            ownClipFlags(screen, group, false);
         }
     }
 
     private static void restoreRecordingGlassClip(Screen screen) {
-        for (java.util.Map.Entry<ViewGroup, Boolean> entry :
-                new ArrayList<>(screen.recordingClipChildren.entrySet())) {
-            ViewGroup group = entry.getKey();
-            if (group != null) group.setClipChildren(entry.getValue());
+        releaseClipFlags(screen, false);
+    }
+
+    /** Keep native clip flags until neither the header nor the recording needs overflow. */
+    private static void ownClipFlags(Screen screen, ViewGroup group, boolean header) {
+        java.util.Set<ViewGroup> owners = header ? screen.headerClipOwners : screen.recordingClipOwners;
+        if (owners.add(group) && !screen.nativeClipFlags.containsKey(group)) {
+            screen.nativeClipFlags.put(group,
+                    new boolean[]{group.getClipChildren(), group.getClipToPadding()});
         }
-        screen.recordingClipChildren.clear();
-        for (java.util.Map.Entry<ViewGroup, Boolean> entry :
-                new ArrayList<>(screen.recordingClipPadding.entrySet())) {
-            if (entry.getKey() != null) entry.getKey().setClipToPadding(entry.getValue());
+        if (group.getClipChildren()) group.setClipChildren(false);
+        if (group.getClipToPadding()) group.setClipToPadding(false);
+    }
+
+    private static void releaseClipFlags(Screen screen, boolean header) {
+        java.util.Set<ViewGroup> owners = header ? screen.headerClipOwners : screen.recordingClipOwners;
+        java.util.Set<ViewGroup> other = header ? screen.recordingClipOwners : screen.headerClipOwners;
+        for (ViewGroup group : new ArrayList<>(owners)) {
+            owners.remove(group);
+            if (other.contains(group)) continue;
+            boolean[] nativeFlags = screen.nativeClipFlags.remove(group);
+            if (nativeFlags == null) continue;
+            group.setClipChildren(nativeFlags[0]);
+            group.setClipToPadding(nativeFlags[1]);
         }
-        screen.recordingClipPadding.clear();
     }
 
     /** Keep quoted reply text readable over the translucent composer without losing hierarchy. */
