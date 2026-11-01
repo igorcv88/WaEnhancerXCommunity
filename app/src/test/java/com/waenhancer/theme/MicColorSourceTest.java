@@ -23,6 +23,21 @@ public class MicColorSourceTest {
         assertEquals(Integer.valueOf(0x80123456), MicColorSource.selectDisc(java.util.Arrays.asList(0x7fffffff, 0x80123456)));
     }
 
+    @Test public void opacityThreshold() {
+        assertTrue(MicColorSource.isDiscOpaque(0x80000000));
+        assertFalse(MicColorSource.isDiscOpaque(0x7fffffff));
+    }
+
+    @Test public void paletteFollowsInPlaceRecolourEverySync() throws IOException {
+        String panes = new String(Files.readAllBytes(Paths.get(
+                "src/main/java/com/waenhancer/xposed/features/customization/ConversationGlassPanes.java")),
+                StandardCharsets.UTF_8);
+        int start = panes.indexOf("private void syncComposerIcons(");
+        String body = panes.substring(start, panes.indexOf("private static void collectDiscCandidates", start));
+        assertFalse("no identity signature may skip re-reading the fill", body.contains("micSignature"));
+        assertTrue(panes.contains("MicColorSource.isDiscOpaque(color)) return color;"));
+    }
+
     @Test public void noDiscColourIsUnknown() {
         assertNull(MicColorSource.selectDisc(java.util.Arrays.asList(null, 0x00ffffff)));
         assertNull(MicColorSource.selectDisc(null));

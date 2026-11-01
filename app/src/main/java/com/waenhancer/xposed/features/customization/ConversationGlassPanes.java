@@ -106,7 +106,6 @@ final class ConversationGlassPanes {
         WeakReference<View> paletteQuote = new WeakReference<>(null);
         final com.waenhancer.theme.ComposerPalette palette = new com.waenhancer.theme.ComposerPalette();
         ColorStateList paletteColors = ColorStateList.valueOf(com.waenhancer.theme.ComposerPalette.CURRENT_PROFILE_ICON);
-        int micSignature;
         boolean micResolved;
         WeakReference<View> stickyDate = new WeakReference<>(null);
         final com.waenhancer.theme.StickyDatePosition datePosition = new com.waenhancer.theme.StickyDatePosition();
@@ -1484,30 +1483,24 @@ final class ConversationGlassPanes {
         if (action != null) {
             java.util.List<View> candidates = new java.util.ArrayList<>(4);
             collectDiscCandidates(action, candidates, 0);
-            int signature = System.identityHashCode(action);
+            // Read every sync: a native fill can be recoloured in place without changing the
+            // drawable, tint or state identity (Codex review on #128). At most six views;
+            // ComposerPalette.update() is a no-op for an unchanged colour.
+            java.util.List<Integer> colors = new java.util.ArrayList<>(candidates.size() * 2);
             for (View v : candidates) {
-                signature = 31 * signature + java.util.Objects.hash(System.identityHashCode(v.getBackground()),
-                        System.identityHashCode(v.getBackgroundTintList()),
-                        java.util.Arrays.hashCode(v.getDrawableState()));
+                int[] state = v.getDrawableState();
+                ColorStateList tint = v.getBackgroundTintList();
+                if (tint != null && v.getBackground() != null)
+                    colors.add(tint.getColorForState(state, tint.getDefaultColor()));
+                colors.add(drawableFillColor(v.getBackground(), state, 0));
             }
-            if (!screen.micResolved || signature != screen.micSignature) {
-                java.util.List<Integer> colors = new java.util.ArrayList<>(candidates.size() * 2);
-                for (View v : candidates) {
-                    int[] state = v.getDrawableState();
-                    ColorStateList tint = v.getBackgroundTintList();
-                    if (tint != null && v.getBackground() != null)
-                        colors.add(tint.getColorForState(state, tint.getDefaultColor()));
-                    colors.add(drawableFillColor(v.getBackground(), state, 0));
-                }
-                Integer color = com.waenhancer.theme.MicColorSource.selectDisc(colors);
-                if (color == null) {
-                    // ComposerPalette.update(null) keeps the last reference (initially CURRENT_PROFILE_ICON).
-                    host.report("composer-mic-disc-fallback", "action button disc colour not exposed through public APIs; keeping last reference (initially current profile's white)");
-                }
-                if (screen.palette.update(color)) screen.paletteColors = ColorStateList.valueOf(screen.palette.color());
-                screen.micSignature = signature;
-                screen.micResolved = true;
+            Integer color = com.waenhancer.theme.MicColorSource.selectDisc(colors);
+            if (color == null && !screen.micResolved) {
+                // ComposerPalette.update(null) keeps the last reference (initially CURRENT_PROFILE_ICON).
+                host.report("composer-mic-disc-fallback", "action button disc colour not exposed through public APIs; keeping last reference (initially current profile's white)");
             }
+            if (color != null) screen.micResolved = true;
+            if (screen.palette.update(color)) screen.paletteColors = ColorStateList.valueOf(screen.palette.color());
         } // A temporarily absent action button keeps the last resolved reference.
         tintComposerIcons(screen, footer, screen.palette.color(), 0);
     }
@@ -1539,7 +1532,8 @@ final class ConversationGlassPanes {
             for (int i = 0; i < layers.getNumberOfLayers(); i++) {
                 if (layers.getId(i) == android.R.id.mask) continue; // ripple mask is never painted
                 Integer color = drawableFillColor(layers.getDrawable(i), state, depth + 1);
-                if (color != null) return color;
+                // A transparent/translucent layer is not the disc; keep looking (Codex review on #128).
+                if (color != null && com.waenhancer.theme.MicColorSource.isDiscOpaque(color)) return color;
             }
             return null;
         }

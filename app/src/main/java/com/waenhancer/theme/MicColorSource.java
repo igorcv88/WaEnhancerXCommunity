@@ -19,10 +19,14 @@ public final class MicColorSource {
     private MicColorSource() {
     }
 
+    public static boolean isDiscOpaque(int color) {
+        return (color >>> 24) >= 0x80;
+    }
+
     public static Integer selectDisc(List<Integer> candidates) {
         if (candidates == null) return null;
         for (Integer color : candidates) {
-            if (color != null && (color >>> 24) >= 0x80) return color;
+            if (color != null && isDiscOpaque(color)) return color;
         }
         return null;
     }
