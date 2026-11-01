@@ -150,7 +150,10 @@ jobs:
             echo "::error::Preview versionCode exceeds Android's supported range."
             exit 1
           }
-          VERSION_NAME="${RELEASE_SERIES}.${MAX_PATCH}-pr${PR_NUMBER}-${SHORT_SHA}"
+          # Both in-app release comparators strip SemVer build metadata at '+'. A
+          # prerelease '-pr...' suffix instead parses as version zero and causes
+          # false update/downgrade prompts on signed PR preview installations.
+          VERSION_NAME="${RELEASE_SERIES}.${MAX_PATCH}+pr${PR_NUMBER}.${SHORT_SHA}"
           {
             echo "code=$VERSION_CODE"
             echo "name=$VERSION_NAME"
