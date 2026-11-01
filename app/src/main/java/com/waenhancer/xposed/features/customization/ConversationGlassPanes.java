@@ -108,6 +108,10 @@ final class ConversationGlassPanes {
         ColorStateList paletteColors = ColorStateList.valueOf(com.waenhancer.theme.ComposerPalette.CURRENT_PROFILE_ICON);
         int micSignature;
         boolean micResolved;
+        /** Identified composer microphone and the colour argument of its last setColorFilter(int…). */
+        WeakReference<ImageView> mic = new WeakReference<>(null);
+        Integer micObservedFilterColor;
+        WeakReference<android.graphics.ColorFilter> micObservedFilter = new WeakReference<>(null);
         WeakReference<View> stickyDate = new WeakReference<>(null);
         final com.waenhancer.theme.StickyDatePosition datePosition = new com.waenhancer.theme.StickyDatePosition();
         final java.util.Set<View> tintedWaveforms = java.util.Collections.newSetFromMap(new WeakHashMap<>());
@@ -1365,6 +1369,8 @@ final class ConversationGlassPanes {
         restoreIcons(screen.originalInputIconTints, screen.appliedInputIconTints);
         restoreTexts(screen.inputTextColors, screen.inputAppliedTextColors);
         screen.micResolved = false;
+        screen.mic = new WeakReference<>(null);
+        screen.micObservedFilterColor = null;
         restoreUnder(screen, footer);
         syncListPadding(screen);
     }
@@ -1380,6 +1386,10 @@ final class ConversationGlassPanes {
      */
     private void syncComposerIcons(Screen screen, ViewGroup footer) {
         ImageView mic = firstImage(findById(footer, "conversation_entry_action_button"), 0);
+        if (mic != null && mic != screen.mic.get()) {
+            screen.mic = new WeakReference<>(mic);
+            screen.micObservedFilterColor = null;
+        }
         if (mic != null) {
             Drawable drawable = mic.getDrawable();
             Drawable current = drawable == null ? null : drawable.getCurrent();
@@ -1390,17 +1400,20 @@ final class ConversationGlassPanes {
                     System.identityHashCode(drawable), System.identityHashCode(filter),
                     System.identityHashCode(tint), java.util.Arrays.hashCode(mic.getDrawableState()));
             if (!screen.micResolved || signature != screen.micSignature) {
-                Integer color = null;
-                if (filter instanceof android.graphics.PorterDuffColorFilter)
-                    color = ((android.graphics.PorterDuffColorFilter) filter).getColor();
-                else if (filter instanceof android.graphics.BlendModeColorFilter)
-                    color = ((android.graphics.BlendModeColorFilter) filter).getColor();
-                else if (tint != null) color = tint.getColorForState(mic.getDrawableState(), tint.getDefaultColor());
-                else if (current instanceof ColorDrawable)
-                    color = ((ColorDrawable) current).getColor();
+                // Public APIs only: PorterDuffColorFilter has no public colour getter.
+                Integer tintColor = tint == null ? null
+                        : tint.getColorForState(mic.getDrawableState(), tint.getDefaultColor());
+                Integer blendColor = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
+                        && filter instanceof android.graphics.BlendModeColorFilter
+                        ? ((android.graphics.BlendModeColorFilter) filter).getColor() : null;
+                Integer observedColor = mic == screen.mic.get() && filter != null
+                        && filter == screen.micObservedFilter.get()
+                        ? screen.micObservedFilterColor : null;
+                Integer drawableColor = current instanceof ColorDrawable ? ((ColorDrawable) current).getColor() : null;
+                Integer color = com.waenhancer.theme.MicColorSource.select(tintColor, blendColor, observedColor, drawableColor);
                 if (color == null) {
-                    color = com.waenhancer.theme.ComposerPalette.CURRENT_PROFILE_ICON;
-                    host.report("composer-mic-style-fallback", "microphone exposes no tint/filter; using current profile's white glyph style");
+                    // ComposerPalette.update(null) keeps the last reference (initially CURRENT_PROFILE_ICON).
+                    host.report("composer-mic-style-fallback", "microphone colour not exposed through public APIs; keeping last reference (initially current profile's white glyph style)");
                 }
                 if (screen.palette.update(color)) screen.paletteColors = ColorStateList.valueOf(screen.palette.color());
                 screen.micSignature = signature;
@@ -1408,6 +1421,19 @@ final class ConversationGlassPanes {
             }
         } // A temporarily absent mic keeps the last resolved reference during audio reconstruction.
         tintComposerIcons(screen, footer, screen.palette.color(), 0);
+    }
+
+    /**
+     * Called from the existing ImageView.setColorFilter observer with the colour argument of the
+     * int overloads. Retained only for the identified composer microphone and only for the filter
+     * instance that call installed; a later setColorFilter(ColorFilter) invalidates it.
+     */
+    void onImageColorFilterSet(ImageView view, Integer color) {
+        Screen screen = screens.get(view.getRootView());
+        if (screen == null || view != screen.mic.get()) return;
+        android.graphics.ColorFilter installed = view.getColorFilter();
+        screen.micObservedFilterColor = installed == null ? null : color;
+        screen.micObservedFilter = new WeakReference<>(installed);
     }
 
     void onComposerVisualChanged(View view) {
