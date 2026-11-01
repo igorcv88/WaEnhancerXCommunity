@@ -44,6 +44,17 @@ assert 'if (!enabled()) return;' in probe
 assert 'SystemClock.uptimeMillis() + 1500' in backing_probe
 assert 'remaining[0]-- <= 0' in backing_probe
 assert 'GlassProbe.enabled()' in backing_probe
+assert 'voiceSnapshots >= 4' in backing_probe, 'recorder inventory must be rate limited'
+assert 'new int[]{160}' in backing_probe, 'recorder subtree walk must be bounded'
+assert 'Math.min(34, candidates.size())' in backing_probe, 'recorder snapshot must cap emitted nodes'
+assert 'COMPOSER_VOICE_NODE' in backing_probe
+assert 'screen.backingProbe.voiceSnapshot(voice,' in conversation
+assert 'VOICE_MIC_UNRESOLVED' in conversation and 'VOICE_MIC_FILTER' in conversation
+assert 'screen.inputBacking.restore(); screen.backingVoice = true;' not in conversation, (
+    'recorder route must not restore the still-visible opaque input background'
+)
+assert 'screen.inputBacking.clear(inactiveInput, true);' in conversation
+assert 'findById(recorder, "voice_note_draft_preview_v2")' in conversation
 HARNESS = r'''
 import com.waenhancer.theme.GlassProbeBudget;
 

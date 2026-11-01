@@ -936,7 +936,12 @@ final class ConversationGlassPanes {
 
     /** The persistent composer pane follows the native recorder; its controls stay native. */
     private void syncVoiceFrame(Screen screen, ViewGroup footer, ViewGroup voice, long now, float d) {
-        if (!screen.backingVoice) { screen.inputBacking.restore(); screen.backingVoice = true; }
+        // The native input holder remains visible behind the voice draft on this WhatsApp build.
+        // Restoring its opaque fill on route entry painted a black bar over the glass (PR #116).
+        // Keep the normal-input ownership until the composer is disabled or the input rebinds.
+        screen.backingVoice = true;
+        if (GlassProbe.enabled()) screen.backingProbe.voiceSnapshot(voice,
+                findById(footer, "input_layout"), screen.transition.epoch());
         int pad = Math.round(COMPOSE_PAD_DP * d);
         // Measured native screen-space bounds mapped into the footer, never a guessed panel.
         int[] voiceRect = rectOf(footer, voice);
@@ -1014,6 +1019,15 @@ final class ConversationGlassPanes {
         // Recycled native recorder holders can restore their opaque background while retaining
         // the same geometry. A sampled native background replacement must be cleared again.
         if (screen.composer.hasLiveRecording()) {
+            // The normal input's *content* is INVISIBLE during voice recording, but its outer
+            // input_layout remains SHOWN and retains a native 3Xk/GradientDrawable backing.
+            // Clear that structural fill only after replacement glass is live; keep its views,
+            // children and native recording controls intact.
+            View inactiveInput = findById(footer, "input_layout");
+            if (inactiveInput != null && inactiveInput != voice
+                    && !isAncestor(inactiveInput, voice) && inactiveInput.isShown()) {
+                screen.inputBacking.clear(inactiveInput, true);
+            }
             clearVoiceBackgrounds(screen, voice);
             if (quote != null) clearReplyBacking(screen, footer, quote);
             clearPlayerBacking(screen, footer, voice);
@@ -1116,7 +1130,9 @@ final class ConversationGlassPanes {
             View edit = findById(input, "edit_layout");
             if (edit != null) clearBackingChain(screen, footer, edit);
             clearInputWrappers(screen, footer, input);
-        } else {
+        } else if (screen.composer == null || screen.composer.getVisibility() != View.VISIBLE) {
+            // A temporary size/capture revalidation is not a native-route transition. Keep
+            // the previously cleared input fill owned while its existing pane is visible.
             screen.inputBacking.restore();
         }
         if ((flags & ComposerTransition.PRESENT) != 0 || wasRecording
@@ -1538,14 +1554,23 @@ final class ConversationGlassPanes {
         TextView timer = findElapsedLabel(voice, 0);
         View mic = findRecordingMic(voice, timer, 0);
         if (mic == null || mic.getWidth() <= 0 || mic.getHeight() <= 0) {
+            if (GlassProbe.enabled()) GlassProbe.event("VOICE_MIC_UNRESOLVED", voice,
+                    "epoch=" + screen.transition.epoch() + " timerFound=" + (timer != null));
             host.report("voice-mic-route-missing", "voice mic not located; "
                     + (timer == null ? "timer=none" : describeRecordingIcons(footer, timer, 0)));
             return;
         }
-        if (mic.isClickable() || mic.isFocusable()) return;
+        if (mic.isClickable() || mic.isFocusable()) {
+            if (GlassProbe.enabled()) GlassProbe.event("VOICE_MIC_INTERACTIVE", mic,
+                    "epoch=" + screen.transition.epoch());
+            return;
+        }
         // A draw-only transparent filter survives native alpha blinking without changing
         // geometry, animator state, timer, controls or the Android system privacy indicator.
-        if (NativeWaveformTint.apply(mic, Color.TRANSPARENT)) screen.tintedWaveforms.add(mic);
+        boolean filtered = NativeWaveformTint.apply(mic, Color.TRANSPARENT);
+        if (filtered) screen.tintedWaveforms.add(mic);
+        if (GlassProbe.enabled()) GlassProbe.event("VOICE_MIC_FILTER", mic,
+                "epoch=" + screen.transition.epoch() + " applied=" + filtered);
     }
 
     /**
@@ -1684,6 +1709,11 @@ final class ConversationGlassPanes {
      */
     private static void clearVoiceBackgrounds(Screen screen, ViewGroup recorder) {
         clearVoiceBackground(screen, recorder);
+        // The compact paused-draft preview has its own rounded native fill inside the much
+        // taller draft layout. A full-bleed-only walk misses it and leaves a dark player strip.
+        // Clear its backing, not the preview view (timer/waveform/buttons must keep working).
+        View preview = findById(recorder, "voice_note_draft_preview_v2");
+        if (preview != null && visuallyShown(preview)) screen.audioBacking.clear(preview, true);
         ViewGroup footer = screen.footer.get();
         // WhatsApp may put the opaque fill on edit_layout / emoji_popup_anchor rather than on
         // voice_note_stub itself. Clear only the full-area chain leading to this known recorder;
