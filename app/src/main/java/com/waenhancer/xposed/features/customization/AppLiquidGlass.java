@@ -556,7 +556,16 @@ public final class AppLiquidGlass extends Feature {
             }
         };
         XposedBridge.hookAllMethods(ImageView.class, "setImageTintList", paletteChanged);
-        XposedBridge.hookAllMethods(ImageView.class, "setColorFilter", paletteChanged);
+        XposedBridge.hookAllMethods(ImageView.class, "setColorFilter", new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                if (GlassPane.isCapturing()) return;
+                ImageView view = (ImageView) param.thisObject;
+                // setColorFilter(int[, Mode]) carries the colour; setColorFilter(ColorFilter) does not.
+                Object first = param.args.length > 0 ? param.args[0] : null;
+                conversation.onImageColorFilterSet(view, first instanceof Integer ? (Integer) first : null);
+                conversation.onComposerVisualChanged(view);
+            }
+        });
         XposedBridge.hookAllMethods(ImageView.class, "drawableStateChanged", paletteChanged);
         XposedBridge.hookAllMethods(TextView.class, "setTextColor", paletteChanged);
         XposedBridge.hookAllMethods(View.class, "setBackgroundTintList", new XC_MethodHook() {
