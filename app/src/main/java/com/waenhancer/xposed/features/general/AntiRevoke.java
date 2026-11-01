@@ -139,7 +139,10 @@ public class AntiRevoke extends Feature {
                 var fMessage = fStatus.getFMessage();
                 if (fMessage == null) return;
                 if (!fStatusKey.isFromMe && handleRevocationAttempt(fMessage, fStatusKey.messageID) != 0) {
-                    param.setResult(0);
+                    // Dev4Mod 01a8bb7: newer builds return a store-result enum, not int.
+                    Object blocked = RevokeResultPolicy.blockedStatusRevokeResult(
+                            ((java.lang.reflect.Method) param.method).getReturnType());
+                    if (blocked != RevokeResultPolicy.UNSUPPORTED) param.setResult(blocked);
                 }
             }
         });
@@ -177,12 +180,15 @@ public class AntiRevoke extends Feature {
                     return;
                 }
 
+                boolean block;
                 if (messageKey.remoteJid.isGroup()) {
-                    if (deviceJid != null && handleRevocationAttempt(fMessage, messageId) != 0) {
-                        param.setResult(true);
-                    }
-                } else if (!messageKey.isFromMe && handleRevocationAttempt(fMessage, messageId) != 0) {
-                    param.setResult(true);
+                    block = deviceJid != null && handleRevocationAttempt(fMessage, messageId) != 0;
+                } else {
+                    block = !messageKey.isFromMe && handleRevocationAttempt(fMessage, messageId) != 0;
+                }
+                if (block) {
+                    Object blocked = blockedMessageRevokeResult(((java.lang.reflect.Method) param.method).getReturnType());
+                    if (blocked != RevokeResultPolicy.UNSUPPORTED) param.setResult(blocked);
                 }
             }
         });
@@ -601,6 +607,38 @@ public class AntiRevoke extends Feature {
         }
         Tasker.sendTaskerEvent(name, jidAuthor.getPhoneNumber(),
                 jidAuthor.isStatus() ? "deleted_status" : "deleted_message");
+    }
+
+    /**
+     * Dev4Mod 01a8bb7: a non-boolean message revoke callback returns a result object; build it
+     * with WhatsApp's own "None" incoming-ack singleton instead of null where it can be found.
+     */
+    private Object blockedMessageRevokeResult(Class<?> returnType) {
+        if (RevokeResultPolicy.isBooleanResult(returnType)) return Boolean.TRUE;
+        if (returnType == void.class) return null;
+        try {
+            var constructors = returnType.getDeclaredConstructors();
+            if (constructors.length == 0) return RevokeResultPolicy.UNSUPPORTED;
+            var constructor = constructors[0];
+            constructor.setAccessible(true);
+            var types = constructor.getParameterTypes();
+            var params = ReflectionUtils.initArray(types);
+            for (int i = 0; i < types.length; i++) {
+                if (types[i].isPrimitive()) continue;
+                try {
+                    var none = Unobfuscator.loadNoneIncomingAckClass(classLoader, types[i]);
+                    var singleton = RevokeResultPolicy.staticSingleton(none);
+                    if (singleton != null) params[i] = singleton;
+                } catch (Throwable ignored) {
+                    // Keep the historical null argument for this parameter.
+                }
+            }
+            return constructor.newInstance(params);
+        } catch (Throwable t) {
+            XposedBridge.log("[WAE] AntiRevoke: unsupported revoke result " + returnType.getName()
+                    + " (" + t.getClass().getSimpleName() + ")");
+            return RevokeResultPolicy.UNSUPPORTED;
+        }
     }
 
     @NonNull

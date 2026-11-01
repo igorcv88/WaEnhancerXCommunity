@@ -42,7 +42,11 @@ public class ChatLimit extends Feature {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 if (antiDisappearing) {
-                    MessageStore.getInstance().executeWritableSQL("UPDATE message_ephemeral SET expire_timestamp = 2553512370000");
+                    // Dev4Mod 1abe476: only touch rows not yet extended so the write lock is short after the
+                    // first run and WhatsApp's own msgstore transactions are less likely to hit SQLITE_BUSY.
+                    MessageStore.getInstance().executeWritableSQL(
+                            "UPDATE message_ephemeral SET expire_timestamp = 2553512370000"
+                                    + " WHERE expire_timestamp IS NULL OR expire_timestamp <> 2553512370000");
                 }
             }
         });

@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 
 import de.robv.android.xposed.XC_MethodHook;
+import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 
 public class SharedPreferencesWrapper implements SharedPreferences {
@@ -195,15 +196,35 @@ public class SharedPreferencesWrapper implements SharedPreferences {
         for (var sharedPreferencesClass : sharedPreferencesClasses) {
             if (sharedPreferencesClass == null) continue;
             if (SharedPreferencesWrapper.class.getName().equals(sharedPreferencesClass.getName())) continue;
-            XposedHelpers.findAndHookMethod(sharedPreferencesClass, "getString", String.class, String.class, getStringHook);
-            XposedHelpers.findAndHookMethod(sharedPreferencesClass, "getStringSet", String.class, Set.class, getStringHook);
-            XposedHelpers.findAndHookMethod(sharedPreferencesClass, "getInt", String.class, int.class, getIntHook);
-            XposedHelpers.findAndHookMethod(sharedPreferencesClass, "getLong", String.class, long.class, getLongHook);
-            XposedHelpers.findAndHookMethod(sharedPreferencesClass, "getFloat", String.class, float.class, getFloatHook);
-            XposedHelpers.findAndHookMethod(sharedPreferencesClass, "getBoolean", String.class, boolean.class, getBooleanHook);
-            XposedHelpers.findAndHookMethod(sharedPreferencesClass, "contains", String.class, containsHook);
-            XposedHelpers.findAndHookMethod(sharedPreferencesClass, "getAll", getAllHook);
+            // Dev4Mod f2551e7: abstract bases/interfaces have nothing concrete to hook, and one
+            // missing getter must not abort hooking the remaining implementations.
+            int modifiers = sharedPreferencesClass.getModifiers();
+            if (java.lang.reflect.Modifier.isAbstract(modifiers) || sharedPreferencesClass.isInterface()) continue;
+            hookIfPresent(sharedPreferencesClass, "getString", getStringHook, String.class, String.class);
+            hookIfPresent(sharedPreferencesClass, "getStringSet", getStringHook, String.class, Set.class);
+            hookIfPresent(sharedPreferencesClass, "getInt", getIntHook, String.class, int.class);
+            hookIfPresent(sharedPreferencesClass, "getLong", getLongHook, String.class, long.class);
+            hookIfPresent(sharedPreferencesClass, "getFloat", getFloatHook, String.class, float.class);
+            hookIfPresent(sharedPreferencesClass, "getBoolean", getBooleanHook, String.class, boolean.class);
+            hookIfPresent(sharedPreferencesClass, "contains", containsHook, String.class);
+            hookIfPresent(sharedPreferencesClass, "getAll", getAllHook);
         }
+    }
+
+    private static void hookIfPresent(Class<?> owner, String name, XC_MethodHook hook, Class<?>... params) {
+        try {
+            XposedHelpers.findAndHookMethod(owner, name, (Object[]) appendHook(params, hook));
+        } catch (Throwable missing) {
+            XposedBridge.log("[WAE] SharedPreferencesWrapper: " + owner.getName() + "#" + name
+                    + " not hooked (" + missing.getClass().getSimpleName() + ")");
+        }
+    }
+
+    private static Object[] appendHook(Class<?>[] params, XC_MethodHook hook) {
+        Object[] result = new Object[params.length + 1];
+        System.arraycopy(params, 0, result, 0, params.length);
+        result[params.length] = hook;
+        return result;
     }
 
     public static void addHook(SPrefHook hook) {

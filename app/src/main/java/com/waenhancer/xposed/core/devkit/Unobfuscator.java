@@ -56,6 +56,7 @@ import java.util.Set;
 import java.util.ArrayList;
 import java.util.Locale;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.Timer;
@@ -286,7 +287,9 @@ public class Unobfuscator {
                     "HandleMeComposing/sendComposing");
             if (method == null)
                 throw new Exception("GhostMode method not found");
-            if (method.getParameterTypes().length > 2 && method.getParameterTypes()[2] == int.class)
+            // Dev4Mod 02e4fc5: the composing-state int is no longer always the third parameter.
+            // TypingPrivacy already locates the int and JID arguments dynamically.
+            if (Arrays.asList(method.getParameterTypes()).contains(int.class))
                 return method;
             throw new Exception("GhostMode method not found parameter type");
         });
@@ -297,8 +300,16 @@ public class Unobfuscator {
     public synchronized static Method loadStartOutgoingCallMethod(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
             Method method = findFirstMethodUsingStrings(classLoader, StringMatchType.Contains, "outgoing-launch/cm-null-contact");
-            if (method == null) throw new NoSuchMethodException("StartOutgoingCall method not found");
-            return method;
+            if (method != null) return method;
+            // Dev4Mod 2d2301a: newer builds dropped the log string; match the
+            // (Context, WaContact, int, boolean) launcher that wraps the contact in a singleton list.
+            var candidates = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                    .paramTypes(Context.class.getName(), loadWaContactClass(classLoader).getName(),
+                            int.class.getName(), boolean.class.getName())
+                    .addInvoke("Ljava/util/Collections;->singletonList(Ljava/lang/Object;)Ljava/util/List;")));
+            if (candidates.size() != 1)
+                throw new NoSuchMethodException("StartOutgoingCall method not found (candidates=" + candidates.size() + ")");
+            return candidates.get(0).getMethodInstance(classLoader);
         });
     }
 
@@ -2174,7 +2185,9 @@ public class Unobfuscator {
         return UnobfuscatorCache.getInstance().getMethod(loader, () -> {
             var clazz = XposedHelpers.findClass("com.whatsapp.conversationslist.ConversationsFragment", loader);
             var method = Arrays.stream(clazz.getDeclaredMethods()).filter(m -> m.getParameterCount() == 3
-                            && m.getReturnType().equals(View.class) && m.getParameterTypes()[1].equals(LayoutInflater.class))
+                            && m.getReturnType().equals(View.class)
+                            // Dev4Mod b84f5f6: WhatsApp 2.26.41 reordered the parameters.
+                            && Arrays.asList(m.getParameterTypes()).contains(LayoutInflater.class))
                     .findFirst().orElse(null);
             if (method == null)
                 throw new RuntimeException("GetViewConversation method not found");
@@ -2947,7 +2960,10 @@ public class Unobfuscator {
 
     public synchronized static Class loadHeaderChannelItemClass(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getClass(classLoader, () -> {
-            var clazz = findFirstClassUsingStrings(classLoader, StringMatchType.Contains, "statusTilesEnabled");
+            // Dev4Mod 2d2301a: current builds name the class in its toString(); keep the old anchor.
+            var clazz = findFirstClassUsingStrings(classLoader, StringMatchType.Contains, "NewsletterHeaderDataItem(enableExploreButton=");
+            if (clazz == null)
+                clazz = findFirstClassUsingStrings(classLoader, StringMatchType.Contains, "statusTilesEnabled");
             if (clazz == null)
                 throw new RuntimeException("HeaderChannelItem class not found");
             return clazz;
@@ -3716,6 +3732,12 @@ public class Unobfuscator {
 
     public static Method loadLockedChatsMethod(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            try {
+                Method viaFragment = findLockedChatsGetterFromFragment(classLoader);
+                if (viaFragment != null) return viaFragment;
+            } catch (Throwable t) {
+                XposedBridge.log("[WAE] LockedChats fragment route unavailable: " + t.getClass().getSimpleName());
+            }
             var classData = dexkit
                     .findClass(FindClass.create()
                             .matcher(ClassMatcher.create().addUsingString("conversationsmgr/replacecontact")))
@@ -3735,6 +3757,50 @@ public class Unobfuscator {
             }
             throw new RuntimeException("LockedChats method not found");
         });
+    }
+
+    /**
+     * Dev4Mod 2d2301a: the locked chats screen reads its list through a no-arg ArrayList getter on
+     * the chats manager. R8 can merge the fragment's list method into its superclass, so both are
+     * scanned. Only a getter also reachable from the notification method and filtering by a
+     * (Jid) -> boolean check is accepted; ambiguity returns null and the legacy route runs.
+     */
+    private static Method findLockedChatsGetterFromFragment(ClassLoader classLoader) throws Exception {
+        var fragment = dexkit.getClassData("com.whatsapp.conversation.conversationslist.LockedConversationsFragment");
+        if (fragment == null) return null;
+        var owners = new ArrayList<ClassData>();
+        owners.add(fragment);
+        if (fragment.getSuperClass() != null) owners.add(fragment.getSuperClass());
+        var notification = dexkit.getMethodData(loadNotificationMethod(classLoader));
+        if (notification == null) return null;
+        var reachable = new HashSet<String>();
+        for (var invoke : notification.getInvokes()) reachable.add(invoke.getDescriptor());
+        var seen = new HashSet<String>();
+        MethodData match = null;
+        for (var owner : owners) {
+            for (var method : owner.getMethods()) {
+                if (method.getParamCount() != 0 || method.getReturnType() == null
+                        || !List.class.getName().equals(method.getReturnType().getName())) continue;
+                for (var invoke : method.getInvokes()) {
+                    if (!invoke.isMethod() || Modifier.isStatic(invoke.getModifiers()) || invoke.getParamCount() != 0
+                            || invoke.getReturnType() == null
+                            || !ArrayList.class.getName().equals(invoke.getReturnType().getName())) continue;
+                    if (!seen.add(invoke.getDescriptor()) || !reachable.contains(invoke.getDescriptor())) continue;
+                    boolean filtersByJid = false;
+                    for (var inner : invoke.getInvokes()) {
+                        if (inner.isMethod() && inner.getParamCount() == 1 && inner.getReturnType() != null
+                                && "boolean".equals(inner.getReturnType().getName())) {
+                            filtersByJid = true;
+                            break;
+                        }
+                    }
+                    if (!filtersByJid) continue;
+                    if (match != null) return null;
+                    match = invoke;
+                }
+            }
+        }
+        return match == null ? null : match.getMethodInstance(classLoader);
     }
 
     public static Method loadGetProfilePhotoMethod(ClassLoader classLoader) throws Exception {
@@ -3917,13 +3983,38 @@ public class Unobfuscator {
         });
     }
 
+    /**
+     * Dev4Mod 01a8bb7: WhatsApp's "None" implementation of an incoming-ack interface, recognised by
+     * a toString() using "None" and a static self-typed singleton. Keyed per interface.
+     */
+    public static Class<?> loadNoneIncomingAckClass(ClassLoader loader, Class<?> ackType) throws Exception {
+        return UnobfuscatorCache.getInstance().getClass(loader, "loadNoneIncomingAckClass:" + ackType.getName(), () -> {
+            var classes = dexkit.findClass(FindClass.create().matcher(ClassMatcher.create()
+                    .addInterface(ackType.getName())
+                    .methods(org.luckypray.dexkit.query.matchers.MethodsMatcher.create()
+                            .add(MethodMatcher.create().name("toString").usingStrings("None")))));
+            for (var data : classes) {
+                var clazz = data.getInstance(loader);
+                for (var field : clazz.getDeclaredFields()) {
+                    if (field.getType() == clazz && Modifier.isStatic(field.getModifiers())) return clazz;
+                }
+            }
+            throw new ClassNotFoundException("NoneIncomingAck class not found");
+        });
+    }
+
     public static Class<?>[] loadSharedPreferencesClasses(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getClasses(classLoader, () -> {
             var classesData = dexkit.findClass(
                     FindClass.create().matcher(ClassMatcher.create().addInterface(SharedPreferences.class.getName())));
             if (classesData.isEmpty())
                 return null;
-            return classesData.stream().map(classData -> convertRealClass(classData, classLoader))
+            // Dev4Mod f2551e7: abstract SharedPreferences bases and interfaces have no concrete
+            // getters to hook; including them made the whole wrapper installation throw.
+            return classesData.stream()
+                    .filter(classData -> !Modifier.isAbstract(classData.getModifiers()) && !Modifier.isInterface(classData.getModifiers()))
+                    .map(classData -> convertRealClass(classData, classLoader))
+                    .filter(Objects::nonNull)
                     .toArray(Class[]::new);
         });
     }
@@ -3942,6 +4033,51 @@ public class Unobfuscator {
                     return methodInstance;
             }
             throw new NoSuchMethodException("PinnedLinkedHashMethod not found");
+        });
+    }
+
+    // Dev4Mod 790a7e2: anchors for builds that inline the pinned-chat limit.
+    public static Method loadPinSelectedChatsMethod(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            var method = findFirstMethodUsingStrings(classLoader, StringMatchType.Contains,
+                    "ConversationPinHelper/pinSelectedJids max=");
+            if (method == null) throw new NoSuchMethodException("PinSelectedChats method not found");
+            return method;
+        });
+    }
+
+    public static Method loadTrimExcessPinnedChatsMethod(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            var method = findFirstMethodUsingStrings(classLoader, StringMatchType.Contains,
+                    "ConversationPinHelper/trimExcessPinnedChats");
+            if (method == null) throw new NoSuchMethodException("TrimExcessPinnedChats method not found");
+            return method;
+        });
+    }
+
+    public static Method loadPinChatHandlerMethod(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            var method = findFirstMethodUsingStrings(classLoader, StringMatchType.Contains, "PinChatHandler/setArchive");
+            if (method == null) throw new NoSuchMethodException("PinChatHandler method not found");
+            return method;
+        });
+    }
+
+    /** Static boolean (Self, Set) check using the number 3; exactly one match is required. */
+    public static Method loadPinnedChatsPremiumUpsellMethod(ClassLoader classLoader) throws Exception {
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
+            var candidates = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                    .returnType(boolean.class).paramCount(2).addUsingNumber(3).modifiers(Modifier.STATIC)));
+            Method match = null;
+            for (var data : candidates) {
+                var types = data.getParamTypeNames();
+                if (types.size() != 2 || !types.get(0).equals(data.getClassName())
+                        || !types.get(1).equals(Set.class.getName())) continue;
+                if (match != null) throw new NoSuchMethodException("PinnedChatsPremiumUpsell method is ambiguous");
+                match = data.getMethodInstance(classLoader);
+            }
+            if (match == null) throw new NoSuchMethodException("PinnedChatsPremiumUpsell method not found");
+            return match;
         });
     }
 
