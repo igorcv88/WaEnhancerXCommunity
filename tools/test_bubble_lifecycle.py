@@ -35,6 +35,10 @@ public class LifecycleChecks {
             now+=16;
         }
         check(!presentation.mayCapture(now,false),"missing native draw backs off");
+        // A content-only invalidation must leave that deadline intact: otherwise a native
+        // setText/image callback after every repaint bypasses the three-attempt ceiling.
+        for (int i=0;i<100;i++) epoch.damage();
+        check(!presentation.mayCapture(now,false),"soft content damage cannot reset presentation backoff");
         long wake=now+presentation.retryDelay(now,false);
         check(presentation.mayCapture(wake,false),"explicit wake does not require a tap");
         check(presentation.retryDelay(wake,true)==0,"actual presentation stops retry wakeups");
@@ -80,6 +84,9 @@ drawable=(ROOT/'app/src/main/java/com/waenhancer/theme/GlassMaterialDrawable.jav
 assert 'binding.glass.presentationPending()' in app and 'binding.glass.capturePending()' in app
 assert 'if (pixelSuppressed) return;' in drawable and 'glass.setPixelSuppressed(true)' in app
 assert 'host.getBackground() == this' in drawable, 'nested masks must keep their native bounds'
+assert 'captureDemand.accept(true)' in drawable and 'captureDemand.accept(false)' in drawable
+watcher=app.split('binding.glass.observeCaptureDemand(hardReset -> {',1)[1].split('private void promoteDeferred',1)[0]
+assert 'if (hardReset) {\n                    binding.presentation.rearm();\n                    binding.recovery.revalidate();' in watcher
 # Device review 2026-11-01: the reference is the action button's disc fill, never the glyph.
 assert 'collectDiscCandidates(action, candidates, 0)' in composer and 'MicColorSource.selectDisc(colors)' in composer
 assert 'if (drawable == null || depth > 4) return null;' in composer, 'unresolvable disc drawables must not crash palette sync'

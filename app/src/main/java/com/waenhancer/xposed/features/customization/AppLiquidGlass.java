@@ -734,11 +734,18 @@ public final class AppLiquidGlass extends Feature {
         private void watchBubble(View row, Binding binding) {
             if (binding.surface != Surface.BUBBLES) return;
             WeakReference<View> rowRef = new WeakReference<>(row);
-            binding.glass.observeCaptureDemand(() -> {
+            binding.glass.observeCaptureDemand(hardReset -> {
                 View target = rowRef.get();
                 if (closed || suspended || target == null || bindings.get(target) != binding) return;
-                binding.presentation.rearm();
-                binding.recovery.revalidate();
+                // A text/tick/image update still needs a fresh backdrop, but the previous
+                // recording remains valid and may already be visible. Re-arming presentation
+                // on every soft update causes a feedback loop: capture -> target.invalidate()
+                // -> native setText/image -> soft damage -> presentation rearm -> capture.
+                // Only a real release, host/size/mask change or first bind resets retries.
+                if (hardReset) {
+                    binding.presentation.rearm();
+                    binding.recovery.revalidate();
+                }
                 scheduleFrame(1L);
             });
             binding.presentation.rearm();

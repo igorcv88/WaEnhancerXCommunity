@@ -42,6 +42,20 @@ public class BubbleCaptureRetentionTest {
         assertFalse(a.contains("binding.glass.invalidateCapture(\"rowRecycled\")"));
     }
 
+    @Test public void softDamageDoesNotRestartPresentationOrRecovery() throws IOException {
+        String g = read("src/main/java/com/waenhancer/theme/GlassMaterialDrawable.java");
+        String a = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
+        assertTrue("hard invalidation must request a new presentation epoch",
+                g.contains("captureDemand.accept(true)"));
+        assertTrue("soft damage must retain the presentation deadline",
+                g.contains("captureDemand.accept(false)"));
+        int start = a.indexOf("binding.glass.observeCaptureDemand(hardReset -> {");
+        assertTrue(start > 0);
+        String watcher = a.substring(start, a.indexOf("private void promoteDeferred", start));
+        assertTrue(watcher.contains("if (hardReset) {\n                    binding.presentation.rearm();\n                    binding.recovery.revalidate();"));
+        assertTrue("soft damage must still schedule a new capture", watcher.contains("scheduleFrame(1L)"));
+    }
+
     @Test public void epochSoftDamageStillRequestsCapture() {
         BubbleCaptureEpoch epoch = new BubbleCaptureEpoch();
         epoch.published();

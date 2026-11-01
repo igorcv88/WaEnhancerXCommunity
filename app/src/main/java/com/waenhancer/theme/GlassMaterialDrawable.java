@@ -64,7 +64,8 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     }
     private boolean canvasOwned;
     private boolean pixelSuppressed;
-    private Runnable captureDemand;
+    /** True only when the old recording was invalidated; soft damage retains its presentation. */
+    private Consumer<Boolean> captureDemand;
     private final BubbleCaptureEpoch captureEpoch = new BubbleCaptureEpoch();
     private long capturedAt, publishedSerial;
     private int canvasOffsetX, canvasOffsetY;
@@ -244,7 +245,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         if (suppressed) releaseLive(); else invalidateCapture("factory-promoted");
         invalidateSelf();
     }
-    public void observeCaptureDemand(Runnable demand) { captureDemand = demand; }
+    public void observeCaptureDemand(Consumer<Boolean> demand) { captureDemand = demand; }
     public long damageRevision() { return captureEpoch.revision(); }
     public boolean capturePending() { return !pixelSuppressed && captureEpoch.pending(); }
     public boolean presentationPending() { return !pixelSuppressed && captureEpoch.captured() >= 0 && !hasPresentedLive(); }
@@ -255,7 +256,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
                 "mask=" + GlassTrace.id(original) + " revision=" + captureEpoch.revision()
                         + " canvasOwned=" + canvasOwned + " " + captureStatus());
         releaseLive();
-        if (captureDemand != null) captureDemand.run();
+        if (captureDemand != null) captureDemand.accept(true);
         invalidateSelf();
     }
     /**
@@ -270,7 +271,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         if (GlassProbe.enabled()) BubbleLifecycleProbe.event("soft-" + reason, owner.get(), this,
                 "revision=" + captureEpoch.revision() + " canvasOwned=" + canvasOwned
                         + " " + captureStatus());
-        if (captureDemand != null) captureDemand.run();
+        if (captureDemand != null) captureDemand.accept(false);
         invalidateSelf();
     }
 
