@@ -138,6 +138,8 @@ Downloaded APKs are verified before installation: published SHA-256, package ide
 
 Official releases are produced by the manually triggered GitHub Actions release workflow with JDK 21 and JVM 17 application bytecode. The workflow validates the Gradle wrapper, signs the release APK, verifies certificate/package/version metadata, calculates SHA-256, and publishes the APK directly to a GitHub Release.
 
+For pre-merge device testing, the separate manual `Build Signed APK From Latest Open PR` workflow runs from `master`, selects the newest open, owner-authored PR from this same repository that targets `master`, and builds its immutable head SHA. It reuses the official release keystore secrets and APK identity checks, and assigns a `versionCode` one greater than the highest published stable/beta tag in the current series. The signed APK, checksum and build metadata are available only as a short-lived GitHub Actions artifact; no tag or GitHub Release is created. The workflow fails if no qualifying PR exists. It must first be merged into `master` before appearing in the Actions manual-dispatch menu.
+
 ## Invariants
 
 - never place a secret in configuration readable by the WhatsApp process;
