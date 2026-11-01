@@ -25,7 +25,7 @@ transferable), **path rule** (only UI/docs/build/test paths changed), **scope ru
 or **history** (revert). Area-triaged rows are not claims that the X change is wrong; they are deferred until a Community
 defect or device evidence justifies reopening them.
 
-Totals: 
+Totals (639 rows): ADAPTED 1, ADAPTED (partial) 1, ALREADY 13, DEFER 274, EQUIVALENT 17, NO-OP 112, REJECT 224, SUPERSEDED 3.
 {'REJECT': 223, 'DEFER': 273, 'NO-OP': 111, 'SUPERSEDED': 2, 'ALREADY': 12, 'ADAPTED (partial)': 1, 'EQUIVALENT': 16, 'ADAPTED': 1}.
 
 | Commit | Date | Subject | Paths | Disposition | Basis | Note |
