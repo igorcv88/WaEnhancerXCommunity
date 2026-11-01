@@ -1274,11 +1274,12 @@ final class ConversationGlassPanes {
         int hash = 17;
         ImageView mic = firstImage(findById(footer, "conversation_entry_action_button"), 0);
         if (mic != null) {
+            Drawable current = mic.getDrawable() == null ? null : mic.getDrawable().getCurrent();
             hash = 31 * hash + System.identityHashCode(mic.getImageTintList());
             hash = 31 * hash + System.identityHashCode(mic.getColorFilter());
             hash = 31 * hash + System.identityHashCode(mic.getDrawable());
             hash = 31 * hash + java.util.Arrays.hashCode(mic.getDrawableState());
-            if (mic.getDrawable() != null) hash = 31 * hash + System.identityHashCode(mic.getDrawable().getCurrent().getColorFilter());
+            if (current != null) hash = 31 * hash + System.identityHashCode(current.getColorFilter());
         }
         hash = 31 * hash + footer.getWidth();
         hash = 31 * hash + footer.getHeight();
@@ -1386,8 +1387,9 @@ final class ConversationGlassPanes {
         ImageView mic = firstImage(findById(footer, "conversation_entry_action_button"), 0);
         if (mic != null) {
             Drawable drawable = mic.getDrawable();
+            Drawable current = drawable == null ? null : drawable.getCurrent();
             android.graphics.ColorFilter filter = mic.getColorFilter();
-            if (filter == null && drawable != null) filter = drawable.getCurrent().getColorFilter();
+            if (filter == null && current != null) filter = current.getColorFilter();
             ColorStateList tint = mic.getImageTintList();
             int signature = java.util.Objects.hash(System.identityHashCode(mic),
                     System.identityHashCode(drawable), System.identityHashCode(filter),
@@ -1399,8 +1401,8 @@ final class ConversationGlassPanes {
                 else if (filter instanceof android.graphics.BlendModeColorFilter)
                     color = ((android.graphics.BlendModeColorFilter) filter).getColor();
                 else if (tint != null) color = tint.getColorForState(mic.getDrawableState(), tint.getDefaultColor());
-                else if (drawable != null && drawable.getCurrent() instanceof ColorDrawable)
-                    color = ((ColorDrawable) drawable.getCurrent()).getColor();
+                else if (current instanceof ColorDrawable)
+                    color = ((ColorDrawable) current).getColor();
                 if (color == null) {
                     color = com.waenhancer.theme.ComposerPalette.CURRENT_PROFILE_ICON;
                     host.report("composer-mic-style-fallback", "microphone exposes no tint/filter; using current profile's white glyph style");

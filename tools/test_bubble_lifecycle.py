@@ -79,6 +79,9 @@ backing=(custom/'ComposerBacking.java').read_text()
 drawable=(ROOT/'app/src/main/java/com/waenhancer/theme/GlassMaterialDrawable.java').read_text()
 assert 'binding.glass.presentationPending()' in app and 'binding.glass.capturePending()' in app
 assert 'if (pixelSuppressed) return;' in drawable and 'glass.setPixelSuppressed(true)' in app
+assert 'host.getBackground() == this' in drawable, 'nested masks must keep their native bounds'
+assert 'Drawable current = drawable == null ? null : drawable.getCurrent();' in composer
+assert 'if (current != null) hash' in composer, 'unresolved mic state must not crash palette sync'
 assert 'SurfaceContrastSampler' not in composer and 'ensureTextContrast' not in composer
 assert 'screen.palette.color()' in composer and 'date_divider_header' in composer
 for role in ('voice_note_draft_quoted_message_frame','composer_quoted_message_frame'):

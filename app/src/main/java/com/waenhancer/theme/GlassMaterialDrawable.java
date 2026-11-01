@@ -325,10 +325,12 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         if (host == null || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return false;
         GlassSpec material = spec.get();
         // A background gets its bounds only when the view first draws it, after this pre-draw
-        // pass: every new or re-bound drawable failed its first capture and showed the fallback
-        // for a frame (24 of 27 binds in the device log). A view's background always spans the
-        // view, so take that size now; the view's own draw sets the same bounds.
-        if (!canvasOwned && (getBounds().width() != host.getWidth() || getBounds().height() != host.getHeight())
+        // pass: every new or re-bound direct background failed its first capture and showed
+        // the fallback for a frame (24 of 27 binds in the device log). Only a directly mounted
+        // background spans the host. Nested Inset/LayerDrawable children and image drawables
+        // keep container-assigned bounds, which can deliberately be smaller than the host.
+        if (!canvasOwned && host.getBackground() == this
+                && (getBounds().width() != host.getWidth() || getBounds().height() != host.getHeight())
                 && host.getWidth() > 0 && host.getHeight() > 0) {
             setBounds(0, 0, host.getWidth(), host.getHeight());
         }
