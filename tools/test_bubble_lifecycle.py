@@ -80,7 +80,9 @@ drawable=(ROOT/'app/src/main/java/com/waenhancer/theme/GlassMaterialDrawable.jav
 assert 'binding.glass.presentationPending()' in app and 'binding.glass.capturePending()' in app
 assert 'if (pixelSuppressed) return;' in drawable and 'glass.setPixelSuppressed(true)' in app
 assert 'host.getBackground() == this' in drawable, 'nested masks must keep their native bounds'
-assert 'Drawable current = drawable == null ? null : drawable.getCurrent();' in composer
+# Device review 2026-11-01: the reference is the action button's disc fill, never the glyph.
+assert 'collectDiscCandidates(action, candidates, 0)' in composer and 'MicColorSource.selectDisc(colors)' in composer
+assert 'if (drawable == null || depth > 4) return null;' in composer, 'unresolvable disc drawables must not crash palette sync'
 assert 'if (current != null) hash' in composer, 'unresolved mic state must not crash palette sync'
 assert 'SurfaceContrastSampler' not in composer and 'ensureTextContrast' not in composer
 assert 'screen.palette.color()' in composer and 'date_divider_header' in composer

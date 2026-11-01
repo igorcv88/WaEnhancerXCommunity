@@ -556,16 +556,7 @@ public final class AppLiquidGlass extends Feature {
             }
         };
         XposedBridge.hookAllMethods(ImageView.class, "setImageTintList", paletteChanged);
-        XposedBridge.hookAllMethods(ImageView.class, "setColorFilter", new XC_MethodHook() {
-            @Override protected void afterHookedMethod(MethodHookParam param) {
-                if (GlassPane.isCapturing()) return;
-                ImageView view = (ImageView) param.thisObject;
-                // setColorFilter(int[, Mode]) carries the colour; setColorFilter(ColorFilter) does not.
-                Object first = param.args.length > 0 ? param.args[0] : null;
-                conversation.onImageColorFilterSet(view, first instanceof Integer ? (Integer) first : null);
-                conversation.onComposerVisualChanged(view);
-            }
-        });
+        XposedBridge.hookAllMethods(ImageView.class, "setColorFilter", paletteChanged);
         XposedBridge.hookAllMethods(ImageView.class, "drawableStateChanged", paletteChanged);
         XposedBridge.hookAllMethods(TextView.class, "setTextColor", paletteChanged);
         XposedBridge.hookAllMethods(View.class, "setBackgroundTintList", new XC_MethodHook() {
@@ -763,7 +754,10 @@ public final class AppLiquidGlass extends Feature {
                 if (binding != null && binding.surface == Surface.BUBBLES) {
                     if (!binding.contentDamagePending) {
                         binding.contentDamagePending = true;
-                        binding.glass.invalidateCapture("rowRecycled");
+                        // Text, ticks and thumbnails do not change what lies behind the bubble:
+                        // recapture without presenting transparent frames meanwhile. A real
+                        // recycle to another host still releases via owner/offset/bounds checks.
+                        binding.glass.damageCapture("row-content");
                         discoverLater(row);
                     }
                     return;
