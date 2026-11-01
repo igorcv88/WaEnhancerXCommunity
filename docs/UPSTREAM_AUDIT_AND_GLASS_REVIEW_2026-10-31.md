@@ -219,3 +219,134 @@ The automated review of that exact PR commit completed with one valid P2 finding
 [PR #121](https://github.com/igorcv88/WaEnhancerXCommunity/pull/121) independently holds the merged-review follow-ups for #114 header/recorder clip ownership and #120 manual preview version semantics, plus this audit. Both #121 and #122 start from the same master; their `ConversationGlassPanes.java` edits auto-merge in a local `git merge-tree` simulation, while their append-only `handoff.md` entries conflict and must be reconciled manually. The Cloud porting pass should start from the **eventually merged master**, or explicitly base on an integration branch including both reviewed PRs only after their tests pass. Do not reset, overwrite, duplicate or cherry-pick active compositor work.
 
 The two upstream default branch HEADs were rechecked against GitHub on **2026-11-01** and remain exactly `Dev4Mod/WaEnhancer@36c22aeda030327704b5ee0b099f060fd42c1120` and `WaEnhancerX/WaEnhancerX@8062ecda7c821bcfd6c794e6d55a25c6e5156be7`: **zero additional commits** since the prior source ledger. The Dev4Mod 77-commit (74 non-merge) inventory is current for that source snapshot; the maintained X table is deliberately selected rather than exhaustive. A thorough Cloud port must audit all other relevant X commits, compare both repos' latest HEADs at execution time, and cross-check the older `UPSTREAM_AUDIT_2026-10-06.md` before assigning final `already present/adapt/defer/reject` statuses. Do not assume a new WhatsApp version is supported merely because the upstream's allow-list includes it; verify concrete obfuscated methods/fields against actual target DEX/APKs.
+
+## Upstream porting pass — 2026-11-01
+
+### Baseline
+
+- PRs #121 and #122 are merged: `master@f6f15ab` (merge of #122 over `422b4f6`, the #121 merge). The `handoff.md` reconciliation section "PR #122 merge reconciliation with merged #121" is present on master.
+- Upstream HEADs re-queried with `git ls-remote` on 2026-11-01: `Dev4Mod/WaEnhancer@36c22aeda030327704b5ee0b099f060fd42c1120` and `WaEnhancerX/WaEnhancerX@8062ecda7c821bcfd6c794e6d55a25c6e5156be7`. Both equal the audited SHAs; **no new upstream commits**.
+- WaEnhancerX was audited exhaustively this time: **all 639 non-merge commits** (742 total, 103 merges) have an explicit disposition in [`UPSTREAM_AUDIT_WAEX_LEDGER_2026-11-01.md`](UPSTREAM_AUDIT_WAEX_LEDGER_2026-11-01.md). The selected X table above remains historical context.
+- WhatsApp/WhatsApp Business APKs could not be obtained in the cloud session (APKMirror and APKPure return HTTP 403 through the egress proxy). **No resolver in this pass was verified against a 2.26.39–2.26.42 DEX**, and no version was added to the compatibility list.
+
+### Pull requests from this pass
+
+| PR area | Branch | Upstream commits covered |
+| --- | --- | --- |
+| A. Unobfuscator cache and lookup performance | `fix/unobfuscator-cache-resilience-20261101` | X `76d85e1` (adapted), X `45bb199` (partial), Dev4Mod `a0e1c89` (subset) |
+| B. WhatsApp resolver compatibility | `fix/whatsapp-resolver-compat-20261101` | Dev4Mod `efdd903`, `b84f5f6`, `02e4fc5`, `2d2301a`, `f2551e7`, `01a8bb7`, `790a7e2`, `1abe476` (partial) |
+| C. Receipts, LID/PN identity | `fix/receipt-identity-ports-20261101` | Dev4Mod `015d446`, `d2c71a5`, `1a06ff0`, `6813a52` |
+| D. Audit and handoff (this document) | `docs/upstream-porting-audit-20261101` | — |
+| 0. Build fix found during validation | `fix/master-compile-porterduff-20261101` | — (master `f6f15ab` did not compile: hidden `PorterDuffColorFilter.getColor()` from #122) |
+
+Key adaptation decisions:
+
+- **A.** Community keeps its `UnobfuscatorCache` storage layout. A persisted descriptor that no longer decodes is evicted and resolved once more (previously the feature failed until the next WhatsApp update); method/field descriptors now carry return/field type, so an in-place host change of a member's type is treated as stale; empty arrays are encoded explicitly (the old `""` encoding failed permanently); a partially resolvable field map is re-resolved rather than returned partially; concurrent feature threads (up to four) share one DexKit search per key; all getters use one bounded per-process negative cache, cleared by the explicit clear-cache broadcast; a schema stamp invalidates old descriptors once. X's **60-second automatic retry is not adopted**: Community DexKit results are deterministic for one installed APK and loaders are reachable from hook callbacks, so periodic rescans would add main-thread risk without a recovery benefit.
+- **B.** Fallbacks never replace a unique legacy match; new anchors require a single match or fall back. `PinnedLimit` uses the Dev4Mod inline-safe hooks only when all anchors exist, otherwise the legacy path; with the chat-pin option off it no longer installs process-wide `ArrayList(int)`/`LinkedHashSet(int)` constructor hooks (they only re-imposed WhatsApp's own limit of 3). The always-on in-chat pinned-message limit (60) is unchanged. AntiRevoke results now follow the hooked method's return type; an unknown type lets WhatsApp proceed instead of raising `ClassCastException`.
+- **C.** The type-89 read-job dispatch is no longer rewritten in the modern dispatch path (the job blocks on its ack without timeout); the read job is cancelled in its own hook when Hide Read, Hide Delivered or Ghost Mode applies. The legacy caller path for older builds is unchanged. Bounded blue-tick release keeps Community's authorize-then-enqueue `ReceiptRelease` with rollback for the sent batch; only rows that are older than the newest 50 or no longer resolvable are marked released in one transaction.
+
+### Dev4Mod 74-commit ledger: final dispositions
+
+`ADAPTED` = ported in A/B/C; `ALREADY` = present in Community; `DEFER` = not now (reason); `REJECT` = architecture/policy; `NO-OP` = changelog/translation/version metadata.
+
+| Commit | Final | Reason / Community equivalent |
+| --- | --- | --- |
+| `36c22ae` | NO-OP | Changelog |
+| `1a06ff0` | **ADAPTED (C)** | `LockedChatsEnhancer` single-set fallback; LID/PN/number matching via `JidIdentitySet` (null identities never match; the old number-only match removed every LID-only contact) |
+| `d2c71a5` | **ADAPTED (C)** | `PendingReceiptBatch`, `MessageHistory.updateViewedMessagesBatch`, oldest-first query |
+| `e08a833` | DEFER | IGStatus caching: Community `IGStatus` differs; FloatingBottomBar part must not alter the approved bar; needs profiling |
+| `a0e1c89` | **ADAPTED (A, subset)** | Lock-free `Utils.getID` cache. CustomThemeV2/CustomView/Stickers/MediaPreview parts deferred (different Community code; needs profiling) |
+| `847bba6` | ALREADY | Community bridge client never opens `ForceStartActivity` on connect |
+| `5d1b37a` | DEFER | Wallpaper prefetch: approved wallpaper path, not changed without device evidence |
+| `6813a52` | **ADAPTED (C)** | Precompiled device-suffix pattern in `WppCore` and `FMessageWpp.UserJid` |
+| `549218e` | DEFER | Community `ReflectionUtils.callMethod(Method, …)` receives a resolved `Method`; name-based best-match paths use XposedHelpers caches. No hot call site profiled |
+| `b0a8681` | ALREADY | Merged #107 |
+| `dcda601` | ALREADY (subset) | Merged #107; dispatcher framework not adopted |
+| `c0cfdd3` | DEFER | Lazy leased DexKit bridge: requires reordering `Unobfuscator.initWithPath` and close/reopen tests; PR A's single-flight removes duplicate scans first. Needs startup timing on device |
+| `39907bc` | DEFER | DexKit artifact change; dependency update is a separate build task |
+| `82c7a50` | NO-OP | Changelog |
+| `efdd903` | **ADAPTED (B)** | `MultiSelectionLimitArgs` (limit = first int that is not a resource ID; block flags cleared; Community keeps its configurable limit instead of `Int.MAX_VALUE`) |
+| `01e2d5a` | NO-OP | Changelog |
+| `7657269` | NO-OP | README recommendation |
+| `9b68b21` | NO-OP | Version metadata |
+| `b84f5f6` | **ADAPTED (B)** | `loadGetViewConversationMethod`: LayoutInflater in any position |
+| `df141fe` | REJECT | Downgrade patch hooks were removed from the app-only Community runtime |
+| `ebc7d33` | NO-OP | Translation label |
+| `bc5029d` | REJECT | Magisk DenyList diagnostics |
+| `509c4ec` | ALREADY | Community `TextStatusComposer` already accepts `(Bundle, View)` and `(View, Bundle)` |
+| `7c4d140` | DEFER | ProGuard keep rules: Community release is not minified |
+| `bbe935a` | NO-OP | Changelog |
+| `790a7e2` | **ADAPTED (B)** | Inline-safe `PinnedLimit` with legacy fallback; constructor hooks only on the legacy path with the option on |
+| `bea484a` | NO-OP | Changelog |
+| `1abe476` | **ADAPTED (B, partial)** | Update only rows not yet extended; Community already writes on a background executor with `busy_timeout` and retries. Running through WhatsApp's own connection is deferred |
+| `3b50e84` | NO-OP | Changelog |
+| `cc51ac7` | DEFER | Version declarations 2.26.41: no DEX available; not declared |
+| `5db954a` | DEFER | Community has no sticker coloured-outline hook |
+| `1ef4e19` | REJECT | SettingsProvider/system scope |
+| `8db37f4` | DEFER | Per-contact privacy keyed by LID needs a non-destructive key migration across 16 `CustomPrivacy.getJSON` call sites, the WhatsApp-side editor and backups; LID-only contacts currently fall back to global settings. Needs a design decision |
+| `e5c347e` | DEFER | New feature (preload statuses) |
+| `42f1632` | REJECT | Release automation (manual-only Actions) |
+| `2f7ea49` | REJECT | R8/resource shrinking |
+| `570d0e9` | REJECT | YukiHookAPI |
+| `3d01fad` | DEFER | New feature (native scheduling, View Once text) |
+| `01a8bb7` | **ADAPTED (B)** | `RevokeResultPolicy`; `loadNoneIncomingAckClass` |
+| `2fc180b` | DEFER | New privacy option (unknown-number delivery receipts); product decision |
+| `2d2301a` | **ADAPTED (B)** | Outgoing-call, newsletter-header and locked-chats resolver fallbacks |
+| `f2551e7` | **ADAPTED (B)** | Abstract/interface filter; per-getter hook isolation in `SharedPreferencesWrapper` |
+| `f4a8da1` | ALREADY | Community builds with JDK 21 |
+| `0e4f586` | NO-OP | Changelog |
+| `090d65a` | DEFER | Community has its own Deleted-for-Me store/vault |
+| `cdff7a9` | DEFER | Contact-picker LID support: different Community picker; needs DB schema evidence (`wa_address_book`) |
+| `8ec2216` | REJECT | Hide My Applist |
+| `015d446` | **ADAPTED (C)** | `ReceiptPolicy.rewritableDispatch`/`suppressReadJob`; live ghost-mode read not adopted (Community reads `ghostmode_actual` preference) |
+| `2a55b5b` | DEFER | Single props resolver: valuable, but a new signature-only resolver must be checked on DEX first |
+| `4909f00` | REJECT | libxposed API101/Yuki migration |
+| `84c9c81` | DEFER | Approved floating bar |
+| `107373a` | NO-OP | Changelog |
+| `166c62b` | DEFER | Community emoji-font rendering path is separate |
+| `e6f8389` | REJECT | Preferences via SettingsProvider |
+| `9b26a67` | DEFER | Approved floating bar |
+| `38ecb66` | DEFER | HideSeen refactor without a distinct defect beyond `015d446` |
+| `c4813e1` | DEFER | CustomThemeV2 drawable lookup; no Community failure observed |
+| `ed39fc4` | DEFER | Community `filter_items`/FilterGroups differ |
+| `1da24d7` | NO-OP | Changelog |
+| `5d63769` | DEFER | Superseded version entries |
+| `5d0398f` | REJECT | Preference transport via system provider |
+| `6fa60ac` | DEFER | Community `FilterGroups` resolves filters differently |
+| `94975f2` | DEFER | MediaQuality transcoder simplification; needs DEX check |
+| `eda42f9` | DEFER | Profile photo argument handling; no Community failure observed |
+| `02e4fc5` | **ADAPTED (B)** | Ghost-mode resolver: int in any position |
+| `fa48d81` | DEFER | New preference (document scanner) |
+| `ae736f3` | DEFER | Community does not declare the ML Kit components |
+| `91088e3` | DEFER | Module UI message |
+| `91ba9fc` | NO-OP | Gradle property |
+| `656349e` | NO-OP | Changelog |
+| `f4cc903` | DEFER | Contact-picker groups |
+| `73d1c4e` | DEFER | As `ae736f3` |
+| `8b71532` | ALREADY | Community shows no toast on bridge connection errors |
+| `10d49b7` | DEFER | Different FeatureLoader ordering |
+
+Earlier [`UPSTREAM_AUDIT_2026-10-06.md`](UPSTREAM_AUDIT_2026-10-06.md) findings were not replayed: its ported items are already on master and none of this pass's changes revert them.
+
+### WaEnhancerX summary
+
+Of 639 non-merge commits: 1 adapted, 1 adapted in part, 12 already present, 16 equivalent by a different Community design, 2 superseded, 273 deferred, 223 rejected and 111 no-op (see the ledger for every SHA). The source-reviewed X items most relevant to the requested priorities:
+
+- DexKit/cache: `76d85e1`, `45bb199` adapted in A; `21f7aee` already covered by DexKit `returnType` matchers plus A's typed validation; `e18f202` already covered by namespace-agnostic class lookup.
+- Startup/lifecycle: `c0efbfb`, `29052b7`, `127a430`, `81a46f1` already present; `7b2a4cb`, `9cffa1f` deferred.
+- Receipts: the `85b0726`/`5327c6b`/`82cb076`/`48272b1`/`9f3616b`/`ac709e0` cluster has an equivalent contract in `ReceiptRelease` (per-message authorization with rollback, recipient from the verified job field). Status-receipt routing (`9dee603`, `13a28ce`, `886f066`) is deferred pending a Galaxy status-reply trace.
+- IPC/preferences: `48cfde3`, `1ec2f17`, `106904c` already present; `e7774c1` deferred.
+
+### Validation for this pass
+
+See `handoff.md` ("Upstream porting pass — 2026-11-01") for the commands and results. Static/JVM validation does not establish that any resolver matches the installed WhatsApp build.
+
+### Pending Galaxy S25 Ultra validation
+
+1. Startup with a warm and a cold cache (after module update): no new `re-resolving stale descriptor` loops; feature error list unchanged or smaller.
+2. Forward selection above the old limit, including groups and multiple channels (`ShareLimit`).
+3. Pin more than three chats with the option on; confirm pins survive a sync and no premium icon; with the option off, native behavior.
+4. Status and message revoke while Anti-Revoke is on, on the installed build (no `ClassCastException` in the WhatsApp log).
+5. Hide Delivered alone, Hide Read alone and Ghost Mode: open chats with unread messages, then confirm WhatsApp keeps sending other jobs (no stuck JobManager) and that the reply/manual blue tick still releases receipts.
+6. Locked chats with a LID-only contact: the contact list hides only locked contacts.
+7. Typing privacy, outgoing-call privacy and locked-chats resolver logs: confirm which route matched.
