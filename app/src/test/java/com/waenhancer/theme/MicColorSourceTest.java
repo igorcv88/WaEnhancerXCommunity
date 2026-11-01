@@ -13,23 +13,42 @@ import java.util.stream.Stream;
 import org.junit.Test;
 
 public class MicColorSourceTest {
-    @Test public void tintListHasPriority() {
-        assertEquals(Integer.valueOf(1), MicColorSource.select(1, 2, 3, 4));
+    @Test public void firstOpaqueDiscColourWins() {
+        // transparent container, translucent ripple, then the white disc fill
+        assertEquals(Integer.valueOf(0xffffffff),
+                MicColorSource.selectDisc(java.util.Arrays.asList(null, 0x00000000, 0x33ffffff, 0xffffffff, 0xff000000)));
     }
 
-    @Test public void fallsThroughPublicSourcesInOrder() {
-        assertEquals(Integer.valueOf(2), MicColorSource.select(null, 2, 3, 4));
-        assertEquals(Integer.valueOf(3), MicColorSource.select(null, null, 3, 4));
-        assertEquals(Integer.valueOf(4), MicColorSource.select(null, null, null, 4));
-        assertNull(MicColorSource.select(null, null, null, null));
+    @Test public void halfOpaqueCounts() {
+        assertEquals(Integer.valueOf(0x80123456), MicColorSource.selectDisc(java.util.Arrays.asList(0x7fffffff, 0x80123456)));
+    }
+
+    @Test public void opacityThreshold() {
+        assertTrue(MicColorSource.isDiscOpaque(0x80000000));
+        assertFalse(MicColorSource.isDiscOpaque(0x7fffffff));
+    }
+
+    @Test public void paletteFollowsInPlaceRecolourEverySync() throws IOException {
+        String panes = new String(Files.readAllBytes(Paths.get(
+                "src/main/java/com/waenhancer/xposed/features/customization/ConversationGlassPanes.java")),
+                StandardCharsets.UTF_8);
+        int start = panes.indexOf("private void syncComposerIcons(");
+        String body = panes.substring(start, panes.indexOf("private static void collectDiscCandidates", start));
+        assertFalse("no identity signature may skip re-reading the fill", body.contains("micSignature"));
+        assertTrue(panes.contains("MicColorSource.isDiscOpaque(color)) return color;"));
+    }
+
+    @Test public void noDiscColourIsUnknown() {
+        assertNull(MicColorSource.selectDisc(java.util.Arrays.asList(null, 0x00ffffff)));
+        assertNull(MicColorSource.selectDisc(null));
     }
 
     @Test public void unknownColourKeepsLastReferenceStartingAtProfileWhite() {
         ComposerPalette palette = new ComposerPalette();
-        assertFalse(palette.update(MicColorSource.select(null, null, null, null)));
+        assertFalse(palette.update(MicColorSource.selectDisc(java.util.Collections.singletonList(null))));
         assertEquals(ComposerPalette.CURRENT_PROFILE_ICON, palette.color());
-        assertTrue(palette.update(MicColorSource.select(0xff112233, null, null, null)));
-        assertFalse(palette.update(MicColorSource.select(null, null, null, null)));
+        assertTrue(palette.update(MicColorSource.selectDisc(java.util.Collections.singletonList(0xff112233))));
+        assertFalse(palette.update(MicColorSource.selectDisc(java.util.Collections.singletonList(null))));
         assertEquals(0xff112233, palette.color());
     }
 
@@ -49,8 +68,8 @@ public class MicColorSourceTest {
         String panes = new String(Files.readAllBytes(Paths.get(
                 "src/main/java/com/waenhancer/xposed/features/customization/ConversationGlassPanes.java")),
                 StandardCharsets.UTF_8);
-        assertTrue("BlendModeColorFilter is API 29+", panes.contains("Build.VERSION_CODES.Q"));
-        assertTrue(panes.contains("MicColorSource.select(tintColor, blendColor, observedColor, drawableColor)"));
+        assertTrue("reference is the action button disc", panes.contains("MicColorSource.selectDisc(colors)"));
+        assertTrue(panes.contains("conversation_entry_action_button"));
         assertFalse("no reflection on the hidden getter", panes.contains("callMethod(filter, \"getColor\")"));
     }
 }

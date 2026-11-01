@@ -556,16 +556,7 @@ public final class AppLiquidGlass extends Feature {
             }
         };
         XposedBridge.hookAllMethods(ImageView.class, "setImageTintList", paletteChanged);
-        XposedBridge.hookAllMethods(ImageView.class, "setColorFilter", new XC_MethodHook() {
-            @Override protected void afterHookedMethod(MethodHookParam param) {
-                if (GlassPane.isCapturing()) return;
-                ImageView view = (ImageView) param.thisObject;
-                // setColorFilter(int[, Mode]) carries the colour; setColorFilter(ColorFilter) does not.
-                Object first = param.args.length > 0 ? param.args[0] : null;
-                conversation.onImageColorFilterSet(view, first instanceof Integer ? (Integer) first : null);
-                conversation.onComposerVisualChanged(view);
-            }
-        });
+        XposedBridge.hookAllMethods(ImageView.class, "setColorFilter", paletteChanged);
         XposedBridge.hookAllMethods(ImageView.class, "drawableStateChanged", paletteChanged);
         XposedBridge.hookAllMethods(TextView.class, "setTextColor", paletteChanged);
         XposedBridge.hookAllMethods(View.class, "setBackgroundTintList", new XC_MethodHook() {
@@ -743,11 +734,18 @@ public final class AppLiquidGlass extends Feature {
         private void watchBubble(View row, Binding binding) {
             if (binding.surface != Surface.BUBBLES) return;
             WeakReference<View> rowRef = new WeakReference<>(row);
-            binding.glass.observeCaptureDemand(() -> {
+            binding.glass.observeCaptureDemand(hardReset -> {
                 View target = rowRef.get();
                 if (closed || suspended || target == null || bindings.get(target) != binding) return;
-                binding.presentation.rearm();
-                binding.recovery.revalidate();
+                // A text/tick/image update still needs a fresh backdrop, but the previous
+                // recording remains valid and may already be visible. Re-arming presentation
+                // on every soft update causes a feedback loop: capture -> target.invalidate()
+                // -> native setText/image -> soft damage -> presentation rearm -> capture.
+                // Only a real release, host/size/mask change or first bind resets retries.
+                if (hardReset) {
+                    binding.presentation.rearm();
+                    binding.recovery.revalidate();
+                }
                 scheduleFrame(1L);
             });
             binding.presentation.rearm();
@@ -763,7 +761,10 @@ public final class AppLiquidGlass extends Feature {
                 if (binding != null && binding.surface == Surface.BUBBLES) {
                     if (!binding.contentDamagePending) {
                         binding.contentDamagePending = true;
-                        binding.glass.invalidateCapture("rowRecycled");
+                        // Text, ticks and thumbnails do not change what lies behind the bubble:
+                        // recapture without presenting transparent frames meanwhile. A real
+                        // recycle to another host still releases via owner/offset/bounds checks.
+                        binding.glass.damageCapture("row-content");
                         discoverLater(row);
                     }
                     return;
