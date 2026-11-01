@@ -292,7 +292,9 @@ public class UnobfuscatorCache {
             sPrefsCacheHooks.edit().remove(key).commit();
         }
     }, (key, cause) -> XposedBridge.log("[WAE] UnobfuscatorCache: re-resolving stale descriptor "
-            + key + " (" + cause.getClass().getSimpleName() + ")"));
+            + key + " (" + cause.getClass().getSimpleName() + ")"),
+            // Same monitor as Unobfuscator's static synchronized loaders: no lock-order inversion.
+            Unobfuscator.class);
 
     private static ReflectionDescriptors.ClassFinder finder(ClassLoader loader) {
         return name -> ReflectionUtils.findClass(name, loader);

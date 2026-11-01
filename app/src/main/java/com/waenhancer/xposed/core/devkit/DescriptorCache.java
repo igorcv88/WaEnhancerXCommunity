@@ -4,12 +4,11 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Pure-Java core of {@link UnobfuscatorCache}: persisted reflection descriptors with
- * stale-entry recovery, per-key single-flight resolution and a bounded per-process
- * negative cache.
+ * stale-entry recovery, single-flight resolution under one shared monitor and a bounded
+ * per-process negative cache.
  *
  * <p>Adapted from the resolution contract of WaEnhancerX {@code DexCacheManager}
  * (commit 76d85e1, GPL-3.0) and its negative lookup cache (commit 45bb199), without
@@ -51,16 +50,23 @@ public final class DescriptorCache {
 
     private final Store store;
     private final Listener listener;
-    private final Map<String, Object> keyLocks = new ConcurrentHashMap<>();
+    /**
+     * The single monitor resolvers run under. Production passes {@code Unobfuscator.class}: its
+     * {@code static synchronized} loaders already hold that monitor and nest into each other, so a
+     * second (per-key) monitor could be acquired in the opposite order and deadlock. One reentrant
+     * monitor cannot invert.
+     */
+    private final Object resolutionLock;
     private final Map<String, Boolean> failures;
 
-    public DescriptorCache(Store store, Listener listener) {
-        this(store, listener, DEFAULT_MAX_FAILURES);
+    public DescriptorCache(Store store, Listener listener, Object resolutionLock) {
+        this(store, listener, resolutionLock, DEFAULT_MAX_FAILURES);
     }
 
-    public DescriptorCache(Store store, Listener listener, int maxFailures) {
+    public DescriptorCache(Store store, Listener listener, Object resolutionLock, int maxFailures) {
         if (maxFailures <= 0) throw new IllegalArgumentException("maxFailures");
         this.store = Objects.requireNonNull(store, "store");
+        this.resolutionLock = Objects.requireNonNull(resolutionLock, "resolutionLock");
         this.listener = listener;
         final int cap = maxFailures;
         this.failures = Collections.synchronizedMap(new LinkedHashMap<String, Boolean>(64, 0.75f, false) {
@@ -73,7 +79,7 @@ public final class DescriptorCache {
 
     /**
      * Returns the cached value for {@code key}, decoding a persisted descriptor or running
-     * {@code resolver} at most once concurrently per key.
+     * {@code resolver} under the shared resolution monitor, so concurrent callers share one result.
      *
      * @throws Exception when the resolver fails, returns {@code null}, or the key already
      *                   failed in this process. The message keeps the historical
@@ -84,23 +90,16 @@ public final class DescriptorCache {
         if (failures.containsKey(key)) {
             throw negativeHit(kind, key);
         }
-        Object lock = keyLocks.computeIfAbsent(key, unused -> new Object());
-        synchronized (lock) {
-            // Another thread may have failed while we waited for the lock.
+        // Fast path without any lock: a valid persisted descriptor only needs decoding.
+        T cached = decodePersisted(key, codec);
+        if (cached != null) return cached;
+        synchronized (resolutionLock) {
+            // Another thread may have resolved or failed while we waited for the monitor.
             if (failures.containsKey(key)) {
                 throw negativeHit(kind, key);
             }
-            String persisted = store.get(key);
-            if (persisted != null) {
-                try {
-                    T decoded = codec.decode(persisted);
-                    if (decoded != null) return decoded;
-                    throw new IllegalStateException("decoded null");
-                } catch (Throwable stale) {
-                    store.remove(key);
-                    if (listener != null) listener.onStaleDescriptor(key, stale);
-                }
-            }
+            cached = decodePersisted(key, codec);
+            if (cached != null) return cached;
             T value;
             try {
                 value = resolver.resolve();
@@ -141,6 +140,25 @@ public final class DescriptorCache {
                 return new ClassNotFoundException(message);
             default:
                 return new LookupFailedException(message);
+        }
+    }
+
+    private <T> T decodePersisted(String key, Codec<T> codec) {
+        String persisted = store.get(key);
+        if (persisted == null) return null;
+        try {
+            T decoded = codec.decode(persisted);
+            if (decoded != null) return decoded;
+            throw new IllegalStateException("decoded null");
+        } catch (Throwable stale) {
+            // Remove only the value we failed to decode; another thread may have replaced it.
+            synchronized (resolutionLock) {
+                if (persisted.equals(store.get(key))) {
+                    store.remove(key);
+                    if (listener != null) listener.onStaleDescriptor(key, stale);
+                }
+            }
+            return null;
         }
     }
 

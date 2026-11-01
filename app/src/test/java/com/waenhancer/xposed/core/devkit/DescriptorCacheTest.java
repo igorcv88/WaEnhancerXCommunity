@@ -19,6 +19,9 @@ import org.junit.Test;
 
 public class DescriptorCacheTest {
 
+    /** Stands in for the Unobfuscator.class monitor held by static synchronized loaders. */
+    static final Object LOCK = new Object();
+
     static final class MapStore implements DescriptorCache.Store {
         final Map<String, String> values = new HashMap<>();
         int puts;
@@ -50,13 +53,13 @@ public class DescriptorCacheTest {
 
     @Test public void resolvesOnceThenDecodesPersistedDescriptor() throws Exception {
         MapStore store = new MapStore();
-        DescriptorCache cache = new DescriptorCache(store, null);
+        DescriptorCache cache = new DescriptorCache(store, null, LOCK);
         AtomicInteger scans = new AtomicInteger();
         Method expected = Host.class.getDeclaredMethod("limit");
         DescriptorCache.Resolver<Method> resolver = () -> { scans.incrementAndGet(); return expected; };
         assertEquals(expected, cache.get("method", "loadLimit", METHOD, resolver));
         // Fresh process: new cache instance over the same store must not scan again.
-        DescriptorCache restarted = new DescriptorCache(store, null);
+        DescriptorCache restarted = new DescriptorCache(store, null, LOCK);
         assertEquals(expected, restarted.get("method", "loadLimit", METHOD, resolver));
         assertEquals(1, scans.get());
     }
@@ -65,7 +68,7 @@ public class DescriptorCacheTest {
         MapStore store = new MapStore();
         store.values.put("loadLimit", "com.example.Gone:a");
         List<String> stale = new ArrayList<>();
-        DescriptorCache cache = new DescriptorCache(store, (key, cause) -> stale.add(key));
+        DescriptorCache cache = new DescriptorCache(store, (key, cause) -> stale.add(key), LOCK);
         Method expected = Host.class.getDeclaredMethod("limit");
         assertEquals(expected, cache.get("method", "loadLimit", METHOD, () -> expected));
         assertEquals(List.of("loadLimit"), stale);
@@ -103,7 +106,7 @@ public class DescriptorCacheTest {
 
     @Test public void failureIsNegativeCachedWithHistoricalExceptionType() throws Exception {
         MapStore store = new MapStore();
-        DescriptorCache cache = new DescriptorCache(store, null);
+        DescriptorCache cache = new DescriptorCache(store, null, LOCK);
         AtomicInteger scans = new AtomicInteger();
         DescriptorCache.Resolver<Method> failing = () -> { scans.incrementAndGet(); throw new NoSuchMethodException("absent"); };
         try { cache.get("method", "loadAbsent", METHOD, failing); fail(); } catch (DescriptorCache.LookupFailedException e) {
@@ -120,7 +123,7 @@ public class DescriptorCacheTest {
     }
 
     @Test public void nullResultIsAFailure() throws Exception {
-        DescriptorCache cache = new DescriptorCache(new MapStore(), null);
+        DescriptorCache cache = new DescriptorCache(new MapStore(), null, LOCK);
         try { cache.get("class", "loadX", null, () -> null); fail(); } catch (DescriptorCache.LookupFailedException e) {
             assertTrue(e.getMessage().endsWith("class is null"));
         }
@@ -128,7 +131,7 @@ public class DescriptorCacheTest {
     }
 
     @Test public void negativeCacheIsBounded() throws Exception {
-        DescriptorCache cache = new DescriptorCache(new MapStore(), null, 3);
+        DescriptorCache cache = new DescriptorCache(new MapStore(), null, LOCK, 3);
         for (int i = 0; i < 10; i++) {
             try { cache.get("class", "k" + i, null, () -> null); } catch (Exception ignored) {}
         }
@@ -139,7 +142,7 @@ public class DescriptorCacheTest {
 
     @Test public void concurrentCallersShareOneResolution() throws Exception {
         MapStore store = new MapStore();
-        DescriptorCache cache = new DescriptorCache(store, null);
+        DescriptorCache cache = new DescriptorCache(store, null, LOCK);
         AtomicInteger scans = new AtomicInteger();
         CountDownLatch inside = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -192,5 +195,58 @@ public class DescriptorCacheTest {
         assertEquals(42, ReflectionDescriptors.decodeNumber(ReflectionDescriptors.encodeNumber(42)));
         assertEquals(7L, ReflectionDescriptors.decodeNumber(ReflectionDescriptors.encodeNumber(7L)));
         assertEquals(5, ReflectionDescriptors.decodeNumber("5"));
+    }
+
+    /**
+     * Codex review on #124: thread A resolves key K1 and its resolver enters the global loader
+     * monitor; thread B already holds that monitor (a static synchronized loader) and requests K1.
+     * With a second per-key monitor the two waited on each other forever.
+     */
+    @Test(timeout = 10_000)
+    public void nestedLoaderUnderGlobalMonitorCannotDeadlock() throws Exception {
+        DescriptorCache cache = new DescriptorCache(new MapStore(), null, LOCK);
+        Method expected = Host.class.getDeclaredMethod("limit");
+        CountDownLatch aInsideResolver = new CountDownLatch(1);
+        CountDownLatch bHoldsMonitor = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Method> a = pool.submit(() -> cache.get("method", "loadWaContact", METHOD, () -> {
+                aInsideResolver.countDown();
+                bHoldsMonitor.await(200, TimeUnit.MILLISECONDS);
+                synchronized (LOCK) { // nested static synchronized loader
+                    return expected;
+                }
+            }));
+            Future<Method> b = pool.submit(() -> {
+                assertTrue(aInsideResolver.await(5, TimeUnit.SECONDS));
+                synchronized (LOCK) { // e.g. loadOnChangeStatus calling loadWaContactClass
+                    bHoldsMonitor.countDown();
+                    return cache.get("method", "loadWaContact", METHOD, () -> expected);
+                }
+            });
+            assertEquals(expected, a.get(5, TimeUnit.SECONDS));
+            assertEquals(expected, b.get(5, TimeUnit.SECONDS));
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test public void staleDecodeOutsideLockDoesNotRemoveANewerValue() throws Exception {
+        MapStore store = new MapStore();
+        store.values.put("k", "bad");
+        Method expected = Host.class.getDeclaredMethod("limit");
+        DescriptorCache cache = new DescriptorCache(store, null, LOCK);
+        DescriptorCache.Codec<Method> swapping = new DescriptorCache.Codec<Method>() {
+            @Override public String encode(Method value) { return ReflectionDescriptors.encodeMethod(value); }
+            @Override public Method decode(String raw) throws Exception {
+                if ("bad".equals(raw)) {
+                    // Another thread replaced the descriptor while this decode was failing.
+                    store.values.put("k", ReflectionDescriptors.encodeMethod(expected));
+                    throw new IllegalArgumentException("stale");
+                }
+                return ReflectionDescriptors.decodeMethod(FINDER, raw);
+            }
+        };
+        assertEquals(expected, cache.get("method", "k", swapping, () -> { throw new AssertionError("no rescan"); }));
     }
 }
