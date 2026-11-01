@@ -5,6 +5,7 @@ import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
+import android.widget.TextView;
 import com.waenhancer.theme.GlassProbe;
 
 /** Opt-in footer-only metadata. Independent quota survives the general capture log budget. */
@@ -45,8 +46,8 @@ final class ComposerBackingProbe {
      * This recorder-only walk is opt-in, limited to four distinct states/minute and 36 lines
      * per state. It reads IDs, geometry and drawable types only, never user content.
      */
-    void voiceSnapshot(ViewGroup recorder, View inactiveInput, long epoch) {
-        if (!GlassProbe.enabled() || recorder == null) return;
+    void voiceSnapshot(ViewGroup footer, ViewGroup recorder, View inactiveInput, long epoch) {
+        if (!GlassProbe.enabled() || footer == null || recorder == null) return;
         long now = SystemClock.uptimeMillis();
         if (voiceWindow < 0 || now - voiceWindow >= 60000) {
             voiceWindow = now;
@@ -76,6 +77,76 @@ final class ComposerBackingProbe {
             }
             emit("COMPOSER_VOICE_NODE", view, extra);
         }
+        // The visible red microphone and second grey timer lie beside the trash, while the
+        // verified voice_note_flashing_recording_view was GONE and 0x0 on this build. Search
+        // the whole footer's left recorder lane, not just the recorder subtree: an animated
+        // view may belong to a sibling/parent overlay. Metadata only; no TextView contents.
+        snapshotLeftRecorderLane(footer, recorder, epoch);
+    }
+
+    private static void snapshotLeftRecorderLane(ViewGroup footer, ViewGroup recorder, long epoch) {
+        int[] at = new int[2];
+        recorder.getLocationOnScreen(at);
+        float density = recorder.getResources().getDisplayMetrics().density;
+        int right = at[0] + Math.min(recorder.getWidth(), Math.round(140f * density));
+        int bottom = at[1] + recorder.getHeight();
+        java.util.ArrayList<View> matches = new java.util.ArrayList<>();
+        collectLeftLane(footer, at[0], at[1], right, bottom, density,
+                new int[]{300}, 0, matches);
+        // Prefer the recorder's lower-left lane (where the red mic flashes over the trash),
+        // even when an earlier input subtree contains many small leaves.
+        matches.sort((a, b) -> Integer.compare(screenBottom(b), screenBottom(a)));
+        int count = Math.min(matches.size(), 30);
+        Log.i(GlassProbe.TAG, "event=COMPOSER_LEFT_LANE_SUMMARY epoch=" + epoch
+                + " candidates=" + matches.size() + " emitted=" + count);
+        for (int i = 0; i < count; i++) {
+            View view = matches.get(i);
+            String detail = "epoch=" + epoch + " item=" + i + " interactive="
+                    + (view.isClickable() || view.isFocusable());
+            if (view instanceof TextView) {
+                TextView text = (TextView) view;
+                android.graphics.drawable.Drawable[] compound = text.getCompoundDrawables();
+                int icons = 0;
+                for (android.graphics.drawable.Drawable drawable : compound) if (drawable != null) icons++;
+                detail += " compoundIcons=" + icons + " textColor="
+                        + Integer.toHexString(text.getCurrentTextColor());
+            } else if (view instanceof ImageView) {
+                ImageView image = (ImageView) view;
+                detail += " image=" + GlassProbe.drawable(image.getDrawable())
+                        + " imageTint=" + (image.getImageTintList() == null ? "none" : "set");
+            }
+            emit("COMPOSER_LEFT_LANE_NODE", view, detail);
+        }
+    }
+
+    private static void collectLeftLane(View node, int left, int top, int right, int bottom,
+                                        float density, int[] visits, int depth,
+                                        java.util.ArrayList<View> out) {
+        if (node == null || depth > 13 || visits[0]-- <= 0 || out.size() >= 64) return;
+        if (node.isShown() && node.getWidth() > 0 && node.getHeight() > 0) {
+            int[] pos = new int[2];
+            node.getLocationOnScreen(pos);
+            boolean overlaps = pos[0] < right && pos[0] + node.getWidth() > left
+                    && pos[1] < bottom && pos[1] + node.getHeight() > top;
+            boolean compact = node.getWidth() <= 240f * density
+                    && node.getHeight() <= 180f * density;
+            boolean relevant = node instanceof ImageView || node instanceof TextView
+                    || !(node instanceof ViewGroup) || node.getBackground() != null;
+            if (overlaps && compact && relevant) out.add(node);
+        }
+        if (node instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) node;
+            for (int i = 0; i < group.getChildCount() && visits[0] > 0 && out.size() < 64; i++) {
+                collectLeftLane(group.getChildAt(i), left, top, right, bottom, density,
+                        visits, depth + 1, out);
+            }
+        }
+    }
+
+    private static int screenBottom(View view) {
+        int[] at = new int[2];
+        view.getLocationOnScreen(at);
+        return at[1] + view.getHeight();
     }
     private static View findByRole(View node, String role, int depth, int[] visits) {
         if (node == null || depth > 10 || visits[0]-- <= 0) return null;

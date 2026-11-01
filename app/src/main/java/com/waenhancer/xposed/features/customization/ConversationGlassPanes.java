@@ -940,7 +940,7 @@ final class ConversationGlassPanes {
         // Restoring its opaque fill on route entry painted a black bar over the glass (PR #116).
         // Keep the normal-input ownership until the composer is disabled or the input rebinds.
         screen.backingVoice = true;
-        if (GlassProbe.enabled()) screen.backingProbe.voiceSnapshot(voice,
+        if (GlassProbe.enabled()) screen.backingProbe.voiceSnapshot(footer, voice,
                 findById(footer, "input_layout"), screen.transition.epoch());
         int pad = Math.round(COMPOSE_PAD_DP * d);
         // Measured native screen-space bounds mapped into the footer, never a guessed panel.

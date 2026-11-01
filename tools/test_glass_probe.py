@@ -48,13 +48,25 @@ assert 'voiceSnapshots >= 4' in backing_probe, 'recorder inventory must be rate 
 assert 'new int[]{160}' in backing_probe, 'recorder subtree walk must be bounded'
 assert 'Math.min(34, candidates.size())' in backing_probe, 'recorder snapshot must cap emitted nodes'
 assert 'COMPOSER_VOICE_NODE' in backing_probe
-assert 'screen.backingProbe.voiceSnapshot(voice,' in conversation
+assert 'screen.backingProbe.voiceSnapshot(footer, voice,' in conversation
+assert 'COMPOSER_LEFT_LANE_NODE' in backing_probe
+assert 'COMPOSER_LEFT_LANE_SUMMARY' in backing_probe
+assert 'voiceSnapshots >= 4' in backing_probe
+assert 'new int[]{300}' in backing_probe
+assert 'Math.min(matches.size(), 30)' in backing_probe
+assert 'compoundIcons=' in backing_probe
 assert 'VOICE_MIC_UNRESOLVED' in conversation and 'VOICE_MIC_FILTER' in conversation
 assert 'screen.inputBacking.restore(); screen.backingVoice = true;' not in conversation, (
     'recorder route must not restore the still-visible opaque input background'
 )
 assert 'screen.inputBacking.clear(inactiveInput, true);' in conversation
 assert 'findById(recorder, "voice_note_draft_preview_v2")' in conversation
+assert 'if (previous.rowBased && canvasOwned)' in app, 'a canvas factory must not evict an eligible row mask'
+assert 'nativeMask && keepGlass(view, previous)' in app, 'replaced row masks must retain the same owner'
+assert 'nativeMaskRebound && keepGlass(target, binding)' in app, 'layout reconciliation must retain row glass'
+assert app.index('bindNativeBubbleRow(row);\n                if (next != null && frame.saw(next))') > 0, (
+    'reply redraw must prefer a native row mask before replacing a canvas factory'
+)
 HARNESS = r'''
 import com.waenhancer.theme.GlassProbeBudget;
 
