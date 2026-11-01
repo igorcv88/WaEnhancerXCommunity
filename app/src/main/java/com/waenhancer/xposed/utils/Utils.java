@@ -61,7 +61,8 @@ public class Utils {
 
     private static final ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     public static android.content.SharedPreferences xprefs;
-    private static final HashMap<String, Integer> ids = new HashMap<>();
+    /** Dev4Mod a0e1c89: lock-free reads; getID runs in view bind/draw paths. */
+    private static final java.util.concurrent.ConcurrentHashMap<String, Integer> ids = new java.util.concurrent.ConcurrentHashMap<>();
     public static boolean DEBUG = false;
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -171,12 +172,8 @@ public class Utils {
 
         final String key = type + "_" + name;
 
-        synchronized (ids) {
-            if (ids.containsKey(key)) {
-                Integer cachedId = ids.get(key);
-                return cachedId != null ? cachedId : -1;
-            }
-        }
+        Integer cachedId = ids.get(key);
+        if (cachedId != null) return cachedId;
 
         try {
             Application app = getApplication();
@@ -187,9 +184,7 @@ public class Utils {
             // Normalize to -1 so callers can reliably detect missing resources.
             if (id == 0) id = -1;
 
-            synchronized (ids) {
-                ids.put(key, id);
-            }
+            ids.put(key, id);
 
             return id;
         } catch (Exception e) {
