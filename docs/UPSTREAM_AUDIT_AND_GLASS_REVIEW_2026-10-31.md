@@ -237,7 +237,7 @@ The two upstream default branch HEADs were rechecked against GitHub on **2026-11
 | B. WhatsApp resolver compatibility | `fix/whatsapp-resolver-compat-20261101` | Dev4Mod `efdd903`, `b84f5f6`, `02e4fc5`, `2d2301a`, `f2551e7`, `01a8bb7`, `790a7e2`, `1abe476` (partial) |
 | C. Receipts, LID/PN identity | `fix/receipt-identity-ports-20261101` | Dev4Mod `015d446`, `d2c71a5`, `1a06ff0`, `6813a52` |
 | D. Audit and handoff (this document) | `docs/upstream-porting-audit-20261101` | — |
-| 0. Build fix found during validation | `fix/master-compile-porterduff-20261101` | — (master `f6f15ab` did not compile: hidden `PorterDuffColorFilter.getColor()` from #122) |
+| 0. Build fix found during validation | `fix/master-compile-porterduff-20261101` | — (master `f6f15ab` did not compile: non-public `PorterDuffColorFilter.getColor()` from #122; replaced by public-API mic colour resolution, PR #123) |
 
 Key adaptation decisions:
 
