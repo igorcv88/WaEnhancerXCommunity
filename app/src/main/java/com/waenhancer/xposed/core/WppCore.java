@@ -48,6 +48,10 @@ import de.robv.android.xposed.XposedHelpers;
 
 public class WppCore {
 
+    /** Dev4Mod 6813a52: compiled once instead of on every JID normalization. */
+    static final java.util.regex.Pattern DEVICE_SUFFIX = java.util.regex.Pattern.compile("\\.[\\d:]+@");
+
+
     static final FeatureCallbacks<ActivityChangeState> listenerAcitivity = new FeatureCallbacks<>();
     @SuppressLint("StaticFieldLeak")
     static Activity mCurrentActivity;
@@ -183,7 +187,7 @@ public class WppCore {
                     || (!Modifier.isStatic(converter.getModifiers()) && repository == null)) {
                 return lid;
             }
-            rawString = rawString.replaceFirst("\\.[\\d:]+@", "@");
+            rawString = DEVICE_SUFFIX.matcher(rawString).replaceFirst("@");
             var newUser = WppCore.createUserJid(rawString);
             if (newUser == null || !converter.getParameterTypes()[0].isInstance(newUser)) return lid;
             var result = ReflectionUtils.callMethod(converter, repository, newUser);
@@ -201,7 +205,7 @@ public class WppCore {
             var rawString = (String) XposedHelpers.callMethod(userJid, "getRawString");
             if (rawString == null || rawString.contains("@lid"))
                 return userJid;
-            rawString = rawString.replaceFirst("\\.[\\d:]+@", "@");
+            rawString = DEVICE_SUFFIX.matcher(rawString).replaceFirst("@");
             var newUser = WppCore.createUserJid(rawString);
             var result = ReflectionUtils.callMethod(convertJidToLid, mWaJidMapRepository, newUser);
             return result == null ? userJid : result;
@@ -243,7 +247,7 @@ public class WppCore {
                 Utils.showToast("Error: could not find JID", Toast.LENGTH_SHORT);
                 return false;
             }
-            jidRawString = jidRawString.replaceFirst("\\.[\\d:]+@", "@");
+            jidRawString = DEVICE_SUFFIX.matcher(jidRawString).replaceFirst("@");
             if (Utils.DEBUG) {
                 ;
             }

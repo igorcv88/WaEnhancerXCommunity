@@ -30,4 +30,17 @@ public class ReceiptPolicyTest {
         assertTrue(ReceiptPolicy.recordHidden(false, true, null));
         assertFalse(ReceiptPolicy.recordHidden(false, false, "read"));
     }
+    /** Dev4Mod 015d446: the read job blocks on its ack; its dispatch must never be rewritten. */
+    @Test public void onlyDeliveryDispatchIsRewritable() {
+        assertTrue(ReceiptPolicy.rewritableDispatch(ReceiptPolicy.DISPATCH_DELIVERY));
+        assertFalse(ReceiptPolicy.rewritableDispatch(ReceiptPolicy.DISPATCH_READ_JOB));
+        assertFalse(ReceiptPolicy.rewritableDispatch(-1));
+    }
+    @Test public void readJobIsCancelledWhenAnyApplicableHideIsActive() {
+        assertTrue(ReceiptPolicy.suppressReadJob(true, false, false));
+        // Hide Delivered alone: a read receipt would imply delivery, cancel the job itself.
+        assertTrue(ReceiptPolicy.suppressReadJob(false, true, false));
+        assertTrue(ReceiptPolicy.suppressReadJob(false, false, true));
+        assertFalse(ReceiptPolicy.suppressReadJob(false, false, false));
+    }
 }

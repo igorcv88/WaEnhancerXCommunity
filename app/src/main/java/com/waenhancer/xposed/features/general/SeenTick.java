@@ -587,15 +587,24 @@ public class SeenTick extends Feature {
         CompletableFuture.runAsync(() -> {
             if (Objects.equals(userJid.getPhoneNumber(), Utils.getMyNumber()) || Objects.requireNonNullElse(userJid.getUserRawString(), "").contains("lid_me"))
                 return;
-            var messages = new ArrayList<FMessageWpp>();
             var hideSeenMessagesssages = MessageHistory.getInstance().getHideSeenMessages(userJid.getPhoneRawString(), MessageHistory.MessageType.MESSAGE_TYPE, false);
             if (hideSeenMessagesssages == null) hideSeenMessagesssages = List.of();
+            var ids = new ArrayList<String>(hideSeenMessagesssages.size());
+            var resolved = new ArrayList<FMessageWpp>(hideSeenMessagesssages.size());
             for (var message : hideSeenMessagesssages) {
-                var fmessage = message.getFMessage();
-                if (fmessage == null) continue;
-                messages.add(fmessage);
+                ids.add(message.message);
+                resolved.add(message.getFMessage());
+            }
+            // Dev4Mod d2c71a5: bounded release of the newest messages; older/unresolvable rows
+            // are marked released in one transaction instead of being retried on every open.
+            var batch = PendingReceiptBatch.split(ids, resolved, PendingReceiptBatch.MAX_SEND);
+            var messages = new ArrayList<FMessageWpp>(batch.send);
+            if (!batch.markOnly.isEmpty()) {
+                MessageHistory.getInstance().updateViewedMessagesBatch(userJid.getPhoneRawString(),
+                        batch.markOnly, MessageHistory.MessageType.MESSAGE_TYPE, true);
             }
             Log.i(RECEIPT_TAG, "chat release pending=" + messages.size()
+                    + " markedOnly=" + batch.markOnly.size()
                     + " rows=" + hideSeenMessagesssages.size() + " jid=" + jidKind(userJid));
             if (messages.isEmpty())
                 return;

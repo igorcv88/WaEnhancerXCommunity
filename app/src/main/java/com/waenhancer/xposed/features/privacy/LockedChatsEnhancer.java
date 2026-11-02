@@ -69,8 +69,9 @@ public class LockedChatsEnhancer extends Feature {
         XposedBridge.hookMethod(loadedContacts, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                // Dev4Mod 1a06ff0: builds with a single HashSet in the chat cache use that set.
                 if (param.args.length == 0 || param.args[0] == null || chatCache == null
-                        || lockedChatsFields.length < 2) return;
+                        || lockedChatsFields.length == 0) return;
                 Object contacts = param.args[0];
                 // Keep the known field when present; only accept an unambiguous typed fallback.
                 java.lang.reflect.Field listField = null;
@@ -90,15 +91,22 @@ public class LockedChatsEnhancer extends Feature {
                 Object rawList = listField.get(contacts);
                 if (!(rawList instanceof List<?>)) return;
                 var list = new ArrayList<>((List<?>) rawList);
-                lockedChatsFields[1].setAccessible(true);
-                HashSet<?> lockedChats = (HashSet<?>) lockedChatsFields[1].get(chatCache);
-                if (lockedChats == null) return;
-                var lockedNumbers = lockedChats.stream().map(userjid -> new FMessageWpp.UserJid(userjid).getPhoneNumber()).collect(Collectors.toList());
+                var lockedField = lockedChatsFields[lockedChatsFields.length > 1 ? 1 : 0];
+                lockedField.setAccessible(true);
+                HashSet<?> lockedChats = (HashSet<?>) lockedField.get(chatCache);
+                if (lockedChats == null || lockedChats.isEmpty()) return;
+                // Match by phone JID, LID and number; unresolved identities never match.
+                var locked = new JidIdentitySet();
+                for (Object jid : lockedChats) {
+                    if (jid == null) continue;
+                    var userJid = new FMessageWpp.UserJid(jid);
+                    locked.add(userJid.getPhoneRawString(), userJid.getUserRawString(), userJid.getPhoneNumber());
+                }
+                if (locked.isEmpty()) return;
                 list.removeIf(item -> {
                     if (!WaContactWpp.TYPE.isInstance(item)) return false;
-                    var waContact = new WaContactWpp(item);
-                    var phoneNumber = waContact.getUserJid().getPhoneNumber();
-                    return lockedNumbers.contains(phoneNumber);
+                    var userJid = new WaContactWpp(item).getUserJid();
+                    return locked.matchesAny(userJid.getPhoneRawString(), userJid.getUserRawString(), userJid.getPhoneNumber());
                 });
                 listField.set(contacts, list);
             }

@@ -65,16 +65,17 @@ public class ShareLimit extends Feature {
         try {
             Class<?> limitInfoClass = Unobfuscator.loadMultiSelectionLimitInfoClass(classLoader);
             if (limitInfoClass != null) {
-                XposedBridge.hookAllConstructors(limitInfoClass, new XC_MethodHook() {
-                    @Override
-                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                        if (param.args != null && param.args.length > 0) {
-                            if (param.args[0] instanceof Integer) {
-                                param.args[0] = limitValue;
-                            }
+                // efdd903: the limit is the first int that is not a resource ID; booleans are block flags.
+                for (var constructor : limitInfoClass.getDeclaredConstructors()) {
+                    var types = constructor.getParameterTypes();
+                    if (!MultiSelectionLimitArgs.hasIntParameter(types)) continue;
+                    XposedBridge.hookMethod(constructor, new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            MultiSelectionLimitArgs.apply(types, param.args, limitValue);
                         }
-                    }
-                });
+                    });
+                }
             }
         } catch (Throwable t) {
             XposedBridge.log("[SHARE_LIMIT] Failed to hook MultiSelectionLimitInfo:");

@@ -106,7 +106,6 @@ final class ConversationGlassPanes {
         WeakReference<View> paletteQuote = new WeakReference<>(null);
         final com.waenhancer.theme.ComposerPalette palette = new com.waenhancer.theme.ComposerPalette();
         ColorStateList paletteColors = ColorStateList.valueOf(com.waenhancer.theme.ComposerPalette.CURRENT_PROFILE_ICON);
-        int micSignature;
         boolean micResolved;
         WeakReference<View> stickyDate = new WeakReference<>(null);
         final com.waenhancer.theme.StickyDatePosition datePosition = new com.waenhancer.theme.StickyDatePosition();
@@ -144,6 +143,11 @@ final class ConversationGlassPanes {
         final WeakHashMap<View, Drawable> clearedForegrounds = new WeakHashMap<>();
         /** The native icon tint, restored exactly when the composer glass is disabled. */
         final WeakHashMap<ImageView, ColorStateList> originalInputIconTints = new WeakHashMap<>();
+        /** Header action icons WhatsApp disables while recording, kept in the header's foreground. */
+        final WeakHashMap<ImageView, ColorStateList> headerIconTints = new WeakHashMap<>();
+        final WeakHashMap<ImageView, ColorStateList> headerAppliedTints = new WeakHashMap<>();
+        final WeakHashMap<TextView, ColorStateList> headerCompoundTints = new WeakHashMap<>();
+        final WeakHashMap<TextView, ColorStateList> headerAppliedCompound = new WeakHashMap<>();
         final WeakHashMap<ImageView, ColorStateList> appliedInputIconTints = new WeakHashMap<>();
         final WeakHashMap<TextView, ColorStateList> inputTextColors = new WeakHashMap<>(), inputAppliedTextColors = new WeakHashMap<>();
         final WeakHashMap<ImageView, ColorStateList> replyAppliedTints = new WeakHashMap<>();
@@ -691,7 +695,100 @@ final class ConversationGlassPanes {
         screen.capsule.setSource(source);
         screen.capsule.setUnderlay(wallpaperOf(screen));
         place(screen.capsule, l, t, r, b, (b - t) / 2f);
+        if (toolbar != null) syncHeaderActions(screen, toolbar);
         traceTopContinuity(screen, holder, content);
+    }
+
+    /**
+     * WhatsApp disables the call, video and overflow actions while a voice note records; their
+     * disabled tint turned them grey on the glass header. While an action is disabled, draw it
+     * with the header's own foreground (the contact name's current text colour) through a
+     * state-independent tint; restore the native tint as soon as it is enabled again or the
+     * header is switched off. Enabled state, clicks and the native views are unchanged.
+     */
+    private void syncHeaderActions(Screen screen, ViewGroup toolbar) {
+        TextView title = findTitle(toolbar);
+        if (title == null) return;
+        ColorStateList foreground = ColorStateList.valueOf(title.getCurrentTextColor());
+        syncHeaderActionTree(screen, toolbar, foreground, 0);
+    }
+
+    private static TextView findTitle(ViewGroup toolbar) {
+        View named = findById(toolbar, "conversation_contact_name");
+        if (named instanceof TextView && named.isShown()) return (TextView) named;
+        return firstShownText(toolbar, 0);
+    }
+
+    private static TextView firstShownText(View view, int depth) {
+        if (view == null || depth > 6 || !view.isShown()) return null;
+        if (view instanceof TextView && !view.getClass().getSimpleName().contains("ActionMenuItemView")
+                && ((TextView) view).length() > 0) return (TextView) view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                TextView found = firstShownText(group.getChildAt(i), depth + 1);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    private void syncHeaderActionTree(Screen screen, View view, ColorStateList foreground, int depth) {
+        if (view == null || depth > 7) return;
+        String name = resourceName(view);
+        // Never touch Back, the avatar or the contact title block.
+        if (name != null && (name.equals("whatsapp_toolbar_home") || name.contains("photo")
+                || name.contains("avatar") || name.contains("picture") || name.contains("contact"))) return;
+        boolean disabled = !view.isEnabled()
+                || (view.getParent() instanceof View && !((View) view.getParent()).isEnabled());
+        if (view instanceof ImageView && (view.isClickable() || view.getParent() instanceof View
+                && ((View) view.getParent()).isClickable())) {
+            ImageView icon = (ImageView) view;
+            ColorStateList current = icon.getImageTintList();
+            if (disabled) {
+                if (!screen.headerIconTints.containsKey(icon) || current != screen.headerAppliedTints.get(icon))
+                    screen.headerIconTints.put(icon, current);
+                if (!sameFlatTint(current, foreground)) icon.setImageTintList(foreground);
+                screen.headerAppliedTints.put(icon, icon.getImageTintList());
+                if (icon.getAlpha() < 1f) host.report("header-action-disabled-alpha",
+                        "disabled header action also lowers view alpha; tint alone cannot restore it");
+            } else if (screen.headerIconTints.containsKey(icon)) {
+                if (current == screen.headerAppliedTints.get(icon)) icon.setImageTintList(screen.headerIconTints.get(icon));
+                screen.headerIconTints.remove(icon);
+                screen.headerAppliedTints.remove(icon);
+            }
+        } else if (view instanceof TextView && view.getClass().getSimpleName().contains("ActionMenuItemView")) {
+            TextView item = (TextView) view;
+            ColorStateList current = item.getCompoundDrawableTintList();
+            if (disabled) {
+                if (!screen.headerCompoundTints.containsKey(item) || current != screen.headerAppliedCompound.get(item))
+                    screen.headerCompoundTints.put(item, current);
+                if (!sameFlatTint(current, foreground)) item.setCompoundDrawableTintList(foreground);
+                screen.headerAppliedCompound.put(item, item.getCompoundDrawableTintList());
+            } else if (screen.headerCompoundTints.containsKey(item)) {
+                if (current == screen.headerAppliedCompound.get(item)) item.setCompoundDrawableTintList(screen.headerCompoundTints.get(item));
+                screen.headerCompoundTints.remove(item);
+                screen.headerAppliedCompound.remove(item);
+            }
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) syncHeaderActionTree(screen, group.getChildAt(i), foreground, depth + 1);
+        }
+    }
+
+    /** Avoids re-setting an equivalent tint on every header sync (each set invalidates the view). */
+    private static boolean sameFlatTint(ColorStateList current, ColorStateList wanted) {
+        return current != null && !current.isStateful() && current.getDefaultColor() == wanted.getDefaultColor();
+    }
+
+    private static void restoreHeaderActions(Screen screen) {
+        restoreIcons(screen.headerIconTints, screen.headerAppliedTints);
+        for (TextView item : new ArrayList<>(screen.headerCompoundTints.keySet()))
+            if (item != null && item.getCompoundDrawableTintList() == screen.headerAppliedCompound.get(item))
+                item.setCompoundDrawableTintList(screen.headerCompoundTints.get(item));
+        screen.headerCompoundTints.clear();
+        screen.headerAppliedCompound.clear();
     }
 
     /**
@@ -776,6 +873,7 @@ final class ConversationGlassPanes {
 
     private void disableHeader(Screen screen) {
         restoreStickyDate(screen);
+        restoreHeaderActions(screen);
         screen.headerOn = false;
         ViewGroup holder = screen.holder.get();
         removePane(screen.band);
@@ -1379,35 +1477,72 @@ final class ConversationGlassPanes {
      * thumbnails, message emoji, the reference microphone or arbitrary neighbouring controls.
      */
     private void syncComposerIcons(Screen screen, ViewGroup footer) {
-        ImageView mic = firstImage(findById(footer, "conversation_entry_action_button"), 0);
-        if (mic != null) {
-            Drawable drawable = mic.getDrawable();
-            Drawable current = drawable == null ? null : drawable.getCurrent();
-            android.graphics.ColorFilter filter = mic.getColorFilter();
-            if (filter == null && current != null) filter = current.getColorFilter();
-            ColorStateList tint = mic.getImageTintList();
-            int signature = java.util.Objects.hash(System.identityHashCode(mic),
-                    System.identityHashCode(drawable), System.identityHashCode(filter),
-                    System.identityHashCode(tint), java.util.Arrays.hashCode(mic.getDrawableState()));
-            if (!screen.micResolved || signature != screen.micSignature) {
-                Integer color = null;
-                if (filter instanceof android.graphics.PorterDuffColorFilter)
-                    color = ((android.graphics.PorterDuffColorFilter) filter).getColor();
-                else if (filter instanceof android.graphics.BlendModeColorFilter)
-                    color = ((android.graphics.BlendModeColorFilter) filter).getColor();
-                else if (tint != null) color = tint.getColorForState(mic.getDrawableState(), tint.getDefaultColor());
-                else if (current instanceof ColorDrawable)
-                    color = ((ColorDrawable) current).getColor();
-                if (color == null) {
-                    color = com.waenhancer.theme.ComposerPalette.CURRENT_PROFILE_ICON;
-                    host.report("composer-mic-style-fallback", "microphone exposes no tint/filter; using current profile's white glyph style");
-                }
-                if (screen.palette.update(color)) screen.paletteColors = ColorStateList.valueOf(screen.palette.color());
-                screen.micSignature = signature;
-                screen.micResolved = true;
+        // Device review 2026-11-01: the reference is the action button's disc (white in the
+        // current profile), not the microphone glyph drawn on it (black). Public APIs only.
+        View action = findById(footer, "conversation_entry_action_button");
+        if (action != null) {
+            java.util.List<View> candidates = new java.util.ArrayList<>(4);
+            collectDiscCandidates(action, candidates, 0);
+            // Read every sync: a native fill can be recoloured in place without changing the
+            // drawable, tint or state identity (Codex review on #128). At most six views;
+            // ComposerPalette.update() is a no-op for an unchanged colour.
+            java.util.List<Integer> colors = new java.util.ArrayList<>(candidates.size() * 2);
+            for (View v : candidates) {
+                int[] state = v.getDrawableState();
+                ColorStateList tint = v.getBackgroundTintList();
+                if (tint != null && v.getBackground() != null)
+                    colors.add(tint.getColorForState(state, tint.getDefaultColor()));
+                colors.add(drawableFillColor(v.getBackground(), state, 0));
             }
-        } // A temporarily absent mic keeps the last resolved reference during audio reconstruction.
+            Integer color = com.waenhancer.theme.MicColorSource.selectDisc(colors);
+            if (color == null && !screen.micResolved) {
+                // ComposerPalette.update(null) keeps the last reference (initially CURRENT_PROFILE_ICON).
+                host.report("composer-mic-disc-fallback", "action button disc colour not exposed through public APIs; keeping last reference (initially current profile's white)");
+            }
+            if (color != null) screen.micResolved = true;
+            if (screen.palette.update(color)) screen.paletteColors = ColorStateList.valueOf(screen.palette.color());
+        } // A temporarily absent action button keeps the last resolved reference.
         tintComposerIcons(screen, footer, screen.palette.color(), 0);
+    }
+
+    /** The action button and its first descendants: the disc may be either one's background. */
+    private static void collectDiscCandidates(View view, java.util.List<View> out, int depth) {
+        if (view == null || depth > 2 || out.size() >= 6) return;
+        out.add(view);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) collectDiscCandidates(group.getChildAt(i), out, depth + 1);
+        }
+    }
+
+    /** Fill colour of common native disc drawables, unwrapping selectors, layers and insets. */
+    private static Integer drawableFillColor(Drawable drawable, int[] state, int depth) {
+        if (drawable == null || depth > 4) return null;
+        Drawable current = drawable.getCurrent();
+        if (current != null && current != drawable) return drawableFillColor(current, state, depth + 1);
+        if (drawable instanceof ColorDrawable) return ((ColorDrawable) drawable).getColor();
+        if (drawable instanceof android.graphics.drawable.GradientDrawable) {
+            ColorStateList fill = ((android.graphics.drawable.GradientDrawable) drawable).getColor();
+            return fill == null ? null : fill.getColorForState(state, fill.getDefaultColor());
+        }
+        if (drawable instanceof android.graphics.drawable.ShapeDrawable)
+            return ((android.graphics.drawable.ShapeDrawable) drawable).getPaint().getColor();
+        if (drawable instanceof android.graphics.drawable.LayerDrawable) {
+            android.graphics.drawable.LayerDrawable layers = (android.graphics.drawable.LayerDrawable) drawable;
+            for (int i = 0; i < layers.getNumberOfLayers(); i++) {
+                if (layers.getId(i) == android.R.id.mask) continue; // ripple mask is never painted
+                Integer color = drawableFillColor(layers.getDrawable(i), state, depth + 1);
+                // A transparent/translucent layer is not the disc; keep looking (Codex review on #128).
+                if (color != null && com.waenhancer.theme.MicColorSource.isDiscOpaque(color)) return color;
+            }
+            return null;
+        }
+        if (drawable instanceof android.graphics.drawable.InsetDrawable)
+            return drawableFillColor(((android.graphics.drawable.InsetDrawable) drawable).getDrawable(), state, depth + 1);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M
+                && drawable instanceof android.graphics.drawable.DrawableWrapper)
+            return drawableFillColor(((android.graphics.drawable.DrawableWrapper) drawable).getDrawable(), state, depth + 1);
+        return null;
     }
 
     void onComposerVisualChanged(View view) {

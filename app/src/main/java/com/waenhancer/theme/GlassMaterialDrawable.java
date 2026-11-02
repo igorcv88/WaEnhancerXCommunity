@@ -64,7 +64,8 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
     }
     private boolean canvasOwned;
     private boolean pixelSuppressed;
-    private Runnable captureDemand;
+    /** True only when the old recording was invalidated; soft damage retains its presentation. */
+    private Consumer<Boolean> captureDemand;
     private final BubbleCaptureEpoch captureEpoch = new BubbleCaptureEpoch();
     private long capturedAt, publishedSerial;
     private int canvasOffsetX, canvasOffsetY;
@@ -137,7 +138,8 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
                     owner = new WeakReference<>(view);
                     canvasOwned = true;
                     int x = Math.round(values[2]), y = Math.round(values[5]);
-                    if (x != canvasOffsetX || y != canvasOffsetY) invalidateCapture("canvas-offset");
+                    // Same row, moved inside it: keep presenting until the recapture is ready.
+                    if (x != canvasOffsetX || y != canvasOffsetY) damageCapture("canvas-offset");
                     canvasOffsetX = x; canvasOffsetY = y;
                 }
             }
@@ -243,7 +245,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         if (suppressed) releaseLive(); else invalidateCapture("factory-promoted");
         invalidateSelf();
     }
-    public void observeCaptureDemand(Runnable demand) { captureDemand = demand; }
+    public void observeCaptureDemand(Consumer<Boolean> demand) { captureDemand = demand; }
     public long damageRevision() { return captureEpoch.revision(); }
     public boolean capturePending() { return !pixelSuppressed && captureEpoch.pending(); }
     public boolean presentationPending() { return !pixelSuppressed && captureEpoch.captured() >= 0 && !hasPresentedLive(); }
@@ -254,9 +256,25 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
                 "mask=" + GlassTrace.id(original) + " revision=" + captureEpoch.revision()
                         + " canvasOwned=" + canvasOwned + " " + captureStatus());
         releaseLive();
-        if (captureDemand != null) captureDemand.run();
+        if (captureDemand != null) captureDemand.accept(true);
         invalidateSelf();
     }
+    /**
+     * Requests a recapture while keeping the current recording on screen until the new one is
+     * published. For changes that do not alter what lies behind this drawable or its size (row
+     * text/ticks/thumbnails, a move inside the same row): releasing here presented transparent
+     * frames on every such signal, which read as the bubble being destroyed and rebuilt. Identity,
+     * host, size, mask and region changes still use {@link #invalidateCapture(String)}.
+     */
+    public void damageCapture(String reason) {
+        captureEpoch.damage();
+        if (GlassProbe.enabled()) BubbleLifecycleProbe.event("soft-" + reason, owner.get(), this,
+                "revision=" + captureEpoch.revision() + " canvasOwned=" + canvasOwned
+                        + " " + captureStatus());
+        if (captureDemand != null) captureDemand.accept(false);
+        invalidateSelf();
+    }
+
     private boolean published(boolean success) {
         if (success) {
             captureEpoch.published();
@@ -469,9 +487,15 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         boolean changed = original != null && original.setVisible(visible, restart);
         return super.setVisible(visible, restart) || changed;
     }
+    private int lastBoundsWidth = -1, lastBoundsHeight = -1;
+
     @Override protected void onBoundsChange(Rect bounds) {
         if (original != null) original.setBounds(bounds);
-        invalidateCapture("drawable-bounds");
+        boolean sameSize = bounds.width() == lastBoundsWidth && bounds.height() == lastBoundsHeight;
+        lastBoundsWidth = bounds.width();
+        lastBoundsHeight = bounds.height();
+        // A pure move keeps the recording's size valid; a resize cannot reuse it.
+        if (sameSize) damageCapture("drawable-moved"); else invalidateCapture("drawable-bounds");
     }
     @Override public void setHotspotBounds(int left, int top, int right, int bottom) {
         super.setHotspotBounds(left, top, right, bottom);

@@ -86,7 +86,13 @@ public class UnobfuscatorCache {
                 lastUpdateTime = mApplication.getPackageManager().getPackageInfo(BuildConfig.APPLICATION_ID, 0).lastUpdateTime;
             } catch (Exception ignored) {
             }
-            if (version != currentVersion || savedUpdateTime != lastUpdateTime || !versionName.equals(savedVersionName)) {
+            int savedSchema = 0;
+            try {
+                savedSchema = sPrefsCacheHooks.getInt(SCHEMA_KEY, 0);
+            } catch (Exception ignored) {
+            }
+            if (version != currentVersion || savedUpdateTime != lastUpdateTime
+                    || !versionName.equals(savedVersionName) || savedSchema != CACHE_SCHEMA) {
                 int toastResId = R.string.starting_cache;
                 try {
                     if (XResManager.moduleResources != null) {
@@ -105,6 +111,7 @@ public class UnobfuscatorCache {
                 sPrefsCacheHooks.edit().putLong("version", currentVersion).commit();
                 sPrefsCacheHooks.edit().putLong("updateTime", lastUpdateTime).commit();
                 sPrefsCacheHooks.edit().putString("wae_version_name", versionName).commit();
+                sPrefsCacheHooks.edit().putInt(SCHEMA_KEY, CACHE_SCHEMA).commit();
                 if (version != currentVersion) {
                     sPrefsCacheStrings.edit().clear().commit();
                 }
@@ -141,8 +148,11 @@ public class UnobfuscatorCache {
             sPrefsCacheHooks.edit().putLong("version", currentVersion).commit();
             sPrefsCacheHooks.edit().putLong("updateTime", lastUpdateTime).commit();
             sPrefsCacheHooks.edit().putString("wae_version_name", versionName).commit();
+            sPrefsCacheHooks.edit().putInt(SCHEMA_KEY, CACHE_SCHEMA).commit();
         } catch (Exception ignored) {
         }
+        // An explicit clear is a request to search again in this process too.
+        descriptors.clearFailures();
     }
 
     private void initCacheStrings() {
@@ -256,287 +266,118 @@ public class UnobfuscatorCache {
         return id < 1 ? "" : mApplication.getResources().getString(id);
     }
 
-    private final Set<String> failedKeys = Collections.synchronizedSet(new HashSet<>());
+    /** Bumped when descriptor semantics change; a mismatch clears persisted descriptors once. */
+    static final int CACHE_SCHEMA = 2;
+    private static final String SCHEMA_KEY = "wae_cache_schema";
 
-    public Field getField(ClassLoader loader, FunctionCall<Field> functionCall) throws Exception {
-        var methodName = getKeyName();
-        if (failedKeys.contains(methodName)) {
-            throw new NoSuchFieldException("Field lookup failed previously in this session: " + methodName);
-        }
-        String value = sPrefsCacheHooks.getString(methodName, null);
-        if (value == null) {
+    private final DescriptorCache descriptors = new DescriptorCache(new DescriptorCache.Store() {
+        @Override
+        public String get(String key) {
             try {
-                Field result = functionCall.call();
-                if (result == null) {
-                    failedKeys.add(methodName);
-                    throw new NoSuchFieldException("Field is null");
-                }
-                saveField(methodName, result);
-                return result;
-            } catch (Exception e) {
-                failedKeys.add(methodName);
-                throw new Exception("Error getting field " + methodName + ": " + e.getMessage(), e);
+                return sPrefsCacheHooks.getString(key, null);
+            } catch (ClassCastException wrongType) {
+                return "";
             }
         }
-        String[] ClassAndName = value.split(":");
-        Class<?> cls = ReflectionUtils.findClass(ClassAndName[0], loader);
-        return XposedHelpers.findField(cls, ClassAndName[1]);
+
+        @SuppressLint("ApplySharedPref")
+        @Override
+        public void put(String key, String value) {
+            sPrefsCacheHooks.edit().putString(key, value).commit();
+        }
+
+        @SuppressLint("ApplySharedPref")
+        @Override
+        public void remove(String key) {
+            sPrefsCacheHooks.edit().remove(key).commit();
+        }
+    }, (key, cause) -> XposedBridge.log("[WAE] UnobfuscatorCache: re-resolving stale descriptor "
+            + key + " (" + cause.getClass().getSimpleName() + ")"),
+            // Same monitor as Unobfuscator's static synchronized loaders: no lock-order inversion.
+            Unobfuscator.class);
+
+    private static ReflectionDescriptors.ClassFinder finder(ClassLoader loader) {
+        return name -> ReflectionUtils.findClass(name, loader);
+    }
+
+    private <T> DescriptorCache.Codec<T> codec(Encoder<T> encoder, Decoder<T> decoder) {
+        return new DescriptorCache.Codec<T>() {
+            @Override
+            public String encode(T value) throws Exception {
+                return encoder.encode(value);
+            }
+
+            @Override
+            public T decode(String raw) throws Exception {
+                return decoder.decode(raw);
+            }
+        };
+    }
+
+    private interface Encoder<T> {
+        String encode(T value) throws Exception;
+    }
+
+    private interface Decoder<T> {
+        T decode(String raw) throws Exception;
+    }
+
+    public Field getField(ClassLoader loader, FunctionCall<Field> functionCall) throws Exception {
+        var f = finder(loader);
+        return descriptors.get("field", getKeyName(),
+                codec(ReflectionDescriptors::encodeField, raw -> ReflectionDescriptors.decodeField(f, raw)),
+                functionCall::call);
     }
 
     public Field[] getFields(ClassLoader loader, FunctionCall<Field[]> functionCall) throws Exception {
-        var methodName = getKeyName();
-        String value = sPrefsCacheHooks.getString(methodName, null);
-        if (value == null) {
-            try {
-                Field[] result = functionCall.call();
-                if (result == null) throw new NoSuchFieldException("Fields is null");
-                saveFields(methodName, result);
-                return result;
-            } catch (Exception e) {
-                throw new Exception("Error getting fields " + methodName + ": " + e.getMessage(), e);
-            }
-        }
-        ArrayList<Field> fields = new ArrayList<>();
-        String[] fieldsString = value.split("&");
-        for (String field : fieldsString) {
-            String[] ClassAndName = field.split(":");
-            Class<?> cls = ReflectionUtils.findClass(ClassAndName[0], loader);
-            fields.add(XposedHelpers.findField(cls, ClassAndName[1]));
-        }
-        return fields.toArray(new Field[0]);
+        var f = finder(loader);
+        return descriptors.get("fields", getKeyName(),
+                codec(ReflectionDescriptors::encodeFields, raw -> ReflectionDescriptors.decodeFields(f, raw)),
+                functionCall::call);
     }
 
     public Method getMethod(ClassLoader loader, FunctionCall<Method> functionCall) throws Exception {
-        var methodName = getKeyName();
-        if (failedKeys.contains(methodName)) {
-            throw new NoSuchMethodException("Method lookup failed previously in this session: " + methodName);
-        }
-        String value = sPrefsCacheHooks.getString(methodName, null);
-        if (value == null) {
-            try {
-                Method result = functionCall.call();
-                if (result == null) {
-                    failedKeys.add(methodName);
-                    throw new NoSuchMethodException("Method is null");
-                }
-                saveMethod(methodName, result);
-                return result;
-            } catch (Exception e) {
-                failedKeys.add(methodName);
-                throw new Exception("Error getting method " + methodName + ": " + e.getMessage(), e);
-            }
-        }
-        return getMethodFromString(loader, value);
+        var f = finder(loader);
+        return descriptors.get("method", getKeyName(),
+                codec(ReflectionDescriptors::encodeMethod, raw -> ReflectionDescriptors.decodeMethod(f, raw)),
+                functionCall::call);
     }
 
     public Method[] getMethods(ClassLoader loader, FunctionCall<Method[]> functionCall) throws Exception {
-        var methodName = getKeyName();
-        if (failedKeys.contains(methodName)) {
-            throw new NoSuchMethodException("Methods lookup failed previously in this session: " + methodName);
-        }
-        String value = sPrefsCacheHooks.getString(methodName, null);
-        if (value == null) {
-            try {
-                Method[] result = functionCall.call();
-                if (result == null) {
-                    failedKeys.add(methodName);
-                    throw new NoSuchMethodException("Methods is null");
-                }
-                saveMethods(methodName, result);
-                return result;
-            } catch (Exception e) {
-                failedKeys.add(methodName);
-                throw new Exception("Error getting methods " + methodName + ": " + e.getMessage(), e);
-            }
-        }
-        var methodStrings = value.split("&");
-        ArrayList<Method> methods = new ArrayList<>();
-        for (String methodString : methodStrings) {
-            var method = getMethodFromString(loader, methodString);
-            methods.add(method);
-        }
-        return methods.toArray(new Method[0]);
+        var f = finder(loader);
+        return descriptors.get("methods", getKeyName(),
+                codec(ReflectionDescriptors::encodeMethods, raw -> ReflectionDescriptors.decodeMethods(f, raw)),
+                functionCall::call);
     }
-
-    @NonNull
-    private Method getMethodFromString(ClassLoader loader, String value) {
-        String[] classAndName = value.split(":");
-        Class<?> cls = XposedHelpers.findClass(classAndName[0], loader);
-        if (classAndName.length == 3) {
-            String[] params = classAndName[2].split(",");
-            Class<?>[] paramTypes = Arrays.stream(params).map(param -> ReflectionUtils.findClass(param, loader)).toArray(Class<?>[]::new);
-            return XposedHelpers.findMethodExact(cls, classAndName[1], paramTypes);
-        }
-        return XposedHelpers.findMethodExact(cls, classAndName[1]);
-    }
-
 
     public Class<?> getClass(ClassLoader loader, FunctionCall<Class<?>> functionCall) throws Exception {
         return getClass(loader, getKeyName(), functionCall);
     }
 
     public Class<?> getClass(ClassLoader loader, String key, FunctionCall<Class<?>> functionCall) throws Exception {
-        if (failedKeys.contains(key)) {
-            throw new ClassNotFoundException("Class lookup failed previously in this session: " + key);
-        }
-        String value = sPrefsCacheHooks.getString(key, null);
-        if (value == null) {
-            try {
-                Class<?> result = functionCall.call();
-                if (result == null) {
-                    failedKeys.add(key);
-                    throw new ClassNotFoundException("Class is null");
-                }
-                saveClass(key, result);
-                return result;
-            } catch (Exception e) {
-                failedKeys.add(key);
-                throw new Exception("Error getting class " + key + ": " + e.getMessage(), e);
-            }
-        }
-        return XposedHelpers.findClass(value, loader);
+        var f = finder(loader);
+        return descriptors.get("class", key,
+                codec(ReflectionDescriptors::encodeClass, raw -> ReflectionDescriptors.decodeClass(f, raw)),
+                functionCall::call);
     }
 
     public Class<?>[] getClasses(ClassLoader loader, FunctionCall<Class<?>[]> functionCall) throws Exception {
-        var methodName = getKeyName();
-        String value = sPrefsCacheHooks.getString(methodName, null);
-        if (value == null) {
-            try {
-                Class<?>[] result = functionCall.call();
-                if (result == null) throw new ClassNotFoundException("Classes is null");
-                saveClasses(methodName, result);
-                return result;
-            } catch (Exception e) {
-                throw new Exception("Error getting classes " + methodName + ": " + e.getMessage(), e);
-            }
-        }
-        String[] classStrings = value.split("&");
-        ArrayList<Class<?>> classes = new ArrayList<>();
-        for (String classString : classStrings) {
-            classes.add(XposedHelpers.findClass(classString, loader));
-        }
-        return classes.toArray(new Class<?>[0]);
+        var f = finder(loader);
+        return descriptors.get("classes", getKeyName(),
+                codec(ReflectionDescriptors::encodeClasses, raw -> ReflectionDescriptors.decodeClasses(f, raw)),
+                functionCall::call);
     }
 
     public HashMap<String, Field> getMapField(ClassLoader loader, FunctionCall<HashMap<String, Field>> functionCall) throws Exception {
         return getMapField(loader, getKeyName(), functionCall);
     }
 
+    /** A map with any entry that no longer resolves is re-resolved as a whole, never returned partially. */
     public HashMap<String, Field> getMapField(ClassLoader loader, String key, FunctionCall<HashMap<String, Field>> functionCall) throws Exception {
-        String value = sPrefsCacheHooks.getString(key, null);
-        if (value == null) {
-            try {
-                var result = functionCall.call();
-                if (result == null) throw new Exception("HashMap is null");
-                saveHashMap(key, result);
-                return result;
-            } catch (Exception e) {
-                throw new Exception("Error getting HashMap " + key + ": " + e.getMessage(), e);
-            }
-        }
-        return loadHashMap(loader, key);
-    }
-
-    private void saveHashMap(String key, HashMap<String, Field> map) {
-        // Cria um novo JSONObject para armazenar os pares
-        JSONObject jsonObject = new JSONObject();
-        for (Map.Entry<String, Field> entry : map.entrySet()) {
-            Field field = entry.getValue();
-            String value = field.getDeclaringClass().getName() + ":" + field.getName();
-            try {
-                jsonObject.put(entry.getKey(), value);
-            } catch (JSONException e) {
-                e.printStackTrace();
-            }
-        }
-        sPrefsCacheHooks.edit().putString(key, jsonObject.toString()).apply();
-    }
-
-    private HashMap<String, Field> loadHashMap(ClassLoader loader, String key) {
-        HashMap<String, Field> map = new HashMap<>();
-        String jsonString = sPrefsCacheHooks.getString(key, null);
-        if (jsonString == null) return map;
-
-        try {
-            JSONObject jsonObject = new JSONObject(jsonString);
-            Iterator<String> keys = jsonObject.keys();
-
-            while (keys.hasNext()) {
-                String mapKey = keys.next();
-                String value = jsonObject.getString(mapKey);
-
-                // Quebra "com.package.Classe:campo"
-                String[] parts = value.split(":");
-                if (parts.length == 2) {
-                    String className = parts[0];
-                    String fieldName = parts[1];
-                    try {
-                        Class<?> clazz = loader.loadClass(className);
-                        Field field = clazz.getDeclaredField(fieldName);
-                        field.setAccessible(true);
-                        map.put(mapKey, field);
-                    } catch (Exception e) {
-                        e.printStackTrace(); // ignora campos inválidos
-                    }
-                }
-            }
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
-
-        return map;
-    }
-
-
-    @SuppressWarnings("ApplySharedPref")
-    public void saveField(String key, Field field) {
-        String value = field.getDeclaringClass().getName() + ":" + field.getName();
-        sPrefsCacheHooks.edit().putString(key, value).commit();
-    }
-
-    @SuppressWarnings("ApplySharedPref")
-    public void saveFields(String key, Field[] fields) {
-        ArrayList<String> values = new ArrayList<>();
-        for (Field field : fields) {
-            values.add(field.getDeclaringClass().getName() + ":" + field.getName());
-        }
-        sPrefsCacheHooks.edit().putString(key, String.join("&", values)).commit();
-    }
-
-    @SuppressWarnings("ApplySharedPref")
-    public void saveMethod(String key, Method method) {
-        String value = method.getDeclaringClass().getName() + ":" + method.getName();
-        if (method.getParameterTypes().length > 0) {
-            value += ":" + Arrays.stream(method.getParameterTypes()).map(Class::getName).collect(Collectors.joining(","));
-        }
-        sPrefsCacheHooks.edit().putString(key, value).commit();
-    }
-
-    @SuppressWarnings("ApplySharedPref")
-    public void saveMethods(String key, Method[] methods) {
-        ArrayList<String> values = new ArrayList<>();
-        for (Method method : methods) {
-            String value = method.getDeclaringClass().getName() + ":" + method.getName();
-            if (method.getParameterTypes().length > 0) {
-                value += ":" + Arrays.stream(method.getParameterTypes()).map(Class::getName).collect(Collectors.joining(","));
-            }
-            values.add(value);
-        }
-        sPrefsCacheHooks.edit().putString(key, String.join("&", values)).commit();
-    }
-
-    @SuppressWarnings("ApplySharedPref")
-    public void saveClass(String message, Class<?> messageClass) {
-        sPrefsCacheHooks.edit().putString(message, messageClass.getName()).commit();
-    }
-
-    @SuppressWarnings("ApplySharedPref")
-    public void saveClasses(String message, Class<?>[] messageClass) {
-        ArrayList<String> values = new ArrayList<>();
-        for (Class<?> aClass : messageClass) {
-            values.add(aClass.getName());
-        }
-        sPrefsCacheHooks.edit().putString(message, String.join("&", values)).commit();
+        var f = finder(loader);
+        return descriptors.get("HashMap", key,
+                codec(ReflectionDescriptors::encodeFieldMap, raw -> ReflectionDescriptors.decodeFieldMap(f, raw)),
+                functionCall::call);
     }
 
     private String getKeyName() {
@@ -570,74 +411,17 @@ public class UnobfuscatorCache {
     }
 
     public Constructor getConstructor(ClassLoader loader, FunctionCall functionCall) throws Exception {
-        var methodName = getKeyName();
-        String value = sPrefsCacheHooks.getString(methodName, null);
-        if (value == null) {
-            var result = (Constructor) functionCall.call();
-            if (result == null) throw new Exception("Class is null");
-            saveConstructor(methodName, result);
-            return result;
-        }
-        String[] classAndName = value.split(":");
-        Class<?> cls = XposedHelpers.findClass(classAndName[0], loader);
-        if (classAndName.length == 2) {
-            String[] params = classAndName[1].split(",");
-            Class<?>[] paramTypes = Arrays.stream(params).map(param -> ReflectionUtils.findClass(param, loader)).toArray(Class<?>[]::new);
-            return XposedHelpers.findConstructorExact(cls, paramTypes);
-        }
-        return XposedHelpers.findConstructorExact(cls);
-    }
-
-    @SuppressWarnings("ApplySharedPref")
-    private void saveConstructor(String key, Constructor constructor) {
-        String value = constructor.getDeclaringClass().getName();
-        if (constructor.getParameterTypes().length > 0) {
-            value += ":" + Arrays.stream(constructor.getParameterTypes()).map(Class::getName).collect(Collectors.joining(","));
-        }
-        sPrefsCacheHooks.edit().putString(key, value).commit();
+        var f = finder(loader);
+        return descriptors.get("constructor", getKeyName(),
+                codec(c -> ReflectionDescriptors.encodeConstructor((Constructor<?>) c),
+                        raw -> ReflectionDescriptors.decodeConstructor(f, raw)),
+                () -> (Constructor<?>) functionCall.call());
     }
 
     public Number getNumber(ClassLoader loader, FunctionCall<Number> functionCall) throws Exception {
-        var methodName = getKeyName();
-        String value = sPrefsCacheHooks.getString(methodName, null);
-        if (value == null) {
-            try {
-                Number result = functionCall.call();
-                if (result == null) throw new Exception("Number is null");
-                saveNumber(methodName, result);
-                return result;
-            } catch (Exception e) {
-                throw new Exception("Error getting number " + methodName + ": " + e.getMessage(), e);
-            }
-        }
-        return loadNumber(value);
-    }
-
-    @SuppressWarnings("ApplySharedPref")
-    private void saveNumber(String key, Number number) {
-        String value = number.getClass().getName() + ":" + number;
-        sPrefsCacheHooks.edit().putString(key, value).commit();
-    }
-
-    private Number loadNumber(String value) {
-        String[] parts = value.split(":", 2);
-        String className = parts.length == 2 ? parts[0] : Integer.class.getName();
-        String numberValue = parts.length == 2 ? parts[1] : value;
-
-        return switch (className) {
-            case "java.lang.Integer" -> Integer.valueOf(numberValue);
-            case "java.lang.Long" -> Long.valueOf(numberValue);
-            case "java.lang.Float" -> Float.valueOf(numberValue);
-            case "java.lang.Double" -> Double.valueOf(numberValue);
-            case "java.lang.Short" -> Short.valueOf(numberValue);
-            case "java.lang.Byte" -> Byte.valueOf(numberValue);
-            default -> {
-                if (numberValue.contains(".")) {
-                    yield Double.valueOf(numberValue);
-                }
-                yield Long.valueOf(numberValue);
-            }
-        };
+        return descriptors.get("number", getKeyName(),
+                codec(ReflectionDescriptors::encodeNumber, ReflectionDescriptors::decodeNumber),
+                functionCall::call);
     }
 
     public interface FunctionCall<T> {
