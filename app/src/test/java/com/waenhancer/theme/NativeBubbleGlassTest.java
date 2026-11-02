@@ -92,12 +92,12 @@ public class NativeBubbleGlassTest {
         String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
         int start = app.indexOf("private void drawNativeBubble(");
         String hook = app.substring(start, app.indexOf("\n    }\n", start));
-        assertTrue(hook.contains("if (!sharedFactoryWanted(outgoing)) return;"));
+        assertTrue(hook.contains("if (!sharedFactoryWanted(outgoing)) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative("));
         assertTrue(hook.contains("if (session.drawBubble(bubble, canvas)) param.setResult(null);"));
         assertTrue(hook.indexOf("nativePass()") < hook.indexOf("param.setResult(null)"));
         String glass = read("src/main/java/com/waenhancer/theme/NativeBubbleGlass.java");
         assertTrue("no glass without a texture: native paints", glass.contains(
-                "if (texture == null) { waiting.add(host); return false; }"));
+                "if (texture == null) { waiting.add(host); return stay(BubbleGlassTelemetry.Native.NO_TEXTURE); }"));
         assertTrue(glass.contains("if (!drawn) return false;"));
         assertFalse("never touches row backgrounds", glass.contains("setBackground"));
     }
@@ -108,7 +108,7 @@ public class NativeBubbleGlassTest {
         String realign = glass.substring(start, glass.indexOf("public void sourceChanged()", start));
         assertFalse("no row is re-recorded while scrolling", realign.contains("invalidate"));
         assertFalse(realign.contains("beginRecording"));
-        int align = glass.indexOf("void align(View host");
+        int align = glass.indexOf("boolean align(View host");
         String body = glass.substring(align, glass.indexOf("void discard()", align));
         assertTrue(body.contains("wallpaper.setTranslationY(ty);"));
         assertFalse(body.contains("invalidate"));
@@ -129,6 +129,65 @@ public class NativeBubbleGlassTest {
         String body = glass.substring(key, glass.indexOf("public static boolean supported()", key));
         assertTrue(body.contains("surfaceAlpha255()") && body.contains("rimIntensity()")
                 && body.contains("GlassOptics.revision()") && body.contains("spec.hashCode()"));
+    }
+
+    // --- Review guidelines (device evidence instead of guesses) -------------------------
+
+    @Test public void unhostedDrawsLogTheRealRecordingViewEvidence() throws IOException {
+        String t = read("src/main/java/com/waenhancer/theme/BubbleGlassTelemetry.java");
+        int start = t.indexOf("static void unhosted(");
+        String body = t.substring(start, t.indexOf("static void hosted(", start));
+        for (String field : new String[]{"drawable=", "canvas=", "canvasSize=", "frameView=", "frameCanvas=",
+                "chain=", "sizeMatches="}) assertTrue(field, body.contains(field));
+        String glass = read("src/main/java/com/waenhancer/theme/NativeBubbleGlass.java");
+        assertTrue("host rule unchanged: only a verified row canvas",
+                glass.contains("return frame != null && frame.canvas == canvas ? frame.view : null;"));
+    }
+
+    @Test public void alignmentInputsAreLoggedAtFirstPresentationAndAfterMovement() throws IOException {
+        String glass = read("src/main/java/com/waenhancer/theme/NativeBubbleGlass.java");
+        assertTrue(glass.contains("BubbleGlassTelemetry.alignment(\"first\", host, entry.matrix, local, hostGlobal, slot.applied);"));
+        assertTrue(glass.contains("BubbleGlassTelemetry.alignment(\"moved\", host, null, slot.local, hostGlobal, slot.applied);"));
+        String t = read("src/main/java/com/waenhancer/theme/BubbleGlassTelemetry.java");
+        assertTrue(t.contains("\" scroll=\"") && t.contains("\" hostGlobal=\"") && t.contains("\" entry=\""));
+    }
+
+    @Test public void quoteRuleIsLoggedNotTrusted() throws IOException {
+        String glass = read("src/main/java/com/waenhancer/theme/NativeBubbleGlass.java");
+        int rule = glass.indexOf("BubbleGlassTelemetry.rejected(\"nested-quote\"");
+        assertTrue(rule > 0 && glass.indexOf("Native.QUOTE", rule) > rule);
+        assertTrue(glass.contains("BubbleGlassTelemetry.rejected(\"painted-twice\""));
+        String t = read("src/main/java/com/waenhancer/theme/BubbleGlassTelemetry.java");
+        assertTrue(t.contains("areaRatio=") && t.contains("previousArgs=") && t.contains("sameInstance="));
+        String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
+        assertTrue("factory primitives recorded as a candidate structural signal",
+                app.contains("com.waenhancer.theme.BubbleGlassTelemetry.factory((Drawable) result, param.args);"));
+    }
+
+    @Test public void silhouetteFallbackIsExplicitAndBounded() throws IOException {
+        assertEquals(4096, NativeBubbleGlass.MAX_MEASURE_PX);
+        assertEquals(12f, NativeBubbleGlass.FALLBACK_RADIUS_DP, 0f);
+        String glass = read("src/main/java/com/waenhancer/theme/NativeBubbleGlass.java");
+        assertTrue(glass.contains("silhouetteFallback(\"too-large\""));
+        assertTrue(glass.contains("silhouetteFallback(\"no-opaque-body\""));
+        assertTrue(glass.contains("silhouetteFallback(\"raster-\""));
+        assertTrue("native mask stays the shape authority",
+                glass.contains("canvas.saveLayer(bounds.left, bounds.top, bounds.right, bounds.bottom, dstIn);"));
+    }
+
+    @Test public void veilFloorIsUnchangedForTheGeometryBuild() {
+        assertEquals(0.50f, NativeBubbleGlass.VEIL_MIN, 0f);
+    }
+
+    @Test public void hookCountsEveryCallAndLeavesUnrecognizedDrawsNative() throws IOException {
+        String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
+        int start = app.indexOf("private void drawNativeBubble(");
+        String hook = app.substring(start, app.indexOf("\n    }\n", start));
+        assertTrue(hook.indexOf("BubbleGlassTelemetry.call();") < hook.indexOf("bubbleSides.get(bubble)"));
+        assertTrue(hook.contains("Native.NOT_REGISTERED); return; }"));
+        assertEquals("setResult only after a recorded glass draw", 1, hook.split("setResult", -1).length - 1);
+        String t = read("src/main/java/com/waenhancer/theme/BubbleGlassTelemetry.java");
+        assertTrue(t.contains("log(\"FREQUENCY\""));
     }
 
     @Test public void otherSurfacesKeepTheApprovedShader() throws IOException {

@@ -297,6 +297,7 @@ public final class AppLiquidGlass extends Feature {
                             || !(param.args[0] instanceof Integer)) return;
                     // Identity bookkeeping only: the result WhatsApp receives is unchanged.
                     bubbleSides.put((Drawable) result, ((Integer) param.args[0]) == 3);
+                    com.waenhancer.theme.BubbleGlassTelemetry.factory((Drawable) result, param.args);
                     Class<?> type=result.getClass();
                     if (LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)) hookBubbleDraw(type);
                     else synchronized (pendingBubbleClasses) { pendingBubbleClasses.add(type); }
@@ -329,7 +330,10 @@ public final class AppLiquidGlass extends Feature {
                         drawNativeBubble(param);
                     }
                 });
-                report("shared-bubble-draw", "bubble glass drawn inside " + t.getName() + ".draw");
+                // A framework class (e.g. a nine-patch) puts every such draw in WhatsApp through
+                // this hook; FREQUENCY telemetry reports calls versus registered bubbles.
+                report("shared-bubble-draw", "bubble glass drawn inside " + t.getName() + ".draw"
+                        + (t.getName().startsWith("android.") ? " (framework class: app-wide hook, identity-filtered)" : ""));
             } catch (Throwable error) {
                 report("shared-bubble-draw", "native bubble draw not observable: " + error);
             }
@@ -339,19 +343,23 @@ public final class AppLiquidGlass extends Feature {
 
     /** Glass for a registered native bubble, or nothing (the native draw then proceeds). */
     private void drawNativeBubble(XC_MethodHook.MethodHookParam param) {
-        if (com.waenhancer.theme.NativeBubbleGlass.nativePass() || GlassPane.isCapturing()) return;
+        com.waenhancer.theme.BubbleGlassTelemetry.call();
+        if (com.waenhancer.theme.NativeBubbleGlass.nativePass()) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NATIVE_PASS); return; }
         Drawable bubble=(Drawable) param.thisObject;
         Boolean outgoing=bubbleSides.get(bubble);
-        if (outgoing==null || !(param.args[0] instanceof Canvas)) return;
+        // Anything not recognized as a registered native bubble on a canvas is left untouched.
+        if (outgoing==null || !(param.args[0] instanceof Canvas)) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NOT_REGISTERED); return; }
+        if (GlassPane.isCapturing()) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.CAPTURE); return; }
         Canvas canvas=(Canvas) param.args[0];
         View host=com.waenhancer.theme.NativeBubbleGlass.hostFor(canvas);
-        if (host==null) { com.waenhancer.theme.NativeBubbleGlass.unhosted(bubble); return; }
-        if (!sharedFactoryWanted(outgoing)) return;
+        if (host==null) { com.waenhancer.theme.NativeBubbleGlass.unhosted(bubble, canvas); return; }
+        if (!sharedFactoryWanted(outgoing)) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.SWITCH_OFF); return; }
         Session session=sessionFor(host.getRootView());
-        if (session==null) return;
+        if (session==null) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NO_SESSION); return; }
         try {
             if (session.drawBubble(bubble, canvas)) param.setResult(null);
         } catch (Throwable error) {
+            com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.EXCEPTION);
             report("shared-bubble-draw-error", "bubble left native: " + error);
         }
     }
@@ -1509,7 +1517,10 @@ public final class AppLiquidGlass extends Feature {
         }
 
         boolean drawBubble(Drawable bubble, Canvas canvas) {
-            if (closed || suspended || bubbleGlass == null || !sharedFactoryAvailable) return false;
+            if (closed || suspended || bubbleGlass == null || !sharedFactoryAvailable) {
+                com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NO_RENDERER);
+                return false;
+            }
             return bubbleGlass.draw(bubble, canvas, resolvedMaterial());
         }
 

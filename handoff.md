@@ -1410,3 +1410,16 @@ Validation (container, Android SDK 36 installed locally; Maven Central 429 bypas
 Device next steps: build the PR APK via the manual workflow; with GlassProbe on, open a chat with a colourful static wallpaper without touching: expect `SOURCE_READY` then `BUBBLE_FIRST_PIXEL_PRESENTED`, bubbles with correct native shape/tail and blurred wallpaper. Then BUB-01..BUB-12 (scroll >30 rows fast/slow, replies/media/voice rows, keyboard, recording, switch off/incoming/outgoing/both, chat/wallpaper change). If bubbles stay native, send the log lines `shared-bubble-draw`, `BUBBLE_UNHOSTED`, `SOURCE_*`. Tune the 50% veil only after seeing it on the device.
 
 Review follow-up (Codex P2 on #131, valid): a scope change (`both`→`incoming`/`outgoing`), opacity, rim or optics change with the same wallpaper did not re-record rows, whose display lists bake in the previous glass or native bubble. `syncSharedBubbles` now keys scope + `NativeBubbleGlass.settingsKey` (surface alpha, rim intensity, optics revision, material) and invalidates the window's observed rows once when it changes. Full suite 562 tests, 0 failures.
+
+### Owner review guidelines on #131 — diagnostics before tuning — 2026-11-02
+
+The user's independent review set six guidelines; all applied without changing the drawing contract:
+1. Host rule unchanged (verified row canvas only; no widening to child views, which could include replies). `BUBBLE_GLASS kind=UNHOSTED` logs drawable class, factory primitive args, canvas identity/size, the innermost observed frame view and canvas, its parent chain and descendants whose size equals the recording canvas (`sizeMatches`) — evidence of the real host. `kind=HOSTED` logs verified hosts once per drawable/host class.
+2. Alignment kept as the initial hypothesis. `kind=ALIGNMENT phase=first` (entry matrix, computed local transform, host window matrix, scroll, translation, applied wallpaper translation/scale) and `phase=moved` (one sample per moving frame, capped).
+3. Quote rule is logged, not trusted: `kind=REJECTED rule=nested-quote|painted-twice` with both rects, area ratio, classes, factory args and same-instance flag. Factory primitives are recorded per drawable as a candidate structural signal to replace the 90% rule once traces show a stable one.
+4. Native mask remains the shape authority; 12dp stays the fallback. `kind=SILHOUETTE_FALLBACK reason=too-large|no-opaque-body|raster-*`; measurement is skipped above 4096 px per side (strips are w×1 and 1×h); `kind=SILHOUETTE` reports cost in µs.
+5. `VEIL_MIN` stays 0.50 for the geometry/alignment build (test pins it).
+6. `kind=FREQUENCY` every 5 s: total hook calls, glass draws and native fallbacks by reason (`not_registered` measures the cost of hooking a framework class). Every unrecognized case paints native; `setResult` only after a recorded glass draw.
+
+Telemetry is `BubbleGlassTelemetry`, enabled only by the existing switch `adb shell setprop log.tag.WaEXGlassDiag DEBUG`, capped at 8 lines per kind per minute, no text/media/JIDs. Validation: Debug/Release compile, 568 unit tests 0 failures, lifecycle script and AGSL check pass. Still no device run.
+
