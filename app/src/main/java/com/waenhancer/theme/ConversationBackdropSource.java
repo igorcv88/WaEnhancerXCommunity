@@ -45,13 +45,19 @@ public final class ConversationBackdropSource {
     private static final AtomicInteger PENDING=new AtomicInteger();
     private final Runnable retryStart=this::start;
     public ConversationBackdropSource(Runnable changed) { this.changed=changed; }
-    public boolean ready() { return texture!=null && epoch.ready() && !closed; }
+    /**
+     * A texture is presentable while a newer revision prepares (stale-while-revalidate): a
+     * keyboard or geometry change must not flash every bubble back to native. Only an
+     * unsupported wallpaper, a permanent failure or release withdraws it.
+     */
+    public boolean ready() { return texture!=null && !closed; }
     public Bitmap texture() { return texture; }
     public long revision() { return epoch.revision(); }
     public void update(WallpaperSnapshot snapshot, float radius) {
         if (closed) return;
         if (!epoch.update(snapshot==null ? null : java.util.Arrays.asList(snapshot,radius))) return;
-        desired=snapshot; blur=radius; texture=null;
+        desired=snapshot; blur=radius;
+        if (snapshot==null && texture!=null) { texture=null; main.post(changed); }
         liveToken.set(epoch.revision());
         main.removeCallbacks(retryStart);
         probe("SOURCE_INVALIDATED", "revision="+epoch.revision());
@@ -93,6 +99,7 @@ public final class ConversationBackdropSource {
                     main.postDelayed(retryStart,delay);
                 } else if (result.outcome!=SourceRetryPolicy.Outcome.STALE) {
                     epoch.complete(token,false);
+                    texture=null; // The previous wallpaper no longer describes this chat.
                     probe("SOURCE_UNAVAILABLE","revision="+token+" reason="+result.outcome);
                     changed.run();
                 }

@@ -109,6 +109,7 @@ public final class AppLiquidGlass extends Feature {
                 conversation.setActivityWindow(decor, activity.getWindow());
                 reloadPrefs();
                 refreshBubblePalette();
+                hookPendingBubbleClasses();
                 publishOptics();
                 Session session = watch(decor);
                 foreground = new WeakReference<>(session);
@@ -266,7 +267,18 @@ public final class AppLiquidGlass extends Feature {
         }
     }
 
+    /**
+     * Native bubble drawables returned by WhatsApp's direction factory, with their side. The
+     * factory result is never wrapped or replaced: WhatsApp keeps its own type, bounds, tail and
+     * recycling. Glass is painted from inside the drawable's own draw call instead.
+     */
+    private final Map<Drawable, Boolean> bubbleSides =
+            java.util.Collections.synchronizedMap(new WeakHashMap<>());
+    private final Set<Method> bubbleDrawHooks = new HashSet<>();
+    /** Drawable classes seen while the switch was off; hooked once it is turned on. */
+    private final Set<Class<?>> pendingBubbleClasses = new HashSet<>();
     private boolean sharedFactoryAvailable;
+
     private void installSharedBubbleFactoryHook() {
         if (android.os.Build.VERSION.SDK_INT < 33) return;
         try {
@@ -278,21 +290,69 @@ public final class AppLiquidGlass extends Feature {
                 report("shared-bubble-factory","bubble factory signature not verified; factory left native");
                 return;
             }
-            XposedBridge.hookMethod(method,new XC_MethodHook(XC_MethodHook.PRIORITY_HIGHEST) {
+            XposedBridge.hookMethod(method,new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     Object result=param.getResult();
-                    if (!(result instanceof Drawable) || result instanceof com.waenhancer.theme.BubbleFactoryDrawable
-                            || param.args.length==0 || !(param.args[0] instanceof Integer)) return;
-                    // Review on #130: with glass off (globally or for this side) WhatsApp keeps its
-                    // own drawable type untouched.
-                    boolean outgoing=((Integer)param.args[0])==3;
-                    if (!sharedFactoryWanted(outgoing)) return;
-                    param.setResult(new com.waenhancer.theme.BubbleFactoryDrawable((Drawable)result));
+                    if (!(result instanceof Drawable) || param.args.length==0
+                            || !(param.args[0] instanceof Integer)) return;
+                    // Identity bookkeeping only: the result WhatsApp receives is unchanged.
+                    bubbleSides.put((Drawable) result, ((Integer) param.args[0]) == 3);
+                    Class<?> type=result.getClass();
+                    if (LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)) hookBubbleDraw(type);
+                    else synchronized (pendingBubbleClasses) { pendingBubbleClasses.add(type); }
                 }
             });
             sharedFactoryAvailable=true;
         } catch (Throwable error) {
             report("shared-bubble-factory","native bubble factory not observable: " + error);
+        }
+    }
+
+    private void hookPendingBubbleClasses() {
+        if (!LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)) return;
+        ArrayList<Class<?>> types;
+        synchronized (pendingBubbleClasses) { types=new ArrayList<>(pendingBubbleClasses); pendingBubbleClasses.clear(); }
+        for (Class<?> type : types) hookBubbleDraw(type);
+    }
+
+    /** Hooks the concrete draw(Canvas) the native bubble class actually runs. */
+    private void hookBubbleDraw(Class<?> type) {
+        for (Class<?> t=type; t!=null && t!=Drawable.class && t!=Object.class; t=t.getSuperclass()) {
+            Method draw;
+            try { draw=t.getDeclaredMethod("draw", Canvas.class); }
+            catch (NoSuchMethodException inherited) { continue; }
+            if (java.lang.reflect.Modifier.isAbstract(draw.getModifiers())) return;
+            synchronized (bubbleDrawHooks) { if (!bubbleDrawHooks.add(draw)) return; }
+            try {
+                XposedBridge.hookMethod(draw, new XC_MethodHook() {
+                    @Override protected void beforeHookedMethod(MethodHookParam param) {
+                        drawNativeBubble(param);
+                    }
+                });
+                report("shared-bubble-draw", "bubble glass drawn inside " + t.getName() + ".draw");
+            } catch (Throwable error) {
+                report("shared-bubble-draw", "native bubble draw not observable: " + error);
+            }
+            return;
+        }
+    }
+
+    /** Glass for a registered native bubble, or nothing (the native draw then proceeds). */
+    private void drawNativeBubble(XC_MethodHook.MethodHookParam param) {
+        if (com.waenhancer.theme.NativeBubbleGlass.nativePass() || GlassPane.isCapturing()) return;
+        Drawable bubble=(Drawable) param.thisObject;
+        Boolean outgoing=bubbleSides.get(bubble);
+        if (outgoing==null || !(param.args[0] instanceof Canvas)) return;
+        Canvas canvas=(Canvas) param.args[0];
+        View host=com.waenhancer.theme.NativeBubbleGlass.hostFor(canvas);
+        if (host==null) { com.waenhancer.theme.NativeBubbleGlass.unhosted(bubble); return; }
+        if (!sharedFactoryWanted(outgoing)) return;
+        Session session=sessionFor(host.getRootView());
+        if (session==null) return;
+        try {
+            if (session.drawBubble(bubble, canvas)) param.setResult(null);
+        } catch (Throwable error) {
+            report("shared-bubble-draw-error", "bubble left native: " + error);
         }
     }
 
@@ -684,8 +744,7 @@ public final class AppLiquidGlass extends Feature {
         private final WeakHashMap<View, Boolean> reportedRowOwners = new WeakHashMap<>();
         private final WeakHashMap<View, Surface> candidates = new WeakHashMap<>();
         private com.waenhancer.theme.ConversationBackdropSource bubbleSource;
-        private final WeakHashMap<View, com.waenhancer.theme.BubbleGlassDrawable> sharedBubbles = new WeakHashMap<>();
-        private final Set<View> sharedRows = java.util.Collections.newSetFromMap(new WeakHashMap<>());
+        private com.waenhancer.theme.NativeBubbleGlass bubbleGlass;
         private WeakReference<View> sharedWallpaper = new WeakReference<>(null);
         private final WeakHashMap<TextView, BubbleTextState> bubbleTexts = new WeakHashMap<>();
         private final WeakHashMap<View, Boolean> pendingCanvasChecks = new WeakHashMap<>();
@@ -721,12 +780,6 @@ public final class AppLiquidGlass extends Feature {
                     next.rearmCanvasHost();
                     if (frame.saw(next)) adopt(row, next);
                 }
-                Drawable nativeBackground = row.getBackground();
-                if (!bindings.containsKey(row) && resourceName(row).startsWith("conversation_row_")
-                        && nativeBackground != null
-                        && "Fyn".equals(nativeBackground.getClass().getSimpleName())) {
-                    pendingNativeBubbleRows.add(row);
-                }
                 row.invalidate();
             });
         }
@@ -757,7 +810,6 @@ public final class AppLiquidGlass extends Feature {
         void rowContentChanged(View node) {
             if (closed || suspended || installing || GlassPane.isCapturing()) return;
             for (View row = node; row != null; row = row.getParent() instanceof View ? (View) row.getParent() : null) {
-                if (sharedRows.contains(row)) { discoverLater(row); return; }
                 Binding binding = bindings.get(row);
                 if (binding != null && binding.surface == Surface.BUBBLES) {
                     if (!binding.contentDamagePending) {
@@ -883,7 +935,6 @@ public final class AppLiquidGlass extends Feature {
         private final Set<View> pendingDiscovery = java.util.Collections.newSetFromMap(new WeakHashMap<>());
         /** Native Fyn rows can be discovered before their main_layout measures. Retain only
          * those incomplete rows for the next global layout, not the entire list tree. */
-        private final Set<View> pendingNativeBubbleRows = java.util.Collections.newSetFromMap(new WeakHashMap<>());
         private boolean discoveryPosted;
         private boolean discovered;
         private boolean installing;
@@ -980,7 +1031,8 @@ public final class AppLiquidGlass extends Feature {
         void suspend() {
             if (closed || suspended) return;
             suspended = true;
-            releaseSharedBubbles();
+            // The bubble wallpaper texture is not chat content: keep it so returning to the chat
+            // does not flash native bubbles while the blur is prepared again.
             GlassTrace.suspended(root.get());
             cancelPending();
             observe(false);
@@ -1369,21 +1421,6 @@ public final class AppLiquidGlass extends Feature {
                     if (candidate != null && candidate.isAttachedToWindow() && candidate.getRootView() == view
                             && LiquidGlassSettings.isEnabled(prefs, entry.getValue())) bind(candidate, entry.getValue(), false);
                 }
-                // A row first walked at 0x0 has no bubble placement yet. Layout reconciliation
-                // must retry it even though the one-time discovery flag is now true.
-                for (View row : new ArrayList<>(pendingNativeBubbleRows)) {
-                    if (row == null || !row.isAttachedToWindow() || row.getRootView() != view
-                            || !LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)) {
-                        pendingNativeBubbleRows.remove(row);
-                        continue;
-                    }
-                    if (!bindings.containsKey(row)) bindNativeBubbleRow(row);
-                    View content = findByName(row, "main_layout", row.getContext().getPackageName());
-                    if (bindings.containsKey(row) || (row.getWidth() > 0 && row.getHeight() > 0
-                            && content != null && content.getWidth() > 0 && content.getHeight() > 0)) {
-                        pendingNativeBubbleRows.remove(row);
-                    }
-                }
                 for (Map.Entry<View, Binding> entry : bindings.entrySet()) {
                     if (entry.getValue().outgoing != null) updateBubbleText(entry.getKey(), entry.getValue());
                 }
@@ -1442,21 +1479,7 @@ public final class AppLiquidGlass extends Feature {
                     bubble.attachMaterial(() -> null);
                 }
             }
-            if (bubble == null && !bindings.containsKey(view)) {
-                String rowName = resourceName(view);
-                Drawable rowBackground = view.getBackground();
-                if (rowName.startsWith("conversation_row_")
-                        && rowBackground != null
-                        && "Fyn".equals(rowBackground.getClass().getSimpleName())
-                        && LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)) {
-                    View content = findByName(view, "main_layout", view.getContext().getPackageName());
-                    if (view.getWidth() <= 0 || view.getHeight() <= 0
-                            || content == null || content.getWidth() <= 0 || content.getHeight() <= 0) {
-                        pendingNativeBubbleRows.add(view);
-                    }
-                }
-                bindNativeBubbleRow(view);
-            }
+            if (bubble == null && !bindings.containsKey(view)) bindNativeBubbleRow(view);
             Surface surface = surfaceFor(view);
             if (surface != null) {
                 candidates.put(view, surface);
@@ -1468,66 +1491,37 @@ public final class AppLiquidGlass extends Feature {
             }
         }
 
-        /** The factory drawable is Canvas-owned on this build (no callback View), but the
-         * native row background itself is a drawable and retains the bubble mask. Only bind
-         * when the Fyn mask, asymmetric bounded main_layout and direction all agree. */
+        /**
+         * Native message rows draw WhatsApp's bubble drawable on their own canvas. Observing the
+         * row's draw identifies that canvas (and the row's position) for the bubble draw hook;
+         * the row itself, its background and its children are never modified.
+         */
         private void bindNativeBubbleRow(View row) {
-            if (!"conversation_row_text".equals(resourceName(row))) return; // First prototype: native media/audio untouched.
-            sharedRows.add(row);
-            reconcileSharedRow(row);
+            if (closed || row.getId() == View.NO_ID || nativeDrawRows.containsKey(row)
+                    || !LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)
+                    || !com.waenhancer.theme.NativeBubbleGlass.supported()
+                    || !resourceName(row).startsWith("conversation_row_")) return;
+            observeNativeRowDraw(row);
+            // A row recorded before it was observed painted its bubble natively; record once more.
+            row.invalidate();
         }
 
-        private void reconcileSharedRow(View row) {
-            com.waenhancer.theme.BubbleGlassDrawable owned=sharedBubbles.get(row);
-            BubblePlacement placement=nativeRowPlacement(row);
-            boolean eligible=sharedFactoryAvailable && !closed && !suspended && row.isAttachedToWindow() && row.getRootView()==root.get()
-                    && placement!=null && LiquidGlassSettings.bubbleEnabled(prefs,placement.outgoing)
-                    && bubbleSource!=null && bubbleSource.ready();
-            if (owned!=null && row.getBackground()!=owned) { sharedBubbles.remove(row); owned=null; }
-            if (!eligible) { restoreSharedRow(row); return; }
-            GlassSpec spec=bubbleMaterial(placement.outgoing,resolvedMaterial());
-            if (owned==null) {
-                Drawable nativeMask=row.getBackground();
-                Drawable shape=nativeMask instanceof com.waenhancer.theme.BubbleFactoryDrawable
-                        ? ((com.waenhancer.theme.BubbleFactoryDrawable)nativeMask).getDrawable() : nativeMask;
-                if (shape==null || !"Fyn".equals(shape.getClass().getSimpleName())) return;
-                owned=new com.waenhancer.theme.BubbleGlassDrawable(row,root.get(),nativeMask,bubbleSource);
-                if (!owned.prepare(placement.region,spec)) return;
-                sharedBubbles.put(row,owned);
-                setSharedBackground(row,owned); owned.attached();
-                observeNativeRowDraw(row);
-                com.waenhancer.theme.ConversationBackdropSource.probe("BUBBLE_BOUND","outgoing="+placement.outgoing);
-            } else if (!owned.prepare(placement.region,spec)) { restoreSharedRow(row); return; }
-            if (owned.consumeDamage()) row.invalidate();
+        boolean drawBubble(Drawable bubble, Canvas canvas) {
+            if (closed || suspended || bubbleGlass == null || !sharedFactoryAvailable) return false;
+            return bubbleGlass.draw(bubble, canvas, resolvedMaterial());
         }
-        /** Scroll alignment for shared consumers (review on #130): re-record moved rows only. */
+
+        /** Same-frame wallpaper alignment for every glass bubble (property updates only). */
         private void realignSharedBubbles() {
-            if (sharedBubbles.isEmpty()) return;
-            int moved=0;
-            for (com.waenhancer.theme.BubbleGlassDrawable bubble:sharedBubbles.values())
-                if (bubble!=null && bubble.realignIfMoved()) moved++;
-            if (moved>0 && GlassProbe.enabled())
-                com.waenhancer.theme.ConversationBackdropSource.probe("BUBBLE_REALIGNED","rows="+moved);
+            if (bubbleGlass != null) bubbleGlass.realign();
         }
-        private void setSharedBackground(View row, Drawable drawable) {
-            boolean wasInstalling=installing; installing=true;
-            int l=row.getPaddingLeft(),t=row.getPaddingTop(),r=row.getPaddingRight(),b=row.getPaddingBottom();
-            try { row.setBackground(drawable); row.setPadding(l,t,r,b); }
-            finally { installing=wasInstalling; }
-        }
-        private void restoreSharedRow(View row) {
-            nativeDrawRows.remove(row);
-            com.waenhancer.theme.BubbleGlassDrawable owned=sharedBubbles.remove(row);
-            if (owned!=null && row.getBackground()==owned) {
-                setSharedBackground(row,owned.original());
-                com.waenhancer.theme.ConversationBackdropSource.probe("BUBBLE_NATIVE_RETAINED","source-or-owner-unavailable");
-            }
-        }
+
         private void releaseSharedBubbles() {
-            for (View row:new ArrayList<>(sharedBubbles.keySet())) if (row!=null) restoreSharedRow(row);
-            if (bubbleSource!=null) bubbleSource.release();
-            bubbleSource=null; sharedWallpaper.clear();
+            if (bubbleGlass != null) bubbleGlass.release();
+            if (bubbleSource != null) bubbleSource.release();
+            bubbleGlass = null; bubbleSource = null; sharedWallpaper.clear();
         }
+
         private void syncSharedBubbles() {
             View window=root.get();
             if (window==null) return;
@@ -1536,21 +1530,23 @@ public final class AppLiquidGlass extends Feature {
                 releaseSharedBubbles(); sharedWallpaper=new WeakReference<>(wallpaper);
             }
             if (wallpaper==null || !LiquidGlassSettings.isEnabled(prefs,Surface.BUBBLES)
-                    || android.os.Build.VERSION.SDK_INT<33 || !GlassOptics.current().oneMate) {
+                    || !com.waenhancer.theme.NativeBubbleGlass.supported() || !GlassOptics.current().oneMate) {
                 releaseSharedBubbles(); return;
             }
-            if (bubbleSource==null) bubbleSource=new com.waenhancer.theme.ConversationBackdropSource(() -> {
-                if (!closed && !suspended) { scan(); scheduleFrame(1); }
-            });
             GlassSpec material=resolvedMaterial();
             if (material==null) return;
+            if (bubbleSource==null) {
+                bubbleSource=new com.waenhancer.theme.ConversationBackdropSource(() -> {
+                    if (closed || bubbleGlass == null) return;
+                    bubbleGlass.sourceChanged();
+                    // Rows recorded before this chat's renderer existed painted natively.
+                    for (View row : new ArrayList<>(nativeDrawRows.keySet()))
+                        if (row != null && row.isAttachedToWindow() && row.getRootView() == window) row.invalidate();
+                });
+                bubbleGlass=new com.waenhancer.theme.NativeBubbleGlass(window, bubbleSource);
+            }
             bubbleSource.update(com.waenhancer.theme.WallpaperSnapshot.read(wallpaper,window),
                     com.waenhancer.theme.ConversationBackdropSource.blurRadius(material,window.getResources().getDisplayMetrics().density));
-            for (View row:new ArrayList<>(sharedRows)) {
-                if (row==null) continue;
-                reconcileSharedRow(row);
-                if (!row.isAttachedToWindow() || row.getRootView()!=window) sharedRows.remove(row);
-            }
         }
         void wallpaperChanged(View target) {
             if (installing || closed || suspended) return;
@@ -1759,7 +1755,7 @@ public final class AppLiquidGlass extends Feature {
             GlassTrace.suspended(root.get());
             if (closed) return;
             closed = true;
-            releaseSharedBubbles(); sharedRows.clear();
+            releaseSharedBubbles();
             cancelPending();
             observe(false);
             if (foreground.get() == this) foreground.clear();
@@ -1788,7 +1784,7 @@ public final class AppLiquidGlass extends Feature {
                 if (secondary != null) { secondary.setPixelSuppressed(false); secondary.attachMaterial(() -> null); secondary.rearmCanvasHost(); }
             }
             secondaryFactories.clear(); reportedRowOwners.clear();
-            bindings.clear(); candidates.clear(); pendingDiscovery.clear(); pendingNativeBubbleRows.clear();
+            bindings.clear(); candidates.clear(); pendingDiscovery.clear();
             restoreAllBubbleText();
         }
         @Override public void onViewAttachedToWindow(View view) { }

@@ -9,62 +9,10 @@ import java.nio.file.Paths;
 
 import org.junit.Test;
 
-/** Review findings on PR #130 (shared wallpaper bubbles). */
+/** Review findings on PR #130 that still apply to the shared wallpaper source. */
 public class SharedBubbleReviewTest {
     private static String read(String path) throws IOException {
         return new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8);
-    }
-
-    private static float[] translate(float x, float y) {
-        return new float[]{1, 0, x, 0, 1, y, 0, 0, 1};
-    }
-
-    // --- P1: scroll alignment -------------------------------------------------------------
-
-    @Test public void scrollOffsetIsDetectedWithoutADraw() {
-        TextureAlignment a = new TextureAlignment();
-        assertFalse("nothing presented yet", a.moved(translate(0, -300)));
-        a.recordDrawn(translate(-40, -300));
-        assertFalse(a.moved(translate(-40, -300)));
-        assertFalse("sub-pixel jitter", a.moved(translate(-40.2f, -300.3f)));
-        // RecyclerView offsets the row by 24 px without re-running draw().
-        assertTrue(a.moved(translate(-40, -276)));
-        a.recordDrawn(translate(-40, -276));
-        assertFalse(a.moved(translate(-40, -276)));
-        a.reset();
-        assertFalse("new texture: the next draw records again", a.moved(translate(0, 0)));
-    }
-
-    @Test public void scaleChangeIsAMove() {
-        TextureAlignment a = new TextureAlignment();
-        a.recordDrawn(translate(0, 0));
-        assertTrue(a.moved(new float[]{1.01f, 0, 0, 0, 1, 0, 0, 0, 1}));
-    }
-
-    @Test public void preDrawRealignsBeforeTheBindingsEarlyReturn() throws IOException {
-        String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
-        int realign = app.indexOf("realignSharedBubbles();");
-        int early = app.indexOf("if (bindings.isEmpty()) return true;", realign - 200);
-        assertTrue(realign > 0 && early > realign);
-        String drawable = read("src/main/java/com/waenhancer/theme/BubbleGlassDrawable.java");
-        assertTrue(drawable.contains("alignment.recordDrawn(values);"));
-        int start = drawable.indexOf("public boolean realignIfMoved()");
-        String body = drawable.substring(start, drawable.indexOf("private void nativeDraw", start));
-        assertTrue(body.contains("invalidateSelf()"));
-        assertFalse("realignment must never touch the shared source", body.contains("source.update")
-                || body.contains("prepare("));
-    }
-
-    // --- P1: factory hook gated by preferences -------------------------------------------
-
-    @Test public void factoryWrapperOnlyWhenGlassWantedForThatSide() throws IOException {
-        String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
-        int start = app.indexOf("private void installSharedBubbleFactoryHook()");
-        String body = app.substring(start, app.indexOf("private boolean sharedFactoryWanted", start));
-        assertTrue(body.contains("params[0]!=int.class"));
-        assertTrue(body.contains("if (!sharedFactoryWanted(outgoing)) return;"));
-        assertTrue(body.indexOf("sharedFactoryWanted(outgoing)") < body.indexOf("new com.waenhancer.theme.BubbleFactoryDrawable"));
-        assertTrue(app.contains("LiquidGlassSettings.bubbleEnabled(prefs, outgoing)\n                && GlassOptics.current().oneMate"));
     }
 
     // --- P1: bounded recovery from transient source failures ------------------------------
