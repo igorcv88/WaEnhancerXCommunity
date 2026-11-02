@@ -51,7 +51,9 @@ WhatsApp internals are version-sensitive. Resolvers must fail closed for the aff
 
 The runtime diagnostics layer records resolver/install/trigger evidence without collecting message content. `ValidationSession` lets the user explicitly run a local functional validation session against WhatsApp or WhatsApp Business and preview/copy the result.
 
-Compatibility evidence is scoped to the installed WhatsApp build and module build. Absence of evidence must not be promoted to a false incompatibility claim.
+Compatibility evidence is scoped to the installed WhatsApp build and module build.
+
+`UnobfuscatorCache` persists DexKit results as string descriptors invalidated by WhatsApp version code, module update time/version name and a cache schema stamp. A descriptor that no longer decodes, or whose member return/field type changed, is evicted and resolved once more; resolution runs under the same `Unobfuscator.class` monitor as the static synchronized loaders (one reentrant monitor, so nested loaders cannot deadlock), while valid persisted descriptors decode without locking; failures are negative-cached for the process lifetime (bounded) and cleared only by the explicit clear-cache broadcast or a new process. Upstream-derived resolver fallbacks must keep a unique legacy match first and accept a new anchor only when it is unambiguous. Absence of evidence must not be promoted to a false incompatibility claim.
 
 The injected `MessageHistory` SQLite store treats `viewed` as explicit receipt-release authorization. Its DB/cache operations are serialized so delayed privacy callbacks cannot revoke that authorization. Known legacy message-key schemas (versions 4–6) migrate to version 7 transactionally while retaining original receipt rows in an archive table. Unmapped row-ID schemas and unknown downgrades preserve their source files; they require a validated migration before their old history can become active.
 
