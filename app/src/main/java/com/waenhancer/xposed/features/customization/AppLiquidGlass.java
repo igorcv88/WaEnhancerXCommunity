@@ -125,7 +125,7 @@ public final class AppLiquidGlass extends Feature {
         installDiscoveryHooks();
         installVoiceActivationHooks();
         installTintObserver();
-        installBubbleHook();
+        installSharedBubbleFactoryHook();
         XposedBridge.hookAllMethods(Dialog.class, "show", new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
                 Dialog dialog = (Dialog) param.thisObject;
@@ -266,53 +266,25 @@ public final class AppLiquidGlass extends Feature {
         }
     }
 
-    private void installBubbleHook() {
+    private boolean sharedFactoryAvailable;
+    private void installSharedBubbleFactoryHook() {
+        if (android.os.Build.VERSION.SDK_INT < 33) return;
         try {
-            // Use the same cached factory resolver as the already-working BubbleColors hook.
-            // Requiring a unique broad DexKit string match here disabled glass on builds where
-            // other, unrelated methods share that string.
-            Method method = Unobfuscator.loadBubbleDrawableMethod(classLoader);
-            if (!Drawable.class.isAssignableFrom(method.getReturnType())
-                    || method.getParameterCount() == 0 || method.getParameterTypes()[0] != int.class) {
-                throw new IllegalStateException("bubble factory signature changed");
-            }
-            XposedBridge.hookMethod(method, new XC_MethodHook(XC_MethodHook.PRIORITY_HIGHEST) {
+            Method method=Unobfuscator.loadBubbleDrawableMethod(classLoader);
+            if (!Drawable.class.isAssignableFrom(method.getReturnType())) return;
+            XposedBridge.hookMethod(method,new XC_MethodHook(XC_MethodHook.PRIORITY_HIGHEST) {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
-                    if (param.args.length == 0 || !(param.args[0] instanceof Integer)) return;
-                    // Identical direction convention to BubbleColors: 3 is my/right bubble.
-                    boolean outgoing = ((Integer) param.args[0]) == 3;
-                    if (!LiquidGlassSettings.bubbleEnabled(prefs, outgoing)) return;
-                    Object value = param.getResult();
-                    if (!(value instanceof Drawable) || value instanceof GlassMaterialDrawable) return;
-                    // No row or activity captured by a global factory hook. Its callback resolves
-                    // the owner after WhatsApp installs the returned drawable on the row.
-                    GlassMaterialDrawable glass = new GlassMaterialDrawable(null, (Drawable) value,
-                            () -> bubbleMaterial(outgoing, material(Surface.BUBBLES)), 16f, true);
-                    bubbleDirections.put(glass, outgoing);
-                    // The factory can be called before the row belongs to a watched window.
-                    // Its drawable may also be nested inside a selector without a later
-                    // View.setBackground call. Follow the real native callback chain when the
-                    // wrapper draws, then adopt it on the next UI turn (never during capture).
-                    glass.observeHost(host -> host.post(() -> {
-                        callbackBubbles.put(host, glass);
-                        Session session = sessionFor(host.getRootView());
-                        if (session != null && !session.closed) {
-                            session.adopt(host, glass);
-                        }
-                    }), () -> report("bubble-no-host-" + (outgoing ? "out" : "in"),
-                            "bubble factory drawable was drawn without a View callback; "
-                                    + "native bubble renderer may not expose a view background"));
-                    param.setResult(glass);
-                    report("bubble-factory-" + (outgoing ? "out" : "in"),
-                            "bubble-factory side=" + (outgoing ? "outgoing" : "incoming") + " wrapped");
+                    Object result=param.getResult();
+                    if (result instanceof Drawable && !(result instanceof com.waenhancer.theme.BubbleFactoryDrawable))
+                        param.setResult(new com.waenhancer.theme.BubbleFactoryDrawable((Drawable)result));
                 }
             });
+            sharedFactoryAvailable=true;
         } catch (Throwable error) {
-            report("bubble-missing", "bubble resolver unavailable; bubbles keep native backgrounds: " + error);
+            report("shared-bubble-factory","native bubble factory not observable: " + error);
         }
     }
 
-    /** Find glass wrapped by WhatsApp's selector, inset, layer or ripple background. */
     private static GlassMaterialDrawable nestedBubble(Drawable drawable, int depth) {
         if (drawable == null || depth > 8) return null;
         if (drawable instanceof GlassMaterialDrawable) return (GlassMaterialDrawable) drawable;
@@ -441,6 +413,7 @@ public final class AppLiquidGlass extends Feature {
                                         + " sessionInstalling=" + session.installing
                                         + " bound=" + session.bindings.containsKey(target));
                     }
+                    if (session != null) session.wallpaperChanged(target);
                     boolean paneOwned = conversation.onBackgroundChanged(target, "background");
                     if (session != null && !session.installing && !paneOwned) {
                         session.rowContentChanged(target);
@@ -467,7 +440,7 @@ public final class AppLiquidGlass extends Feature {
                     ImageView target = (ImageView) param.thisObject;
                     conversation.onBackgroundChanged(target);
                     Session session = sessionFor(target.getRootView());
-                    if (session != null) session.rowContentChanged(target);
+                    if (session != null) { session.wallpaperChanged(target); session.rowContentChanged(target); }
                     if (session != null && !session.installing
                             && (nestedBubble((Drawable) param.args[0], 0) != null
                                 || session.bindings.containsKey(target))) session.discoverLater(target);
@@ -552,7 +525,12 @@ public final class AppLiquidGlass extends Feature {
     private void installTintObserver() {
         XC_MethodHook paletteChanged = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
-                if (!GlassPane.isCapturing()) conversation.onComposerVisualChanged((View) param.thisObject);
+                if (!GlassPane.isCapturing()) {
+                    View view=(View)param.thisObject;
+                    conversation.onComposerVisualChanged(view);
+                    Session session=sessionFor(view.getRootView());
+                    if (session!=null) session.wallpaperChanged(view);
+                }
             }
         };
         XposedBridge.hookAllMethods(ImageView.class, "setImageTintList", paletteChanged);
@@ -565,6 +543,7 @@ public final class AppLiquidGlass extends Feature {
                 if (!GlassPane.isCapturing()) conversation.onBackgroundChanged(view, "tint");
                 Session session = sessionFor(view.getRootView());
                 if (session == null || session.installing) return;
+                session.wallpaperChanged(view);
                 Binding binding = session.bindings.get(view);
                 if (binding != null) binding.tintChanged = true;
             }
@@ -687,6 +666,10 @@ public final class AppLiquidGlass extends Feature {
         private final WeakHashMap<View, WeakReference<GlassMaterialDrawable>> secondaryFactories = new WeakHashMap<>();
         private final WeakHashMap<View, Boolean> reportedRowOwners = new WeakHashMap<>();
         private final WeakHashMap<View, Surface> candidates = new WeakHashMap<>();
+        private com.waenhancer.theme.ConversationBackdropSource bubbleSource;
+        private final WeakHashMap<View, com.waenhancer.theme.BubbleGlassDrawable> sharedBubbles = new WeakHashMap<>();
+        private final Set<View> sharedRows = java.util.Collections.newSetFromMap(new WeakHashMap<>());
+        private WeakReference<View> sharedWallpaper = new WeakReference<>(null);
         private final WeakHashMap<TextView, BubbleTextState> bubbleTexts = new WeakHashMap<>();
         private final WeakHashMap<View, Boolean> pendingCanvasChecks = new WeakHashMap<>();
 
@@ -757,6 +740,7 @@ public final class AppLiquidGlass extends Feature {
         void rowContentChanged(View node) {
             if (closed || suspended || installing || GlassPane.isCapturing()) return;
             for (View row = node; row != null; row = row.getParent() instanceof View ? (View) row.getParent() : null) {
+                if (sharedRows.contains(row)) { discoverLater(row); return; }
                 Binding binding = bindings.get(row);
                 if (binding != null && binding.surface == Surface.BUBBLES) {
                     if (!binding.contentDamagePending) {
@@ -979,6 +963,7 @@ public final class AppLiquidGlass extends Feature {
         void suspend() {
             if (closed || suspended) return;
             suspended = true;
+            releaseSharedBubbles();
             GlassTrace.suspended(root.get());
             cancelPending();
             observe(false);
@@ -1255,6 +1240,7 @@ public final class AppLiquidGlass extends Feature {
             // Before the early return below: switching the panes off must still restore the screen.
             conversation.sync(view);
             home.sync(view);
+            syncSharedBubbles();
             try {
                 for (Map.Entry<View, Binding> entry : new ArrayList<>(bindings.entrySet())) {
                     View target = entry.getKey();
@@ -1467,27 +1453,81 @@ public final class AppLiquidGlass extends Feature {
          * native row background itself is a drawable and retains the bubble mask. Only bind
          * when the Fyn mask, asymmetric bounded main_layout and direction all agree. */
         private void bindNativeBubbleRow(View row) {
-            if (!LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES) || bindings.containsKey(row)) return;
-            BubblePlacement placement = nativeRowPlacement(row);
-            if (placement == null || !LiquidGlassSettings.bubbleEnabled(prefs, placement.outgoing)) return;
-            Drawable original = row.getBackground();
-            if (original == null || original instanceof GlassMaterialDrawable
-                    || !"Fyn".equals(original.getClass().getSimpleName())) return;
-            observeNativeRowDraw(row);
-            bind(row, Surface.BUBBLES, true);
-            Binding binding = bindings.get(row);
-            if (binding == null) return;
-            binding.rowBased = true;
-            watchBubble(row, binding);
-            binding.outgoing = placement.outgoing;
-            binding.glass.setMaterialRegion(placement.region);
-            final boolean side = placement.outgoing;
-            binding.glass.attachMaterial(() -> bubbleMaterial(side, resolvedMaterial()));
-            updateBubbleText(row, binding);
-            report("bubble-attached-row-" + (side ? "out" : "in"),
-                    "native WhatsApp bubble mask adopted on " + resourceName(row)
-                            + " side=" + (side ? "outgoing" : "incoming")
-                            + " crop=" + placement.region.toShortString());
+            if (!"conversation_row_text".equals(resourceName(row))) return; // First prototype: native media/audio untouched.
+            sharedRows.add(row);
+            reconcileSharedRow(row);
+        }
+
+        private void reconcileSharedRow(View row) {
+            com.waenhancer.theme.BubbleGlassDrawable owned=sharedBubbles.get(row);
+            BubblePlacement placement=nativeRowPlacement(row);
+            boolean eligible=sharedFactoryAvailable && !closed && !suspended && row.isAttachedToWindow() && row.getRootView()==root.get()
+                    && placement!=null && LiquidGlassSettings.bubbleEnabled(prefs,placement.outgoing)
+                    && bubbleSource!=null && bubbleSource.ready();
+            if (owned!=null && row.getBackground()!=owned) { sharedBubbles.remove(row); owned=null; }
+            if (!eligible) { restoreSharedRow(row); return; }
+            GlassSpec spec=bubbleMaterial(placement.outgoing,resolvedMaterial());
+            if (owned==null) {
+                Drawable nativeMask=row.getBackground();
+                Drawable shape=nativeMask instanceof com.waenhancer.theme.BubbleFactoryDrawable
+                        ? ((com.waenhancer.theme.BubbleFactoryDrawable)nativeMask).getDrawable() : nativeMask;
+                if (shape==null || !"Fyn".equals(shape.getClass().getSimpleName())) return;
+                owned=new com.waenhancer.theme.BubbleGlassDrawable(row,root.get(),nativeMask,bubbleSource);
+                if (!owned.prepare(placement.region,spec)) return;
+                sharedBubbles.put(row,owned);
+                setSharedBackground(row,owned); owned.attached();
+                observeNativeRowDraw(row);
+                com.waenhancer.theme.ConversationBackdropSource.probe("BUBBLE_BOUND","outgoing="+placement.outgoing);
+            } else if (!owned.prepare(placement.region,spec)) { restoreSharedRow(row); return; }
+            if (owned.consumeDamage()) row.invalidate();
+        }
+        private void setSharedBackground(View row, Drawable drawable) {
+            boolean wasInstalling=installing; installing=true;
+            int l=row.getPaddingLeft(),t=row.getPaddingTop(),r=row.getPaddingRight(),b=row.getPaddingBottom();
+            try { row.setBackground(drawable); row.setPadding(l,t,r,b); }
+            finally { installing=wasInstalling; }
+        }
+        private void restoreSharedRow(View row) {
+            nativeDrawRows.remove(row);
+            com.waenhancer.theme.BubbleGlassDrawable owned=sharedBubbles.remove(row);
+            if (owned!=null && row.getBackground()==owned) {
+                setSharedBackground(row,owned.original());
+                com.waenhancer.theme.ConversationBackdropSource.probe("BUBBLE_NATIVE_RETAINED","source-or-owner-unavailable");
+            }
+        }
+        private void releaseSharedBubbles() {
+            for (View row:new ArrayList<>(sharedBubbles.keySet())) if (row!=null) restoreSharedRow(row);
+            if (bubbleSource!=null) bubbleSource.release();
+            bubbleSource=null; sharedWallpaper.clear();
+        }
+        private void syncSharedBubbles() {
+            View window=root.get();
+            if (window==null) return;
+            View wallpaper=findByName(window,"conversation_background",window.getContext().getPackageName());
+            if (wallpaper!=sharedWallpaper.get()) {
+                releaseSharedBubbles(); sharedWallpaper=new WeakReference<>(wallpaper);
+            }
+            if (wallpaper==null || !LiquidGlassSettings.isEnabled(prefs,Surface.BUBBLES)
+                    || android.os.Build.VERSION.SDK_INT<33 || !GlassOptics.current().oneMate) {
+                releaseSharedBubbles(); return;
+            }
+            if (bubbleSource==null) bubbleSource=new com.waenhancer.theme.ConversationBackdropSource(() -> {
+                if (!closed && !suspended) { scan(); scheduleFrame(1); }
+            });
+            GlassSpec material=resolvedMaterial();
+            if (material==null) return;
+            bubbleSource.update(com.waenhancer.theme.WallpaperSnapshot.read(wallpaper,window),
+                    com.waenhancer.theme.ConversationBackdropSource.blurRadius(material,window.getResources().getDisplayMetrics().density));
+            for (View row:new ArrayList<>(sharedRows)) {
+                if (row==null) continue;
+                reconcileSharedRow(row);
+                if (!row.isAttachedToWindow() || row.getRootView()!=window) sharedRows.remove(row);
+            }
+        }
+        void wallpaperChanged(View target) {
+            if (installing || closed || suspended) return;
+            for (View node=target;node!=null;node=node.getParent() instanceof View?(View)node.getParent():null)
+                if ("conversation_background".equals(resourceName(node))) { discoverLater(target); return; }
         }
 
         /** Bounded diagnostics for an unknown WhatsApp row: IDs/classes only, never text/media. */
@@ -1619,6 +1659,7 @@ public final class AppLiquidGlass extends Feature {
         }
 
         void bind(View view, Surface surface, boolean nativeMask) {
+            if (surface == Surface.BUBBLES) return; // Shared consumers never enter LiveBudget/captureBehind.
             if (GlassProbe.enabled() && GlassProbe.composerNode(view)) {
                 GlassProbe.event("BIND_ATTEMPT", view,
                         "surface=" + surface + " paneOwns=" + conversation.owns(view)
@@ -1690,6 +1731,7 @@ public final class AppLiquidGlass extends Feature {
             GlassTrace.suspended(root.get());
             if (closed) return;
             closed = true;
+            releaseSharedBubbles(); sharedRows.clear();
             cancelPending();
             observe(false);
             if (foreground.get() == this) foreground.clear();
