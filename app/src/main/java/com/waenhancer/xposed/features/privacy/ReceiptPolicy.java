@@ -19,6 +19,29 @@ public final class ReceiptPolicy {
         return hideDelivered && !explicitlyViewed;
     }
 
+    /** Delivery-receipt dispatch code in WhatsApp's modern receipt Message dispatch. */
+    public static final int DISPATCH_DELIVERY = 419;
+    /** Read-receipt dispatch code; only SendReadReceiptJob creates it. */
+    public static final int DISPATCH_READ_JOB = 89;
+
+    /**
+     * Dev4Mod 015d446: SendReadReceiptJob waits on its ack future with {@code get()} and no
+     * timeout, so rewriting a type-89 dispatch to -1 leaves the job thread blocked and can jam
+     * WhatsApp's JobManager. Only the delivery dispatch may be rewritten; read receipts are
+     * cancelled in the job itself (see {@link #suppressReadJob}).
+     */
+    public static boolean rewritableDispatch(int code) {
+        return code == DISPATCH_DELIVERY;
+    }
+
+    /**
+     * Cancels the read job when Hide Read applies, in Ghost Mode, or when Hide Delivered applies:
+     * a read receipt implies delivery, and the job is no longer suppressed downstream.
+     */
+    public static boolean suppressReadJob(boolean hideRead, boolean hideDelivered, boolean ghostMode) {
+        return hideRead || hideDelivered || ghostMode;
+    }
+
     public static boolean recordHidden(boolean hideRead, boolean hideDelivered, String receiptType) {
         return hideDelivered || (hideRead && "read".equals(receiptType));
     }

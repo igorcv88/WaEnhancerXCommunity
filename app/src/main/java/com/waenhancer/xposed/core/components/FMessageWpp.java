@@ -624,6 +624,10 @@ public class FMessageWpp {
 
     public static class UserJid {
 
+        /** Dev4Mod 6813a52: device suffix ("user.12:3@server"), compiled once. */
+        private static final java.util.regex.Pattern DEVICE_SUFFIX = java.util.regex.Pattern.compile("\\.[\\d:]+@");
+
+
         public static Class<?> TYPE_DEVICEJID;
         public static Class<?> TYPE_USERJID;
         public static Class<?> TYPE_JID;
@@ -678,7 +682,7 @@ public class FMessageWpp {
             if (this.phoneJid == null) return null;
             String raw = (String) XposedHelpers.callMethod(this.phoneJid, "getRawString");
             if (raw == null) return null;
-            return raw.replaceFirst("\\.[\\d:]+@", "@");
+            return DEVICE_SUFFIX.matcher(raw).replaceFirst("@");
         }
 
         @Nullable
@@ -686,7 +690,7 @@ public class FMessageWpp {
             if (this.userJid == null) return null;
             String raw = (String) XposedHelpers.callMethod(this.userJid, "getRawString");
             if (raw == null) return null;
-            return raw.replaceFirst("\\.[\\d:]+@", "@");
+            return DEVICE_SUFFIX.matcher(raw).replaceFirst("@");
         }
 
         @Nullable

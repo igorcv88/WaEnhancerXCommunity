@@ -168,6 +168,34 @@ public class MessageHistory extends SQLiteOpenHelper {
         return true;
     }
 
+    /**
+     * Updates existing rows in one transaction (Dev4Mod d2c71a5). Missing rows are not inserted:
+     * this only changes the release state of receipts that were actually hidden.
+     *
+     * @return number of updated rows
+     */
+    public synchronized int updateViewedMessagesBatch(String jid, java.util.List<String> messageIds, MessageType type, boolean viewed) {
+        if (dbWrite == null || jid == null || messageIds == null || messageIds.isEmpty()) return 0;
+        int updated = 0;
+        ContentValues content = new ContentValues();
+        content.put("viewed", viewed ? 1 : 0);
+        dbWrite.beginTransaction();
+        try {
+            for (String messageId : messageIds) {
+                updated += dbWrite.update("hide_seen_messages", content, "jid=? AND message_id=? AND type=?",
+                        new String[]{jid, messageId, String.valueOf(type.ordinal())});
+            }
+            dbWrite.setTransactionSuccessful();
+        } finally {
+            dbWrite.endTransaction();
+        }
+        for (String messageId : messageIds) {
+            seenMessageCache.remove(createSeenMessageCacheKey(jid, messageId, type));
+        }
+        invalidateSeenMessagesListCache(jid, type);
+        return updated;
+    }
+
     public synchronized MessageSeenItem getHideSeenMessage(String jid, String message_id, MessageType type) {
         // Check cache first
         String cacheKey = createSeenMessageCacheKey(jid, message_id, type);
@@ -213,7 +241,8 @@ public class MessageHistory extends SQLiteOpenHelper {
         }
 
         // If not in cache, query database
-        Cursor cursor = dbWrite.query("hide_seen_messages", new String[]{"jid", "message_id", "viewed"}, "jid=? AND type=? AND viewed=?", new String[]{jid, String.valueOf(type.ordinal()), viewed ? "1" : "0"}, null, null, null);
+        // Oldest first (Dev4Mod d2c71a5) so callers can bound releases to the newest rows.
+        Cursor cursor = dbWrite.query("hide_seen_messages", new String[]{"jid", "message_id", "viewed"}, "jid=? AND type=? AND viewed=?", new String[]{jid, String.valueOf(type.ordinal()), viewed ? "1" : "0"}, null, null, "_id ASC");
         if (!cursor.moveToFirst()) {
             cursor.close();
             return null;
