@@ -54,3 +54,6 @@ demo/
 /Screenshot (*.png
 screenshots*
 screenshot*
+# Python bytecode from tools/test_*.py runs
+__pycache__/
+*.pyc
