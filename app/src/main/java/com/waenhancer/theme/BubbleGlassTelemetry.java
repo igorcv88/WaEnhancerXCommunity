@@ -9,14 +9,16 @@ import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
+import com.waenhancer.diagnostics.InspectorTrace;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
 
 /**
- * Opt-in diagnostics for native-drawn bubble glass, enabled with the existing GlassProbe switch
- * ({@code adb shell setprop log.tag.WaEXGlassDiag DEBUG}).
+ * Opt-in diagnostics for native-drawn bubble glass, enabled by the existing GlassProbe switch
+ * ({@code adb shell setprop log.tag.WaEXGlassDiag DEBUG}) or the short-lived Element Inspector
+ * session. The latter also saves bounded structural events in the companion's private report.
  *
  * <p>Evidence instead of guesses: which view really records the bubble, how its texture was
  * aligned, which candidates a rule rejected, and how often the draw hook runs. Only class names,
@@ -178,6 +180,9 @@ public final class BubbleGlassTelemetry {
     }
 
     private static void log(String kind, String detail) {
+        // The companion can display/export the same bounded, content-free evidence. This is
+        // only active while the user has explicitly armed Element Inspector.
+        InspectorTrace.glassEvent("BUBBLE_GLASS_" + kind, detail);
         Log.i(GlassProbe.TAG, "event=BUBBLE_GLASS kind=" + kind + " t=" + SystemClock.uptimeMillis() + " " + detail);
     }
 

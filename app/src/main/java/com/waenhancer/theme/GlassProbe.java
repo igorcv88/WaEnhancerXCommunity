@@ -6,6 +6,7 @@ import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewParent;
+import com.waenhancer.diagnostics.InspectorTrace;
 
 /**
  * Opt-in, bounded diagnostics for native view ownership and glass frame transitions.
@@ -19,7 +20,9 @@ public final class GlassProbe {
     private static final GlassProbeBudget BUDGET = new GlassProbeBudget();
     private GlassProbe() { }
 
-    public static boolean enabled() { return Log.isLoggable(TAG, Log.DEBUG); }
+    public static boolean enabled() {
+        return Log.isLoggable(TAG, Log.DEBUG) || InspectorTrace.active();
+    }
 
     public static void event(String type, View view, String details) {
         if (!enabled()) return;

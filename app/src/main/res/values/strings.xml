@@ -136,6 +136,12 @@
     <string name="inspector_disarmed_message">Element Inspector disarmed.</string>
     <string name="inspector_open_whatsapp">Open WhatsApp</string>
     <string name="inspector_whatsapp_not_found">WhatsApp is not installed</string>
+    <string name="inspector_view_captures">View captures</string>
+    <string name="inspector_results_title">Element Inspector / Player Probe</string>
+    <string name="inspector_clear_captures">Clear inspector/player captures</string>
+    <string name="inspector_clear_confirmation">Delete locally saved element selections, player view snapshots and bubble diagnostic events?</string>
+    <string name="inspector_capture_instructions">Element inspector / player probe: tap the eye on the app home screen, then open WhatsApp. Tap the floating blue handle to switch to PICK mode and touch a view; press and hold that handle to capture the current screen manually. Home and conversation structures are also sampled automatically. Long-press the eye to return here. Copy or share the report below; captures exclude message and contact text. Arm only while diagnosing.</string>
+    <string name="inspector_sample_saved">Structural snapshot saved to Diagnostics</string>
     <string name="edited_history">Edited History</string>
     <string name="message_original">Original Message</string>
     <string name="message_original_time">Original Time</string>

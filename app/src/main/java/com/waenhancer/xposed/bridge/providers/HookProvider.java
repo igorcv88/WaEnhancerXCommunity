@@ -14,6 +14,7 @@ import androidx.annotation.Nullable;
 import com.waenhancer.config.NspPreferenceMigration;
 import com.waenhancer.config.PreferenceSchema;
 import com.waenhancer.config.PreferenceStores;
+import com.waenhancer.diagnostics.InspectorTrace;
 import com.waenhancer.security.CallerAuthority;
 import com.waenhancer.security.BridgePreferencePolicy;
 import com.waenhancer.xposed.bridge.service.HookBinder;
@@ -94,6 +95,16 @@ public class HookProvider extends ContentProvider {
             // an injected process built against the previous bridge does not crash.
             if ("record_event".equals(method) || "record_crash".equals(method)) {
                 return Bundle.EMPTY;
+            }
+
+            // A narrow, authenticated write-only bridge for opt-in, content-free inspector
+            // records. Generic preference IPC cannot read or write this private history.
+            if (InspectorTrace.METHOD_APPEND.equals(method) && extras != null) {
+                String target = stringExtra(extras, "target");
+                String batch = stringExtra(extras, "batch");
+                if (InspectorTrace.appendPrivate(PreferenceStores.privateStore(context), target, batch))
+                    return Bundle.EMPTY;
+                return null;
             }
 
             if (METHOD_GET.equals(method) && extras != null) {

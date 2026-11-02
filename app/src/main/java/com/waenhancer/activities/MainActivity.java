@@ -288,12 +288,22 @@ public class MainActivity extends BaseActivity {
 
     private boolean isInspectorArmed() {
         String value = SafePrefs.getString(prefs(), INSPECTOR_SESSION_PREF, "");
-        return value != null && !value.isEmpty();
+        if (value == null) return false;
+        String[] parts = value.split("\\|", -1);
+        if (parts.length != 2 || parts[0].isEmpty()) return false;
+        try {
+            long age = System.currentTimeMillis() - Long.parseLong(parts[1]);
+            return age >= -5_000L && age < 10 * 60_000L;
+        } catch (NumberFormatException invalid) { return false; }
     }
 
     private void setupInspectorButton() {
         updateInspectorButtonState();
         binding.btnInspector.setOnClickListener(v -> toggleInspector());
+        binding.btnInspector.setOnLongClickListener(v -> {
+            openInspectorResults();
+            return true;
+        });
     }
 
     private void updateInspectorButtonState() {
@@ -313,9 +323,8 @@ public class MainActivity extends BaseActivity {
     /**
      * Arms the Element Inspector session by writing {@code token|armedAtMillis} to the
      * {@code inspector_session} preference. This exact "token|timestamp" pipe-delimited format
-     * is required by {@code InspectorFeature.parseSession(String)} on the read side (Task B3) —
-     * the timestamp is informational only; idle-timeout expiry is computed entirely by the
-     * overlay's own session tracking, not from this value.
+     * is required by {@code InspectorFeature.parseSession(String)} on the read side. The initial
+     * timestamp prevents stale sessions being restored; live touches renew the in-process timer.
      */
     private void armInspector() {
         String token = generateInspectorToken();
@@ -326,6 +335,8 @@ public class MainActivity extends BaseActivity {
                 .setTitle(R.string.inspector_identify_ui_elements)
                 .setMessage(R.string.inspector_armed_message)
                 .setPositiveButton(R.string.inspector_open_whatsapp, (dialog, which) -> openWhatsApp())
+                .setNeutralButton(R.string.inspector_view_captures, (dialog, which) ->
+                        openInspectorResults())
                 .setNegativeButton(R.string.cancel, null)
                 .show();
     }
@@ -334,6 +345,12 @@ public class MainActivity extends BaseActivity {
     private void disarmInspector() {
         SafePrefs.put(this, prefs(), Collections.singletonMap(INSPECTOR_SESSION_PREF, ""));
         android.widget.Toast.makeText(this, R.string.inspector_disarmed_message, android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void openInspectorResults() {
+        Intent intent = new Intent(this, DiagnosticsActivity.class);
+        intent.putExtra(DiagnosticsActivity.EXTRA_INSPECTOR_ONLY, true);
+        startActivity(intent);
     }
 
     private String generateInspectorToken() {

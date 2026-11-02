@@ -334,6 +334,8 @@ public final class AppLiquidGlass extends Feature {
                 // this hook; FREQUENCY telemetry reports calls versus registered bubbles.
                 report("shared-bubble-draw", "bubble glass drawn inside " + t.getName() + ".draw"
                         + (t.getName().startsWith("android.") ? " (framework class: app-wide hook, identity-filtered)" : ""));
+                com.waenhancer.diagnostics.InspectorTrace.glassEvent(
+                        "shared-bubble-draw", "class=" + t.getName());
             } catch (Throwable error) {
                 report("shared-bubble-draw", "native bubble draw not observable: " + error);
             }
@@ -350,6 +352,8 @@ public final class AppLiquidGlass extends Feature {
         // Anything not recognized as a registered native bubble on a canvas is left untouched.
         if (outgoing==null || !(param.args[0] instanceof Canvas)) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NOT_REGISTERED); return; }
         if (GlassPane.isCapturing()) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.CAPTURE); return; }
+        com.waenhancer.diagnostics.InspectorTrace.glassEventOnce(
+                "shared-bubble-draw", "class=" + bubble.getClass().getName());
         Canvas canvas=(Canvas) param.args[0];
         View host=com.waenhancer.theme.NativeBubbleGlass.hostFor(canvas);
         if (host==null) { com.waenhancer.theme.NativeBubbleGlass.unhosted(bubble, canvas); return; }
