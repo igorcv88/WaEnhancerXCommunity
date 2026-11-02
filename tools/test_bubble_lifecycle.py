@@ -41,7 +41,10 @@ app=(ROOT/'app/src/main/java/com/waenhancer/xposed/features/customization/AppLiq
 assert 'LiveBackdrop' not in source+consumer and 'captureBehind' not in source+consumer
 assert 'view.draw(' not in source and 'root.draw(' not in source and 'window.draw(' not in source
 assert 'WORKER.execute' in source and 'setWaitForPresent(true)' in source
-assert 'token!=epoch.revision()' in source and 'failedRevision=token' in source
+assert 'token!=epoch.revision()' in source and 'retry.onResult(token,result.outcome)' in source
+# Review on #130: transient delivery retries a bounded number of times; stale jobs skip rendering.
+assert 'failedRevision' not in source and 'transientSync(sync)' in source and 'token!=liveToken.get()' in source
+assert 'realignSharedBubbles();' in app and 'sharedFactoryWanted(outgoing)' in app
 assert 'source.ready()' in consumer and 'nativeDraw(canvas); return;' in consumer
 assert 'new RuntimeShader' not in consumer.split('@Override public void draw',1)[1]
 assert 'if (surface == Surface.BUBBLES) return;' in app

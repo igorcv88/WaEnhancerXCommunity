@@ -15,6 +15,10 @@ public final class BubbleGlassDrawable extends Drawable implements Drawable.Call
     private final Rect region=new Rect();
     private final Matrix rowGlobal=new Matrix(), rootGlobal=new Matrix(), inverse=new Matrix(), textureToLocal=new Matrix();
     private final float[] values=new float[9];
+    // Separate scratch for the pre-draw alignment check; draw() keeps its own matrices.
+    private final Matrix checkRow=new Matrix(), checkRoot=new Matrix(), checkInverse=new Matrix(), checkOut=new Matrix();
+    private final float[] checkValues=new float[9];
+    private final TextureAlignment alignment=new TextureAlignment();
     private RuntimeShader shader;
     private BitmapShader textureShader;
     private Bitmap texture;
@@ -54,7 +58,7 @@ public final class BubbleGlassDrawable extends Drawable implements Drawable.Call
             if (texture!=source.texture()) {
                 texture=source.texture(); dirty=true;
                 textureShader=new BitmapShader(texture,Shader.TileMode.CLAMP,Shader.TileMode.CLAMP);
-                presented=false;
+                presented=false; alignment.reset();
             }
             paint.setShader(shader);
             return true;
@@ -72,6 +76,7 @@ public final class BubbleGlassDrawable extends Drawable implements Drawable.Call
         textureToLocal.postTranslate(-region.left,-region.top);
         textureToLocal.getValues(values);
         if (!textureToLocal.rectStaysRect()) { nativeDraw(canvas); return; }
+        alignment.recordDrawn(values);
         int save=canvas.save();
         try {
             textureShader.setLocalMatrix(textureToLocal); shader.setInputShader("content",textureShader);
@@ -90,6 +95,28 @@ public final class BubbleGlassDrawable extends Drawable implements Drawable.Call
         } finally { canvas.restoreToCount(save); }
         if (broken) nativeDraw(canvas);
     }
+    /**
+     * Pre-draw check (main thread): RecyclerView moves rows by RenderNode offset and replays the
+     * recorded display list, so the BitmapShader matrix from the last draw would keep sampling
+     * the previous wallpaper region. Only a row whose transform changed is invalidated; it then
+     * re-records with the same shared texture (no re-blur, no reallocation).
+     *
+     * @return true when the row was invalidated
+     */
+    public boolean realignIfMoved() {
+        View view=row.get(), window=root.get();
+        if (view==null || window==null || region.isEmpty() || !presented) return false;
+        checkRow.reset(); view.transformMatrixToGlobal(checkRow);
+        checkRoot.reset(); window.transformMatrixToGlobal(checkRoot);
+        if (!checkRow.invert(checkInverse)) return false;
+        checkOut.set(checkRoot); checkOut.postConcat(checkInverse);
+        checkOut.postTranslate(-region.left,-region.top);
+        checkOut.getValues(checkValues);
+        if (!alignment.moved(checkValues)) return false;
+        invalidateSelf();
+        return true;
+    }
+
     private void nativeDraw(Canvas canvas) {
         Boolean previous=MASKING.get(); MASKING.set(true);
         try { original.setBounds(getBounds()); original.draw(canvas); }

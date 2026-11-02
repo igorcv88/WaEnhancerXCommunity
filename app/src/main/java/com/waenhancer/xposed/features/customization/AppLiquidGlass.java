@@ -271,18 +271,35 @@ public final class AppLiquidGlass extends Feature {
         if (android.os.Build.VERSION.SDK_INT < 33) return;
         try {
             Method method=Unobfuscator.loadBubbleDrawableMethod(classLoader);
-            if (!Drawable.class.isAssignableFrom(method.getReturnType())) return;
+            // Same factory and direction convention as BubbleColors (first int arg, 3 = outgoing).
+            Class<?>[] params=method.getParameterTypes();
+            if (!Drawable.class.isAssignableFrom(method.getReturnType())
+                    || params.length==0 || params[0]!=int.class) {
+                report("shared-bubble-factory","bubble factory signature not verified; factory left native");
+                return;
+            }
             XposedBridge.hookMethod(method,new XC_MethodHook(XC_MethodHook.PRIORITY_HIGHEST) {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     Object result=param.getResult();
-                    if (result instanceof Drawable && !(result instanceof com.waenhancer.theme.BubbleFactoryDrawable))
-                        param.setResult(new com.waenhancer.theme.BubbleFactoryDrawable((Drawable)result));
+                    if (!(result instanceof Drawable) || result instanceof com.waenhancer.theme.BubbleFactoryDrawable
+                            || param.args.length==0 || !(param.args[0] instanceof Integer)) return;
+                    // Review on #130: with glass off (globally or for this side) WhatsApp keeps its
+                    // own drawable type untouched.
+                    boolean outgoing=((Integer)param.args[0])==3;
+                    if (!sharedFactoryWanted(outgoing)) return;
+                    param.setResult(new com.waenhancer.theme.BubbleFactoryDrawable((Drawable)result));
                 }
             });
             sharedFactoryAvailable=true;
         } catch (Throwable error) {
             report("shared-bubble-factory","native bubble factory not observable: " + error);
         }
+    }
+
+    private boolean sharedFactoryWanted(boolean outgoing) {
+        return LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)
+                && LiquidGlassSettings.bubbleEnabled(prefs, outgoing)
+                && GlassOptics.current().oneMate;
     }
 
     private static GlassMaterialDrawable nestedBubble(Drawable drawable, int depth) {
@@ -1023,6 +1040,8 @@ public final class AppLiquidGlass extends Feature {
                 GlassTrace.frame(root.get());
                 home.frame(root.get());
                 conversation.onFrame(root.get());
+                // Before the per-binding early return: shared bubbles are not bindings.
+                realignSharedBubbles();
                 if (bindings.isEmpty()) return true;
                 long now = SystemClock.uptimeMillis();
                 boolean fresh = false;
@@ -1480,6 +1499,15 @@ public final class AppLiquidGlass extends Feature {
                 com.waenhancer.theme.ConversationBackdropSource.probe("BUBBLE_BOUND","outgoing="+placement.outgoing);
             } else if (!owned.prepare(placement.region,spec)) { restoreSharedRow(row); return; }
             if (owned.consumeDamage()) row.invalidate();
+        }
+        /** Scroll alignment for shared consumers (review on #130): re-record moved rows only. */
+        private void realignSharedBubbles() {
+            if (sharedBubbles.isEmpty()) return;
+            int moved=0;
+            for (com.waenhancer.theme.BubbleGlassDrawable bubble:sharedBubbles.values())
+                if (bubble!=null && bubble.realignIfMoved()) moved++;
+            if (moved>0 && GlassProbe.enabled())
+                com.waenhancer.theme.ConversationBackdropSource.probe("BUBBLE_REALIGNED","rows="+moved);
         }
         private void setSharedBackground(View row, Drawable drawable) {
             boolean wasInstalling=installing; installing=true;
