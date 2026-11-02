@@ -1,68 +1,30 @@
 package com.waenhancer.theme;
 
 import static org.junit.Assert.*;
-
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-
 import org.junit.Test;
 
-/**
- * Device review 2026-11-01: bubbles were applied on open, then destroyed and rebuilt on every
- * scroll or recording start. Content-only signals and same-size moves must request a recapture
- * without releasing the presented recording; identity/size changes still release.
- */
+/** Text bubbles keep a producer epoch, not individual view captures. */
 public class BubbleCaptureRetentionTest {
-    private static String read(String path) throws IOException {
-        return new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8);
+    @Test public void oneHundredRowMovesDoNotInvalidateSource() {
+        BackdropEpoch source=new BackdropEpoch();
+        assertTrue(source.update("wallpaper/crop/theme-A"));
+        long epoch=source.revision(); assertTrue(source.complete(epoch,true));
+        for(int rowOffset=0;rowOffset<100;rowOffset++) {
+            assertFalse(source.update("wallpaper/crop/theme-A"));
+            assertEquals(epoch,source.revision()); assertTrue(source.ready());
+        }
     }
-
-    @Test public void softDamageKeepsPresentedPixels() throws IOException {
-        String g = read("src/main/java/com/waenhancer/theme/GlassMaterialDrawable.java");
-        int start = g.indexOf("public void damageCapture(String reason)");
-        assertTrue(start > 0);
-        String body = g.substring(start, g.indexOf("private boolean published", start));
-        assertTrue(body.contains("captureEpoch.damage()"));
-        assertFalse("soft damage must not release the live recording", body.contains("releaseLive"));
+    @Test public void sourceChangeRejectsLateWorkerAndKeepsNativeUntilReady() {
+        BackdropEpoch source=new BackdropEpoch(); source.update("A"); long old=source.revision();
+        source.update("B"); assertFalse(source.ready()); assertFalse(source.complete(old,true));
+        assertTrue(source.complete(source.revision(),true)); assertTrue(source.ready());
+        source.release(); assertFalse(source.ready()); assertFalse(source.complete(source.revision(),true));
     }
-
-    @Test public void onlyResizeReleasesOnBoundsChange() throws IOException {
-        String g = read("src/main/java/com/waenhancer/theme/GlassMaterialDrawable.java");
-        assertTrue(g.contains("if (sameSize) damageCapture(\"drawable-moved\"); else invalidateCapture(\"drawable-bounds\");"));
-        assertTrue(g.contains("damageCapture(\"canvas-offset\")"));
-        // A different host row is still a hard reset.
-        assertTrue(g.contains("invalidateCapture(\"rowRecycled\")"));
-    }
-
-    @Test public void rowContentSignalsDoNotRelease() throws IOException {
-        String a = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
-        assertTrue(a.contains("binding.glass.damageCapture(\"row-content\")"));
-        assertFalse(a.contains("binding.glass.invalidateCapture(\"rowRecycled\")"));
-    }
-
-    @Test public void softDamageDoesNotRestartPresentationOrRecovery() throws IOException {
-        String g = read("src/main/java/com/waenhancer/theme/GlassMaterialDrawable.java");
-        String a = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
-        assertTrue("hard invalidation must request a new presentation epoch",
-                g.contains("captureDemand.accept(true)"));
-        assertTrue("soft damage must retain the presentation deadline",
-                g.contains("captureDemand.accept(false)"));
-        int start = a.indexOf("binding.glass.observeCaptureDemand(hardReset -> {");
-        assertTrue(start > 0);
-        String watcher = a.substring(start, a.indexOf("private void promoteDeferred", start));
-        assertTrue(watcher.contains("if (hardReset) {\n                    binding.presentation.rearm();\n                    binding.recovery.revalidate();"));
-        assertTrue("soft damage must still schedule a new capture", watcher.contains("scheduleFrame(1L)"));
-    }
-
-    @Test public void epochSoftDamageStillRequestsCapture() {
-        BubbleCaptureEpoch epoch = new BubbleCaptureEpoch();
-        epoch.published();
-        assertFalse(epoch.pending());
-        epoch.damage();
-        assertTrue("damage schedules a recapture", epoch.pending());
-        epoch.published();
-        assertFalse(epoch.pending());
+    @Test public void noStretchedOrUncoveredWallpaper() {
+        assertTrue(BackdropGeometry.covers(new float[]{1,0,0,0,1,0,0,0,1},1440,3120,1440,3120));
+        assertFalse(BackdropGeometry.covers(new float[]{1,0,0,0,1,128,0,0,1},1440,2992,1440,3120));
+        assertFalse(BackdropGeometry.covers(new float[]{1,0,0,0,2,0,0,0,1},1440,3120,1440,3120));
+        assertTrue(BackdropGeometry.covers(new float[]{-1,0,1440,0,1,0,0,0,1},1440,3120,1440,3120));
+        assertTrue(BackdropGeometry.covers(new float[]{0,-1,3120,1,0,0,0,0,1},1440,3120,3120,1440));
     }
 }

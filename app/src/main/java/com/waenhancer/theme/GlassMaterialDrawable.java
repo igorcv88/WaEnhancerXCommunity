@@ -50,6 +50,7 @@ public final class GlassMaterialDrawable extends Drawable implements Drawable.Ca
         }
         /** Identifies the factory drawable actually rendered in this native row draw. */
         void mark(GlassMaterialDrawable drawable) { factoryDraws.mark(drawable); }
+        public View row() { return view; }
         public boolean saw(GlassMaterialDrawable drawable) { return factoryDraws.saw(drawable); }
         public boolean isNestedFor(View target) { return previous != null && previous.view == target; }
     }
