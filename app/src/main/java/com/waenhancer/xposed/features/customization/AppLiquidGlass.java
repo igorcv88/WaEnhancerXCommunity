@@ -745,6 +745,8 @@ public final class AppLiquidGlass extends Feature {
         private final WeakHashMap<View, Surface> candidates = new WeakHashMap<>();
         private com.waenhancer.theme.ConversationBackdropSource bubbleSource;
         private com.waenhancer.theme.NativeBubbleGlass bubbleGlass;
+        /** Bubble scope + material/optics the observed rows were last recorded with. */
+        private String bubbleSettings;
         private WeakReference<View> sharedWallpaper = new WeakReference<>(null);
         private final WeakHashMap<TextView, BubbleTextState> bubbleTexts = new WeakHashMap<>();
         private final WeakHashMap<View, Boolean> pendingCanvasChecks = new WeakHashMap<>();
@@ -1519,7 +1521,13 @@ public final class AppLiquidGlass extends Feature {
         private void releaseSharedBubbles() {
             if (bubbleGlass != null) bubbleGlass.release();
             if (bubbleSource != null) bubbleSource.release();
-            bubbleGlass = null; bubbleSource = null; sharedWallpaper.clear();
+            bubbleGlass = null; bubbleSource = null; bubbleSettings = null; sharedWallpaper.clear();
+        }
+
+        /** Re-records observed rows once; their display lists bake in glass or native bubbles. */
+        private void invalidateBubbleRows(View window) {
+            for (View row : new ArrayList<>(nativeDrawRows.keySet()))
+                if (row != null && row.isAttachedToWindow() && row.getRootView() == window) row.invalidate();
         }
 
         private void syncSharedBubbles() {
@@ -1540,11 +1548,16 @@ public final class AppLiquidGlass extends Feature {
                     if (closed || bubbleGlass == null) return;
                     bubbleGlass.sourceChanged();
                     // Rows recorded before this chat's renderer existed painted natively.
-                    for (View row : new ArrayList<>(nativeDrawRows.keySet()))
-                        if (row != null && row.isAttachedToWindow() && row.getRootView() == window) row.invalidate();
+                    invalidateBubbleRows(window);
                 });
                 bubbleGlass=new com.waenhancer.theme.NativeBubbleGlass(window, bubbleSource);
             }
+            // Scope (incoming/outgoing/both), opacity, rim or optics changed while the wallpaper
+            // did not: recorded rows still hold the previous glass or native bubble.
+            String settings=LiquidGlassSettings.bubbleScope(prefs).name() + ":"
+                    + com.waenhancer.theme.NativeBubbleGlass.settingsKey(material);
+            if (bubbleSettings!=null && !bubbleSettings.equals(settings)) invalidateBubbleRows(window);
+            bubbleSettings=settings;
             bubbleSource.update(com.waenhancer.theme.WallpaperSnapshot.read(wallpaper,window),
                     com.waenhancer.theme.ConversationBackdropSource.blurRadius(material,window.getResources().getDisplayMetrics().density));
         }

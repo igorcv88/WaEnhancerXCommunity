@@ -91,6 +91,16 @@ public final class NativeBubbleGlass {
         dstIn.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_IN));
     }
 
+    /**
+     * Everything a recorded bubble bakes in besides the wallpaper: opacity, rim, optics and the
+     * material. Recorded rows are not re-drawn by a settings change alone, so the session
+     * invalidates them when this key changes.
+     */
+    public static String settingsKey(GlassSpec spec) {
+        return KyantLens.surfaceAlpha255() + ":" + KyantLens.rimIntensity() + ":" + GlassOptics.revision()
+                + ":" + (spec == null ? 0 : spec.hashCode());
+    }
+
     public static boolean supported() {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !KyantLens.isBroken();
     }

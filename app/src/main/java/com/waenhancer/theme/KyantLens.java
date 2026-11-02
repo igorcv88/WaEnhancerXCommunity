@@ -338,6 +338,10 @@ public final class KyantLens {
         rimIntensity = Float.isFinite(value) ? Math.max(0f, Math.min(2f, value)) : 1f;
     }
 
+    static float rimIntensity() {
+        return rimIntensity;
+    }
+
     static int surfaceAlpha255() {
         return surfaceAlpha255;
     }

@@ -117,6 +117,20 @@ public class NativeBubbleGlassTest {
         assertTrue(pre > 0 && app.indexOf("if (bindings.isEmpty()) return true;", pre) > pre);
     }
 
+    @Test public void settingsChangesReRecordObservedRows() throws IOException {
+        String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
+        int start = app.indexOf("private void syncSharedBubbles()");
+        String sync = app.substring(start, app.indexOf("void wallpaperChanged(View target)", start));
+        assertTrue(sync.contains("LiquidGlassSettings.bubbleScope(prefs).name()"));
+        assertTrue(sync.contains("NativeBubbleGlass.settingsKey(material)"));
+        assertTrue(sync.contains("if (bubbleSettings!=null && !bubbleSettings.equals(settings)) invalidateBubbleRows(window);"));
+        String glass = read("src/main/java/com/waenhancer/theme/NativeBubbleGlass.java");
+        int key = glass.indexOf("public static String settingsKey(");
+        String body = glass.substring(key, glass.indexOf("public static boolean supported()", key));
+        assertTrue(body.contains("surfaceAlpha255()") && body.contains("rimIntensity()")
+                && body.contains("GlassOptics.revision()") && body.contains("spec.hashCode()"));
+    }
+
     @Test public void otherSurfacesKeepTheApprovedShader() throws IOException {
         String lens = read("src/main/java/com/waenhancer/theme/KyantLens.java");
         assertTrue(lens.contains("if (cov <= 0.0 && uFullCover < 0.5) return half4(0.0);"));
