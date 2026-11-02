@@ -111,9 +111,73 @@ final class WallpaperProjection {
         original.setBounds(bounds);
         return true;
     }
+    /** Read-only bitmap contract. Never records the native wallpaper View or its descendants. */
+    static WallpaperSnapshot snapshot(View wallpaper, View target) {
+        if (wallpaper == null || target == null) return null;
+        if (wallpaper instanceof ImageView) {
+            WallpaperSnapshot result = snapshotSlot(wallpaper, ((ImageView) wallpaper).getDrawable(), true, target);
+            if (result != null) return result;
+        }
+        WallpaperSnapshot result = snapshotSlot(wallpaper, wallpaper.getBackground(), false, target);
+        if (result != null) return result;
+        return snapshotChildren(wallpaper, target, 0);
+    }
+    private static WallpaperSnapshot snapshotChildren(View view, View target, int depth) {
+        if (!(view instanceof ViewGroup) || depth >= 5) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (!child.isShown()) continue;
+            WallpaperSnapshot result = child instanceof ImageView
+                    ? snapshotSlot(child, ((ImageView) child).getDrawable(), true, target) : null;
+            if (result == null) result = snapshotSlot(child, child.getBackground(), false, target);
+            if (result == null) result = snapshotChildren(child, target, depth + 1);
+            if (result != null) return result;
+        }
+        return null;
+    }
+    private static WallpaperSnapshot snapshotSlot(View view, Drawable slot, boolean image, View target) {
+        if (view.getAlpha()!=1f || view.getForeground()!=null
+                || (image && ((ImageView)view).getImageTintList()!=null)
+                || (!image && view.getBackgroundTintList()!=null)) return null;
+        if (slot instanceof WallpaperProjection.ProjectedDrawable)
+            return ((ProjectedDrawable) slot).snapshot(target);
+        if (!(slot instanceof BitmapDrawable)) return null;
+        BitmapDrawable bitmap = (BitmapDrawable) slot;
+        if (!WallpaperSnapshot.supported(bitmap)) return null;
+        Rect bounds = bitmap.getBounds(), dest = new Rect();
+        if (bounds.isEmpty()) return null;
+        if (image) dest.set(bounds);
+        else Gravity.apply(bitmap.getGravity(), bitmap.getIntrinsicWidth(), bitmap.getIntrinsicHeight(),
+                bounds, dest, view.getLayoutDirection());
+        Matrix map = new Matrix();
+        map.setScale((float) dest.width()/bitmap.getBitmap().getWidth(), (float) dest.height()/bitmap.getBitmap().getHeight());
+        map.postTranslate(dest.left, dest.top);
+        if (image) {
+            map.postConcat(((ImageView) view).getImageMatrix());
+            map.postTranslate(view.getPaddingLeft(), view.getPaddingTop());
+        }
+        Matrix global = new Matrix(), inverse = new Matrix();
+        view.transformMatrixToGlobal(global); map.postConcat(global);
+        target.transformMatrixToGlobal(global = new Matrix());
+        if (!global.invert(inverse)) return null;
+        map.postConcat(inverse);
+        return WallpaperSnapshot.create(bitmap, map, target.getWidth(), target.getHeight());
+    }
     private final class ProjectedDrawable extends Drawable {
         private final BitmapDrawable nativeDrawable;
         ProjectedDrawable(BitmapDrawable drawable) { nativeDrawable = drawable; }
+        WallpaperSnapshot snapshot(View output) {
+            if (!update() || !WallpaperSnapshot.supported(nativeDrawable)) return null;
+            View band = target.get();
+            if (band == null) return null;
+            Matrix map = new Matrix(bitmapToBand), global = new Matrix(), inverse = new Matrix();
+            band.transformMatrixToGlobal(global); map.postConcat(global);
+            global.reset(); output.transformMatrixToGlobal(global);
+            if (!global.invert(inverse)) return null;
+            map.postConcat(inverse);
+            return WallpaperSnapshot.create(nativeDrawable, map, output.getWidth(), output.getHeight());
+        }
         @Override public void draw(Canvas canvas) {
             if (installed == this && update() && drawableToBand.invert(inverse)) {
                 nativeMatrix.set(projectedDrawableMatrix);

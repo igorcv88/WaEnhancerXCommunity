@@ -492,28 +492,7 @@ public final class KyantLens {
                     throw compile;
                 }
             }
-            shader.setFloatUniform("uSize", width, height);
-            shader.setFloatUniform("uOrigin", originX, originY);
-            shader.setFloatUniform("uRadius", radius);
-            shader.setFloatUniform("uRefractH", params.refractHeight);
-            shader.setFloatUniform("uRefractA", params.refractAmount);
-            shader.setFloatUniform("uDepth", params.depth);
-            shader.setFloatUniform("uChroma", params.chroma);
-            int t = params.tint;
-            shader.setFloatUniform("uTint", ((t >> 16) & 0xFF) / 255f, ((t >> 8) & 0xFF) / 255f,
-                    (t & 0xFF) / 255f, ((t >>> 24) & 0xFF) / 255f);
-            shader.setFloatUniform("uStrokeW", params.strokeWidth);
-            shader.setFloatUniform("uBloom", params.bloom);
-            shader.setFloatUniform("uHighlight", params.highlight);
-            shader.setFloatUniform("uStrokeA", params.strokeAlpha);
-            shader.setFloatUniform("uContourGain", params.contourGain);
-            shader.setFloatUniform("uAppChrome", params.appChrome);
-            shader.setFloatUniform("uLight1", params.l1x, params.l1y, params.l1z);
-            shader.setFloatUniform("uLight1I", params.l1i);
-            shader.setFloatUniform("uLight2", params.l2x, params.l2y, params.l2z);
-            shader.setFloatUniform("uLight2I", params.l2i);
-            shader.setFloatUniform("uShadowR", params.shadowRadius);
-            shader.setFloatUniform("uShadowA", params.shadowAlpha);
+            configure(shader, params, width, height, radius, originX, originY);
 
             // A runtime-shader effect snapshots its uniforms when it is created (see LensEffect),
             // so the wrapper is rebuilt after every write; the compiled program is kept.
@@ -540,6 +519,34 @@ public final class KyantLens {
             Log.e(TAG, "OneMate lens unavailable", error);
             return false;
         }
+    }
+
+    /** Same optical program for a prepared wallpaper texture; no per-consumer blur effect. */
+    static void configure(RuntimeShader shader, Params params, int width, int height,
+                      float radius, float originX, float originY) {
+        shader.setFloatUniform("uSize", width, height);
+        shader.setFloatUniform("uOrigin", originX, originY);
+        shader.setFloatUniform("uRadius", radius);
+        shader.setFloatUniform("uRefractH", params.refractHeight);
+        shader.setFloatUniform("uRefractA", params.refractAmount);
+        shader.setFloatUniform("uDepth", params.depth);
+        shader.setFloatUniform("uChroma", params.chroma);
+        int t = params.tint;
+        shader.setFloatUniform("uTint", ((t >> 16) & 0xFF) / 255f, ((t >> 8) & 0xFF) / 255f,
+                (t & 0xFF) / 255f, ((t >>> 24) & 0xFF) / 255f);
+        shader.setFloatUniform("uStrokeW", params.strokeWidth);
+        shader.setFloatUniform("uBloom", params.bloom);
+        shader.setFloatUniform("uHighlight", params.highlight);
+        shader.setFloatUniform("uStrokeA", params.strokeAlpha);
+        shader.setFloatUniform("uContourGain", params.contourGain);
+        shader.setFloatUniform("uAppChrome", params.appChrome);
+        shader.setFloatUniform("uLight1", params.l1x, params.l1y, params.l1z);
+        shader.setFloatUniform("uLight1I", params.l1i);
+        shader.setFloatUniform("uLight2", params.l2x, params.l2y, params.l2z);
+        shader.setFloatUniform("uLight2I", params.l2i);
+        shader.setFloatUniform("uShadowR", params.shadowRadius);
+        shader.setFloatUniform("uShadowA", params.shadowAlpha);
+
     }
 
     RenderEffect effect() {
