@@ -20,13 +20,16 @@ import com.google.android.material.button.MaterialButton;
 import com.waenhancer.R;
 import com.waenhancer.activities.base.BaseActivity;
 import com.waenhancer.diagnostics.FeatureCatalog;
+import com.waenhancer.diagnostics.InspectorTrace;
 import com.waenhancer.diagnostics.ValidationSession;
 import com.waenhancer.config.PreferenceStores;
 
 /** Preview-first local diagnostic exporter. */
 public class DiagnosticsActivity extends BaseActivity {
+    public static final String EXTRA_INSPECTOR_ONLY = "com.waenhancer.inspect_results";
 
     private TextView reportView;
+    private boolean inspectorOnly;
     private final Handler refreshHandler = new Handler(Looper.getMainLooper());
     private final Runnable refreshRunnable = new Runnable() {
         @Override
@@ -40,6 +43,7 @@ public class DiagnosticsActivity extends BaseActivity {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        inspectorOnly = getIntent().getBooleanExtra(EXTRA_INSPECTOR_ONLY, false);
         setContentView(buildContent());
         refresh();
     }
@@ -65,14 +69,15 @@ public class DiagnosticsActivity extends BaseActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         MaterialToolbar toolbar = new MaterialToolbar(this);
-        toolbar.setTitle(R.string.diagnostics_title);
+        toolbar.setTitle(inspectorOnly ? R.string.inspector_results_title : R.string.diagnostics_title);
         toolbar.setNavigationIcon(android.R.drawable.ic_media_previous);
         toolbar.setNavigationOnClickListener(v -> finish());
         root.addView(toolbar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
 
         TextView notice = new TextView(this);
-        notice.setText(R.string.diagnostics_notice);
+        notice.setText(getString(R.string.diagnostics_notice) + "\n\n"
+                + getString(R.string.inspector_capture_instructions));
         notice.setPadding(dp(20), dp(12), dp(20), dp(12));
         root.addView(notice);
 
@@ -95,7 +100,7 @@ public class DiagnosticsActivity extends BaseActivity {
             });
             checklist.addView(check);
         }
-        root.addView(checklist);
+        if (!inspectorOnly) root.addView(checklist);
 
         ScrollView scroll = new ScrollView(this);
         reportView = new TextView(this);
@@ -113,10 +118,12 @@ public class DiagnosticsActivity extends BaseActivity {
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setPadding(dp(12), dp(8), dp(12), dp(12));
 
-        MaterialButton session = button(ValidationSession.active(
-                PreferenceStores.privateStore(this)) ? "Reset session" : "Start session");
-        session.setOnClickListener(v -> session());
-        actions.addView(session, weighted());
+        if (!inspectorOnly) {
+            MaterialButton session = button(ValidationSession.active(
+                    PreferenceStores.privateStore(this)) ? "Reset session" : "Start session");
+            session.setOnClickListener(v -> session());
+            actions.addView(session, weighted());
+        }
 
         MaterialButton copy = button("Copy report");
         copy.setOnClickListener(v -> copy());
@@ -126,6 +133,17 @@ public class DiagnosticsActivity extends BaseActivity {
         share.setOnClickListener(v -> share());
         actions.addView(share, weighted());
         root.addView(actions);
+
+        MaterialButton clearCaptures = button(getString(R.string.inspector_clear_captures));
+        clearCaptures.setOnClickListener(v -> new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.inspector_clear_captures)
+                .setMessage(R.string.inspector_clear_confirmation)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    InspectorTrace.clear(this);
+                    refresh();
+                }).show());
+        root.addView(clearCaptures);
         return root;
     }
 
@@ -145,8 +163,9 @@ public class DiagnosticsActivity extends BaseActivity {
 
     private void refresh() {
         if (reportView == null) return;
-        reportView.setText(ValidationSession.buildReport(
-                this, PreferenceStores.privateStore(this)));
+        String captures = InspectorTrace.report(this);
+        reportView.setText(inspectorOnly ? captures : ValidationSession.buildReport(
+                this, PreferenceStores.privateStore(this)) + captures);
     }
 
     private void session() {

@@ -21,6 +21,7 @@ import androidx.annotation.NonNull;
 
 import com.google.android.material.chip.Chip;
 import com.waenhancer.R;
+import com.waenhancer.diagnostics.InspectorTrace;
 
 import java.util.List;
 
@@ -160,6 +161,7 @@ public class InspectorOverlay {
             case MotionEvent.ACTION_DOWN:
                 dragStartRawX = event.getRawX();
                 dragStartRawY = event.getRawY();
+                dragStartTime = android.os.SystemClock.uptimeMillis();
                 dragStartX = handleParams.x;
                 dragStartY = handleParams.y;
                 return true;
@@ -174,7 +176,12 @@ public class InspectorOverlay {
                 float movedX = Math.abs(event.getRawX() - dragStartRawX);
                 float movedY = Math.abs(event.getRawY() - dragStartRawY);
                 if (movedX < TAP_SLOP_PX && movedY < TAP_SLOP_PX) {
-                    setMode(mode == Mode.PICK ? Mode.NAVIGATE : Mode.PICK);
+                    if (android.os.SystemClock.uptimeMillis() - dragStartTime >= 650L) {
+                        InspectorTrace.activitySnapshot(activity, "manual-handle");
+                        Toast.makeText(activity, R.string.inspector_sample_saved, Toast.LENGTH_SHORT).show();
+                    } else {
+                        setMode(mode == Mode.PICK ? Mode.NAVIGATE : Mode.PICK);
+                    }
                 }
                 return true;
             default:
@@ -185,6 +192,7 @@ public class InspectorOverlay {
     private static final float TAP_SLOP_PX = 16f;
     private float dragStartRawX;
     private float dragStartRawY;
+    private long dragStartTime;
     private int dragStartX;
     private int dragStartY;
 
@@ -272,7 +280,11 @@ public class InspectorOverlay {
     private void show(ProbeNode node) {
         currentNode = node;
         highlightView.setBounds(node.left(), node.top(), node.right(), node.bottom());
-        populatePanel(InspectedView.of(node, activity.getClass().getName()));
+        InspectedView inspected = InspectedView.of(node, activity.getClass().getName());
+        InspectorTrace.selection(activity, inspected.className(), inspected.entryName(),
+                String.join(" > ", inspected.parentChain()),
+                node.left(), node.top(), node.right(), node.bottom());
+        populatePanel(inspected);
         panelView.setVisibility(View.VISIBLE);
     }
 

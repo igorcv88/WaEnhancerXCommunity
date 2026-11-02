@@ -36,21 +36,27 @@ with tempfile.TemporaryDirectory(prefix='waex-shared-') as directory:
     subprocess.run(['java','-XX:-UsePerfData','-cp',str(tmp),'Checks'],check=True)
 theme=ROOT/'app/src/main/java/com/waenhancer/theme'
 source=(theme/'ConversationBackdropSource.java').read_text()
-consumer=(theme/'BubbleGlassDrawable.java').read_text()
+consumer=(theme/'NativeBubbleGlass.java').read_text()
 app=(ROOT/'app/src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java').read_text()
-assert 'LiveBackdrop' not in source+consumer and 'captureBehind' not in source+consumer
+assert 'LiveBackdrop' not in source and 'captureBehind' not in source+consumer
+# The consumer may only *skip* while another surface captures; it never creates a capture.
+assert consumer.count('LiveBackdrop')==1 and 'LiveBackdrop.isCapturing()' in consumer
 assert 'view.draw(' not in source and 'root.draw(' not in source and 'window.draw(' not in source
 assert 'WORKER.execute' in source and 'setWaitForPresent(true)' in source
 assert 'token!=epoch.revision()' in source and 'retry.onResult(token,result.outcome)' in source
 # Review on #130: transient delivery retries a bounded number of times; stale jobs skip rendering.
 assert 'failedRevision' not in source and 'transientSync(sync)' in source and 'token!=liveToken.get()' in source
+# Native-drawn glass: WhatsApp's factory drawable and row background are never replaced.
+assert not (theme/'BubbleGlassDrawable.java').exists() and not (theme/'BubbleFactoryDrawable.java').exists()
+factory=app[app.index('private void installSharedBubbleFactoryHook()'):app.index('private void hookPendingBubbleClasses()')]
+assert 'setResult(' not in factory and 'bubbleSides.put((Drawable) result' in factory
 assert 'realignSharedBubbles();' in app and 'sharedFactoryWanted(outgoing)' in app
-assert 'source.ready()' in consumer and 'nativeDraw(canvas); return;' in consumer
-assert 'new RuntimeShader' not in consumer.split('@Override public void draw',1)[1]
+assert 'setBackground' not in consumer and 'if (texture == null) { waiting.add(host); return stay(BubbleGlassTelemetry.Native.NO_TEXTURE); }' in consumer
+realign=consumer[consumer.index('public void realign()'):consumer.index('public void sourceChanged()')]
+assert 'invalidate' not in realign and 'beginRecording' not in realign
+assert 'new RuntimeShader' not in consumer[:consumer.index('private static final class Slot')]
 assert 'if (surface == Surface.BUBBLES) return;' in app
 assert 'installBubbleHook();' not in app and 'installSharedBubbleFactoryHook();' in app
-assert '"conversation_row_text".equals(resourceName(row))' in app
-assert 'row.getBackground()==owned' in app and 'owned.original()' in app
 composer=(ROOT/'app/src/main/java/com/waenhancer/xposed/features/customization/ConversationGlassPanes.java').read_text()
 assert 'collectDiscCandidates(action, candidates, 0)' in composer and 'MicColorSource.selectDisc(colors)' in composer
-print('PASS: isolated producer, no per-row capture/budget, ready-before-bind, native failure and preserved mic-disc palette contracts')
+print('PASS: isolated producer, no per-row capture/budget, factory/row untouched, scroll by node transform, native failure and preserved mic-disc palette contracts')

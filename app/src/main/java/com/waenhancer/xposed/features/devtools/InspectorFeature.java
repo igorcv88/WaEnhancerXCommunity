@@ -9,6 +9,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.waenhancer.config.SafePrefs;
+import com.waenhancer.diagnostics.InspectorTrace;
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.FeatureLoader;
 import com.waenhancer.xposed.core.WppCore;
@@ -24,6 +25,7 @@ public class InspectorFeature extends Feature {
     private static final int MAX_TOKEN_LENGTH = 128;
 
     private InspectorOverlay currentOverlay;
+    private Activity attachedActivity;
     private InspectorSession retainedSession;
     private final Handler pollHandler = new Handler(Looper.getMainLooper());
     private Runnable pollRunnable;
@@ -43,23 +45,29 @@ public class InspectorFeature extends Feature {
     public void doHook() {
         InspectorSession initial = parseSession(getSafeString(SESSION_KEY, ""),
                 System.currentTimeMillis());
-        // No lifecycle listener is installed while the inspector is off. Arming from the
-        // companion app intentionally requires opening/reopening WhatsApp.
-        if (initial == null) return;
         retainedSession = initial;
+
+        // The listener must exist even when initially disarmed. Otherwise arming from the
+        // companion while WhatsApp remains alive never enables the inspector until a force-stop.
+        // Off sessions do no probing, polling or overlay work.
 
         WppCore.addListenerActivity((activity, type) -> {
             long now = System.currentTimeMillis();
-            InspectorSession liveSession = currentOverlay != null
-                    ? currentOverlay.getSession() : retainedSession;
-            if (liveSession != null && !liveSession.isActive(now)) {
-                endSession(true);
-                return;
-            }
-
             InspectorSession persisted = parseSession(getSafeString(SESSION_KEY, ""), now);
             if (persisted == null) {
                 endSession(false);
+                return;
+            }
+
+            InspectorSession liveSession = currentOverlay != null
+                    ? currentOverlay.getSession() : retainedSession;
+            if (liveSession != null && !liveSession.matches(persisted.token())) {
+                detachTransient();
+                retainedSession = persisted;
+                liveSession = persisted;
+            }
+            if (liveSession != null && !liveSession.isActive(now)) {
+                endSession(true);
                 return;
             }
 
@@ -102,9 +110,22 @@ public class InspectorFeature extends Feature {
         InspectorSession seed = retainedSession != null && retainedSession.isActive(now)
                 ? retainedSession : freshlyParsed;
         currentOverlay = new InspectorOverlay(activity, () -> endSession(true));
+        attachedActivity = activity;
         currentOverlay.setSession(seed);
         currentOverlay.attach();
+        InspectorTrace.arm(activity);
+        // Two bounded snapshots distinguish the home mini-player from the conversation header
+        // without relying on UIAutomator's foreground timing or on WhatsApp class names.
+        sampleAfter(activity, 400L);
+        sampleAfter(activity, 1600L);
         startPolling();
+    }
+
+    private void sampleAfter(Activity activity, long delayMs) {
+        pollHandler.postDelayed(() -> {
+            if (attachedActivity != activity || currentOverlay == null) return;
+            InspectorTrace.activitySnapshot(activity, "resume-" + delayMs + "ms");
+        }, delayMs);
     }
 
     private void detachTransient() {
@@ -113,6 +134,8 @@ public class InspectorFeature extends Feature {
             currentOverlay.detach();
             currentOverlay = null;
         }
+        attachedActivity = null;
+        InspectorTrace.disarm();
         stopPolling();
     }
 
@@ -122,6 +145,8 @@ public class InspectorFeature extends Feature {
             currentOverlay = null;
         }
         retainedSession = null;
+        attachedActivity = null;
+        InspectorTrace.disarm();
         stopPolling();
         if (clearPref) clearSessionPref();
     }

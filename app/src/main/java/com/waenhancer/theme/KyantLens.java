@@ -68,6 +68,9 @@ public final class KyantLens {
             + "uniform float uLight2I;\n"
             + "uniform float uShadowR;\n"
             + "uniform float uShadowA;\n"
+            // 1 only for message bubbles: the native silhouette (tail included) masks the
+            // result, so pixels outside the rounded body stay plain glass instead of clear.
+            + "uniform float uFullCover;\n"
             + "\n"
             + "float sdRR(float2 p, float2 b, float r) {\n"
             + "    float2 q = abs(p) - b + r;\n"
@@ -114,11 +117,13 @@ public final class KyantLens {
             + "    float r = min(uRadius, min(hs.x, hs.y));\n"
             + "    float sd = sdRR(p, hs, r);\n"
             + "    float cov = clamp(0.5 - sd, 0.0, 1.0);\n"
-            + "    if (cov <= 0.0) return half4(0.0);\n"
+            + "    if (cov <= 0.0 && uFullCover < 0.5) return half4(0.0);\n"
+            + "    float outside = (uFullCover > 0.5 && sd > 0.0) ? 1.0 : 0.0;\n"
+            + "    if (uFullCover > 0.5) cov = 1.0;\n"
             + "\n"
             + "    float4 col;\n"
             + "    float depth = max(-sd, 0.0);\n"
-            + "    if (uRefractH > 0.0 && uRefractA > 0.0 && depth < uRefractH) {\n"
+            + "    if (uRefractH > 0.0 && uRefractA > 0.0 && depth < uRefractH && outside < 0.5) {\n"
             + "        float x = 1.0 - depth / uRefractH;\n"
             + "        float d = (1.0 - sqrt(max(1.0 - x * x, 0.0))) * uRefractA;\n"
             + "        float gr = min(r * 1.5, min(hs.x, hs.y));\n"
@@ -162,7 +167,7 @@ public final class KyantLens {
             // One continuous material: a narrow grazing reflection persists around the
             // outline and overlaps the soft bevel. Both use the same live colour.
             // The pressed tab retains its original BloomStroke treatment.
-            + "    if (uHighlight > 0.0 && uStrokeA <= 0.0) {\n"
+            + "    if (uHighlight > 0.0 && uStrokeA <= 0.0 && outside < 0.5) {\n"
             + "        float band = max(uBloom * 2.0, 1.0);\n"
             + "        float t = clamp(depth / band, 0.0, 1.0);\n"
             + "        float envelope = 16.0 * t * t * (1.0 - t) * (1.0 - t);\n"
@@ -209,7 +214,7 @@ public final class KyantLens {
             + "            float3 target = mix(max(col.rgb, reflected), col.rgb * 0.55, bright * contourShare);\n"
             + "            col.rgb = mix(col.rgb, target, reflection);\n"
             + "        }\n"
-            + "    } else if (uHighlight > 0.0) {\n"
+            + "    } else if (uHighlight > 0.0 && outside < 0.5) {\n"
             + "        float bigR = max(r, uBloom);\n"
             + "        float2 xa = abs(p);\n"
             + "        if (!(xa.x < hs.x - bigR && xa.y < hs.y - bigR)) {\n"
@@ -236,13 +241,16 @@ public final class KyantLens {
         float l1x, l1y, l1z, l1i, l2x, l2y, l2z, l2i;
         float shadowRadius, shadowAlpha;
         float saturation, blurRadius;
+        /** 1 for message bubbles (see uFullCover); 0 keeps every other surface unchanged. */
+        float fullCover;
 
         String key() {
             return refractHeight + ":" + refractAmount + ":" + depth + ":" + chroma + ":" + tint
                     + ":" + strokeWidth + ":" + bloom + ":" + highlight + ":" + strokeAlpha
                     + ":" + l1x + ":" + l1y + ":" + l1z + ":" + l1i + ":" + l2x + ":" + l2y
                     + ":" + l2z + ":" + l2i + ":" + shadowRadius + ":" + shadowAlpha
-                    + ":" + saturation + ":" + blurRadius + ":" + contourGain + ":" + appChrome;
+                    + ":" + saturation + ":" + blurRadius + ":" + contourGain + ":" + appChrome
+                    + ":" + fullCover;
         }
     }
 
@@ -328,6 +336,10 @@ public final class KyantLens {
     /** Applied by the app hook on resume; both bar and app chrome share this optical strength. */
     public static void publishRimIntensity(float value) {
         rimIntensity = Float.isFinite(value) ? Math.max(0f, Math.min(2f, value)) : 1f;
+    }
+
+    static float rimIntensity() {
+        return rimIntensity;
     }
 
     static int surfaceAlpha255() {
@@ -546,6 +558,7 @@ public final class KyantLens {
         shader.setFloatUniform("uLight2I", params.l2i);
         shader.setFloatUniform("uShadowR", params.shadowRadius);
         shader.setFloatUniform("uShadowA", params.shadowAlpha);
+        shader.setFloatUniform("uFullCover", params.fullCover);
 
     }
 
