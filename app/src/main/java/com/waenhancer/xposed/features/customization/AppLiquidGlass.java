@@ -1136,7 +1136,13 @@ public final class AppLiquidGlass extends Feature {
             if (glass) rowsWithGlassContrast.add(row); else rowsWithGlassContrast.remove(row);
             int content = material == null ? 0 : material.contentColor & 0x00FFFFFF;
             int secondary = content | (REPLY_TEXT_ALPHA << 24);
-            tintText(rowChild(row, "quoted_text"), glass, secondary);
+            View quoted = rowChild(row, "quoted_text");
+            tintText(quoted, glass, secondary);
+            if (glass && !contrastInDraw && quoted instanceof TextView) {
+                android.content.res.ColorStateList[] held = quoteTexts.get(quoted);
+                com.waenhancer.theme.BubbleGlassTelemetry.quoteState((TextView) quoted,
+                        held != null && ((TextView) quoted).getTextColors() == held[1]);
+            }
             View visualizer = rowChild(row, "audio_visualizer");
             if (visualizer != null || rowChild(row, "conversation_row_audio_player_view") != null) {
                 tintText(rowChild(row, "description"), glass, secondary);
@@ -1209,7 +1215,10 @@ public final class AppLiquidGlass extends Feature {
             android.content.res.ColorStateList[] state = quoteTexts.get(text);
             android.content.res.ColorStateList current = text.getTextColors();
             if (!glass) {
-                if (state != null && current == state[1]) text.setTextColor(state[0]);
+                if (state != null && current == state[1]) {
+                    text.setTextColor(state[0]);
+                    com.waenhancer.theme.BubbleGlassTelemetry.contrastNative(text, bubbleGlass == null ? "no-glass-session" : "row-without-glass");
+                }
                 if (quoteTexts.remove(text) != null) contrastOwners.remove(text);
                 return;
             }
@@ -2091,8 +2100,10 @@ public final class AppLiquidGlass extends Feature {
                         closed ? "closed" : suspended ? "suspended" : bubbleGlass == null ? "no-glass" : "no-factory");
                 return false;
             }
-            // Bubble Colors, when chosen, tints the glass like it tints native bubbles.
-            return bubbleGlass.draw(bubble, canvas, bubbleDrawMaterial(outgoing, resolvedMaterial()));
+            // Bubble Colors, when chosen, tints the glass like it tints native bubbles; the wash
+            // follows the untinted material, whose content colour the glass rows' text uses.
+            GlassSpec base = resolvedMaterial();
+            return bubbleGlass.draw(bubble, canvas, bubbleDrawMaterial(outgoing, base), base);
         }
 
         /** Same-frame wallpaper alignment for every glass bubble (property updates only). */

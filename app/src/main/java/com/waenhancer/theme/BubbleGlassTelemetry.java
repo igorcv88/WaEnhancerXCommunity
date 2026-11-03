@@ -124,6 +124,31 @@ public final class BubbleGlassTelemetry {
         log("ICON_STATE", "view=" + describe(icon) + " drawable=" + signature);
     }
 
+    /**
+     * Reply snippet state after its sync (posted pass only). WhatsApp can colour the text itself
+     * (a ForegroundColorSpan in the Spanned text), which beats TextView.setTextColor and passes no
+     * hooked setter: spans > 0 with a grey snippet is the evidence for that.
+     */
+    public static void quoteState(android.widget.TextView text, boolean colourIsOurs) {
+        if (!on() || text == null) return;
+        CharSequence value = text.getText();
+        int spans = 0;
+        if (value instanceof android.text.Spanned) {
+            android.text.Spanned spanned = (android.text.Spanned) value;
+            spans = spanned.getSpans(0, spanned.length(), android.text.style.ForegroundColorSpan.class).length;
+        }
+        String signature = "ours=" + colourIsOurs + " current=#" + Integer.toHexString(text.getCurrentTextColor())
+                + " colour_spans=" + spans + " alpha=" + text.getAlpha();
+        if (!allowed("QUOTE_STATE:" + signature)) return;
+        log("QUOTE_STATE", "view=" + describe(text) + " " + signature);
+    }
+
+    /** A held glass-row view went back to WhatsApp's colour (after the hold, or a release). */
+    public static void contrastNative(View view, String why) {
+        if (!on() || !allowed("CONTRAST_NATIVE:" + why)) return;
+        log("CONTRAST_NATIVE", "why=" + why + " view=" + describe(view));
+    }
+
     private static final Map<Integer, Long> SWITCH_OFF_DIRECTIONS = new java.util.TreeMap<>();
 
     /** Factory direction of a draw left native by the side switch (UI thread). */

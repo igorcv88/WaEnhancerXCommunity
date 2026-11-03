@@ -1673,3 +1673,45 @@ External review (owner-supplied, from another instance; treated as hypotheses, n
 - "`setColorFilter` only logged": true, but no `CONTRAST_FILTER` line in the owner's trace. Strongest open hypothesis for the play button (`reasserted_icon=0`): a filter or tint set on the drawable itself, which beats the view tint and passes no hooked setter. Added `ICON_STATE` (posted sync, `control_btn` only, rate-limited per distinct state): drawable class, whether the view tint is ours, drawable filter, view filter.
 - "Reply `RippleDrawable` fill": WhatsApp's quote box, native by design (`nested-quote`); not the body veil.
 - Its colour proposal (hue/saturation from the chosen colour, keep blur/opacity) rendered done properly: Oklab, wallpaper lightness kept, a/b moved 70% to the chosen colour. Grey vs blue ΔE ≈ 15 at unchanged lightness and detail. Shown to the owner as option D; decision pending.
+
+### Bubble Colors as tinted glass; wash follows the untinted material — 2026-11-03
+
+Branch `ccr-a55049bc-m310s8` restarted from `master@8f09471` (#147 merged); PR [#148](https://github.com/igorcv88/WaEnhancerXCommunity/pull/148).
+
+Owner photos on #147 (colours #002D29 left, #0A2D49 right; amount 70% and 10%, plus a light-colour pair): "it mixes the colour with a whitish tone". Measured:
+- dark colours at 70%: saturation 0.45 vs the wallpaper's 0.99. #147's Oklab move lifts the dark choice to the wallpaper's lightness, which makes it pastel.
+- light colours: the bubble is lighter than the wallpaper (L* 67 vs 58). Bug: `withBubbleTint` sets the content colour from the chosen colour (dark for a light colour), so `KyantLens` picked a white wash, while glass-row text uses the base material's white.
+- 10%: plain glass, as designed.
+
+The numpy model of the #147 shader reproduces the device pixels (teal: model 73,123,137 vs device 76,126,138). Candidates were rendered with the owner's colours; the owner picked the linear-light colour filter.
+
+Change:
+- Shader: `uHue` is now float4 (filter rgb, amount); `transmitted` is linearised, multiplied by `mix(1, filter, amount)`, then re-encoded. The Oklab code is removed.
+- `KyantLens.glassFilter`: the chosen colour in linear RGB divided by its max channel; neutral for black and greys.
+- `NativeBubbleGlass.draw(bubble, canvas, spec, base)`: the wash colour is `KyantLens.neutralWash(base)` (alpha unchanged).
+- Slider caption updated; the key and its 0.7 default are kept.
+
+Validation:
+- Debug compile; unit tests 669, 0 failures (filter values, wash from the base material, amount and key).
+- `tools/test_bubble_lifecycle.py` passes.
+- SkSL compile OK. A render through the real shader matches the model within 0.5/255: teal mean (9,126,168), navy (10,97,177), sat 0.94, vs plain glass (21,126,177).
+- Not validated on device.
+
+Device next: at 70% the two sides should be saturated teal-blue / deeper blue with no whitish cast, and the wallpaper detail as with plain glass. Light colours: no lighter-than-wallpaper veil. Greys filter nothing by design (a neutral filter); if grey bubbles must read as grey, that needs a separate decision (it requires darkening or covering).
+
+#### Reply snippets still alternate grey/white (same PR #148) — 2026-11-03
+
+Owner report on #147/#148 builds: reply snippets (`quoted_text`) still alternate between grey and white. The trace was exported about 3 s after opening the chat, before the first `FREQUENCY` (every 5 s, `REPORT_MS`), so the #147 counters (`contrast_held/restored/fresh/in_draw`) are absent; no evidence for any path yet. Checked and ruled out by code: a full release (`releaseSharedBubbles` → `restoreReplyTexts`) needs a wallpaper view change or bubble glass off, and would also drop all bubble glass, which the owner does not see.
+
+Leading hypothesis, not yet evidenced: WhatsApp colours the snippet inside the text (a `ForegroundColorSpan` in the Spanned text, e.g. from emoji/format processing on rebind). That beats `TextView.setTextColor` and passes no hooked setter, which fits `reasserted_text` staying near 0.
+
+Added evidence:
+- `QUOTE_STATE` (posted sync, glass rows, rate-limited per distinct state): whether the view still holds our colour, the current text colour, the `ForegroundColorSpan` count, alpha.
+- `CONTRAST_NATIVE` (rate-limited per reason): each time a held view is returned to WhatsApp's colour, with the reason (`row-without-glass` after the hold, `no-glass-session`).
+
+Validation: 669 tests, 0 failures.
+
+Device next: open a chat with replies, scroll for at least 10 s (past two `FREQUENCY` reports), then export. Reading the trace:
+- `colour_spans` > 0 with grey on screen: strip or neutralise colour spans on glass rows.
+- `CONTRAST_NATIVE` lines during the flicker: the row loses glass for longer than the 500 ms hold; look at `LOST` reasons.
+- `ours=false` without either: an unhooked colour path.
