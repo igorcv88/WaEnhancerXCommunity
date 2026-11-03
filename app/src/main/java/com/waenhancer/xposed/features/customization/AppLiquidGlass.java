@@ -2091,8 +2091,10 @@ public final class AppLiquidGlass extends Feature {
                         closed ? "closed" : suspended ? "suspended" : bubbleGlass == null ? "no-glass" : "no-factory");
                 return false;
             }
-            // Bubble Colors, when chosen, tints the glass like it tints native bubbles.
-            return bubbleGlass.draw(bubble, canvas, bubbleDrawMaterial(outgoing, resolvedMaterial()));
+            // Bubble Colors, when chosen, tints the glass like it tints native bubbles; the wash
+            // follows the untinted material, whose content colour the glass rows' text uses.
+            GlassSpec base = resolvedMaterial();
+            return bubbleGlass.draw(bubble, canvas, bubbleDrawMaterial(outgoing, base), base);
         }
 
         /** Same-frame wallpaper alignment for every glass bubble (property updates only). */

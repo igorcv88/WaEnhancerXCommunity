@@ -151,6 +151,17 @@ public final class NativeBubbleGlass {
      * @return true when glass was recorded and the native draw must be skipped
      */
     public boolean draw(Drawable bubble, Canvas canvas, GlassSpec spec) {
+        return draw(bubble, canvas, spec, spec);
+    }
+
+    /**
+     * @param base the untinted material: its content colour is the one glass rows use for text,
+     *             so the wash follows it. A light Bubble Colors choice flips the tinted spec's
+     *             content colour to dark, which turned the wash white under white text (owner
+     *             2026-11-03: a whitish cast with light colours).
+     */
+    public boolean draw(Drawable bubble, Canvas canvas, GlassSpec spec, GlassSpec base) {
+        if (base == null) base = spec;
         if (broken || released || spec == null || !supported()) return stay(BubbleGlassTelemetry.Native.UNSUPPORTED);
         if (!canvas.isHardwareAccelerated()) return stay(BubbleGlassTelemetry.Native.NOT_HARDWARE);
         if (LiveBackdrop.isCaptureCanvas(canvas)) return stay(BubbleGlassTelemetry.Native.CAPTURE);
@@ -196,7 +207,8 @@ public final class NativeBubbleGlass {
         int save = canvas.save();
         boolean drawn = false;
         try {
-            slot.prepare(bubble, bounds, texture, source.textureWidth(), source.textureHeight(), spec, density);
+            slot.prepare(bubble, bounds, texture, source.textureWidth(), source.textureHeight(), spec,
+                    KyantLens.neutralWash(base), density);
             slot.local.set(local);
             if (!rootTransform()) return lost(host, BubbleGlassTelemetry.Native.ROOT);
             slot.align(host, hostGlobal, rootInverse);
@@ -377,7 +389,8 @@ public final class NativeBubbleGlass {
             wallpaper.setPivotY(0f);
         }
 
-        void prepare(Drawable bubble, Rect bounds, Bitmap source, int sourceW, int sourceH, GlassSpec spec, float density) {
+        void prepare(Drawable bubble, Rect bounds, Bitmap source, int sourceW, int sourceH, GlassSpec spec,
+                     int washRgb, float density) {
             int w = bounds.width(), h = bounds.height();
             // HWUI deletes the display lists of a subtree that leaves the frame (RenderNode
             // onRemovedFromTree -> destroyHardwareResources, recursively to child nodes). A row
@@ -418,10 +431,11 @@ public final class NativeBubbleGlass {
                         : new BubbleSilhouette(0, 0, w, h, Math.min(FALLBACK_RADIUS_DP * density, Math.min(w, h) / 2f), 0);
                 measuredKey = measure;
             }
-            // Same material as the approved composer/header: neutral wash at the opacity slider.
-            // Bubble Colors move the blur's Oklab hue/chroma (KyantLens uHue), never the opacity.
+            // Same material as the approved composer/header: neutral wash at the opacity slider,
+            // its colour from the untinted material. Bubble Colors filter the blur (uHue).
             KyantLens.Params params = KyantLens.appSurface(spec, silhouette.height(), density,
                     KyantLens.surfaceAlpha255());
+            params.tint = (params.tint & 0xFF000000) | washRgb;
             // No tail: owner review 2026-11-03 ("the little stroke outside the first message").
             // The glass is the rounded body only; the native silhouette still masks it.
             params.fullCover = 0f;

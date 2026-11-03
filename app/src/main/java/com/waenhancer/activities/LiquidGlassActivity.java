@@ -212,9 +212,9 @@ public class LiquidGlassActivity extends AppCompatActivity {
         });
         controls.addView(label);
         controls.addView(slider);
-        addCaption("Only with Change Bubble Colors set. How much of your bubble colour (hue and "
-                + "saturation) the glass takes from what is behind it. Opacity and brightness stay "
-                + "those of the rest of the glass; 0% shows the plain glass.");
+        addCaption("Only with Change Bubble Colors set. Tints the glass like coloured glass: what "
+                + "shows through is filtered by your bubble colour. Opacity stays that of the rest "
+                + "of the glass; 0% shows the plain glass. Neutral greys and black filter nothing.");
     }
 
     private void addBubbleScopeRow() {

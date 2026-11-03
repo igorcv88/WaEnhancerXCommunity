@@ -191,15 +191,16 @@ public class NativeBubbleGlassTest {
         String body = glass.substring(prep, glass.indexOf("void retexture(", prep));
         assertTrue(body.contains("KyantLens.appSurface(spec, silhouette.height(), density,"));
         assertFalse("no forced native-colour veil", body.contains("VEIL_MIN"));
-        // Bubble Colors never change the wash (owner 2026-11-03: a boosted pigment wash made
-        // tinted bubbles opaque); the colour is a hue pull inside KyantLens.
-        assertFalse(body.contains("params.tint ="));
+        // Bubble Colors never change the wash's opacity (owner 2026-11-03: a boosted pigment wash
+        // made tinted bubbles opaque); only its colour follows the untinted material.
+        assertEquals(1, body.split("params.tint =", -1).length - 1);
+        assertTrue(body.contains("params.tint = (params.tint & 0xFF000000) | washRgb;"));
         assertTrue(body.contains("params.refractHeight = Math.min(BUBBLE_REFRACT_HEIGHT_DP * density, silhouette.height() / 2f);"));
         assertEquals(12f, NativeBubbleGlass.BUBBLE_REFRACT_HEIGHT_DP, 0f);
         assertEquals(8f, NativeBubbleGlass.BUBBLE_REFRACT_AMOUNT_DP, 0f);
         String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
         assertTrue("Bubble Colors tints the glass at the slider opacity",
-                app.contains("return bubbleGlass.draw(bubble, canvas, bubbleDrawMaterial(outgoing, resolvedMaterial()));"));
+                app.contains("return bubbleGlass.draw(bubble, canvas, bubbleDrawMaterial(outgoing, base), base);"));
     }
 
     // --- Device review 2026-11-03: transparent rows, tail, reply corners ------------------
@@ -215,7 +216,7 @@ public class NativeBubbleGlassTest {
         int hook = app.indexOf("private void drawNativeBubble(");
         String body = app.substring(hook, app.indexOf("\n    }\n", hook));
         assertFalse(body.contains("prefs"));
-        assertTrue(app.contains("return bubbleGlass.draw(bubble, canvas, bubbleDrawMaterial(outgoing, resolvedMaterial()));"));
+        assertTrue(app.contains("return bubbleGlass.draw(bubble, canvas, bubbleDrawMaterial(outgoing, base), base);"));
     }
 
     @Test public void scopeDecisionIsPure() {
