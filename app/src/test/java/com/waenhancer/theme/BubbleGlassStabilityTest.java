@@ -185,10 +185,12 @@ public class BubbleGlassStabilityTest {
         int clear = app.indexOf("private void clearFill(Drawable fill, boolean glass)");
         String fill = app.substring(clear, app.indexOf("private void tintTree(", clear));
         assertTrue("only flat fills, restorable", fill.contains("instanceof android.graphics.drawable.ColorDrawable")
-                && fill.contains("fill.setAlpha(original);"));
+                && fill.contains("flat.setColor(original);"));
+        assertTrue("Codex review on #144: the full colour, never an effective alpha",
+                fill.contains("clearedFills.put(fill, flat.getColor());") && !fill.contains("setAlpha("));
         int restore = app.indexOf("private void restoreReplyTexts()");
         String all = app.substring(restore, app.indexOf("private void restoreReplyCorners()", restore));
-        assertTrue(all.contains("entry.getKey().setAlpha(entry.getValue());"));
+        assertTrue(all.contains("((android.graphics.drawable.ColorDrawable) entry.getKey()).setColor(entry.getValue());"));
     }
 
     @Test public void anyChildOfAVerifiedMessageListIsARow() throws IOException {

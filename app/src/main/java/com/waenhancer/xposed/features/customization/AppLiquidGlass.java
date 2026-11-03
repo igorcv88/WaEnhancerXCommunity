@@ -972,7 +972,11 @@ public final class AppLiquidGlass extends Feature {
         private final WeakHashMap<View, Integer> liftedLayers = new WeakHashMap<>();
         private final Map<String, Integer> contrastIds = new java.util.HashMap<>();
         private final Set<View> contrastPending = java.util.Collections.newSetFromMap(new WeakHashMap<>());
-        /** Native fills cleared inside glass bubbles: drawable -> original alpha. */
+        /**
+         * Native fills cleared inside glass bubbles: drawable -> original colour. The full colour,
+         * not getAlpha(): ColorDrawable.setAlpha multiplies the base colour's own alpha, so
+         * restoring an effective alpha would fade a translucent fill at every transition.
+         */
         private final WeakHashMap<Drawable, Integer> clearedFills = new WeakHashMap<>();
 
         private int contrastId(View row, String name) {
@@ -1033,16 +1037,17 @@ public final class AppLiquidGlass extends Feature {
 
         private void clearFill(Drawable fill, boolean glass) {
             if (!(fill instanceof android.graphics.drawable.ColorDrawable)) return;
+            android.graphics.drawable.ColorDrawable flat = (android.graphics.drawable.ColorDrawable) fill;
             Integer original = clearedFills.get(fill);
             if (!glass) {
-                if (original != null) { fill.setAlpha(original); clearedFills.remove(fill); }
+                if (original != null) { flat.setColor(original); clearedFills.remove(fill); }
                 return;
             }
             if (original == null) {
-                fill.mutate();
-                clearedFills.put(fill, fill.getAlpha());
+                flat.mutate();
+                clearedFills.put(fill, flat.getColor());
             }
-            if (fill.getAlpha() != 0) fill.setAlpha(0);
+            if (flat.getColor() != 0) flat.setColor(0);
         }
 
         private void tintTree(View view, boolean glass, int color, int depth) {
@@ -1124,7 +1129,8 @@ public final class AppLiquidGlass extends Feature {
                 if (entry.getKey() != null) entry.getKey().setLayerType(entry.getValue(), null);
             liftedLayers.clear();
             for (Map.Entry<Drawable, Integer> entry : new ArrayList<>(clearedFills.entrySet()))
-                if (entry.getKey() != null) entry.getKey().setAlpha(entry.getValue());
+                if (entry.getKey() instanceof android.graphics.drawable.ColorDrawable)
+                    ((android.graphics.drawable.ColorDrawable) entry.getKey()).setColor(entry.getValue());
             clearedFills.clear();
         }
 
