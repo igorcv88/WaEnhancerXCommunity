@@ -1,5 +1,6 @@
 # AntiRevoke state and legacy marker handoff
 
+Current review-ready PR: https://github.com/igorcv88/WaEnhancerXCommunity/pull/143
 Current branch: `fix/antirevoke-legacy-marker-bind`, based on `master@41de3b31`.
 Previous storage implementation: merged PR https://github.com/igorcv88/WaEnhancerXCommunity/pull/136.
 See `ANTIREVOKE_PERSISTENCE.md` for the full storage contract and remaining coverage limits.
