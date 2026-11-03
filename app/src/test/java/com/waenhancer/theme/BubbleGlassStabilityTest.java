@@ -98,6 +98,15 @@ public class BubbleGlassStabilityTest {
 
     // --- Opening a chat with a known wallpaper look shows glass at once -------------------
 
+    @Test public void incompleteFingerprintNeverSharesATexture() {
+        // Codex review on #138: a hardware-bitmap wallpaper is skipped by the software probe, so
+        // two different wallpapers could fingerprint alike once identities are dropped.
+        int[] pixels = new int[WallpaperCapture.PROBE_W * WallpaperCapture.PROBE_H];
+        assertTrue(WallpaperCapture.lookKeyAllowed(pixels, true));
+        assertFalse(WallpaperCapture.lookKeyAllowed(pixels, false));
+        assertFalse(WallpaperCapture.lookKeyAllowed(null, true));
+    }
+
     @Test public void provisionalTextureIsKeyedByLookNotIdentity() throws IOException {
         String source = read(SOURCE);
         assertTrue(source.contains("desiredLook=usable && capture.contentKey!=null ? capture.contentKey+\"|blur=\"+radius : null;"));
@@ -105,7 +114,10 @@ public class BubbleGlassStabilityTest {
         assertTrue("the chat's own render still replaces it",
                 source.indexOf("texture=lastTexture;") < source.indexOf("start();\n    }\n    public static float blurRadius"));
         String capture = read("src/main/java/com/waenhancer/theme/WallpaperCapture.java");
+        assertTrue("no look key when a drawable could not be fingerprinted",
+                capture.contains("if (lookKeyAllowed(pixels, complete[0])) plan.contentKey"));
+        assertTrue(capture.contains("complete[0] = false;"));
         assertTrue("look = geometry + fingerprint, without drawable identities", capture.contains(
-                "plan.contentKey = withContent(window.getWidth() + \"x\" + window.getHeight()\n                + \"|\" + coverage.toShortString(), pixels);"));
+                "plan.contentKey = withContent(window.getWidth() + \"x\" + window.getHeight()"));
     }
 }
