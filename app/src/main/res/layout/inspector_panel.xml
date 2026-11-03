@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/inspector_panel_card"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_gravity="bottom"
-    app:cardCornerRadius="16dp"
-    app:cardElevation="8dp"
-    app:contentPadding="16dp">
+    android:background="#F7F8FA"
+    android:elevation="8dp"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -36,7 +37,7 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginVertical="8dp"
-            android:background="?attr/colorOutline" />
+            android:background="#D0D4D8" />
 
         <!-- Geometry block -->
         <TextView
@@ -60,7 +61,7 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginVertical="8dp"
-            android:background="?attr/colorOutline" />
+            android:background="#D0D4D8" />
 
         <!-- Context block -->
         <TextView
@@ -76,7 +77,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
             android:text="@string/inspector_reveal"
-            android:textColor="?attr/colorPrimary"
+            android:textColor="#1D6BBD"
             android:visibility="gone" />
 
         <TextView
@@ -88,55 +89,63 @@
             tools:text="parents: conversation_row &gt; conversations_view &gt; content" />
 
         <!-- Actions -->
-        <com.google.android.material.chip.ChipGroup
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp">
+            android:layout_marginTop="12dp"
+            android:fillViewport="true"
+            android:scrollbars="none">
 
-            <com.google.android.material.chip.Chip
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+            <Button
                 android:id="@+id/inspector_action_copy_id"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/inspector_action_copy_id" />
 
-            <com.google.android.material.chip.Chip
+            <Button
                 android:id="@+id/inspector_action_copy_class"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/inspector_action_copy_class" />
 
-            <com.google.android.material.chip.Chip
+            <Button
                 android:id="@+id/inspector_action_copy_selector"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/inspector_action_copy_selector" />
 
-            <com.google.android.material.chip.Chip
+            <Button
                 android:id="@+id/inspector_action_add_css"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/inspector_action_add_css" />
 
-            <com.google.android.material.chip.Chip
+            <Button
                 android:id="@+id/inspector_action_parent"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/inspector_action_parent" />
 
-            <com.google.android.material.chip.Chip
+            <Button
                 android:id="@+id/inspector_action_child"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/inspector_action_child" />
 
-            <com.google.android.material.chip.Chip
+            <Button
                 android:id="@+id/inspector_action_exit"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/inspector_action_exit" />
 
-        </com.google.android.material.chip.ChipGroup>
+            </LinearLayout>
+        </HorizontalScrollView>
 
     </LinearLayout>
 
-</androidx.cardview.widget.CardView>
+</LinearLayout>

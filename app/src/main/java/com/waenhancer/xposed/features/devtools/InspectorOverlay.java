@@ -14,14 +14,15 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 
-import com.google.android.material.chip.Chip;
 import com.waenhancer.R;
 import com.waenhancer.diagnostics.InspectorTrace;
+import com.waenhancer.xposed.utils.ModuleContextWrapper;
 
 import java.util.List;
 
@@ -79,6 +80,7 @@ public class InspectorOverlay {
     // outside the panel's own bounds.
     private View panelView;
     private WindowManager.LayoutParams panelParams;
+    private Context panelResourceContext;
 
     // Handle window: always touchable, never affected by mode.
     private View handleRoot;
@@ -119,7 +121,11 @@ public class InspectorOverlay {
      * window whose {@code FLAG_NOT_TOUCHABLE} alternates with mode.
      */
     private void attachPanel() {
-        panelView = LayoutInflater.from(activity).inflate(R.layout.inspector_panel, null, false);
+        // These resource IDs belong to the Enhancer APK, not to WhatsApp's host Activity.
+        // The host inflater caused Resources.NotFoundException on the Galaxy (2026-11-02).
+        panelResourceContext = new ModuleContextWrapper(activity);
+        panelView = LayoutInflater.from(panelResourceContext)
+                .inflate(R.layout.inspector_panel, null, false);
         panelView.setVisibility(View.GONE);
         wirePanelActions();
 
@@ -178,7 +184,8 @@ public class InspectorOverlay {
                 if (movedX < TAP_SLOP_PX && movedY < TAP_SLOP_PX) {
                     if (android.os.SystemClock.uptimeMillis() - dragStartTime >= 650L) {
                         InspectorTrace.activitySnapshot(activity, "manual-handle");
-                        Toast.makeText(activity, R.string.inspector_sample_saved, Toast.LENGTH_SHORT).show();
+                        Toast.makeText(activity, moduleString(R.string.inspector_sample_saved),
+                                Toast.LENGTH_SHORT).show();
                     } else {
                         setMode(mode == Mode.PICK ? Mode.NAVIGATE : Mode.PICK);
                     }
@@ -253,6 +260,7 @@ public class InspectorOverlay {
             }
             panelView = null;
         }
+        panelResourceContext = null;
         if (handleRoot != null) {
             try {
                 windowManager.removeViewImmediate(handleRoot);
@@ -318,13 +326,13 @@ public class InspectorOverlay {
     }
 
     private void wirePanelActions() {
-        Chip copyId = panelView.findViewById(R.id.inspector_action_copy_id);
-        Chip copyClass = panelView.findViewById(R.id.inspector_action_copy_class);
-        Chip copySelector = panelView.findViewById(R.id.inspector_action_copy_selector);
-        Chip addCss = panelView.findViewById(R.id.inspector_action_add_css);
-        Chip parent = panelView.findViewById(R.id.inspector_action_parent);
-        Chip child = panelView.findViewById(R.id.inspector_action_child);
-        Chip exit = panelView.findViewById(R.id.inspector_action_exit);
+        Button copyId = panelView.findViewById(R.id.inspector_action_copy_id);
+        Button copyClass = panelView.findViewById(R.id.inspector_action_copy_class);
+        Button copySelector = panelView.findViewById(R.id.inspector_action_copy_selector);
+        Button addCss = panelView.findViewById(R.id.inspector_action_add_css);
+        Button parent = panelView.findViewById(R.id.inspector_action_parent);
+        Button child = panelView.findViewById(R.id.inspector_action_child);
+        Button exit = panelView.findViewById(R.id.inspector_action_exit);
 
         copyId.setOnClickListener(v -> copyFromCurrent("id", InspectedView::entryName));
         copyClass.setOnClickListener(v -> copyFromCurrent("class", InspectedView::className));
@@ -335,14 +343,16 @@ public class InspectorOverlay {
             if (currentNode == null) return;
             ProbeNode up = currentNode.parent();
             if (up != null) show(up);
-            else Toast.makeText(activity, R.string.inspector_no_parent, Toast.LENGTH_SHORT).show();
+            else Toast.makeText(activity, moduleString(R.string.inspector_no_parent),
+                    Toast.LENGTH_SHORT).show();
         });
 
         child.setOnClickListener(v -> {
             if (currentNode == null) return;
             List<ProbeNode> children = currentNode.children();
             if (children == null || children.isEmpty()) {
-                Toast.makeText(activity, R.string.inspector_no_children, Toast.LENGTH_SHORT).show();
+                Toast.makeText(activity, moduleString(R.string.inspector_no_children),
+                        Toast.LENGTH_SHORT).show();
             } else if (children.size() == 1) {
                 show(children.get(0));
             } else {
@@ -360,7 +370,7 @@ public class InspectorOverlay {
             labels[i] = c.entryName() != null ? c.entryName() : c.className();
         }
         new AlertDialog.Builder(activity)
-                .setTitle(R.string.inspector_choose_child)
+                .setTitle(moduleString(R.string.inspector_choose_child))
                 .setItems(labels, (dialog, which) -> show(children.get(which)))
                 .show();
     }
@@ -375,10 +385,15 @@ public class InspectorOverlay {
     private void copyFromCurrent(String what, java.util.function.Function<InspectedView, String> extractor) {
         InspectedView view = currentView();
         if (view == null) {
-            Toast.makeText(activity, R.string.inspector_nothing_selected, Toast.LENGTH_SHORT).show();
+            Toast.makeText(activity, moduleString(R.string.inspector_nothing_selected),
+                    Toast.LENGTH_SHORT).show();
             return;
         }
         InspectorClipboard.copy(activity, "inspector-" + what, extractor.apply(view));
+    }
+
+    private String moduleString(int resId) {
+        return panelResourceContext.getString(resId);
     }
 
     // ---- Highlight border -------------------------------------------------------------------

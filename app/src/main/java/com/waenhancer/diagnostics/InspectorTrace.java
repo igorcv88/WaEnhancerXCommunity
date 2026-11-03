@@ -164,7 +164,8 @@ public final class InspectorTrace {
     private static boolean allowedGlassReason(String reason) {
         if (reason == null) return false;
         return "shared-bubble-draw".equals(reason) || "shared-bubble-draw-error".equals(reason)
-                || reason.startsWith("SOURCE_") || reason.startsWith("BUBBLE_");
+                || reason.startsWith("SOURCE_") || reason.startsWith("BUBBLE_")
+                || reason.startsWith("INSPECTOR_");
     }
 
     private static JSONObject base(String kind, Activity activity) throws Exception {
