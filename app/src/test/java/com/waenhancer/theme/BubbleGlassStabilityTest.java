@@ -139,7 +139,8 @@ public class BubbleGlassStabilityTest {
         int tint = app.indexOf("private void tintText(");
         String text = app.substring(tint, app.indexOf("private void tintIcon(", tint));
         assertTrue("a row without glass gets WhatsApp's colour back",
-                text.contains("if (state != null && current == state[1]) text.setTextColor(state[0]);"));
+                text.contains("if (state != null && current == state[1]) {\n                    text.setTextColor(state[0]);"));
+        assertTrue("every return to WhatsApp's colour is logged", text.contains("BubbleGlassTelemetry.contrastNative(text,"));
         assertTrue(app.contains("if (contrastPending.add(row)) row.post(() -> { contrastPending.remove(row); if (!closed) syncReplyText(row); });"));
         assertTrue(app.contains("restoreReplyCorners();\n            restoreReplyTexts();"));
         String glass = read(GLASS);

@@ -1698,3 +1698,20 @@ Validation:
 - Not validated on device.
 
 Device next: at 70% the two sides should be saturated teal-blue / deeper blue with no whitish cast, and the wallpaper detail as with plain glass. Light colours: no lighter-than-wallpaper veil. Greys filter nothing by design (a neutral filter); if grey bubbles must read as grey, that needs a separate decision (it requires darkening or covering).
+
+#### Reply snippets still alternate grey/white (same PR #148) — 2026-11-03
+
+Owner report on #147/#148 builds: reply snippets (`quoted_text`) still alternate between grey and white. The trace was exported about 3 s after opening the chat, before the first `FREQUENCY` (every 5 s, `REPORT_MS`), so the #147 counters (`contrast_held/restored/fresh/in_draw`) are absent; no evidence for any path yet. Checked and ruled out by code: a full release (`releaseSharedBubbles` → `restoreReplyTexts`) needs a wallpaper view change or bubble glass off, and would also drop all bubble glass, which the owner does not see.
+
+Leading hypothesis, not yet evidenced: WhatsApp colours the snippet inside the text (a `ForegroundColorSpan` in the Spanned text, e.g. from emoji/format processing on rebind). That beats `TextView.setTextColor` and passes no hooked setter, which fits `reasserted_text` staying near 0.
+
+Added evidence:
+- `QUOTE_STATE` (posted sync, glass rows, rate-limited per distinct state): whether the view still holds our colour, the current text colour, the `ForegroundColorSpan` count, alpha.
+- `CONTRAST_NATIVE` (rate-limited per reason): each time a held view is returned to WhatsApp's colour, with the reason (`row-without-glass` after the hold, `no-glass-session`).
+
+Validation: 669 tests, 0 failures.
+
+Device next: open a chat with replies, scroll for at least 10 s (past two `FREQUENCY` reports), then export. Reading the trace:
+- `colour_spans` > 0 with grey on screen: strip or neutralise colour spans on glass rows.
+- `CONTRAST_NATIVE` lines during the flicker: the row loses glass for longer than the 500 ms hold; look at `LOST` reasons.
+- `ours=false` without either: an unhooked colour path.
