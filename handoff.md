@@ -1471,3 +1471,13 @@ Validation (SDK 36 container, local-only Maven mirror): Debug/Release compile; 5
 
 Device next: player checklist above; bubbles: open a chat with static wallpaper, both sides on — expect `BUBBLE_GLASS kind=SOURCE state=ready` then glass on incoming and outgoing text bubbles; if not, `FREQUENCY source=...(reason)` names the blocking gate.
 
+### PR #134 owner review (on `9c06126`) — 2026-11-03
+
+Four findings, all confirmed in code and fixed:
+1. (P1) Consumer guard relied on a class-name substring `RecyclerView`; R8 renames androidx in WhatsApp. `WallpaperCapture.consumerSignals` now checks the whole superclass chain (AbsListView/AdapterView/ScrollView/`*.RecyclerView`/`*.NestedScrollView`/GlassPane), scroll behaviour (`isScrollContainer`, `canScroll*`) and resource names (`conversation_row*`, `footer`, `input_layout`, `conversation_list_view_host`). Any child subtree holding a consumer is skipped at every depth; the search fails closed above 8 levels or 96 nodes. No device evidence that a list was ever captured — this closes the insufficient guard.
+2. (P2) The revision key missed in-place changes (`ColorDrawable.setColor`, tint, wrapper state such as `ProjectedDrawable`). The key now also carries a 12×24 CPU rendering of exactly the recorded items (reused bitmap; hardware-bitmap items skipped, their identity/generation stay in the key).
+3. (P2) A first unsupported capture returned at `epoch.update(null)` (null initial key) before reporting. The reason is now reported before the revision check.
+4. (P2) A stale completion called `start()` without the 150 ms settle. `RenderDebounce` is the single policy, checked inside `start()`, so update, stale completion and retries all obey it; the first texture is immediate.
+
+Tests: new `WallpaperSourceReviewTest` (10) executes the consumer decision (custom-named and obfuscated recyclers, rows/composer, plain wallpaper views), content-key change with same identity, first-unsupported telemetry state, and debounce timing during an active render; source checks cover wiring that needs Android Views/HWUI. Full suite 584 tests, 0 failures; Debug/Release compile; Python and AGSL checks as before. These do not prove drawable selection or texture invalidation on the device.
+

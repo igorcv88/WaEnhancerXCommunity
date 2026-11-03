@@ -49,6 +49,11 @@ public final class ConversationBackdropSource {
     private final Runnable retryStart=this::start;
     /** Quiet time before re-rendering a replacement texture. */
     static final long SETTLE_MS=150L;
+    /**
+     * Single scheduling policy: the first texture renders at once; a replacement waits until the
+     * source has been quiet for SETTLE_MS, whichever path starts it (update, stale completion).
+     */
+    private final RenderDebounce debounce=new RenderDebounce(SETTLE_MS);
     public ConversationBackdropSource(Runnable changed) { this.changed=changed; }
     /**
      * A texture is presentable while a newer revision prepares (stale-while-revalidate): a
@@ -65,6 +70,9 @@ public final class ConversationBackdropSource {
     public void update(WallpaperCapture capture, float radius) {
         if (closed) return;
         boolean usable=capture!=null && capture.unsupported==null;
+        // Report before the revision check: the epoch key starts null, so a first unsupported
+        // capture is "no change" for rendering but must still say why there is no texture.
+        if (!usable) BubbleGlassTelemetry.source("unsupported", capture==null ? "no-capture" : capture.unsupported);
         if (!epoch.update(usable ? java.util.Arrays.asList(capture.key,radius) : null)) return;
         desired=usable ? capture : null; blur=radius;
         desiredContent=null;
@@ -74,22 +82,21 @@ public final class ConversationBackdropSource {
                 desired=null;
                 BubbleGlassTelemetry.source("unsupported", "record-"+failure.getClass().getSimpleName());
             }
-        } else {
-            BubbleGlassTelemetry.source("unsupported", capture==null ? "no-capture" : capture.unsupported);
         }
+        debounce.changed(android.os.SystemClock.uptimeMillis());
         if (desired==null && texture!=null) { texture=null; main.post(changed); }
         liveToken.set(epoch.revision());
         main.removeCallbacks(retryStart);
         probe("SOURCE_INVALIDATED", "revision="+epoch.revision()+(desired==null ? " unsupported" : ""));
-        // First texture: now. A replacement (keyboard/geometry animation changes the layout every
-        // frame) waits for the layout to settle; the previous texture stays visible meanwhile.
-        if (texture==null) start(); else main.postDelayed(retryStart,SETTLE_MS);
+        start();
     }
     public static float blurRadius(GlassSpec spec, float density) {
         return KyantLens.appSurface(spec,1,density,KyantLens.surfaceAlpha255()).blurRadius;
     }
     private void start() {
         if (working || closed || desired==null || desiredContent==null || !retry.mayAttempt(epoch.revision())) return;
+        long settle=debounce.delay(android.os.SystemClock.uptimeMillis(), texture!=null);
+        if (settle>0) { main.removeCallbacks(retryStart); main.postDelayed(retryStart,settle); return; }
         if (Build.VERSION.SDK_INT<33) { BubbleGlassTelemetry.source("unsupported","api"); return; }
         if (desired.bytes()>MAX_BYTES) { BubbleGlassTelemetry.source("unsupported","too-large"); return; }
         if (PENDING.get()>=MAX_PENDING) { main.postDelayed(retryStart,50L); return; }

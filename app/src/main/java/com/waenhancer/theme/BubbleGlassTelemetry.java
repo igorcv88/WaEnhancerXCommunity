@@ -49,10 +49,16 @@ public final class BubbleGlassTelemetry {
 
     /** Property read at most once per second: the draw hook runs for every hooked draw. */
     public static boolean on() {
-        long now = SystemClock.uptimeMillis();
-        if (enabledAt < 0 || now - enabledAt >= 1000L) { enabled = GlassProbe.enabled(); enabledAt = now; }
-        return enabled;
+        try {
+            long now = SystemClock.uptimeMillis();
+            if (enabledAt < 0 || now - enabledAt >= 1000L) { enabled = GlassProbe.enabled(); enabledAt = now; }
+            return enabled;
+        } catch (RuntimeException unavailable) {
+            return false; // Host-JVM tests and any process without logging services.
+        }
     }
+
+    static String sourceState() { return sourceState + "(" + sourceReason + ")"; }
 
     /** Every entry into the bubble draw hook, before any filtering (framework-class hook cost). */
     public static void call() { calls++; }

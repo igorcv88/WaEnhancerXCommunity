@@ -209,8 +209,8 @@ public class NativeBubbleGlassTest {
         String code = cap.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("//[^\n]*", "");
         assertFalse("drawables only: no View.draw", code.contains("view.draw(") || code.contains("wallpaper.draw("));
         assertFalse(code.contains("drawRenderNode"));
-        assertTrue(code.contains("view instanceof android.widget.AbsListView"));
-        assertTrue(code.contains("view instanceof GlassPane"));
+        assertTrue(code.contains("name.equals(\"android.widget.AbsListView\")"));
+        assertTrue(code.contains("name.equals(\"com.waenhancer.theme.GlassPane\")"));
         assertTrue(code.contains("walk.leafOnly = hostsConsumers(wallpaper, 0);"));
         assertTrue(code.contains("if (consumer(view)) return;"));
         assertTrue("animated wallpaper stays native", code.contains("drawable instanceof Animatable"));
@@ -229,7 +229,7 @@ public class NativeBubbleGlassTest {
         String t = read("src/main/java/com/waenhancer/theme/BubbleGlassTelemetry.java");
         assertTrue(t.contains(".append(\" source=\").append(sourceState)"));
         assertTrue("replacements are debounced; the first texture is immediate",
-                src.contains("if (texture==null) start(); else main.postDelayed(retryStart,SETTLE_MS);"));
+                src.contains("private final RenderDebounce debounce=new RenderDebounce(SETTLE_MS);"));
     }
 
     @Test public void otherSurfacesKeepTheApprovedShader() throws IOException {

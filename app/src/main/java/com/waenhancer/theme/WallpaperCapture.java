@@ -85,23 +85,109 @@ public final class WallpaperCapture {
         walk.bounds.roundOut(coverage);
         if (!coverage.intersect(0, 0, window.getWidth(), window.getHeight()) || coverage.width() < 2
                 || coverage.height() < 2) return unsupported(window, "off-window");
-        String key = window.getWidth() + "x" + window.getHeight() + "|" + coverage.toShortString() + "|" + walk.key;
+        String identity = window.getWidth() + "x" + window.getHeight() + "|" + coverage.toShortString() + "|" + walk.key;
+        // Identity alone misses in-place changes (ColorDrawable.setColor, tint, wrapper state):
+        // the key also carries a tiny rendering of exactly what would be recorded.
+        String key = withContent(identity, fingerprint(walk.items, coverage));
         return new WallpaperCapture(window.getWidth(), window.getHeight(), coverage, key, null, walk.items);
     }
 
-    /** Message list, recycler or glass pane anywhere below {@code view} (bounded search). */
+    static final int PROBE_W = 12, PROBE_H = 24;
+    private static Bitmap probe;
+    private static int[] probePixels;
+
+    /** Pure: the texture key changes whenever the drawn content changes. */
+    static String withContent(String identity, int[] pixels) {
+        return identity + "|px" + (pixels == null ? "none" : Integer.toHexString(java.util.Arrays.hashCode(pixels)));
+    }
+
+    /**
+     * Renders the plan at {@link #PROBE_W}×{@link #PROBE_H} on the CPU (UI thread, reused bitmap).
+     * Items that cannot be drawn in software (hardware bitmaps) are skipped; their bitmap identity
+     * and generation remain in the identity part of the key.
+     */
+    private static int[] fingerprint(ArrayList<Item> items, Rect coverage) {
+        try {
+            if (probe == null) { probe = Bitmap.createBitmap(PROBE_W, PROBE_H, Bitmap.Config.ARGB_8888); probePixels = new int[PROBE_W * PROBE_H]; }
+            probe.eraseColor(0);
+            android.graphics.Canvas canvas = new android.graphics.Canvas(probe);
+            canvas.scale((float) PROBE_W / coverage.width(), (float) PROBE_H / coverage.height());
+            canvas.translate(-coverage.left, -coverage.top);
+            for (Item item : items) {
+                int save = canvas.save();
+                try {
+                    canvas.concat(item.matrix);
+                    if (item.clip != null) canvas.clipRect(item.clip);
+                    if (item.alpha < 255) canvas.saveLayerAlpha(null, item.alpha);
+                    item.drawable.draw(canvas);
+                } catch (RuntimeException softwareUnsupported) {
+                    // e.g. a hardware bitmap: identity/generation still describe it.
+                } finally {
+                    canvas.restoreToCount(save);
+                }
+            }
+            probe.getPixels(probePixels, 0, PROBE_W, 0, 0, PROBE_W, PROBE_H);
+            return probePixels;
+        } catch (RuntimeException | OutOfMemoryError unavailable) {
+            return null;
+        }
+    }
+
+    static final int CONSUMER_SEARCH_DEPTH = 8, CONSUMER_SEARCH_NODES = 96;
+
+    /**
+     * Message list, recycler, scroller, message row or glass pane anywhere below {@code view}.
+     * Bounded, and fails closed: a subtree too deep or too large to inspect counts as a consumer.
+     */
     static boolean hostsConsumers(View view, int depth) {
+        return hostsConsumers(view, depth, new int[1]);
+    }
+
+    private static boolean hostsConsumers(View view, int depth, int[] visited) {
+        if (++visited[0] > CONSUMER_SEARCH_NODES) return true;
         if (consumer(view)) return true;
-        if (!(view instanceof ViewGroup) || depth >= 8) return false;
+        if (!(view instanceof ViewGroup)) return false;
         ViewGroup group = (ViewGroup) view;
+        if (group.getChildCount() == 0) return false;
+        if (depth >= CONSUMER_SEARCH_DEPTH) return true;
         for (int i = 0; i < group.getChildCount(); i++)
-            if (hostsConsumers(group.getChildAt(i), depth + 1)) return true;
+            if (hostsConsumers(group.getChildAt(i), depth + 1, visited)) return true;
         return false;
     }
 
     private static boolean consumer(View view) {
-        return view instanceof android.widget.AbsListView || view instanceof android.widget.AdapterView
-                || view instanceof GlassPane || view.getClass().getName().contains("RecyclerView");
+        java.util.ArrayList<String> chain = new java.util.ArrayList<>();
+        for (Class<?> c = view.getClass(); c != null && c != View.class && c != Object.class; c = c.getSuperclass())
+            chain.add(c.getName());
+        // R8 renames androidx RecyclerView in WhatsApp, so behaviour matters as much as names.
+        return consumerSignals(chain, view.isScrollContainer(),
+                view.canScrollVertically(1) || view.canScrollVertically(-1)
+                        || view.canScrollHorizontally(1) || view.canScrollHorizontally(-1),
+                entryName(view));
+    }
+
+    /**
+     * Pure decision (host-JVM tested): a list/scroller by any superclass name, any scrolling
+     * behaviour, our own glass panes, or WhatsApp message rows and composer containers.
+     */
+    static boolean consumerSignals(java.util.List<String> classChain, boolean scrollContainer,
+                                   boolean scrollable, String entryName) {
+        for (String name : classChain) {
+            if (name.equals("android.widget.AbsListView") || name.equals("android.widget.AdapterView")
+                    || name.equals("android.widget.ScrollView") || name.equals("android.widget.HorizontalScrollView")
+                    || name.endsWith(".RecyclerView") || name.endsWith(".NestedScrollView")
+                    || name.equals("com.waenhancer.theme.GlassPane")) return true;
+        }
+        if (scrollContainer || scrollable) return true;
+        return entryName != null && (entryName.startsWith("conversation_row") || entryName.equals("footer")
+                || entryName.equals("input_layout") || entryName.equals("conversation_list_view_host"));
+    }
+
+    private static String entryName(View view) {
+        int id = view.getId();
+        if (id == View.NO_ID || id == 0) return null;
+        try { return view.getResources().getResourceEntryName(id); }
+        catch (RuntimeException unknown) { return null; }
     }
 
     private static WallpaperCapture unsupported(View window, String reason) {
@@ -201,8 +287,12 @@ public final class WallpaperCapture {
             }
             if (view instanceof ViewGroup && !(leafOnly && depth == 0)) {
                 ViewGroup group = (ViewGroup) view;
-                for (int i = 0; i < group.getChildCount() && reason == null; i++)
-                    view(group.getChildAt(i), alpha, depth + 1);
+                for (int i = 0; i < group.getChildCount() && reason == null; i++) {
+                    View child = group.getChildAt(i);
+                    // Any subtree that holds a consumer is left out entirely, at every depth.
+                    if (hostsConsumers(child, 0)) continue;
+                    view(child, alpha, depth + 1);
+                }
             }
             Drawable foreground = view.getForeground();
             if (foreground != null && reason == null) {
