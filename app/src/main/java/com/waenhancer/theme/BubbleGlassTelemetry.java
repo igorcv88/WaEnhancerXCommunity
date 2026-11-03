@@ -106,6 +106,24 @@ public final class BubbleGlassTelemetry {
         log("CONTRAST_FILTER", "view=" + describe(view));
     }
 
+    /**
+     * State of a glass-row icon after its sync (posted pass only): which drawable it shows and
+     * whether anything overrides the view tint. A colour filter or tint set on the drawable itself
+     * (e.g. a play/pause morph drawable) wins over ImageView.setImageTintList and passes through
+     * none of the hooked view setters; this line is the evidence for or against that.
+     * Rate-limited per distinct state, so a steady icon logs once a minute at most.
+     */
+    public static void iconState(android.widget.ImageView icon, boolean viewTintIsOurs) {
+        if (!on() || icon == null) return;
+        Drawable drawable = icon.getDrawable();
+        boolean drawableFilter = drawable != null && drawable.getColorFilter() != null;
+        boolean viewFilter = icon.getColorFilter() != null;
+        String signature = (drawable == null ? "none" : drawable.getClass().getName())
+                + " tint_ours=" + viewTintIsOurs + " drawable_filter=" + drawableFilter + " view_filter=" + viewFilter;
+        if (!allowed("ICON_STATE:" + entryName(icon) + ":" + signature)) return;
+        log("ICON_STATE", "view=" + describe(icon) + " drawable=" + signature);
+    }
+
     private static final Map<Integer, Long> SWITCH_OFF_DIRECTIONS = new java.util.TreeMap<>();
 
     /** Factory direction of a draw left native by the side switch (UI thread). */

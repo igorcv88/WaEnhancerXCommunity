@@ -1142,8 +1142,15 @@ public final class AppLiquidGlass extends Feature {
                 tintText(rowChild(row, "description"), glass, secondary);
                 tintText(rowChild(row, "date"), glass, secondary);
                 View play = rowChild(row, "control_btn");
-                if (play instanceof android.widget.ImageView)
-                    tintIcon((android.widget.ImageView) play, glass, content | 0xFF000000);
+                if (play instanceof android.widget.ImageView) {
+                    android.widget.ImageView playIcon = (android.widget.ImageView) play;
+                    tintIcon(playIcon, glass, content | 0xFF000000);
+                    if (glass && !contrastInDraw) {
+                        android.content.res.ColorStateList[] held = glassIcons.get(playIcon);
+                        com.waenhancer.theme.BubbleGlassTelemetry.iconState(playIcon,
+                                held != null && playIcon.getImageTintList() == held[1]);
+                    }
+                }
                 if (visualizer != null && !contrastInDraw) liftLayer(visualizer, glass);
             }
             // Call rows: the missed/incoming call glyph loses contrast on glass once its native
