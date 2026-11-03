@@ -39,8 +39,14 @@ import java.util.WeakHashMap;
  */
 public final class NativeBubbleGlass {
     private static final ThreadLocal<Boolean> NATIVE_PASS = new ThreadLocal<>();
-    /** Body wash floor: the native colour must stay dense enough for text on any wallpaper. */
-    static final float VEIL_MIN = 0.50f;
+    /**
+     * Bubbles use the composer/header material (same wash, rim and blur) with a lens scaled to
+     * their size: the 24dp chrome band covers almost all of a one-line bubble and reads as heavy
+     * distortion. Device review 2026-11-03: "like the input and the header, a little refraction".
+     */
+    static final float BUBBLE_REFRACT_HEIGHT_DP = 12f, BUBBLE_REFRACT_AMOUNT_DP = 8f;
+    /** Native mask alpha × this (clamped): a 15%-alpha palette still masks the glass fully. */
+    static final float MASK_ALPHA_GAIN = 8f;
     /** Fallback corner when the silhouette cannot be measured. */
     static final float FALLBACK_RADIUS_DP = 12f;
     private static final int MAX_SLOTS_PER_ROW = 4;
@@ -90,6 +96,15 @@ public final class NativeBubbleGlass {
         this.root = new WeakReference<>(root);
         this.source = source;
         dstIn.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_IN));
+        // The native drawable is only the shape. A translucent Bubble Colors palette (device:
+        // SILHOUETTE_FALLBACK no-opaque-body) would otherwise make the glass equally faint, so
+        // the mask's alpha is boosted: any covered pixel keeps the glass fully, edges stay smooth.
+        android.graphics.ColorMatrix shapeOnly = new android.graphics.ColorMatrix(new float[]{
+                0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0,
+                0, 0, 0, MASK_ALPHA_GAIN, 0});
+        dstIn.setColorFilter(new android.graphics.ColorMatrixColorFilter(shapeOnly));
     }
 
     /**
@@ -321,12 +336,15 @@ public final class NativeBubbleGlass {
                         : new BubbleSilhouette(0, 0, w, h, Math.min(FALLBACK_RADIUS_DP * density, Math.min(w, h) / 2f), 0);
                 measuredKey = measure;
             }
+            // Same material as the approved composer/header: neutral wash at the opacity slider,
+            // or the user's Bubble Colors choice at that same opacity (GlassSpec bubble tint).
             KyantLens.Params params = KyantLens.appSurface(spec, silhouette.height(), density,
                     KyantLens.surfaceAlpha255());
-            params.fullCover = 1f;
-            int veil = Math.max(KyantLens.surfaceAlpha255(), Math.round(VEIL_MIN * 255f));
-            int rgb = silhouette.color != 0 ? silhouette.color : params.tint;
-            params.tint = (veil << 24) | (rgb & 0x00FFFFFF);
+            // No tail: owner review 2026-11-03 ("the little stroke outside the first message").
+            // The glass is the rounded body only; the native silhouette still masks it.
+            params.fullCover = 0f;
+            params.refractHeight = Math.min(BUBBLE_REFRACT_HEIGHT_DP * density, silhouette.height() / 2f);
+            params.refractAmount = BUBBLE_REFRACT_AMOUNT_DP * density;
             String key = w + "x" + h + ":" + silhouette.left + "," + silhouette.top + ","
                     + silhouette.right + "," + silhouette.bottom + ":" + silhouette.radius
                     + ":" + params.key() + ":" + GlassOptics.revision();

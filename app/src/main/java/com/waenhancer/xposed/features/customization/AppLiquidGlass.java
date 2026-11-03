@@ -94,6 +94,7 @@ public final class AppLiquidGlass extends Feature {
 
     @Override public void doHook() {
         refreshBubblePalette();
+        refreshBubbleScope();
         // Always register lifecycle: switches can be enabled after WhatsApp has started.
         WppCore.addListenerActivity((activity, state) -> {
             if (activity == null || activity.getWindow() == null) return;
@@ -108,6 +109,7 @@ public final class AppLiquidGlass extends Feature {
             } else if (state == WppCore.ActivityChangeState.ChangeType.RESUMED) {
                 conversation.setActivityWindow(decor, activity.getWindow());
                 reloadPrefs();
+                refreshBubbleScope();
                 refreshBubblePalette();
                 hookPendingBubbleClasses();
                 publishOptics();
@@ -278,7 +280,8 @@ public final class AppLiquidGlass extends Feature {
      * factory result is never wrapped or replaced: WhatsApp keeps its own type, bounds, tail and
      * recycling. Glass is painted from inside the drawable's own draw call instead.
      */
-    private final Map<Drawable, Boolean> bubbleSides =
+    /** Raw factory direction per drawable (3 = outgoing, as in BubbleColors). */
+    private final Map<Drawable, Integer> bubbleSides =
             java.util.Collections.synchronizedMap(new WeakHashMap<>());
     private final Set<Method> bubbleDrawHooks = new HashSet<>();
     /** Drawable classes seen while the switch was off; hooked once it is turned on. */
@@ -302,10 +305,10 @@ public final class AppLiquidGlass extends Feature {
                     if (!(result instanceof Drawable) || param.args.length==0
                             || !(param.args[0] instanceof Integer)) return;
                     // Identity bookkeeping only: the result WhatsApp receives is unchanged.
-                    bubbleSides.put((Drawable) result, ((Integer) param.args[0]) == 3);
+                    bubbleSides.put((Drawable) result, (Integer) param.args[0]);
                     com.waenhancer.theme.BubbleGlassTelemetry.factory((Drawable) result, param.args);
                     Class<?> type=result.getClass();
-                    if (LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)) hookBubbleDraw(type);
+                    if (bubbleScopeCache != LiquidGlassSettings.BubbleScope.OFF) hookBubbleDraw(type);
                     else synchronized (pendingBubbleClasses) { pendingBubbleClasses.add(type); }
                 }
             });
@@ -354,7 +357,8 @@ public final class AppLiquidGlass extends Feature {
         com.waenhancer.theme.BubbleGlassTelemetry.call();
         if (com.waenhancer.theme.NativeBubbleGlass.nativePass()) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NATIVE_PASS); return; }
         Drawable bubble=(Drawable) param.thisObject;
-        Boolean outgoing=bubbleSides.get(bubble);
+        Integer direction=bubbleSides.get(bubble);
+        Boolean outgoing=direction==null ? null : direction==3;
         // Anything not recognized as a registered native bubble on a canvas is left untouched.
         if (outgoing==null || !(param.args[0] instanceof Canvas)) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NOT_REGISTERED); return; }
         Canvas canvas=(Canvas) param.args[0];
@@ -366,21 +370,48 @@ public final class AppLiquidGlass extends Feature {
                 "shared-bubble-draw", "class=" + bubble.getClass().getName());
         View host=com.waenhancer.theme.NativeBubbleGlass.hostFor(canvas);
         if (host==null) { com.waenhancer.theme.NativeBubbleGlass.unhosted(bubble, canvas); return; }
-        if (!sharedFactoryWanted(outgoing)) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.SWITCH_OFF); return; }
+        if (!sharedFactoryWanted(outgoing)) {
+            com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.SWITCH_OFF);
+            com.waenhancer.theme.BubbleGlassTelemetry.switchOff(direction);
+            com.waenhancer.theme.BubbleGlassTelemetry.nativeRow("switch_off", host, direction, bubbleScopeCache.name());
+            return;
+        }
         Session session=sessionFor(host.getRootView());
         if (session==null) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NO_SESSION); return; }
         try {
-            if (session.drawBubble(bubble, canvas)) param.setResult(null);
+            if (session.drawBubble(bubble, canvas, outgoing)) param.setResult(null);
         } catch (Throwable error) {
             com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.EXCEPTION);
             report("shared-bubble-draw-error", "bubble left native: " + error);
         }
     }
 
+    /**
+     * Bubble scope read once per resume/scan, never per draw. Reading it per draw called
+     * {@code prefs.getAll()} on the preference bridge for every bubble (2835 times in one device
+     * trace) and any failed read meant OFF: those rows were recorded native, i.e. transparent
+     * with a translucent Bubble Colors palette (device trace: switch_off=555 with both sides on).
+     */
+    private volatile LiquidGlassSettings.BubbleScope bubbleScopeCache = LiquidGlassSettings.BubbleScope.OFF;
+
+    private void refreshBubbleScope() {
+        LiquidGlassSettings.BubbleScope read = LiquidGlassSettings.bubbleScopeOrNull(prefs);
+        if (read != null) bubbleScopeCache = read; // A failed read keeps the last good value.
+    }
+
     private boolean sharedFactoryWanted(boolean outgoing) {
-        return LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)
-                && LiquidGlassSettings.bubbleEnabled(prefs, outgoing)
-                && GlassOptics.current().oneMate;
+        return LiquidGlassSettings.scopeIncludes(bubbleScopeCache, outgoing) && GlassOptics.current().oneMate;
+    }
+
+    /** Draw-path variant of {@link #bubbleMaterial}: no preference read. */
+    private GlassSpec bubbleDrawMaterial(boolean outgoing, GlassSpec base) {
+        if (base == null || !LiquidGlassSettings.scopeIncludes(bubbleScopeCache, outgoing)) return null;
+        int tint = bubblePalette.forSide(outgoing);
+        if (tint == 0 || (tint >>> 24) == 0) return base;
+        synchronized (tintedMaterials) {
+            return tintedMaterials.computeIfAbsent(base, ignored -> new java.util.HashMap<>())
+                    .computeIfAbsent(tint, base::withBubbleTint);
+        }
     }
 
     private static GlassMaterialDrawable nestedBubble(Drawable drawable, int depth) {
@@ -766,6 +797,46 @@ public final class AppLiquidGlass extends Feature {
         private final WeakHashMap<View, Surface> candidates = new WeakHashMap<>();
         private com.waenhancer.theme.ConversationBackdropSource bubbleSource;
         private com.waenhancer.theme.NativeBubbleGlass bubbleGlass;
+        /**
+         * Reply boxes inside glass bubbles: WhatsApp fakes their rounded corners by painting the
+         * corner wedges in the (opaque, dark) bubble colour, which shows as black triangles over
+         * glass. Clipping the quote frame to a rounded outline cuts exactly those wedges, whatever
+         * draws them; the box and its content stay native. Reversible; original values kept here.
+         */
+        private final WeakHashMap<View, Object[]> clippedQuotes = new WeakHashMap<>();
+        private int quoteFrameId = -1;
+        static final float QUOTE_CORNER_DP = 8f;
+
+        private void clipReplyCorners(View window) {
+            if (quoteFrameId == -1) quoteFrameId = window.getResources().getIdentifier(
+                    "bubble_quoted_message_frame", "id", window.getContext().getPackageName());
+            if (quoteFrameId == 0) return;
+            final float radius = QUOTE_CORNER_DP * window.getResources().getDisplayMetrics().density;
+            for (View row : new ArrayList<>(nativeDrawRows.keySet())) {
+                if (row == null || !row.isAttachedToWindow() || row.getRootView() != window) continue;
+                View frame = row.findViewById(quoteFrameId);
+                if (frame == null || clippedQuotes.containsKey(frame)) continue;
+                clippedQuotes.put(frame, new Object[]{frame.getOutlineProvider(), frame.getClipToOutline()});
+                com.waenhancer.theme.BubbleGlassTelemetry.quoteFrame(frame);
+                frame.setOutlineProvider(new android.view.ViewOutlineProvider() {
+                    @Override public void getOutline(View view, android.graphics.Outline outline) {
+                        outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
+                    }
+                });
+                frame.setClipToOutline(true);
+            }
+        }
+
+        private void restoreReplyCorners() {
+            for (Map.Entry<View, Object[]> entry : new ArrayList<>(clippedQuotes.entrySet())) {
+                View frame = entry.getKey();
+                if (frame == null) continue;
+                frame.setOutlineProvider((android.view.ViewOutlineProvider) entry.getValue()[0]);
+                frame.setClipToOutline((Boolean) entry.getValue()[1]);
+            }
+            clippedQuotes.clear();
+        }
+
         /** One-frame PixelCopy of the bare wallpaper when it cannot be replayed (per wallpaper). */
         private com.waenhancer.theme.WallpaperFallback wallpaperFallback;
         private WeakReference<android.view.Window> activityWindow = new WeakReference<>(null);
@@ -1524,7 +1595,7 @@ public final class AppLiquidGlass extends Feature {
          */
         private void bindNativeBubbleRow(View row) {
             if (closed || row.getId() == View.NO_ID || nativeDrawRows.containsKey(row)
-                    || !LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)
+                    || bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF
                     || !com.waenhancer.theme.NativeBubbleGlass.supported()
                     || !resourceName(row).startsWith("conversation_row_")) return;
             observeNativeRowDraw(row);
@@ -1532,12 +1603,13 @@ public final class AppLiquidGlass extends Feature {
             row.invalidate();
         }
 
-        boolean drawBubble(Drawable bubble, Canvas canvas) {
+        boolean drawBubble(Drawable bubble, Canvas canvas, boolean outgoing) {
             if (closed || suspended || bubbleGlass == null || !sharedFactoryAvailable) {
                 com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NO_RENDERER);
                 return false;
             }
-            return bubbleGlass.draw(bubble, canvas, resolvedMaterial());
+            // Bubble Colors, when chosen, tints the glass like it tints native bubbles.
+            return bubbleGlass.draw(bubble, canvas, bubbleDrawMaterial(outgoing, resolvedMaterial()));
         }
 
         /** Same-frame wallpaper alignment for every glass bubble (property updates only). */
@@ -1549,6 +1621,7 @@ public final class AppLiquidGlass extends Feature {
             if (bubbleGlass != null) bubbleGlass.release();
             if (bubbleSource != null) bubbleSource.release();
             if (wallpaperFallback != null) wallpaperFallback.release();
+            restoreReplyCorners();
             bubbleGlass = null; bubbleSource = null; wallpaperFallback = null; bubbleSettings = null; sharedWallpaper.clear();
         }
 
@@ -1565,9 +1638,9 @@ public final class AppLiquidGlass extends Feature {
             if (wallpaper!=sharedWallpaper.get()) {
                 releaseSharedBubbles(); sharedWallpaper=new WeakReference<>(wallpaper);
             }
-            if (wallpaper==null || !LiquidGlassSettings.isEnabled(prefs,Surface.BUBBLES)
+            if (wallpaper==null || bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF
                     || !com.waenhancer.theme.NativeBubbleGlass.supported() || !GlassOptics.current().oneMate) {
-                if (LiquidGlassSettings.isEnabled(prefs,Surface.BUBBLES))
+                if (bubbleScopeCache != LiquidGlassSettings.BubbleScope.OFF)
                     com.waenhancer.theme.BubbleGlassTelemetry.source("off", wallpaper==null ? "no-wallpaper-view"
                             : !com.waenhancer.theme.NativeBubbleGlass.supported() ? "api-or-lens" : "classic-renderer");
                 releaseSharedBubbles(); return;
@@ -1585,10 +1658,11 @@ public final class AppLiquidGlass extends Feature {
             }
             // Scope (incoming/outgoing/both), opacity, rim or optics changed while the wallpaper
             // did not: recorded rows still hold the previous glass or native bubble.
-            String settings=LiquidGlassSettings.bubbleScope(prefs).name() + ":"
+            String settings=bubbleScopeCache.name() + ":"
                     + com.waenhancer.theme.NativeBubbleGlass.settingsKey(material);
             if (bubbleSettings!=null && !bubbleSettings.equals(settings)) invalidateBubbleRows(window);
             bubbleSettings=settings;
+            clipReplyCorners(window);
             com.waenhancer.theme.WallpaperCapture plan=com.waenhancer.theme.WallpaperCapture.plan(wallpaper,window);
             String unsupported=plan.unsupportedReason();
             String identity=wallpaperFallback!=null || unsupported!=null || bubbleSource.failed()
@@ -1608,7 +1682,8 @@ public final class AppLiquidGlass extends Feature {
                 else if (unsupported==null || com.waenhancer.theme.WallpaperFallback.eligible(unsupported))
                     wallpaperFallback.request(wallpaper,window,activityWindow.get(),identity,() -> {
                         if (!closed && !suspended) scan();
-                    });
+                    }, () -> !closed && bubbleSource!=null && (bubbleSource.texture()==null || bubbleSource.failed()
+                            || com.waenhancer.theme.WallpaperCapture.plan(wallpaper,window).unsupportedReason()!=null));
             }
             bubbleSource.update(plan,
                     com.waenhancer.theme.ConversationBackdropSource.blurRadius(material,window.getResources().getDisplayMetrics().density));

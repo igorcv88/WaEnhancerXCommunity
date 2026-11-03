@@ -105,6 +105,31 @@ public final class LiquidGlassSettings {
         } catch (RuntimeException ignored) { return BubbleScope.OFF; }
     }
 
+    /**
+     * Like {@link #bubbleScope}, but {@code null} when the preferences cannot be read, so a
+     * caller can keep its last known value instead of treating a failed bridge read as OFF.
+     */
+    public static BubbleScope bubbleScopeOrNull(SharedPreferences prefs) {
+        if (prefs == null) return null;
+        try {
+            java.util.Map<String, ?> all = prefs.getAll();
+            if (all == null) return null;
+            Object raw = all.get(BUBBLE_SCOPE);
+            if (raw != null) {
+                for (BubbleScope scope : BubbleScope.values()) if (scope.key.equals(String.valueOf(raw))) return scope;
+                return BubbleScope.OFF;
+            }
+            return Boolean.TRUE.equals(all.get(Surface.BUBBLES.key)) ? BubbleScope.BOTH : BubbleScope.OFF;
+        } catch (Throwable unreadable) {
+            return null;
+        }
+    }
+
+    public static boolean scopeIncludes(BubbleScope scope, boolean outgoing) {
+        return scope == BubbleScope.BOTH
+                || (outgoing ? scope == BubbleScope.OUTGOING : scope == BubbleScope.INCOMING);
+    }
+
     public static boolean bubbleEnabled(SharedPreferences prefs, boolean outgoing) {
         BubbleScope scope = bubbleScope(prefs);
         return scope == BubbleScope.BOTH
