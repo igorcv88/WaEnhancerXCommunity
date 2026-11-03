@@ -139,7 +139,7 @@ public class BubbleGlassStabilityTest {
         String text = app.substring(tint, app.indexOf("private void tintIcon(", tint));
         assertTrue("a row without glass gets WhatsApp's colour back",
                 text.contains("if (state != null && current == state[1]) text.setTextColor(state[0]);"));
-        assertTrue(app.contains("bubbleGlass.onGlassChanged(row -> row.post("));
+        assertTrue(app.contains("if (contrastPending.add(row)) row.post(() -> { contrastPending.remove(row); if (!closed) syncReplyText(row); });"));
         assertTrue(app.contains("restoreReplyCorners();\n            restoreReplyTexts();"));
         String glass = read(GLASS);
         assertTrue("a sent message on a recycled row drops the glass state",
@@ -161,6 +161,34 @@ public class BubbleGlassStabilityTest {
         String all = app.substring(restore, app.indexOf("private void restoreReplyCorners()", restore));
         assertTrue(all.contains("icon.setImageTintList(entry.getValue()[0]);"));
         assertTrue(all.contains("entry.getKey().setLayerType(entry.getValue(), null);"));
+    }
+
+    @Test public void contrastIsReappliedAfterEveryGlassRecording() throws IOException {
+        // Device 2026-11-03: voice notes and replies were white or grey at random; WhatsApp
+        // rebinds rows that keep their glass and resets its colours without a glass change.
+        String glass = read(GLASS);
+        assertTrue(glass.contains("glassRows.add(host);\n        notifyChanged(host);"));
+        String app = read(APP);
+        int lift = app.indexOf("private void liftLayer(View view, boolean glass)");
+        String layer = app.substring(lift, app.indexOf("private void restoreReplyTexts()", lift));
+        assertTrue("a layer type reset by WhatsApp is lifted again",
+                layer.contains("if (original != null && view.getLayerType() == View.LAYER_TYPE_HARDWARE) return;"));
+    }
+
+    @Test public void callAndViewOnceRowsFollowTheGlass() throws IOException {
+        String app = read(APP);
+        int start = app.indexOf("private void syncReplyText(View row)");
+        String body = app.substring(start, app.indexOf("private void tintText(", start));
+        assertTrue(body.contains("rowChild(row, \"call_type_icon\")"));
+        assertTrue(body.contains("tintText(rowChild(row, \"call_log_subtitle\"), glass, secondary);"));
+        assertTrue(body.contains("rowChild(row, \"view_once_media_container_large\")"));
+        int clear = app.indexOf("private void clearFill(Drawable fill, boolean glass)");
+        String fill = app.substring(clear, app.indexOf("private void tintTree(", clear));
+        assertTrue("only flat fills, restorable", fill.contains("instanceof android.graphics.drawable.ColorDrawable")
+                && fill.contains("fill.setAlpha(original);"));
+        int restore = app.indexOf("private void restoreReplyTexts()");
+        String all = app.substring(restore, app.indexOf("private void restoreReplyCorners()", restore));
+        assertTrue(all.contains("entry.getKey().setAlpha(entry.getValue());"));
     }
 
     @Test public void anyChildOfAVerifiedMessageListIsARow() throws IOException {

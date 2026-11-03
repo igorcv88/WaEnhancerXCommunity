@@ -209,7 +209,10 @@ public final class NativeBubbleGlass {
         }
         if (!drawn) return false;
         lastEntry = entry; lastDrawable = bubble; lastRect.set(hostRect);
-        if (glassRows.add(host)) notifyChanged(host);
+        // Every glass recording, not only the first: WhatsApp rebinds a row that keeps its glass
+        // (recycling, playback state) and resets its own colours, which must be applied again.
+        glassRows.add(host);
+        notifyChanged(host);
         BubbleGlassTelemetry.glass();
         BubbleGlassTelemetry.hosted(bubble, canvas, host);
         if (!presented) {
@@ -245,7 +248,7 @@ public final class NativeBubbleGlass {
     /** Whether this row's latest recording painted glass (reply-text contrast follows it). */
     public boolean hasGlass(View row) { return glassRows.contains(row); }
 
-    /** Called (UI thread, inside a row draw) when a row gains or loses glass. */
+    /** Called (UI thread, inside a row draw) when a row records with glass or loses it. */
     private java.util.function.Consumer<View> glassChanged;
     public void onGlassChanged(java.util.function.Consumer<View> listener) { glassChanged = listener; }
 
