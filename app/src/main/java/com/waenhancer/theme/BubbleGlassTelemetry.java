@@ -86,10 +86,42 @@ public final class BubbleGlassTelemetry {
         if (kind == 0) reassertedText++; else if (kind == 1) reassertedIcon++; else reassertedLayer++;
     }
 
+    private static long contrastHeld, contrastRestored, contrastFresh, contrastInDraw;
+
+    /**
+     * Glass-row contrast transitions (UI thread). 0 held: a row without glass in its latest
+     * recording kept the glass colours inside the hold window; 1 restored: native colours put
+     * back after the hold; 2 fresh: a view tinted for the first time in a row that already had
+     * glass colours (WhatsApp replaced the view); 3 in-draw: tints applied inside the glass
+     * recording itself.
+     */
+    public static void contrast(int kind) {
+        if (kind == 0) contrastHeld++; else if (kind == 1) contrastRestored++;
+        else if (kind == 2) contrastFresh++; else contrastInDraw++;
+    }
+
     /** A colour filter set on a managed icon: it overrides the tint, so it is evidence. */
     public static void contrastFilter(View view) {
         if (!on() || !allowed("CONTRAST_FILTER")) return;
         log("CONTRAST_FILTER", "view=" + describe(view));
+    }
+
+    /**
+     * State of a glass-row icon after its sync (posted pass only): which drawable it shows and
+     * whether anything overrides the view tint. A colour filter or tint set on the drawable itself
+     * (e.g. a play/pause morph drawable) wins over ImageView.setImageTintList and passes through
+     * none of the hooked view setters; this line is the evidence for or against that.
+     * Rate-limited per distinct state, so a steady icon logs once a minute at most.
+     */
+    public static void iconState(android.widget.ImageView icon, boolean viewTintIsOurs) {
+        if (!on() || icon == null) return;
+        Drawable drawable = icon.getDrawable();
+        boolean drawableFilter = drawable != null && drawable.getColorFilter() != null;
+        boolean viewFilter = icon.getColorFilter() != null;
+        String signature = (drawable == null ? "none" : drawable.getClass().getName())
+                + " tint_ours=" + viewTintIsOurs + " drawable_filter=" + drawableFilter + " view_filter=" + viewFilter;
+        if (!allowed("ICON_STATE:" + entryName(icon) + ":" + signature)) return;
+        log("ICON_STATE", "view=" + describe(icon) + " drawable=" + signature);
     }
 
     private static final Map<Integer, Long> SWITCH_OFF_DIRECTIONS = new java.util.TreeMap<>();
@@ -117,6 +149,9 @@ public final class BubbleGlassTelemetry {
         if (reassertedText + reassertedIcon + reassertedLayer > 0)
             out.append(" reasserted_text=").append(reassertedText).append(" reasserted_icon=").append(reassertedIcon)
                     .append(" reasserted_layer=").append(reassertedLayer);
+        if (contrastHeld + contrastRestored + contrastFresh + contrastInDraw > 0)
+            out.append(" contrast_held=").append(contrastHeld).append(" contrast_restored=").append(contrastRestored)
+                    .append(" contrast_fresh=").append(contrastFresh).append(" contrast_in_draw=").append(contrastInDraw);
         log("FREQUENCY", out.toString());
     }
 

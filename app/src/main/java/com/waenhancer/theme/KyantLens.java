@@ -71,9 +71,9 @@ public final class KyantLens {
             // 1 only for message bubbles: the native silhouette (tail included) masks the
             // result, so pixels outside the rounded body stay plain glass instead of clear.
             + "uniform float uFullCover;\n"
-            // Bubble Colors: rgb = the chosen colour, a = how far the blur is pulled towards it.
-            // Zero for every other surface.
-            + "uniform float4 uHue;\n"
+            // Bubble Colors: Oklab a, b of the chosen colour and how far the blur moves to them.
+            // Zero amount for every other surface.
+            + "uniform float3 uHue;\n"
             + "\n"
             + "float sdRR(float2 p, float2 b, float r) {\n"
             + "    float2 q = abs(p) - b + r;\n"
@@ -157,21 +157,27 @@ public final class KyantLens {
             + "\n"
             // Retain the live refracted colour for the bevel reflection, before the wash.
             + "    float3 transmitted = clamp(col.rgb / max(col.a, 0.0001), 0.0, 1.0);\n"
-            // Bubble Colors pull the blurred backdrop's hue towards the chosen colour at the
-            // backdrop's own luminance: the glass stays as transparent as without Bubble Colors
-            // (same wash, same detail), only its colour moves. Owner review 2026-11-03.
-            + "    if (uHue.a > 0.0) {\n"
-            + "        float3 lumaW = float3(0.2126, 0.7152, 0.0722);\n"
-            + "        float backLuma = dot(transmitted, lumaW);\n"
-            // W3C color blend mode (SetLum + ClipColor): the chosen colour's hue and saturation
-            // at the backdrop's exact luminance, so highlights and shadows behind the glass
-            // keep their contrast. Clipping moves towards the luminance, never changes it.
-            + "        float3 shade = uHue.rgb + (backLuma - dot(uHue.rgb, lumaW));\n"
-            + "        float lo = min(min(shade.r, shade.g), shade.b);\n"
-            + "        float hi = max(max(shade.r, shade.g), shade.b);\n"
-            + "        if (lo < 0.0) shade = backLuma + (shade - backLuma) * backLuma / max(backLuma - lo, 0.0001);\n"
-            + "        if (hi > 1.0) shade = backLuma + (shade - backLuma) * (1.0 - backLuma) / max(hi - backLuma, 0.0001);\n"
-            + "        col.rgb = mix(col.rgb, clamp(shade, 0.0, 1.0) * col.a, uHue.a);\n"
+            // Bubble Colors (owner choice 2026-11-03): the blurred backdrop takes the chosen
+            // colour's hue and chroma in Oklab while keeping its own perceptual lightness L, so
+            // opacity, brightness and the detail behind the glass are those of an untinted bubble.
+            + "    if (uHue.z > 0.0) {\n"
+            + "        float3 okC = transmitted;\n"
+            + "        float3 okLin = mix(okC / 12.92, pow((okC + 0.055) / 1.055, float3(2.4)), step(0.04045, okC));\n"
+            + "        float okl = pow(max(0.4122214708 * okLin.r + 0.5363325363 * okLin.g + 0.0514459929 * okLin.b, 0.0), 1.0 / 3.0);\n"
+            + "        float okm = pow(max(0.2119034982 * okLin.r + 0.6806995451 * okLin.g + 0.1073969566 * okLin.b, 0.0), 1.0 / 3.0);\n"
+            + "        float oks = pow(max(0.0883024619 * okLin.r + 0.2817188376 * okLin.g + 0.6299787005 * okLin.b, 0.0), 1.0 / 3.0);\n"
+            + "        float okL = 0.2104542553 * okl + 0.7936177850 * okm - 0.0040720468 * oks;\n"
+            + "        float okA = mix(1.9779984951 * okl - 2.4285922050 * okm + 0.4505937099 * oks, uHue.x, uHue.z);\n"
+            + "        float okB = mix(0.0259040371 * okl + 0.7827717662 * okm - 0.8086757660 * oks, uHue.y, uHue.z);\n"
+            + "        okl = okL + 0.3963377774 * okA + 0.2158037573 * okB;\n"
+            + "        okm = okL - 0.1055613458 * okA - 0.0638541728 * okB;\n"
+            + "        oks = okL - 0.0894841775 * okA - 1.2914855480 * okB;\n"
+            + "        okl = okl * okl * okl; okm = okm * okm * okm; oks = oks * oks * oks;\n"
+            + "        okLin = clamp(float3(4.0767416621 * okl - 3.3077115913 * okm + 0.2309699292 * oks,\n"
+            + "                -1.2684380046 * okl + 2.6097574011 * okm - 0.3413193965 * oks,\n"
+            + "                -0.0041960863 * okl - 0.7034186147 * okm + 1.7076147010 * oks), 0.0, 1.0);\n"
+            + "        okC = mix(okLin * 12.92, 1.055 * pow(okLin, float3(1.0 / 2.4)) - 0.055, step(0.0031308, okLin));\n"
+            + "        col.rgb = clamp(okC, 0.0, 1.0) * col.a;\n"
             + "    }\n"
             // Surface: the flat tint drawn over the lensed backdrop (premultiplied source-over).
             + "    col = col * (1.0 - uTint.a) + float4(uTint.rgb * uTint.a, uTint.a);\n"
@@ -262,9 +268,8 @@ public final class KyantLens {
         float saturation, blurRadius;
         /** 1 for message bubbles (see uFullCover); 0 keeps every other surface unchanged. */
         float fullCover;
-        /** Bubble Colors hue pull (see uHue): colour (rgb) and amount; 0 for every other surface. */
-        int hue;
-        float hueAmount;
+        /** Bubble Colors (see uHue): the chosen colour's Oklab a, b and the amount; 0 elsewhere. */
+        float hueA, hueB, hueAmount;
 
         String key() {
             return refractHeight + ":" + refractAmount + ":" + depth + ":" + chroma + ":" + tint
@@ -272,7 +277,7 @@ public final class KyantLens {
                     + ":" + l1x + ":" + l1y + ":" + l1z + ":" + l1i + ":" + l2x + ":" + l2y
                     + ":" + l2z + ":" + l2i + ":" + shadowRadius + ":" + shadowAlpha
                     + ":" + saturation + ":" + blurRadius + ":" + contourGain + ":" + appChrome
-                    + ":" + fullCover + ":" + hue + ":" + hueAmount;
+                    + ":" + fullCover + ":" + hueA + ":" + hueB + ":" + hueAmount;
         }
     }
 
@@ -287,10 +292,28 @@ public final class KyantLens {
      */
     static final float BLUR_DP = 10f;
     /**
-     * How far Bubble Colors pull the blur's hue towards the chosen colour (0 none, 1 the full
-     * colour at the backdrop's luminance). Owner: "only pull the blur's colour a little".
+     * Bubble Colors on glass (owner choice 2026-11-03, after a 3x pigment wash read as opaque, a
+     * gamma-luma hue pull as a milky veil, and a colour wash at the slider alpha as too weak to
+     * tell dark grey from dark blue): the bubble keeps the neutral wash, and the blur takes the
+     * chosen colour's Oklab hue/chroma by the user's amount at its own lightness (uHue).
      */
-    static final float BUBBLE_HUE_PULL = 0.35f;
+    static final float BUBBLE_COLOUR_AMOUNT_DEFAULT = 0.7f;
+
+    /** Oklab {L, a, b} of an sRGB colour (Björn Ottosson's reference matrices). */
+    static float[] oklab(int rgb) {
+        double r = linear(((rgb >> 16) & 0xFF) / 255d), g = linear(((rgb >> 8) & 0xFF) / 255d), b = linear((rgb & 0xFF) / 255d);
+        double l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+        double m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+        double s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+        return new float[]{
+                (float) (0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s),
+                (float) (1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s),
+                (float) (0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s)};
+    }
+
+    private static double linear(double c) {
+        return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    }
     /** Keep strong information suppression in the header and composer. */
     static final float APP_BLUR_DP = 30f;
     static final float VIEW_CONTOUR_GAIN = 1.6f;
@@ -369,6 +392,17 @@ public final class KyantLens {
         return rimIntensity;
     }
 
+    private static volatile float bubbleColourAmount = BUBBLE_COLOUR_AMOUNT_DEFAULT;
+
+    /** The user's bubble colour amount (0-1), published with the other material settings. */
+    public static void publishBubbleColourAmount(float value) {
+        bubbleColourAmount = Float.isFinite(value) ? Math.max(0f, Math.min(1f, value)) : BUBBLE_COLOUR_AMOUNT_DEFAULT;
+    }
+
+    static float bubbleColourAmount() {
+        return bubbleColourAmount;
+    }
+
     static int surfaceAlpha255() {
         return surfaceAlpha255;
     }
@@ -410,13 +444,15 @@ public final class KyantLens {
         // recorded backdrop supplies all hue. Content colour selects dark/light.
         int neutral = SemanticTheme.relativeLuminance(spec.contentColor) > 0.5d
                 ? 0x000000 : 0xFFFFFF;
-        // Every surface keeps the same neutral wash at the opacity slider. Bubble Colors do not
-        // change it: they only pull the blur's hue towards the chosen colour (uHue). A pigment
-        // wash at a boosted alpha made tinted bubbles opaque (owner review 2026-11-03).
+        // Every surface keeps the same neutral wash at the opacity slider. Only explicit bubble
+        // customisation adds colour, as an Oklab hue/chroma move of the blur (uHue) that leaves
+        // opacity and lightness alone. All app chrome stays neutral.
         p.tint = (surfaceAlpha255 << 24) | neutral;
-        if (spec.bubbleTint) {
-            p.hue = spec.fillColor & 0x00FFFFFF;
-            p.hueAmount = BUBBLE_HUE_PULL;
+        if (spec.bubbleTint && bubbleColourAmount > 0f) {
+            float[] chosen = oklab(spec.fillColor & 0x00FFFFFF);
+            p.hueA = chosen[1];
+            p.hueB = chosen[2];
+            p.hueAmount = bubbleColourAmount;
         }
         p.strokeWidth = VIEW_STROKE_DP * density;
         p.contourGain = VIEW_CONTOUR_GAIN * rimIntensity;
@@ -590,9 +626,7 @@ public final class KyantLens {
         shader.setFloatUniform("uShadowR", params.shadowRadius);
         shader.setFloatUniform("uShadowA", params.shadowAlpha);
         shader.setFloatUniform("uFullCover", params.fullCover);
-        int h = params.hue;
-        shader.setFloatUniform("uHue", ((h >> 16) & 0xFF) / 255f, ((h >> 8) & 0xFF) / 255f,
-                (h & 0xFF) / 255f, params.hueAmount);
+        shader.setFloatUniform("uHue", params.hueA, params.hueB, params.hueAmount);
 
     }
 

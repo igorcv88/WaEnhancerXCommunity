@@ -210,6 +210,34 @@ public class BubbleGlassStabilityTest {
                 .contains("try { syncContrast(row); } finally { applyingContrast = outer; }"));
     }
 
+    @Test public void contrastHasHysteresisAndFollowsTheGlassRecording() throws IOException {
+        // Device trace 2026-11-03 after #145: reply text and play button still flickered while
+        // WhatsApp setter resets were rare (reasserted_text=4, reasserted_icon=0): the colours
+        // followed every single native recording and every session scan landing in one.
+        String app = read(APP);
+        int hold = app.indexOf("private boolean contrastGlass(View row, GlassSpec material)");
+        String body = app.substring(hold, app.indexOf("private void syncContrast(View row)", hold));
+        assertTrue(body.contains("if (bubbleGlass.hasGlass(row)) { nativeSince.remove(row); return true; }"));
+        assertTrue("only rows that had glass colours are held",
+                body.contains("if (!rowsWithGlassContrast.contains(row)) return false;"));
+        assertTrue("a real native transition still restores after the hold",
+                body.contains("row.postDelayed(() -> { holdPending.remove(row); if (!closed) syncReplyText(row); }, left + 16);"));
+        assertTrue("short enough that a real native row recolours promptly",
+                app.contains("static final long CONTRAST_HOLD_MS = 500;"));
+        int sync = app.indexOf("private void syncContrast(View row)");
+        String contrast = app.substring(sync, app.indexOf("private void clearFill(", sync));
+        assertTrue(contrast.contains("boolean glass = contrastGlass(row, material);"));
+        assertTrue("no layer change inside a recording",
+                contrast.contains("if (visualizer != null && !contrastInDraw) liftLayer(visualizer, glass);"));
+        assertTrue(contrast.contains("if (!contrastInDraw) {\n                    clearFill(group.getBackground(), glass);"));
+        assertTrue("tints applied in the glass recording itself, the posted sync still follows",
+                app.contains("if (glassNow != null && glassNow.hasGlass(row)) syncTintsInDraw(row);\n"
+                        + "                    if (contrastPending.add(row)) row.post("));
+        int restore = app.indexOf("private void restoreReplyTexts()");
+        String all = app.substring(restore, app.indexOf("private void restoreContrast()", restore));
+        assertTrue(all.contains("rowsWithGlassContrast.clear();") && all.contains("nativeSince.clear();"));
+    }
+
     @Test public void callAndViewOnceRowsFollowTheGlass() throws IOException {
         String app = read(APP);
         int start = app.indexOf("private void syncReplyText(View row)");
@@ -299,24 +327,48 @@ public class BubbleGlassStabilityTest {
         assertTrue("one hook per method", app.contains("if (!rowDrawHooks.add(method)) return;"));
     }
 
-    // Owner review 2026-11-03: Bubble Colors made the glass opaque. The colour must only pull
-    // the blur's hue; opacity (the wash) is the same as without Bubble Colors.
-    @Test public void bubbleColorsPullTheHueWithoutChangingOpacity() throws IOException {
+    // Owner choice 2026-11-03 (after an external review's proposal, previewed on the owner's
+    // wallpaper): Bubble Colors move the blur's Oklab hue/chroma towards the chosen colour by a
+    // user amount and never change the wash, so opacity and lightness match untinted glass.
+    @Test public void bubbleColorsMoveHueAndChromaWithoutChangingTheWash() {
         GlassSpec base = GlassSpec.resolve(GlassSpec.Variant.LIQUID, true, 0, 0xFF25D366, 10f, true, false);
         GlassSpec tinted = base.withBubbleTint(0xFF0B3D91);
-        KyantLens.Params plain = KyantLens.appSurface(base, 120, 3f, 46);
-        KyantLens.Params colored = KyantLens.appSurface(tinted, 120, 3f, 46);
-        assertEquals("same wash alpha", plain.tint >>> 24, colored.tint >>> 24);
-        assertNotEquals("wash is not the pigment", 0x0B3D91, colored.tint & 0x00FFFFFF);
-        assertEquals(0x0B3D91, colored.hue);
-        assertEquals(KyantLens.BUBBLE_HUE_PULL, colored.hueAmount, 0f);
-        assertTrue(KyantLens.BUBBLE_HUE_PULL > 0f && KyantLens.BUBBLE_HUE_PULL <= 0.5f);
-        assertEquals("untinted surfaces get no pull", 0f, plain.hueAmount, 0f);
-        assertNotEquals("a hue change rebuilds the effect", plain.key(), colored.key());
-        String lens = read("src/main/java/com/waenhancer/theme/KyantLens.java");
-        assertTrue("the pull keeps the backdrop luminance",
-                lens.contains("float3 shade = uHue.rgb + (backLuma - dot(uHue.rgb, lumaW));"));
-        assertFalse(read(GLASS).contains("tintedWashAlpha"));
+        try {
+            KyantLens.publishBubbleColourAmount(0.7f);
+            KyantLens.Params plain = KyantLens.appSurface(base, 120, 3f, 46);
+            KyantLens.Params colored = KyantLens.appSurface(tinted, 120, 3f, 46);
+            assertEquals("same wash as untinted glass", plain.tint, colored.tint);
+            float[] chosen = KyantLens.oklab(0x0B3D91);
+            assertEquals(chosen[1], colored.hueA, 0f);
+            assertEquals(chosen[2], colored.hueB, 0f);
+            assertEquals(0.7f, colored.hueAmount, 0f);
+            assertEquals("untinted surfaces get no colour", 0f, plain.hueAmount, 0f);
+            assertNotEquals("a colour change rebuilds the effect", plain.key(), colored.key());
+            KyantLens.publishBubbleColourAmount(0f);
+            assertEquals("0% is plain glass", 0f, KyantLens.appSurface(tinted, 120, 3f, 46).hueAmount, 0f);
+            KyantLens.publishBubbleColourAmount(Float.NaN);
+            assertEquals(0.7f, KyantLens.bubbleColourAmount(), 0f);
+            KyantLens.publishBubbleColourAmount(5f);
+            assertEquals(1f, KyantLens.bubbleColourAmount(), 0f);
+        } finally {
+            KyantLens.publishBubbleColourAmount(0.7f);
+        }
+        assertTrue("lightness is kept, only a and b move",
+                KyantLens.SHADER.contains("float okA = mix(1.9779984951 * okl - 2.4285922050 * okm + 0.4505937099 * oks, uHue.x, uHue.z);"));
+    }
+
+    @Test public void oklabMatchesTheReferenceValues() {
+        float[] white = KyantLens.oklab(0xFFFFFF);
+        assertEquals(1f, white[0], 1e-3f); assertEquals(0f, white[1], 1e-3f); assertEquals(0f, white[2], 1e-3f);
+        float[] red = KyantLens.oklab(0xFF0000); // Ottosson: (0.62796, 0.22486, 0.12585)
+        assertEquals(0.62796f, red[0], 1e-3f); assertEquals(0.22486f, red[1], 1e-3f); assertEquals(0.12585f, red[2], 1e-3f);
+        float[] grey = KyantLens.oklab(0x1E2328); // a near-neutral choice has almost no chroma
+        assertTrue(Math.hypot(grey[1], grey[2]) < 0.02);
+    }
+
+    @Test public void bubbleColourAmountRebuildsRecordedRows() throws IOException {
+        assertTrue(read(GLASS).contains("KyantLens.rimIntensity() + \":\" + KyantLens.bubbleColourAmount()"));
+        assertTrue(read(APP).contains("KyantLens.publishBubbleColourAmount(LiquidGlassSettings.bubbleColourAmount(prefs));"));
     }
 
     @Test public void incompleteFingerprintNeverSharesATexture() {

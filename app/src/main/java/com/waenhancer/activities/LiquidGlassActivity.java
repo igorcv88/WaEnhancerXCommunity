@@ -107,6 +107,7 @@ public class LiquidGlassActivity extends AppCompatActivity {
                         + "it as you scroll, which is what the material is made of.",
                 LiquidGlassSettings.SCROLL_BUTTON);
         addBubbleScopeRow();
+        addBubbleColourAmountRow();
 
         addSection("Across WhatsApp");
         for (LiquidGlassSettings.Surface surface : LiquidGlassSettings.Surface.values()) {
@@ -188,6 +189,32 @@ public class LiquidGlassActivity extends AppCompatActivity {
                         + "Liquid style there; turning it off puts back the previous one.",
                 LiquidGlassSettings.isBarLiquid(prefs),
                 checked -> LiquidGlassSettings.setBarLiquid(prefs, checked));
+    }
+
+    private void addBubbleColourAmountRow() {
+        TextView label = new TextView(this);
+        label.setTextSize(14);
+        Slider slider = new Slider(this);
+        slider.setValueFrom(0f);
+        slider.setValueTo(100f);
+        slider.setStepSize(5f);
+        float start = LiquidGlassSettings.bubbleColourAmount(prefs) * 100f;
+        slider.setValue(Math.max(0f, Math.min(100f, Math.round(start / 5f) * 5f)));
+        label.setText("Bubble colour amount: " + Math.round(slider.getValue()) + "%");
+        slider.addOnChangeListener((bar, value, fromUser) ->
+                label.setText("Bubble colour amount: " + Math.round(value) + "%"));
+        slider.addOnSliderTouchListener(new Slider.OnSliderTouchListener() {
+            @Override public void onStartTrackingTouch(@androidx.annotation.NonNull Slider bar) { }
+            @Override public void onStopTrackingTouch(@androidx.annotation.NonNull Slider bar) {
+                prefs.edit().putFloat(LiquidGlassSettings.BUBBLE_COLOUR_AMOUNT, bar.getValue() / 100f).apply();
+                notifyChanged();
+            }
+        });
+        controls.addView(label);
+        controls.addView(slider);
+        addCaption("Only with Change Bubble Colors set. How much of your bubble colour (hue and "
+                + "saturation) the glass takes from what is behind it. Opacity and brightness stay "
+                + "those of the rest of the glass; 0% shows the plain glass.");
     }
 
     private void addBubbleScopeRow() {

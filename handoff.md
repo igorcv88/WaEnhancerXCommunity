@@ -1645,3 +1645,31 @@ Validation:
 - Not validated on device.
 
 Device next: Bubble Colors on vs off should show the same transparency; the bubble only shifts towards the chosen hue. If the colour is too faint, raise `BUBBLE_HUE_PULL` (0.5); if a dark palette should also darken the glass slightly, that needs an explicit owner decision (it reduces transparency). If all glass falls back to the classic look after this build, the AGSL program failed on device (`OneMate lens unavailable` in logcat).
+
+### Glass-row contrast hysteresis — 2026-11-03
+
+Branch `ccr-a55049bc-m310s8` restarted from `master@4056a81` (#146 merged); PR [#147](https://github.com/igorcv88/WaEnhancerXCommunity/pull/147).
+
+Owner report on #146: the reply snippet and voice-note play button still flicker white/grey on glass rows. Trace `FREQUENCY`: `reasserted_text=4 reasserted_icon=0` over `calls=5655 glass=2464 no_texture=47`. WhatsApp setter resets are rare, so #145's setter guard is not the missing piece.
+
+Cause (source analysis, not traced): the contrast state followed each single recording. `NativeBubbleGlass.lost` (any native recording of a row that had glass: `NO_TEXTURE`, `MATRIX`, `TOO_SMALL`, `SLOT_FULL`, `ROOT`) notifies, and the posted sync restored WhatsApp's colours. Every session scan (`clipReplyCorners` → `syncReplyText` for all rows) did the same for any row caught between recordings. The next glass recording turned them white again. Separately, the rising edge was posted, so a view WhatsApp replaced on rebind showed one native frame.
+
+Change (`AppLiquidGlass.Session`):
+- `contrastGlass`: hysteresis. A row that had glass colours keeps them for `CONTRAST_HOLD_MS` = 500ms from the first observation without glass; a `postDelayed` sync then restores native colours if it still has none.
+- `syncTintsInDraw`: text and icon tints applied inside the glass recording (from `onGlassChanged` when `hasGlass`); waveform layer and view-once fills are skipped there (`contrastInDraw`) and stay with the posted sync.
+- Telemetry `contrast_held` (gaps bridged), `contrast_restored` (real native transitions), `contrast_fresh` (a view first tinted in a row already holding glass colours: WhatsApp replaced it), `contrast_in_draw`.
+
+Validation: debug compile; unit tests 665, 0 failures (new source test `contrastHasHysteresisAndFollowsTheGlassRecording`); `tools/test_bubble_lifecycle.py` passes. Not validated on device.
+
+Device next: scroll and tap through replies and voice notes. In the trace, high `contrast_held` confirms the cause was single native recordings; high `contrast_fresh` means WhatsApp replaces those views on rebind (now covered by the in-draw tint). If flicker remains with both low, capture `LOST` lines.
+
+Bubble Colors look (final for this PR, supersedes the strength slider below): after the external review, the owner picked option D, an Oklab hue/chroma move with the slider as the colour amount. `uHue` (float3: chosen Oklab a, b, amount) is applied before the wash: the backdrop's L is kept, a/b are mixed towards the choice. The wash is the untinted neutral one. Key `liquid_glass_bubble_colour_amount` (0–1, default 0.7) replaces `liquid_glass_bubble_tint_strength` (never merged). Verified offline with Skia's SkSL compiler and a render through the real shader on the owner's wallpaper: grey vs blue ΔE 15.0 at 70% (8.6 at 40%, 21.6 at 100%); max |ΔL| vs untinted 0.004 (8-bit rounding); detail std 0.0285 vs 0.0286. Cost: about 40 extra ALU ops and 6 `pow` per tinted bubble pixel, only when the amount is above 0. Tests: 668, 0 failures. Superseded intermediate: owner picked "colour replaces the veil" plus a strength setting. `KyantLens.surface` uses the chosen colour as the wash at slider alpha × `liquid_glass_bubble_tint_strength` (0.5–3, default 1; cap 62%); the #146 hue pull (`uHue`) is removed, so the AGSL program is byte-identical to the #145 one (checked). New public float key in `PreferenceSchema`, `LiquidGlassSettings.bubbleTintStrength`, slider "Bubble colour strength" (50–300%) under the bubble scope row, published in `publishOptics`, part of `NativeBubbleGlass.settingsKey`. Tests: settings clamp, wash alpha/colour/cap, no `uHue` left, settings key; 667 tests, 0 failures. Device next: 100% should match Bubble Colors off in transparency; raise the slider until the colour reads. Background below.
+
+Previous state (decision then pending): Bubble Colors look. #146's luminance-locked hue pull reads as a milky veil over the dark wash (owner: "three layers": blur, darkened veil, colour). Measured on the owner's screenshot: incoming pad (47,141,176) vs (1,124,179) with Bubble Colors off, i.e. desaturated, not darker. Offline preview with the real shader on the owner's wallpaper reproduces it. Options shown to the owner: colour replaces the neutral wash at the slider alpha (two layers, the pre-#144 look the owner found too faint), or the same at 1.6×. Dark grey and dark blue at these strengths are hard to tell apart on a saturated blue wallpaper.
+
+External review (owner-supplied, from another instance; treated as hypotheses, not facts), checked against #147:
+- "#146's 35% pull too weak": superseded by #147. Measured on the owner's wallpaper (offline render): grey vs blue ΔE ≈ 4 at strength 100%, ≈ 8 at 200% (with darker bodies and less detail behind), ≈ 13 at 300%.
+- "Initial sync posted → one native frame": valid for #145/#146; #147 tints inside the glass recording.
+- "`setColorFilter` only logged": true, but no `CONTRAST_FILTER` line in the owner's trace. Strongest open hypothesis for the play button (`reasserted_icon=0`): a filter or tint set on the drawable itself, which beats the view tint and passes no hooked setter. Added `ICON_STATE` (posted sync, `control_btn` only, rate-limited per distinct state): drawable class, whether the view tint is ours, drawable filter, view filter.
+- "Reply `RippleDrawable` fill": WhatsApp's quote box, native by design (`nested-quote`); not the body veil.
+- Its colour proposal (hue/saturation from the chosen colour, keep blur/opacity) rendered done properly: Oklab, wallpaper lightness kept, a/b moved 70% to the chosen colour. Grey vs blue ΔE ≈ 15 at unchanged lightness and detail. Shown to the owner as option D; decision pending.

@@ -171,6 +171,18 @@ public class LiquidGlassSettingsTest {
         assertEquals(1f, LiquidGlassSettings.rimIntensity(prefs), 0f);
     }
 
+    @Test public void bubbleColourAmountIsClampedAndDefaultsTo70Percent() {
+        assertEquals(0.7f, LiquidGlassSettings.bubbleColourAmount(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.BUBBLE_COLOUR_AMOUNT, 0.4f).apply();
+        assertEquals(0.4f, LiquidGlassSettings.bubbleColourAmount(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.BUBBLE_COLOUR_AMOUNT, 9f).apply();
+        assertEquals(1f, LiquidGlassSettings.bubbleColourAmount(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.BUBBLE_COLOUR_AMOUNT, -1f).apply();
+        assertEquals(0f, LiquidGlassSettings.bubbleColourAmount(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.BUBBLE_COLOUR_AMOUNT, Float.NaN).apply();
+        assertEquals(0.7f, LiquidGlassSettings.bubbleColourAmount(prefs), 0f);
+    }
+
     @Test public void existingBubbleToggleMigratesToBothDirections() {
         prefs.edit().putBoolean(LiquidGlassSettings.Surface.BUBBLES.key, true).apply();
         assertEquals(LiquidGlassSettings.BubbleScope.BOTH, LiquidGlassSettings.bubbleScope(prefs));
