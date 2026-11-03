@@ -76,6 +76,22 @@ public final class BubbleGlassTelemetry {
 
     public static void stayedNative(Native reason) { NATIVE[reason.ordinal()]++; }
 
+    private static long reassertedText, reassertedIcon, reassertedLayer;
+
+    /**
+     * WhatsApp reset the colour of a glass row's content (rebind, playback state) and the glass
+     * colour was applied again inside that same call (UI thread). 0 text, 1 icon, 2 layer.
+     */
+    public static void reasserted(int kind) {
+        if (kind == 0) reassertedText++; else if (kind == 1) reassertedIcon++; else reassertedLayer++;
+    }
+
+    /** A colour filter set on a managed icon: it overrides the tint, so it is evidence. */
+    public static void contrastFilter(View view) {
+        if (!on() || !allowed("CONTRAST_FILTER")) return;
+        log("CONTRAST_FILTER", "view=" + describe(view));
+    }
+
     private static final Map<Integer, Long> SWITCH_OFF_DIRECTIONS = new java.util.TreeMap<>();
 
     /** Factory direction of a draw left native by the side switch (UI thread). */
@@ -98,6 +114,9 @@ public final class BubbleGlassTelemetry {
         if (!SWITCH_OFF_DIRECTIONS.isEmpty()) out.append(" switch_off_dirs=").append(SWITCH_OFF_DIRECTIONS);
         if (revivedLens + revivedWallpaper > 0)
             out.append(" revived_lens=").append(revivedLens).append(" revived_wallpaper=").append(revivedWallpaper);
+        if (reassertedText + reassertedIcon + reassertedLayer > 0)
+            out.append(" reasserted_text=").append(reassertedText).append(" reasserted_icon=").append(reassertedIcon)
+                    .append(" reasserted_layer=").append(reassertedLayer);
         log("FREQUENCY", out.toString());
     }
 

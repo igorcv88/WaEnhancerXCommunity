@@ -63,6 +63,10 @@ public final class AppLiquidGlass extends Feature {
     private final WeakHashMap<View, WeakReference<Session>> sessions = new WeakHashMap<>();
     private final Map<Integer, Surface> resourceSurfaces = new java.util.HashMap<>();
     private final Set<Integer> unknownResources = new HashSet<>();
+    /** Glass-row content views whose colour is held: view -> owning session (UI thread). */
+    private final WeakHashMap<View, Session> contrastOwners = new WeakHashMap<>();
+    /** Set while this module writes those colours, so its own setter calls are not answered. */
+    private boolean applyingContrast;
     private final Set<String> reported = new HashSet<>();
     /** Direction metadata survives factory creation until the native row installs the drawable. */
     private final Map<GlassMaterialDrawable, Boolean> bubbleDirections =
@@ -129,6 +133,7 @@ public final class AppLiquidGlass extends Feature {
         installDiscoveryHooks();
         installVoiceActivationHooks();
         installTintObserver();
+        installContrastGuards();
         installSharedBubbleFactoryHook();
         observeRowsEarly();
         prepareBubbleDiskCache();
@@ -817,6 +822,34 @@ public final class AppLiquidGlass extends Feature {
         });
     }
 
+    /**
+     * Message-row content colours on glass are held at their source, like the composer icons
+     * (onComposerVisualChanged): WhatsApp resets them on every rebind and playback change, and
+     * that invalidates only the child, not the row whose glass recording drove the sync. The
+     * native grey then showed for a frame or stayed until the row redrew (owner video
+     * 2026-11-03). The reset is answered inside the same setter call, before any frame.
+     */
+    private void installContrastGuards() {
+        XC_MethodHook guard = new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                if (applyingContrast || android.os.Looper.myLooper() != android.os.Looper.getMainLooper()
+                        || contrastOwners.isEmpty()) return;
+                View view = (View) param.thisObject;
+                Session owner = contrastOwners.get(view);
+                if (owner != null) owner.reassertContrast(view, param.method.getName());
+            }
+        };
+        try {
+            XposedBridge.hookAllMethods(TextView.class, "setTextColor", guard);
+            XposedBridge.hookAllMethods(ImageView.class, "setImageTintList", guard);
+            XposedBridge.hookAllMethods(ImageView.class, "setColorFilter", guard);
+            XposedBridge.hookAllMethods(View.class, "setLayerType", guard);
+            report("contrast-guards", "glass-row content colour guards installed");
+        } catch (RuntimeException | LinkageError error) {
+            report("contrast-guard-missing", "glass-row colour guards unavailable: " + error);
+        }
+    }
+
     private Surface surfaceFor(View view) {
         int id = view.getId();
         if (id == View.NO_ID || id == 0 || unknownResources.contains(id)) return null;
@@ -1002,6 +1035,48 @@ public final class AppLiquidGlass extends Feature {
          */
         private void syncReplyText(View row) {
             if (row == null || closed) return;
+            boolean outer = applyingContrast;
+            applyingContrast = true;
+            try { syncContrast(row); } finally { applyingContrast = outer; }
+        }
+
+        /**
+         * WhatsApp reset a held colour (rebind, playback state): its value becomes the native one
+         * restored later, and the glass colour is applied again in the same call, so no frame
+         * shows the native grey. Any other setter on a held view is left alone.
+         */
+        void reassertContrast(View view, String method) {
+            if (closed) { contrastOwners.remove(view); return; }
+            boolean outer = applyingContrast;
+            applyingContrast = true;
+            try {
+                if ("setTextColor".equals(method) && view instanceof TextView) {
+                    TextView text = (TextView) view;
+                    android.content.res.ColorStateList[] state = quoteTexts.get(text);
+                    if (state == null || text.getTextColors() == state[1]) return;
+                    state[0] = text.getTextColors();
+                    text.setTextColor(state[1]);
+                    com.waenhancer.theme.BubbleGlassTelemetry.reasserted(0);
+                } else if ("setImageTintList".equals(method) && view instanceof ImageView) {
+                    ImageView icon = (ImageView) view;
+                    android.content.res.ColorStateList[] state = glassIcons.get(icon);
+                    if (state == null || icon.getImageTintList() == state[1]) return;
+                    state[0] = icon.getImageTintList();
+                    icon.setImageTintList(state[1]);
+                    com.waenhancer.theme.BubbleGlassTelemetry.reasserted(1);
+                } else if ("setColorFilter".equals(method) && view instanceof ImageView) {
+                    // A filter overrides the tint; not overridden blindly, reported as evidence.
+                    if (glassIcons.containsKey(view) && ((ImageView) view).getColorFilter() != null)
+                        com.waenhancer.theme.BubbleGlassTelemetry.contrastFilter(view);
+                } else if ("setLayerType".equals(method) && liftedLayers.containsKey(view)) {
+                    liftedLayers.put(view, view.getLayerType()); // WhatsApp's latest, restored later.
+                    applyLift(view);
+                    com.waenhancer.theme.BubbleGlassTelemetry.reasserted(2);
+                }
+            } finally { applyingContrast = outer; }
+        }
+
+        private void syncContrast(View row) {
             GlassSpec material = resolvedMaterial();
             boolean glass = bubbleGlass != null && material != null && bubbleGlass.hasGlass(row);
             int content = material == null ? 0 : material.contentColor & 0x00FFFFFF;
@@ -1067,13 +1142,14 @@ public final class AppLiquidGlass extends Feature {
             android.content.res.ColorStateList current = text.getTextColors();
             if (!glass) {
                 if (state != null && current == state[1]) text.setTextColor(state[0]);
-                quoteTexts.remove(text);
+                if (quoteTexts.remove(text) != null) contrastOwners.remove(text);
                 return;
             }
             if (state != null && current == state[1] && state[1].getDefaultColor() == color) return;
             android.content.res.ColorStateList original = state != null && current == state[1] ? state[0] : current;
             android.content.res.ColorStateList wanted = android.content.res.ColorStateList.valueOf(color);
             quoteTexts.put(text, new android.content.res.ColorStateList[]{original, wanted});
+            contrastOwners.put(text, this);
             text.setTextColor(wanted);
         }
 
@@ -1082,13 +1158,14 @@ public final class AppLiquidGlass extends Feature {
             android.content.res.ColorStateList current = icon.getImageTintList();
             if (!glass) {
                 if (state != null && current == state[1]) icon.setImageTintList(state[0]);
-                glassIcons.remove(icon);
+                if (glassIcons.remove(icon) != null) contrastOwners.remove(icon);
                 return;
             }
             if (state != null && current == state[1] && state[1].getDefaultColor() == color) return;
             android.content.res.ColorStateList original = state != null && current == state[1] ? state[0] : current;
             android.content.res.ColorStateList wanted = android.content.res.ColorStateList.valueOf(color);
             glassIcons.put(icon, new android.content.res.ColorStateList[]{original, wanted});
+            contrastOwners.put(icon, this);
             icon.setImageTintList(wanted);
         }
 
@@ -1100,21 +1177,41 @@ public final class AppLiquidGlass extends Feature {
         private void liftLayer(View view, boolean glass) {
             Integer original = liftedLayers.get(view);
             if (!glass) {
-                if (original != null) { view.setLayerType(original, null); liftedLayers.remove(view); }
+                if (original != null) {
+                    view.setLayerType(original, null);
+                    liftedLayers.remove(view);
+                    contrastOwners.remove(view);
+                }
                 return;
             }
             if (original != null && view.getLayerType() == View.LAYER_TYPE_HARDWARE) return;
             if (original == null) liftedLayers.put(view, view.getLayerType());
-            android.graphics.Paint paint = new android.graphics.Paint();
-            paint.setColorFilter(new android.graphics.ColorMatrixColorFilter(new float[]{
-                    WAVE_LIFT, 0, 0, 0, 255 * (1 - WAVE_LIFT),
-                    0, WAVE_LIFT, 0, 0, 255 * (1 - WAVE_LIFT),
-                    0, 0, WAVE_LIFT, 0, 255 * (1 - WAVE_LIFT),
-                    0, 0, 0, 1, 0}));
-            view.setLayerType(View.LAYER_TYPE_HARDWARE, paint);
+            contrastOwners.put(view, this);
+            applyLift(view);
+        }
+
+        private android.graphics.Paint liftPaint;
+
+        private void applyLift(View view) {
+            if (liftPaint == null) {
+                liftPaint = new android.graphics.Paint();
+                liftPaint.setColorFilter(new android.graphics.ColorMatrixColorFilter(new float[]{
+                        WAVE_LIFT, 0, 0, 0, 255 * (1 - WAVE_LIFT),
+                        0, WAVE_LIFT, 0, 0, 255 * (1 - WAVE_LIFT),
+                        0, 0, WAVE_LIFT, 0, 255 * (1 - WAVE_LIFT),
+                        0, 0, 0, 1, 0}));
+            }
+            view.setLayerType(View.LAYER_TYPE_HARDWARE, liftPaint);
         }
 
         private void restoreReplyTexts() {
+            boolean outer = applyingContrast;
+            applyingContrast = true;
+            try { restoreContrast(); } finally { applyingContrast = outer; }
+            contrastOwners.values().removeIf(owner -> owner == this);
+        }
+
+        private void restoreContrast() {
             for (Map.Entry<TextView, android.content.res.ColorStateList[]> entry : new ArrayList<>(quoteTexts.entrySet())) {
                 TextView text = entry.getKey();
                 if (text != null && text.getTextColors() == entry.getValue()[1]) text.setTextColor(entry.getValue()[0]);

@@ -175,6 +175,40 @@ public class BubbleGlassStabilityTest {
                 layer.contains("if (original != null && view.getLayerType() == View.LAYER_TYPE_HARDWARE) return;"));
     }
 
+    @Test public void contrastIsHeldAtItsSetters() throws IOException {
+        // Device video 2026-11-03: reply text and the play button flickered white/grey on every
+        // scroll or tap, or stayed grey until the next touch. A WhatsApp colour reset invalidates
+        // only the child, so no row recording (and no sync) followed it.
+        String app = read(APP);
+        int install = app.indexOf("private void installContrastGuards()");
+        String guards = app.substring(install, app.indexOf("private Surface surfaceFor(", install));
+        assertTrue(guards.contains("hookAllMethods(TextView.class, \"setTextColor\", guard)"));
+        assertTrue(guards.contains("hookAllMethods(ImageView.class, \"setImageTintList\", guard)"));
+        assertTrue(guards.contains("hookAllMethods(View.class, \"setLayerType\", guard)"));
+        assertTrue("UI thread only, and never answering this module's own writes",
+                guards.contains("if (applyingContrast || android.os.Looper.myLooper() != android.os.Looper.getMainLooper()"));
+        assertTrue(app.contains("installTintObserver();\n        installContrastGuards();"));
+        int start = app.indexOf("void reassertContrast(View view, String method)");
+        String body = app.substring(start, app.indexOf("private void syncContrast(View row)", start));
+        assertTrue("WhatsApp's new colour becomes the one restored later",
+                body.contains("state[0] = text.getTextColors();\n                    text.setTextColor(state[1]);"));
+        assertTrue(body.contains("state[0] = icon.getImageTintList();\n                    icon.setImageTintList(state[1]);"));
+        assertTrue(body.contains("liftedLayers.put(view, view.getLayerType());"));
+        assertTrue("already applied: no write, no invalidation loop",
+                body.contains("if (state == null || text.getTextColors() == state[1]) return;"));
+        // Ownership follows the held state; restoring writes under the guard.
+        int text = app.indexOf("private void tintText(");
+        String tint = app.substring(text, app.indexOf("private void tintIcon(", text));
+        assertTrue(tint.contains("if (quoteTexts.remove(text) != null) contrastOwners.remove(text);"));
+        assertTrue(tint.contains("contrastOwners.put(text, this);\n            text.setTextColor(wanted);"));
+        int restore = app.indexOf("private void restoreReplyTexts()");
+        String all = app.substring(restore, app.indexOf("private void restoreContrast()", restore));
+        assertTrue(all.contains("applyingContrast = true;") && all.contains("contrastOwners.values().removeIf(owner -> owner == this);"));
+        int sync = app.indexOf("private void syncReplyText(View row)");
+        assertTrue(app.substring(sync, app.indexOf("void reassertContrast(", sync))
+                .contains("try { syncContrast(row); } finally { applyingContrast = outer; }"));
+    }
+
     @Test public void callAndViewOnceRowsFollowTheGlass() throws IOException {
         String app = read(APP);
         int start = app.indexOf("private void syncReplyText(View row)");

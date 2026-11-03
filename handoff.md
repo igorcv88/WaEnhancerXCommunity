@@ -1604,3 +1604,19 @@ Causes/fixes: (a) colours were re-applied only when a row gained/lost glass, but
 Validation: Release compile, 648 unit tests 0 failures (2 new), Python checks as before. Not validated on device.
 
 Same PR #144 (open): owner reports the glass ignores the Bubble Colors palette (incoming should read dark grey, outgoing dark blue; both looked alike). Cause: `KyantLens.surface` keeps only the palette's RGB and washes it at the opacity slider's alpha (18% default), too faint over the bright blue wallpaper. Fix: `NativeBubbleGlass.tintedWashAlpha` = max(slider, min(3× slider, 62%)) for `spec.bubbleTint` only (138/255 at the default slider). The earlier "no forced veil" rule still holds for untinted bubbles; the test was narrowed accordingly. 649 unit tests 0 failures. Device next: confirm both sides now read in their palette colour; if too strong/weak, adjust `BUBBLE_TINT_GAIN`.
+
+### Content colours held at their setters — 2026-11-03
+
+Branch `ccr-a55049bc-m310s8` restarted from `master@70958e3` (#144 merged); new PR.
+
+Owner video after #144: bubble glass itself is stable ("a parte das bolhas em si tá perfeito"); content colours are not: reply snippet text, the voice-note play button, duration/time and similar flicker white → grey → white on every scroll or tap, and sometimes stay grey until the next touch. The composer icons/recorder had the same symptom earlier and were fixed by answering the colour setters (`installTintObserver` → `ConversationGlassPanes.onComposerVisualChanged`).
+
+Cause (source analysis, not traced): the message-row sync ran only after a glass recording of the row (`onGlassChanged`, posted) or a session scan. A WhatsApp `setTextColor`/`setImageTintList` on rebind or playback change invalidates only that child; the row is not re-recorded, so no sync follows (stuck grey). When a sync did follow, it ran after the frame that showed WhatsApp's grey (flicker). The identity check (`current == state[1]`) correctly detected the reset but only at the next sync.
+
+Fix: `installContrastGuards` hooks `TextView.setTextColor`, `ImageView.setImageTintList`, `ImageView.setColorFilter` and `View.setLayerType` (after, UI thread only). Views whose colour the session holds are registered in `contrastOwners` (weak, view → session) when tinted/lifted and unregistered when restored or the session is closed. On a WhatsApp reset of a held view, `Session.reassertContrast` records the new value as the native one (restored later) and re-applies the glass colour in the same call, before any frame. `applyingContrast` keeps the module's own writes (sync, restore, reassert) from being answered. Waveform lift uses one cached `Paint`. A colour filter set on a held icon is not overridden; it is logged as `CONTRAST_FILTER` evidence. `FREQUENCY` now carries `reasserted_text/icon/layer`.
+
+Not covered: a brand-new row (never synced) still gets its colours from the posted sync after its first glass recording, so one native-colour frame is possible for rows created during scroll; recycled rows (the common scroll case) are covered. View-once fills (`ColorDrawable.setColor`) are not guarded.
+
+Validation: debug compile, 650 unit tests 0 failures (1 new source test), `tools/test_bubble_lifecycle.py` passes. Not validated on device.
+
+Device next: scroll and tap through replies and voice notes (play/pause); colours should stay white with no grey frame. In a trace, `reasserted_*` counts show how often WhatsApp resets them; a `CONTRAST_FILTER` line means the play button uses a colour filter and needs a filter-level fix. If one grey frame remains on new rows only, consider syncing in the row's pre-draw.
