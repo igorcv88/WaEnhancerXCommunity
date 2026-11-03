@@ -1578,3 +1578,15 @@ Two causes, both addressed: (1) no row draw hook existed before the first discov
 Limits: the first ever chat with a new wallpaper still waits for its render; a wallpaper whose fingerprint is incomplete (hardware bitmap) has no look and is never stored; turning bubble glass on mid-process enables storing only from the next process start.
 
 Validation: Release compile, 644 unit tests 0 failures (3 new), Python checks as before. Not validated on device. Device next: force-stop WhatsApp, open a chat: expect `BUBBLE_GLASS_SOURCE state=provisional reason=disk` and no native flash; then scroll for `revived_*`.
+
+### View-once/call rows, voice-note contrast, rim retune — 2026-11-03
+
+Branch `ccr-a55049bc-m310s8` restarted from `master@41de3b3` (#141 merged); new PR.
+
+Owner result on #141: stable ("estabilíssimo") through scrolling, entering/leaving chats and app restarts; trace `revived_lens=408 revived_wallpaper=386` confirms the HWUI rebuild path is exercised. Remaining: (1) no glass on view-once messages or calls; (2) received voice notes keep grey play button, duration, time and waveform; (3) rim now too weak ("from one extreme to the other").
+
+(1) Trace: `UNHOSTED ... args=2,-1 / 2,1,true ... canvasSize=1440x222 frame=none` — registered incoming bubbles on full-width row canvases that were not recognised as rows (their IDs are not `conversation_row_*`; exact names unknown). Fix: `rowLists` remembers the parent list of verified rows; any direct child of such a list is a message row in the draw hook (`messageRow`) and in discovery (`bindNativeBubbleRow`). (2) `syncReplyText` now also tints `control_btn` (image tint), `description` and `date` in voice-note rows with the material content colour, and lightens `audio_visualizer` via a hardware-layer colour filter (`WAVE_LIFT=0.5`); all restored when the row is native or glass is released. (3) Rim 0.65× contour, 0.5× highlight, 1dp (was 0.4/0.4/0.8dp).
+
+Not verified: which IDs the view-once/call rows have, and whether their bubble is the same factory drawable (trace says registered direction 2, so yes for at least one type). If they still stay native, the next trace should show `HOSTED` or `NATIVE_ROW` lines for them.
+
+Validation: Release compile, 646 unit tests 0 failures (2 new), Python checks as before. Not validated on device.
