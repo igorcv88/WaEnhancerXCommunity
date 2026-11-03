@@ -107,6 +107,7 @@ public class LiquidGlassActivity extends AppCompatActivity {
                         + "it as you scroll, which is what the material is made of.",
                 LiquidGlassSettings.SCROLL_BUTTON);
         addBubbleScopeRow();
+        addBubbleTintStrengthRow();
 
         addSection("Across WhatsApp");
         for (LiquidGlassSettings.Surface surface : LiquidGlassSettings.Surface.values()) {
@@ -188,6 +189,32 @@ public class LiquidGlassActivity extends AppCompatActivity {
                         + "Liquid style there; turning it off puts back the previous one.",
                 LiquidGlassSettings.isBarLiquid(prefs),
                 checked -> LiquidGlassSettings.setBarLiquid(prefs, checked));
+    }
+
+    private void addBubbleTintStrengthRow() {
+        TextView label = new TextView(this);
+        label.setTextSize(14);
+        Slider slider = new Slider(this);
+        slider.setValueFrom(50f);
+        slider.setValueTo(300f);
+        slider.setStepSize(10f);
+        float start = LiquidGlassSettings.bubbleTintStrength(prefs) * 100f;
+        slider.setValue(Math.max(50f, Math.min(300f, Math.round(start / 10f) * 10f)));
+        label.setText("Bubble colour strength: " + Math.round(slider.getValue()) + "%");
+        slider.addOnChangeListener((bar, value, fromUser) ->
+                label.setText("Bubble colour strength: " + Math.round(value) + "%"));
+        slider.addOnSliderTouchListener(new Slider.OnSliderTouchListener() {
+            @Override public void onStartTrackingTouch(@androidx.annotation.NonNull Slider bar) { }
+            @Override public void onStopTrackingTouch(@androidx.annotation.NonNull Slider bar) {
+                prefs.edit().putFloat(LiquidGlassSettings.BUBBLE_TINT_STRENGTH, bar.getValue() / 100f).apply();
+                notifyChanged();
+            }
+        });
+        controls.addView(label);
+        controls.addView(slider);
+        addCaption("Only with Change Bubble Colors set. Your bubble colour replaces the glass's "
+                + "neutral tint; 100% keeps the same opacity as the rest of the glass, higher "
+                + "values show more colour and less of what is behind (capped at 62%).");
     }
 
     private void addBubbleScopeRow() {

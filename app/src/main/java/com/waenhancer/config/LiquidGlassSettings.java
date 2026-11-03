@@ -31,6 +31,8 @@ public final class LiquidGlassSettings {
     public static final String BAR_OPACITY = "floating_bottom_bar_glass_opacity";
     /** OneMate's shared live rim, percent: 0 disables the rim, 100 is the calibrated baseline. */
     public static final String RIM_INTENSITY = "liquid_glass_rim_intensity";
+    /** Bubble Colors on glass: wash strength relative to the opacity slider, 0.5-3 (1 = same opacity). */
+    public static final String BUBBLE_TINT_STRENGTH = "liquid_glass_bubble_tint_strength";
     /**
      * The style the bar had before Liquid was switched on, so switching it off is reversible.
      *
@@ -232,6 +234,15 @@ public final class LiquidGlassSettings {
         try {
             float value = prefs.getFloat(RIM_INTENSITY, 1f);
             return Float.isFinite(value) ? Math.max(0f, Math.min(2f, value)) : 1f;
+        } catch (RuntimeException ignored) { return 1f; }
+    }
+
+    /** Bubble Colors wash strength on glass bubbles, clamped to 0.5-3; 1 until set. */
+    public static float bubbleTintStrength(SharedPreferences prefs) {
+        if (prefs == null) return 1f;
+        try {
+            float value = prefs.getFloat(BUBBLE_TINT_STRENGTH, 1f);
+            return Float.isFinite(value) ? Math.max(0.5f, Math.min(3f, value)) : 1f;
         } catch (RuntimeException ignored) { return 1f; }
     }
 

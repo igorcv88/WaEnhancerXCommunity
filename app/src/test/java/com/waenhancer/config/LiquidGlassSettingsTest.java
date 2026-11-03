@@ -171,6 +171,18 @@ public class LiquidGlassSettingsTest {
         assertEquals(1f, LiquidGlassSettings.rimIntensity(prefs), 0f);
     }
 
+    @Test public void bubbleTintStrengthIsClampedAndDefaultsToTheSliderOpacity() {
+        assertEquals(1f, LiquidGlassSettings.bubbleTintStrength(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.BUBBLE_TINT_STRENGTH, 1.6f).apply();
+        assertEquals(1.6f, LiquidGlassSettings.bubbleTintStrength(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.BUBBLE_TINT_STRENGTH, 99f).apply();
+        assertEquals(3f, LiquidGlassSettings.bubbleTintStrength(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.BUBBLE_TINT_STRENGTH, 0.1f).apply();
+        assertEquals(0.5f, LiquidGlassSettings.bubbleTintStrength(prefs), 0f);
+        prefs.edit().putFloat(LiquidGlassSettings.BUBBLE_TINT_STRENGTH, Float.NaN).apply();
+        assertEquals(1f, LiquidGlassSettings.bubbleTintStrength(prefs), 0f);
+    }
+
     @Test public void existingBubbleToggleMigratesToBothDirections() {
         prefs.edit().putBoolean(LiquidGlassSettings.Surface.BUBBLES.key, true).apply();
         assertEquals(LiquidGlassSettings.BubbleScope.BOTH, LiquidGlassSettings.bubbleScope(prefs));

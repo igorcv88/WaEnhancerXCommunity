@@ -327,24 +327,36 @@ public class BubbleGlassStabilityTest {
         assertTrue("one hook per method", app.contains("if (!rowDrawHooks.add(method)) return;"));
     }
 
-    // Owner review 2026-11-03: Bubble Colors made the glass opaque. The colour must only pull
-    // the blur's hue; opacity (the wash) is the same as without Bubble Colors.
-    @Test public void bubbleColorsPullTheHueWithoutChangingOpacity() throws IOException {
+    // Owner choice 2026-11-03: Bubble Colors replace the neutral wash (blur + one coloured
+    // layer) at the slider alpha times a user strength. A 3x pigment wash read as opaque and a
+    // luminance-locked hue pull read as a milky veil over the dark wash.
+    @Test public void bubbleColorsReplaceTheWashAtTheUsersStrength() {
         GlassSpec base = GlassSpec.resolve(GlassSpec.Variant.LIQUID, true, 0, 0xFF25D366, 10f, true, false);
         GlassSpec tinted = base.withBubbleTint(0xFF0B3D91);
-        KyantLens.Params plain = KyantLens.appSurface(base, 120, 3f, 46);
-        KyantLens.Params colored = KyantLens.appSurface(tinted, 120, 3f, 46);
-        assertEquals("same wash alpha", plain.tint >>> 24, colored.tint >>> 24);
-        assertNotEquals("wash is not the pigment", 0x0B3D91, colored.tint & 0x00FFFFFF);
-        assertEquals(0x0B3D91, colored.hue);
-        assertEquals(KyantLens.BUBBLE_HUE_PULL, colored.hueAmount, 0f);
-        assertTrue(KyantLens.BUBBLE_HUE_PULL > 0f && KyantLens.BUBBLE_HUE_PULL <= 0.5f);
-        assertEquals("untinted surfaces get no pull", 0f, plain.hueAmount, 0f);
-        assertNotEquals("a hue change rebuilds the effect", plain.key(), colored.key());
-        String lens = read("src/main/java/com/waenhancer/theme/KyantLens.java");
-        assertTrue("the pull keeps the backdrop luminance",
-                lens.contains("float3 shade = uHue.rgb + (backLuma - dot(uHue.rgb, lumaW));"));
-        assertFalse(read(GLASS).contains("tintedWashAlpha"));
+        try {
+            KyantLens.publishBubbleTintStrength(1f);
+            KyantLens.Params plain = KyantLens.appSurface(base, 120, 3f, 46);
+            KyantLens.Params colored = KyantLens.appSurface(tinted, 120, 3f, 46);
+            assertEquals("100%: same opacity as without Bubble Colors", plain.tint >>> 24, colored.tint >>> 24);
+            assertEquals("the colour is the wash", 0x0B3D91, colored.tint & 0x00FFFFFF);
+            KyantLens.publishBubbleTintStrength(2f);
+            assertEquals(92, KyantLens.appSurface(tinted, 120, 3f, 46).tint >>> 24);
+            assertEquals("untinted surfaces ignore the strength", plain.tint, KyantLens.appSurface(base, 120, 3f, 46).tint);
+            KyantLens.publishBubbleTintStrength(3f);
+            assertEquals("capped at 62%", 158, KyantLens.appSurface(tinted, 120, 3f, 100).tint >>> 24);
+            KyantLens.publishBubbleTintStrength(Float.NaN);
+            assertEquals(1f, KyantLens.bubbleTintStrength(), 0f);
+            KyantLens.publishBubbleTintStrength(9f);
+            assertEquals(3f, KyantLens.bubbleTintStrength(), 0f);
+        } finally {
+            KyantLens.publishBubbleTintStrength(1f);
+        }
+        assertFalse("no hue pull left in the program", KyantLens.SHADER.contains("uHue"));
+    }
+
+    @Test public void bubbleTintStrengthRebuildsRecordedRows() throws IOException {
+        assertTrue(read(GLASS).contains("KyantLens.rimIntensity() + \":\" + KyantLens.bubbleTintStrength()"));
+        assertTrue(read(APP).contains("KyantLens.publishBubbleTintStrength(LiquidGlassSettings.bubbleTintStrength(prefs));"));
     }
 
     @Test public void incompleteFingerprintNeverSharesATexture() {
