@@ -136,7 +136,7 @@ public final class NativeBubbleGlass {
      * invalidates them when this key changes.
      */
     public static String settingsKey(GlassSpec spec) {
-        return KyantLens.surfaceAlpha255() + ":" + KyantLens.rimIntensity() + ":" + KyantLens.bubbleTintStrength()
+        return KyantLens.surfaceAlpha255() + ":" + KyantLens.rimIntensity() + ":" + KyantLens.bubbleColourAmount()
                 + ":" + GlassOptics.revision()
                 + ":" + (spec == null ? 0 : spec.hashCode());
     }
@@ -418,8 +418,8 @@ public final class NativeBubbleGlass {
                         : new BubbleSilhouette(0, 0, w, h, Math.min(FALLBACK_RADIUS_DP * density, Math.min(w, h) / 2f), 0);
                 measuredKey = measure;
             }
-            // Same material as the approved composer/header: neutral wash at the opacity slider,
-            // or the Bubble Colors colour as that wash at slider alpha × colour strength.
+            // Same material as the approved composer/header: neutral wash at the opacity slider.
+            // Bubble Colors move the blur's Oklab hue/chroma (KyantLens uHue), never the opacity.
             KyantLens.Params params = KyantLens.appSurface(spec, silhouette.height(), density,
                     KyantLens.surfaceAlpha255());
             // No tail: owner review 2026-11-03 ("the little stroke outside the first message").

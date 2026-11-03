@@ -288,6 +288,7 @@ public class LensOpticsTest {
         String java = new String(Files.readAllBytes(source), StandardCharsets.UTF_8);
         String shader = KyantLens.SHADER;
         Set<String> floats = names(java, "setFloatUniform\\(\"(\\w+)\"");
+        assertTrue(floats.contains("uHue"));
         for (String name : floats) {
             assertTrue(name + " not declared as a float uniform",
                     Pattern.compile("\\nuniform float[234]? " + name + ";").matcher(shader).find());

@@ -209,7 +209,7 @@ public final class AppLiquidGlass extends Feature {
             com.waenhancer.theme.KyantLens.publishOpacity(LiquidGlassSettings.opacityPercent(prefs),
                     LiquidGlassSettings.MATERIAL.recommendedOpacityPercent());
             com.waenhancer.theme.KyantLens.publishRimIntensity(LiquidGlassSettings.rimIntensity(prefs));
-            com.waenhancer.theme.KyantLens.publishBubbleTintStrength(LiquidGlassSettings.bubbleTintStrength(prefs));
+            com.waenhancer.theme.KyantLens.publishBubbleColourAmount(LiquidGlassSettings.bubbleColourAmount(prefs));
         } catch (Throwable error) {
             optics = GlassOptics.LEGACY;
             report("optics-read", "optics switches unreadable; original renderer: " + error);

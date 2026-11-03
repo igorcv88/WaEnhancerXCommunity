@@ -188,7 +188,7 @@ public final class PreferenceSchema {
         add(entries, "liquid_glass_bubbles", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_bubble_scope", Type.STRING, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_rim_intensity", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
-        add(entries, "liquid_glass_bubble_tint_strength", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "liquid_glass_bubble_colour_amount", Type.FLOAT, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_cards", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "liquid_glass_panels", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         // LiquidGlassOptics: experimental optical corrections, read by AppLiquidGlass in WhatsApp.

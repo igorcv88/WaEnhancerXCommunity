@@ -327,36 +327,48 @@ public class BubbleGlassStabilityTest {
         assertTrue("one hook per method", app.contains("if (!rowDrawHooks.add(method)) return;"));
     }
 
-    // Owner choice 2026-11-03: Bubble Colors replace the neutral wash (blur + one coloured
-    // layer) at the slider alpha times a user strength. A 3x pigment wash read as opaque and a
-    // luminance-locked hue pull read as a milky veil over the dark wash.
-    @Test public void bubbleColorsReplaceTheWashAtTheUsersStrength() {
+    // Owner choice 2026-11-03 (after an external review's proposal, previewed on the owner's
+    // wallpaper): Bubble Colors move the blur's Oklab hue/chroma towards the chosen colour by a
+    // user amount and never change the wash, so opacity and lightness match untinted glass.
+    @Test public void bubbleColorsMoveHueAndChromaWithoutChangingTheWash() {
         GlassSpec base = GlassSpec.resolve(GlassSpec.Variant.LIQUID, true, 0, 0xFF25D366, 10f, true, false);
         GlassSpec tinted = base.withBubbleTint(0xFF0B3D91);
         try {
-            KyantLens.publishBubbleTintStrength(1f);
+            KyantLens.publishBubbleColourAmount(0.7f);
             KyantLens.Params plain = KyantLens.appSurface(base, 120, 3f, 46);
             KyantLens.Params colored = KyantLens.appSurface(tinted, 120, 3f, 46);
-            assertEquals("100%: same opacity as without Bubble Colors", plain.tint >>> 24, colored.tint >>> 24);
-            assertEquals("the colour is the wash", 0x0B3D91, colored.tint & 0x00FFFFFF);
-            KyantLens.publishBubbleTintStrength(2f);
-            assertEquals(92, KyantLens.appSurface(tinted, 120, 3f, 46).tint >>> 24);
-            assertEquals("untinted surfaces ignore the strength", plain.tint, KyantLens.appSurface(base, 120, 3f, 46).tint);
-            KyantLens.publishBubbleTintStrength(3f);
-            assertEquals("capped at 62%", 158, KyantLens.appSurface(tinted, 120, 3f, 100).tint >>> 24);
-            KyantLens.publishBubbleTintStrength(Float.NaN);
-            assertEquals(1f, KyantLens.bubbleTintStrength(), 0f);
-            KyantLens.publishBubbleTintStrength(9f);
-            assertEquals(3f, KyantLens.bubbleTintStrength(), 0f);
+            assertEquals("same wash as untinted glass", plain.tint, colored.tint);
+            float[] chosen = KyantLens.oklab(0x0B3D91);
+            assertEquals(chosen[1], colored.hueA, 0f);
+            assertEquals(chosen[2], colored.hueB, 0f);
+            assertEquals(0.7f, colored.hueAmount, 0f);
+            assertEquals("untinted surfaces get no colour", 0f, plain.hueAmount, 0f);
+            assertNotEquals("a colour change rebuilds the effect", plain.key(), colored.key());
+            KyantLens.publishBubbleColourAmount(0f);
+            assertEquals("0% is plain glass", 0f, KyantLens.appSurface(tinted, 120, 3f, 46).hueAmount, 0f);
+            KyantLens.publishBubbleColourAmount(Float.NaN);
+            assertEquals(0.7f, KyantLens.bubbleColourAmount(), 0f);
+            KyantLens.publishBubbleColourAmount(5f);
+            assertEquals(1f, KyantLens.bubbleColourAmount(), 0f);
         } finally {
-            KyantLens.publishBubbleTintStrength(1f);
+            KyantLens.publishBubbleColourAmount(0.7f);
         }
-        assertFalse("no hue pull left in the program", KyantLens.SHADER.contains("uHue"));
+        assertTrue("lightness is kept, only a and b move",
+                KyantLens.SHADER.contains("float okA = mix(1.9779984951 * okl - 2.4285922050 * okm + 0.4505937099 * oks, uHue.x, uHue.z);"));
     }
 
-    @Test public void bubbleTintStrengthRebuildsRecordedRows() throws IOException {
-        assertTrue(read(GLASS).contains("KyantLens.rimIntensity() + \":\" + KyantLens.bubbleTintStrength()"));
-        assertTrue(read(APP).contains("KyantLens.publishBubbleTintStrength(LiquidGlassSettings.bubbleTintStrength(prefs));"));
+    @Test public void oklabMatchesTheReferenceValues() {
+        float[] white = KyantLens.oklab(0xFFFFFF);
+        assertEquals(1f, white[0], 1e-3f); assertEquals(0f, white[1], 1e-3f); assertEquals(0f, white[2], 1e-3f);
+        float[] red = KyantLens.oklab(0xFF0000); // Ottosson: (0.62796, 0.22486, 0.12585)
+        assertEquals(0.62796f, red[0], 1e-3f); assertEquals(0.22486f, red[1], 1e-3f); assertEquals(0.12585f, red[2], 1e-3f);
+        float[] grey = KyantLens.oklab(0x1E2328); // a near-neutral choice has almost no chroma
+        assertTrue(Math.hypot(grey[1], grey[2]) < 0.02);
+    }
+
+    @Test public void bubbleColourAmountRebuildsRecordedRows() throws IOException {
+        assertTrue(read(GLASS).contains("KyantLens.rimIntensity() + \":\" + KyantLens.bubbleColourAmount()"));
+        assertTrue(read(APP).contains("KyantLens.publishBubbleColourAmount(LiquidGlassSettings.bubbleColourAmount(prefs));"));
     }
 
     @Test public void incompleteFingerprintNeverSharesATexture() {
