@@ -3,6 +3,7 @@ package com.waenhancer.theme;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.RectF;
+import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
 import android.util.Log;
@@ -178,6 +179,21 @@ public final class BubbleGlassTelemetry {
     public static void nativeRow(String reason, View host, Integer direction, String detail) {
         if (!on() || !allowed("NATIVE_ROW:" + reason)) return;
         log("NATIVE_ROW", "reason=" + reason + " dir=" + direction + " host=" + describe(host) + " detail=" + detail);
+    }
+
+    /** A cached copy of a factory bubble (same ConstantState) adopted on a verified row. */
+    public static void adoptedCopy(Drawable drawable, Integer direction) {
+        if (!on() || !allowed("ADOPTED_COPY")) return;
+        log("ADOPTED_COPY", "drawable=" + drawable.getClass().getName() + " dir=" + direction);
+    }
+
+    /** A drawable on a verified row canvas that is neither a factory result nor a copy of one. */
+    public static void unregisteredOnRow(Drawable drawable, View host) {
+        if (!on() || !allowed("UNREGISTERED_ON_ROW:" + drawable.getClass().getName())) return;
+        Rect b = drawable.getBounds();
+        log("UNREGISTERED_ON_ROW", "drawable=" + drawable.getClass().getName()
+                + " state=" + (drawable.getConstantState() == null ? "none" : drawable.getConstantState().getClass().getName())
+                + " bounds=" + b.width() + "x" + b.height() + " host=" + describe(host));
     }
 
     /**

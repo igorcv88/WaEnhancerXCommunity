@@ -80,7 +80,7 @@ public class BubbleGlassStabilityTest {
         assertTrue(glass.contains("if (texture == null) { reset(\"texture-withdrawn\"); return; }"));
         assertTrue(glass.contains("\"BUBBLE_GLASS_RESET\""));
         assertTrue("a row that had glass and records native is reported",
-                glass.contains("if (glassRows.remove(host)) BubbleGlassTelemetry.lost(reason.name(), host);"));
+                glass.contains("if (glassRows.remove(host)) { BubbleGlassTelemetry.lost(reason.name(), host); notifyChanged(host); }"));
         assertTrue(glass.contains("if (slot == null) return lost(host, BubbleGlassTelemetry.Native.SLOT_FULL);"));
     }
 
@@ -97,6 +97,53 @@ public class BubbleGlassStabilityTest {
     }
 
     // --- Opening a chat with a known wallpaper look shows glass at once -------------------
+
+    // --- Scrolling: cached copies of a factory bubble (device 2026-11-03) ------------------
+
+    @Test public void cachedBubbleCopiesAreAdoptedOnlyOnVerifiedRows() throws IOException {
+        String app = read(APP);
+        assertTrue("the factory records the ConstantState it returns",
+                app.contains("if (state!=null) bubbleStateSides.put(state, (Integer) param.args[0]);"));
+        int start = app.indexOf("private Integer adoptBubbleCopy(");
+        String body = app.substring(start, app.indexOf("\n    }\n", start));
+        assertTrue("only inside a verified row draw",
+                body.indexOf("NativeBubbleGlass.hostFor((Canvas) canvas) == null) return null;") < body.indexOf("bubbleStateSides.get(state)"));
+        assertTrue(body.contains("bubbleSides.put(bubble, direction);"));
+        int hook = app.indexOf("private void drawNativeBubble(");
+        String draw = app.substring(hook, app.indexOf("\n    }\n", hook));
+        assertTrue(draw.indexOf("adoptBubbleCopy(bubble") < draw.indexOf("Boolean outgoing="));
+    }
+
+    // --- Quieter rim (owner review 2026-11-03) --------------------------------------------
+
+    @Test public void bubbleRimIsAFractionOfTheChromeRim() throws IOException {
+        assertTrue(NativeBubbleGlass.BUBBLE_RIM_GAIN > 0f && NativeBubbleGlass.BUBBLE_RIM_GAIN < 1f);
+        assertTrue(NativeBubbleGlass.BUBBLE_HIGHLIGHT_GAIN > 0f && NativeBubbleGlass.BUBBLE_HIGHLIGHT_GAIN < 1f);
+        assertTrue(NativeBubbleGlass.BUBBLE_STROKE_DP < 1.25f);
+        String glass = read(GLASS);
+        assertTrue("scales the user's rim setting instead of replacing it",
+                glass.contains("params.contourGain *= BUBBLE_RIM_GAIN;"));
+        assertTrue(glass.contains("params.highlight *= BUBBLE_HIGHLIGHT_GAIN;"));
+    }
+
+    // --- Reply snippets readable on glass -------------------------------------------------
+
+    @Test public void replySnippetFollowsTheRowsGlassAndIsRestored() throws IOException {
+        String app = read(APP);
+        int start = app.indexOf("private void syncReplyText(View row)");
+        String body = app.substring(start, app.indexOf("private void restoreReplyTexts()", start));
+        assertTrue("snippet only; the sender title keeps its participant colour",
+                body.contains("\"quoted_text\"") && !body.contains("quoted_title"));
+        assertTrue(body.contains("bubbleGlass.hasGlass(row)"));
+        assertTrue("a row without glass gets WhatsApp's colour back",
+                body.contains("if (state != null && current == state[1]) text.setTextColor(state[0]);"));
+        assertTrue(app.contains("bubbleGlass.onGlassChanged(row -> row.post("));
+        assertTrue(app.contains("restoreReplyCorners();\n            restoreReplyTexts();"));
+        String glass = read(GLASS);
+        assertTrue("a sent message on a recycled row drops the glass state",
+                glass.contains("public void nativeRow(View host) {"));
+        assertTrue(app.contains("if (owner!=null && owner.bubbleGlass!=null) owner.bubbleGlass.nativeRow(host);"));
+    }
 
     @Test public void incompleteFingerprintNeverSharesATexture() {
         // Codex review on #138: a hardware-bitmap wallpaper is skipped by the software probe, so

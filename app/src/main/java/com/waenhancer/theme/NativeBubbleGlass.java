@@ -45,6 +45,12 @@ public final class NativeBubbleGlass {
      * distortion. Device review 2026-11-03: "like the input and the header, a little refraction".
      */
     static final float BUBBLE_REFRACT_HEIGHT_DP = 12f, BUBBLE_REFRACT_AMOUNT_DP = 8f;
+    /**
+     * Bubble rim relative to the composer/header rim. Owner review 2026-11-03: the border "draws
+     * too much attention"; the reference is a thin, quiet hairline. Gain and highlight scale the
+     * user's rim setting, so the rim slider still works on bubbles.
+     */
+    static final float BUBBLE_RIM_GAIN = 0.4f, BUBBLE_HIGHLIGHT_GAIN = 0.4f, BUBBLE_STROKE_DP = 0.8f;
     /** Native mask alpha × this (clamped): a 15%-alpha palette still masks the glass fully. */
     static final float MASK_ALPHA_GAIN = 8f;
     /** Fallback corner when the silhouette cannot be measured. */
@@ -200,7 +206,7 @@ public final class NativeBubbleGlass {
         }
         if (!drawn) return false;
         lastEntry = entry; lastDrawable = bubble; lastRect.set(hostRect);
-        glassRows.add(host);
+        if (glassRows.add(host)) notifyChanged(host);
         BubbleGlassTelemetry.glass();
         BubbleGlassTelemetry.hosted(bubble, canvas, host);
         if (!presented) {
@@ -233,9 +239,25 @@ public final class NativeBubbleGlass {
         }
     }
 
+    /** Whether this row's latest recording painted glass (reply-text contrast follows it). */
+    public boolean hasGlass(View row) { return glassRows.contains(row); }
+
+    /** Called (UI thread, inside a row draw) when a row gains or loses glass. */
+    private java.util.function.Consumer<View> glassChanged;
+    public void onGlassChanged(java.util.function.Consumer<View> listener) { glassChanged = listener; }
+
+    private void notifyChanged(View host) {
+        if (glassChanged != null) glassChanged.accept(host);
+    }
+
+    /** The side switch left this row native (e.g. a recycled row now holds a sent message). */
+    public void nativeRow(View host) {
+        if (glassRows.remove(host)) notifyChanged(host);
+    }
+
     /** Native for a known row; reported when that row's previous recording had glass. */
     private boolean lost(View host, BubbleGlassTelemetry.Native reason) {
-        if (glassRows.remove(host)) BubbleGlassTelemetry.lost(reason.name(), host);
+        if (glassRows.remove(host)) { BubbleGlassTelemetry.lost(reason.name(), host); notifyChanged(host); }
         return stay(reason);
     }
 
@@ -274,7 +296,9 @@ public final class NativeBubbleGlass {
         }
         slots.clear();
         waiting.clear();
+        ArrayList<View> wasGlass = new ArrayList<>(glassRows);
         glassRows.clear();
+        for (View row : wasGlass) if (row != null) notifyChanged(row);
         lastEntry = null; lastDrawable = null;
     }
 
@@ -380,6 +404,9 @@ public final class NativeBubbleGlass {
             params.fullCover = 0f;
             params.refractHeight = Math.min(BUBBLE_REFRACT_HEIGHT_DP * density, silhouette.height() / 2f);
             params.refractAmount = BUBBLE_REFRACT_AMOUNT_DP * density;
+            params.contourGain *= BUBBLE_RIM_GAIN;
+            params.highlight *= BUBBLE_HIGHLIGHT_GAIN;
+            params.strokeWidth = BUBBLE_STROKE_DP * density;
             String key = w + "x" + h + ":" + silhouette.left + "," + silhouette.top + ","
                     + silhouette.right + "," + silhouette.bottom + ":" + silhouette.radius
                     + ":" + params.key() + ":" + GlassOptics.revision();
