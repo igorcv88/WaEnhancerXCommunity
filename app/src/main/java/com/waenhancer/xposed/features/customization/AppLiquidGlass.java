@@ -345,6 +345,8 @@ public final class AppLiquidGlass extends Feature {
                     // bubble hook still needs this window's session and renderer.
                     if (!messageRow(host) || bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF) return;
                     nativeDrawRows.put(host, Boolean.TRUE);
+                    // Discovery skips rows registered here, so the list is learned here too.
+                    if (knownRowId(host.getId()) && host.getParent() != null) rowLists.put(host.getParent(), Boolean.TRUE);
                 }
                 param.setObjectExtra("waex-row-scope", Boolean.TRUE);
                 param.setObjectExtra("waex-row-previous", GlassMaterialDrawable.enterRowDraw(

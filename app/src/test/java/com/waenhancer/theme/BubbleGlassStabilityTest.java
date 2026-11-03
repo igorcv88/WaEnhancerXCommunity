@@ -169,6 +169,8 @@ public class BubbleGlassStabilityTest {
         String app = read(APP);
         assertTrue(app.contains("if (row.getParent() != null && knownRowId(row.getId())) rowLists.put(row.getParent(), Boolean.TRUE);"));
         assertTrue(app.contains("if (!messageRow(host) || bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF) return;"));
+        assertTrue("Codex review on #142: rows registered by the early draw path also teach their list",
+                app.contains("if (knownRowId(host.getId()) && host.getParent() != null) rowLists.put(host.getParent(), Boolean.TRUE);"));
         int bind = app.indexOf("private void bindNativeBubbleRow(View row)");
         String body = app.substring(bind, app.indexOf("observeNativeRowDraw(row);", bind));
         assertTrue(body.contains("if (!named && (row.getParent() == null || !rowLists.containsKey(row.getParent()))) return;"));
