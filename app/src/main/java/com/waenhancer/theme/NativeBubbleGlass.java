@@ -186,7 +186,7 @@ public final class NativeBubbleGlass {
         int save = canvas.save();
         boolean drawn = false;
         try {
-            slot.prepare(bubble, bounds, texture, spec, density);
+            slot.prepare(bubble, bounds, texture, source.textureWidth(), source.textureHeight(), spec, density);
             slot.local.set(local);
             if (!rootTransform()) return lost(host, BubbleGlassTelemetry.Native.ROOT);
             slot.align(host, hostGlobal, rootInverse);
@@ -272,7 +272,7 @@ public final class NativeBubbleGlass {
         Bitmap texture = source.texture();
         if (texture == null) { reset("texture-withdrawn"); return; }
         for (RowSlots row : slots.values())
-            for (Slot slot : row.slots) if (slot != null) slot.retexture(texture);
+            for (Slot slot : row.slots) if (slot != null) slot.retexture(texture, source.textureWidth(), source.textureHeight());
         // Rows that painted natively while the source was preparing re-record once.
         for (View host : new ArrayList<>(waiting)) if (host != null) host.invalidate();
         waiting.clear();
@@ -341,6 +341,8 @@ public final class NativeBubbleGlass {
     }
 
     /** One native bubble on one row: a lens node whose child carries the wallpaper texture. */
+    private static final Paint SCALED = new Paint(Paint.FILTER_BITMAP_FLAG);
+
     private static final class Slot {
         final RenderNode lens = new RenderNode("WaEX-bubble-lens");
         final RenderNode wallpaper = new RenderNode("WaEX-bubble-wallpaper");
@@ -362,7 +364,7 @@ public final class NativeBubbleGlass {
             wallpaper.setPivotY(0f);
         }
 
-        void prepare(Drawable bubble, Rect bounds, Bitmap source, GlassSpec spec, float density) {
+        void prepare(Drawable bubble, Rect bounds, Bitmap source, int sourceW, int sourceH, GlassSpec spec, float density) {
             int w = bounds.width(), h = bounds.height();
             // HWUI deletes the display lists of a subtree that leaves the frame (RenderNode
             // onRemovedFromTree -> destroyHardwareResources, recursively to child nodes). A row
@@ -370,7 +372,7 @@ public final class NativeBubbleGlass {
             // size/texture keys: an empty lens left the bubble fully transparent, an empty
             // wallpaper child left only the wash (no blur, no rim). Rebuild whatever was dropped.
             boolean wallpaperDropped = texture == source && !wallpaper.hasDisplayList();
-            if (texture != source || wallpaperDropped) retexture(source);
+            if (texture != source || wallpaperDropped) retexture(source, sourceW, sourceH);
             boolean lensDropped = lensW >= 0 && !lens.hasDisplayList();
             if (wallpaperDropped || lensDropped) BubbleGlassTelemetry.revived(lensDropped, wallpaperDropped);
             if (w != lensW || h != lensH || lensDropped) {
@@ -427,11 +429,17 @@ public final class NativeBubbleGlass {
             }
         }
 
-        void retexture(Bitmap source) {
+        /** Draws the texture over the window area it covers ({@code w}×{@code h}, window px). */
+        void retexture(Bitmap source, int w, int h) {
             texture = source;
-            wallpaper.setPosition(0, 0, source.getWidth(), source.getHeight());
-            RecordingCanvas content = wallpaper.beginRecording(source.getWidth(), source.getHeight());
-            try { content.drawBitmap(source, 0f, 0f, null); } finally { wallpaper.endRecording(); }
+            if (w <= 0 || h <= 0) { w = source.getWidth(); h = source.getHeight(); }
+            wallpaper.setPosition(0, 0, w, h);
+            RecordingCanvas content = wallpaper.beginRecording(w, h);
+            try {
+                // A provisional disk texture is a quarter-resolution copy: scale it up, filtered.
+                if (source.getWidth() == w && source.getHeight() == h) content.drawBitmap(source, 0f, 0f, null);
+                else content.drawBitmap(source, null, new Rect(0, 0, w, h), SCALED);
+            } finally { wallpaper.endRecording(); }
         }
 
         /** Window texture space → lens-local: the inverse of where this bubble now sits. */

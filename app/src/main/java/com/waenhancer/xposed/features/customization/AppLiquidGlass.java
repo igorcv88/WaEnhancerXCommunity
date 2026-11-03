@@ -130,6 +130,8 @@ public final class AppLiquidGlass extends Feature {
         installVoiceActivationHooks();
         installTintObserver();
         installSharedBubbleFactoryHook();
+        observeRowsEarly();
+        prepareBubbleDiskCache();
         XposedBridge.hookAllMethods(Dialog.class, "show", new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
                 Dialog dialog = (Dialog) param.thisObject;
@@ -255,42 +257,7 @@ public final class AppLiquidGlass extends Feature {
             for (Class<?> type = row.getClass(); type != null; type = type.getSuperclass()) {
                 try {
                     Method method = type.getDeclaredMethod(name, Canvas.class);
-                    if (rowDrawHooks.add(method)) XposedBridge.hookMethod(method, new XC_MethodHook() {
-                        @Override protected void beforeHookedMethod(MethodHookParam param) {
-                            View host = (View) param.thisObject;
-                            // A pane capture runs in pre-draw, before the real frame, and makes dirty
-                            // rows re-record their own RenderNode inside it. That recording is the
-                            // one the real frame reuses, so only a draw straight into the capture
-                            // canvas is skipped.
-                            if (GlassPane.isCaptureCanvas((Canvas) param.args[0])) return;
-                            if (!nativeDrawRows.containsKey(host)) {
-                                // Same row class and ID as a verified row: host it now. The
-                                // bubble hook still needs this window's session and renderer.
-                                if (!knownRowId(host.getId()) || bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF) return;
-                                nativeDrawRows.put(host, Boolean.TRUE);
-                            }
-                            param.setObjectExtra("waex-row-scope", Boolean.TRUE);
-                            param.setObjectExtra("waex-row-previous", GlassMaterialDrawable.enterRowDraw(
-                                    host, (Canvas) param.args[0]));
-                            param.setObjectExtra("waex-row-frame", GlassMaterialDrawable.currentRowDraw());
-                        }
-                        @Override protected void afterHookedMethod(MethodHookParam param) {
-                            if (param.getObjectExtra("waex-row-scope") != null) {
-                                GlassMaterialDrawable.DrawHost frame = (GlassMaterialDrawable.DrawHost)
-                                        param.getObjectExtra("waex-row-frame");
-                                GlassMaterialDrawable.leaveRowDraw((GlassMaterialDrawable.DrawHost)
-                                        param.getObjectExtra("waex-row-previous"));
-                                // Only the outermost draw() establishes that the native row
-                                // really stopped painting the previously adopted factory.
-                                if ("draw".equals(method.getName()) && frame != null
-                                        && !frame.isNestedFor((View) param.thisObject)) {
-                                    View host = (View) param.thisObject;
-                                    Session session = sessionFor(host.getRootView());
-                                    if (session != null) session.reconcileCanvasDraw(host, frame);
-                                }
-                            }
-                        }
-                    });
+                    hookRowDraw(method);
                     break;
                 } catch (NoSuchMethodException absent) {
                     // Search the inherited implementation, not an obfuscated class name.
@@ -300,6 +267,93 @@ public final class AppLiquidGlass extends Feature {
                 }
             }
         }
+    }
+
+    /**
+     * Last blurred wallpaper, quarter resolution, in WhatsApp's own cache directory (OS-clearable,
+     * excluded from backups): shown at once by the first chat after a restart (owner choice
+     * 2026-11-03, option 2). Deleted when bubble glass is off.
+     */
+    private void prepareBubbleDiskCache() {
+        try {
+            android.content.Context app = com.waenhancer.xposed.utils.Utils.getApplication();
+            if (app == null) return;
+            if (bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF)
+                com.waenhancer.theme.ConversationBackdropSource.clearDisk(app.getCacheDir());
+            else if (com.waenhancer.theme.NativeBubbleGlass.supported())
+                com.waenhancer.theme.ConversationBackdropSource.preloadDisk(app.getCacheDir());
+        } catch (Throwable error) {
+            report("bubble-disk-cache", "blurred wallpaper cache unavailable: " + error);
+        }
+    }
+
+    /** Row resource names whose IDs are known before any discovery (cold start). */
+    static final String[] KNOWN_ROW_NAMES = {
+            "conversation_row_text", "conversation_row_voice_note", "conversation_row_image",
+            "conversation_row_sticker", "conversation_row_video", "conversation_row_document",
+            "conversation_row_audio", "conversation_row_gif", "conversation_row_location",
+            "conversation_row_contact"};
+
+    /**
+     * Cold start: the first chat after WhatsApp starts drew its first frames before discovery had
+     * hooked any row draw, so bubbles painted natively for a moment (owner report 2026-11-03).
+     * View.draw is hooked up front and known row IDs are resolved by name; the hook filters by
+     * ID exactly as after discovery. Rows that override draw() are still hooked at discovery.
+     */
+    private void observeRowsEarly() {
+        if (bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF
+                || !com.waenhancer.theme.NativeBubbleGlass.supported()) return;
+        try {
+            android.content.Context app = com.waenhancer.xposed.utils.Utils.getApplication();
+            if (app == null) return;
+            for (String name : KNOWN_ROW_NAMES) {
+                int id = app.getResources().getIdentifier(name, "id", app.getPackageName());
+                if (id != 0) rememberRowId(id);
+            }
+            hookRowDraw(View.class.getDeclaredMethod("draw", Canvas.class));
+        } catch (Throwable error) {
+            report("bubble-draw-hook", "early row draw observation unavailable: " + error);
+        }
+    }
+
+    private void hookRowDraw(Method method) {
+        if (!rowDrawHooks.add(method)) return;
+        XposedBridge.hookMethod(method, new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                View host = (View) param.thisObject;
+                // A pane capture runs in pre-draw, before the real frame, and makes dirty
+                // rows re-record their own RenderNode inside it. That recording is the
+                // one the real frame reuses, so only a draw straight into the capture
+                // canvas is skipped.
+                if (GlassPane.isCaptureCanvas((Canvas) param.args[0])) return;
+                if (!nativeDrawRows.containsKey(host)) {
+                    // Same row class and ID as a verified row: host it now. The
+                    // bubble hook still needs this window's session and renderer.
+                    if (!knownRowId(host.getId()) || bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF) return;
+                    nativeDrawRows.put(host, Boolean.TRUE);
+                }
+                param.setObjectExtra("waex-row-scope", Boolean.TRUE);
+                param.setObjectExtra("waex-row-previous", GlassMaterialDrawable.enterRowDraw(
+                        host, (Canvas) param.args[0]));
+                param.setObjectExtra("waex-row-frame", GlassMaterialDrawable.currentRowDraw());
+            }
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                if (param.getObjectExtra("waex-row-scope") != null) {
+                    GlassMaterialDrawable.DrawHost frame = (GlassMaterialDrawable.DrawHost)
+                            param.getObjectExtra("waex-row-frame");
+                    GlassMaterialDrawable.leaveRowDraw((GlassMaterialDrawable.DrawHost)
+                            param.getObjectExtra("waex-row-previous"));
+                    // Only the outermost draw() establishes that the native row
+                    // really stopped painting the previously adopted factory.
+                    if ("draw".equals(method.getName()) && frame != null
+                            && !frame.isNestedFor((View) param.thisObject)) {
+                        View host = (View) param.thisObject;
+                        Session session = sessionFor(host.getRootView());
+                        if (session != null) session.reconcileCanvasDraw(host, frame);
+                    }
+                }
+            }
+        });
     }
 
     /**

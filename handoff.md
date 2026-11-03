@@ -1568,3 +1568,13 @@ Root cause (source-proven against AOSP `libs/hwui/RenderNode.cpp`/`RenderNode.h`
 Cold-start blink (owner: low priority; only the first chat after WhatsApp restarts): after a process start there is no previous texture to show, so bubbles paint native until the first blur render (~20–170 ms in traces); row draw hooks also install at the first discovery. Options for later, owner decision: accept; keep a small blurred wallpaper texture on disk (wallpaper only, never chat content) to show at once; or draw the glass wash without the wallpaper until the blur is ready instead of the native bubble (changes the "no glass → native" invariant).
 
 Validation: Release compile, 641 unit tests 0 failures (`glassNodesDroppedByHwuiAreRebuilt`), Python checks as before. Not validated on device. Device next: scroll a long chat up and down repeatedly; every received bubble should keep blur and rim; `FREQUENCY` should show `revived_*` > 0.
+
+### Cold-start blink: stored blur + early row hook (owner chose option 2) — 2026-11-03
+
+Same branch/PR #141 (open). Owner: the blink happens on the first chat after WhatsApp restarts (possibly also after a long absence, if the process is killed); chose option 2 (store the blur on disk).
+
+Two causes, both addressed: (1) no row draw hook existed before the first discovery, so the first frame was unhosted; `observeRowsEarly()` hooks `View.draw` at startup (only when bubble glass can run) and resolves row IDs from known names (`KNOWN_ROW_NAMES`). Rows whose class overrides `draw()` are still hooked at discovery; nesting is handled by the existing outermost-scope walk. (2) No texture in memory after a restart; `ConversationBackdropSource.saveDisk` writes a quarter-resolution WEBP (`waex/bubble_backdrop.webp` + `.key` with the look) to WhatsApp's cache directory after each new look, and `preloadDisk` reads it once per process on the worker into a hardware bitmap. `update()` uses it as a provisional texture (`provisional(disk)`) when the look matches; `NativeBubbleGlass` scales it to the window. Storage notes: replayed wallpaper only (copies have no look key), OS-clearable cache, not in backups, deleted at startup when bubble glass is off.
+
+Limits: the first ever chat with a new wallpaper still waits for its render; a wallpaper whose fingerprint is incomplete (hardware bitmap) has no look and is never stored; turning bubble glass on mid-process enables storing only from the next process start.
+
+Validation: Release compile, 644 unit tests 0 failures (3 new), Python checks as before. Not validated on device. Device next: force-stop WhatsApp, open a chat: expect `BUBBLE_GLASS_SOURCE state=provisional reason=disk` and no native flash; then scroll for `revived_*`.
