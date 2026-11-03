@@ -66,6 +66,14 @@ public final class BubbleGlassTelemetry {
 
     public static void glass() { glass++; }
 
+    private static long revivedLens, revivedWallpaper;
+
+    /** Glass nodes whose display list HWUI deleted (row left the frame) and that were rebuilt. */
+    static void revived(boolean lens, boolean wallpaper) {
+        if (lens) revivedLens++;
+        if (wallpaper) revivedWallpaper++;
+    }
+
     public static void stayedNative(Native reason) { NATIVE[reason.ordinal()]++; }
 
     private static final Map<Integer, Long> SWITCH_OFF_DIRECTIONS = new java.util.TreeMap<>();
@@ -88,6 +96,8 @@ public final class BubbleGlassTelemetry {
             if (n != 0) out.append(' ').append(reason.name().toLowerCase(java.util.Locale.ROOT)).append('=').append(n);
         }
         if (!SWITCH_OFF_DIRECTIONS.isEmpty()) out.append(" switch_off_dirs=").append(SWITCH_OFF_DIRECTIONS);
+        if (revivedLens + revivedWallpaper > 0)
+            out.append(" revived_lens=").append(revivedLens).append(" revived_wallpaper=").append(revivedWallpaper);
         log("FREQUENCY", out.toString());
     }
 

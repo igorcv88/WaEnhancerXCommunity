@@ -145,6 +145,23 @@ public class BubbleGlassStabilityTest {
         assertTrue(app.contains("if (owner!=null && owner.bubbleGlass!=null) owner.bubbleGlass.nativeRow(host);"));
     }
 
+    // --- Rows that leave the frame lose their glass display lists (device 2026-11-03) -----
+
+    @Test public void glassNodesDroppedByHwuiAreRebuilt() throws IOException {
+        // AOSP libs/hwui RenderNode: MarkAndSweepRemoved -> onRemovedFromTree ->
+        // destroyHardwareResources deletes the display lists of the removed subtree, our
+        // lens/wallpaper children included. Keys alone (size, texture) cannot detect that.
+        String glass = read(GLASS);
+        int start = glass.indexOf("void prepare(Drawable bubble");
+        String prepare = glass.substring(start, glass.indexOf("void retexture(Bitmap source)", start));
+        assertTrue(prepare.contains("boolean wallpaperDropped = texture == source && !wallpaper.hasDisplayList();"));
+        assertTrue(prepare.contains("if (texture != source || wallpaperDropped) retexture(source);"));
+        assertTrue(prepare.contains("boolean lensDropped = lensW >= 0 && !lens.hasDisplayList();"));
+        assertTrue(prepare.contains("if (w != lensW || h != lensH || lensDropped) {"));
+        assertTrue("the wallpaper child is rebuilt before the lens that draws it",
+                prepare.indexOf("retexture(source);") < prepare.indexOf("lens.beginRecording"));
+    }
+
     @Test public void incompleteFingerprintNeverSharesATexture() {
         // Codex review on #138: a hardware-bitmap wallpaper is skipped by the software probe, so
         // two different wallpapers could fingerprint alike once identities are dropped.

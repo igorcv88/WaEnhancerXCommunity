@@ -364,8 +364,16 @@ public final class NativeBubbleGlass {
 
         void prepare(Drawable bubble, Rect bounds, Bitmap source, GlassSpec spec, float density) {
             int w = bounds.width(), h = bounds.height();
-            if (texture != source) retexture(source);
-            if (w != lensW || h != lensH) {
+            // HWUI deletes the display lists of a subtree that leaves the frame (RenderNode
+            // onRemovedFromTree -> destroyHardwareResources, recursively to child nodes). A row
+            // that scrolls away and back re-records itself, but these nodes kept their old
+            // size/texture keys: an empty lens left the bubble fully transparent, an empty
+            // wallpaper child left only the wash (no blur, no rim). Rebuild whatever was dropped.
+            boolean wallpaperDropped = texture == source && !wallpaper.hasDisplayList();
+            if (texture != source || wallpaperDropped) retexture(source);
+            boolean lensDropped = lensW >= 0 && !lens.hasDisplayList();
+            if (wallpaperDropped || lensDropped) BubbleGlassTelemetry.revived(lensDropped, wallpaperDropped);
+            if (w != lensW || h != lensH || lensDropped) {
                 lens.setPosition(0, 0, w, h);
                 RecordingCanvas content = lens.beginRecording(w, h);
                 try { content.drawRenderNode(wallpaper); } finally { lens.endRecording(); }
