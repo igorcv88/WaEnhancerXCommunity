@@ -85,6 +85,7 @@ public class InspectorOverlay {
     // Handle window: always touchable, never affected by mode.
     private View handleRoot;
     private WindowManager.LayoutParams handleParams;
+    private String attachmentStage = "not-started";
 
     public InspectorOverlay(@NonNull Activity activity, @NonNull Runnable onExit) {
         this.activity = activity;
@@ -109,10 +110,18 @@ public class InspectorOverlay {
         contentRoot.addView(touchCatcher, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
+        attachmentStage = "content";
         windowManager.addView(contentRoot, params(FLAGS_NAVIGATE));
 
+        attachmentStage = "panel";
         attachPanel();
+        attachmentStage = "handle";
         attachHandle();
+        attachmentStage = "complete";
+    }
+
+    public String attachmentStage() {
+        return attachmentStage;
     }
 
     /**
@@ -132,7 +141,7 @@ public class InspectorOverlay {
         panelParams = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION,
+                WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
                 HANDLE_FLAGS,
                 PixelFormat.TRANSLUCENT);
         panelParams.token = activity.getWindow().getDecorView().getWindowToken();
@@ -150,7 +159,7 @@ public class InspectorOverlay {
 
         handleParams = new WindowManager.LayoutParams(
                 sizePx, sizePx,
-                WindowManager.LayoutParams.TYPE_APPLICATION,
+                WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
                 HANDLE_FLAGS,
                 PixelFormat.TRANSLUCENT);
         handleParams.token = activity.getWindow().getDecorView().getWindowToken();
@@ -275,10 +284,12 @@ public class InspectorOverlay {
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION,
+                WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
                 flags,
                 PixelFormat.TRANSLUCENT);
-        // The Activity's own window token is what dispenses with SYSTEM_ALERT_WINDOW.
+        // Sub-windows use their parent window's token, not the Activity token required by
+        // TYPE_APPLICATION. The DecorView token is a ViewRootImpl window binder; combining
+        // it with TYPE_APPLICATION caused repeatable BadTokenException on the Galaxy.
         lp.token = activity.getWindow().getDecorView().getWindowToken();
         return lp;
     }

@@ -168,11 +168,13 @@ public class InspectorFeature extends Feature {
             currentOverlay.setSession(seed);
             currentOverlay.attach();
         } catch (Throwable failure) {
+            String stage = currentOverlay == null ? "construct" : currentOverlay.attachmentStage();
             InspectorTrace.glassEvent("INSPECTOR_ATTACH_FAILED", "type="
-                    + failure.getClass().getSimpleName() + " cause="
+                    + failure.getClass().getSimpleName() + " stage=" + stage + " cause="
                     + (failure.getCause() == null ? "none"
                     : failure.getCause().getClass().getSimpleName()));
-            de.robv.android.xposed.XposedBridge.log("WaEnhancer Inspector overlay failed: " + failure);
+            de.robv.android.xposed.XposedBridge.log(
+                    "WaEnhancer Inspector overlay failed at " + stage + ": " + failure);
             if (currentOverlay != null) {
                 try { currentOverlay.detach(); } catch (Throwable ignored) { }
             }
