@@ -1556,3 +1556,25 @@ Also: bubble rim at 0.4× contour gain and highlight with a 0.8dp stroke (still 
 Open item: both screenshots show a light-blue square at the left edge just below the header, at the same screen position while scrolling (so not a row). Unknown source; ask the owner to PICK it with the inspector.
 
 Validation: Debug/Release compile, 640 unit tests 0 failures (3 new in `BubbleGlassStabilityTest`), Python checks as before. Not validated on device.
+
+### Root cause of bubbles breaking while scrolling — 2026-11-03
+
+Branch `ccr-a55049bc-m310s8` restarted from `master@b0c5e1a` (#140 merged); new PR.
+
+Owner test of `master` with #140: unchanged. While scrolling, received bubbles randomly render either fully transparent (text only) or semi-opaque without blur or rim; others are correct. Reply text and the quieter rim were approved ("the aesthetics improved a lot"). Trace: no `ADOPTED_COPY`, no `UNREGISTERED_ON_ROW`, no `LOST`, `glass` keeps growing. So the #140 cached-copy hypothesis was wrong for this symptom (the adoption code stays: harmless, bounded to verified rows). The broken bubbles are recorded as glass.
+
+Root cause (source-proven against AOSP `libs/hwui/RenderNode.cpp`/`RenderNode.h` main): when a row leaves the frame, `MarkAndSweepRemoved` calls `onRemovedFromTree` → `destroyHardwareResources`, which discards the row's display list and, through `ImmediateRemoved`, those of child nodes whose only parent it was: our lens and wallpaper nodes. The row re-records when it returns; our nodes were re-recorded only on a size/texture change. Empty lens → fully transparent; lens rebuilt (new size) over an empty wallpaper child → wash only. Fix: `Slot.prepare` checks `hasDisplayList()` (= native `mValid`, cleared by `discardStagingDisplayList`) on both nodes each recording and rebuilds them. `FREQUENCY` reports `revived_lens`/`revived_wallpaper`.
+
+Cold-start blink (owner: low priority; only the first chat after WhatsApp restarts): after a process start there is no previous texture to show, so bubbles paint native until the first blur render (~20–170 ms in traces); row draw hooks also install at the first discovery. Options for later, owner decision: accept; keep a small blurred wallpaper texture on disk (wallpaper only, never chat content) to show at once; or draw the glass wash without the wallpaper until the blur is ready instead of the native bubble (changes the "no glass → native" invariant).
+
+Validation: Release compile, 641 unit tests 0 failures (`glassNodesDroppedByHwuiAreRebuilt`), Python checks as before. Not validated on device. Device next: scroll a long chat up and down repeatedly; every received bubble should keep blur and rim; `FREQUENCY` should show `revived_*` > 0.
+
+### Cold-start blink: stored blur + early row hook (owner chose option 2) — 2026-11-03
+
+Same branch/PR #141 (open). Owner: the blink happens on the first chat after WhatsApp restarts (possibly also after a long absence, if the process is killed); chose option 2 (store the blur on disk).
+
+Two causes, both addressed: (1) no row draw hook existed before the first discovery, so the first frame was unhosted; `observeRowsEarly()` hooks `View.draw` at startup (only when bubble glass can run) and resolves row IDs from known names (`KNOWN_ROW_NAMES`). Rows whose class overrides `draw()` are still hooked at discovery; nesting is handled by the existing outermost-scope walk. (2) No texture in memory after a restart; `ConversationBackdropSource.saveDisk` writes a quarter-resolution WEBP (`waex/bubble_backdrop.webp` + `.key` with the look) to WhatsApp's cache directory after each new look, and `preloadDisk` reads it once per process on the worker into a hardware bitmap. `update()` uses it as a provisional texture (`provisional(disk)`) when the look matches; `NativeBubbleGlass` scales it to the window. Storage notes: replayed wallpaper only (copies have no look key), OS-clearable cache, not in backups, deleted at startup when bubble glass is off.
+
+Limits: the first ever chat with a new wallpaper still waits for its render; a wallpaper whose fingerprint is incomplete (hardware bitmap) has no look and is never stored; turning bubble glass on mid-process enables storing only from the next process start.
+
+Validation: Release compile, 644 unit tests 0 failures (3 new), Python checks as before. Not validated on device. Device next: force-stop WhatsApp, open a chat: expect `BUBBLE_GLASS_SOURCE state=provisional reason=disk` and no native flash; then scroll for `revived_*`.

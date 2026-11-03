@@ -63,6 +63,95 @@ public final class ConversationBackdropSource {
     private static Bitmap lastTexture;
     private static String lastLook;
     private String desiredLook;
+    /** Window size the texture covers (a provisional disk texture is smaller and scaled up). */
+    private int textureWidth, textureHeight;
+    public int textureWidth() { return textureWidth; }
+    public int textureHeight() { return textureHeight; }
+
+    // --- Last blurred wallpaper on disk (owner choice 2026-11-03, option 2) -------------------
+    // Only the replayed wallpaper (never a screen copy, never chat content), at quarter
+    // resolution, in WhatsApp's cache directory: OS-clearable and excluded from backups. Read
+    // once per process before the first chat opens; the chat's own render still replaces it.
+    static final int DISK_SCALE=4;
+    static final long MAX_DISK_BYTES=4L*1024*1024;
+    static final String DISK_DIR="waex", DISK_IMAGE="bubble_backdrop.webp", DISK_KEY="bubble_backdrop.key";
+    private static volatile java.io.File diskDir;
+    private static volatile Bitmap diskTexture;
+    private static volatile String diskLook;
+    /** Look currently on disk; read and written on WORKER only. */
+    private static String savedLook;
+
+    /** Loads the stored blur off the UI thread; at most once per process. */
+    public static void preloadDisk(java.io.File cacheDir) {
+        if (cacheDir==null || diskDir!=null || Build.VERSION.SDK_INT<33) return;
+        final java.io.File dir=new java.io.File(cacheDir,DISK_DIR);
+        diskDir=dir;
+        WORKER.execute(() -> {
+            try {
+                java.io.File image=new java.io.File(dir,DISK_IMAGE), key=new java.io.File(dir,DISK_KEY);
+                if (!image.isFile() || !key.isFile() || image.length()>MAX_DISK_BYTES || key.length()>4096) return;
+                String look=new String(java.nio.file.Files.readAllBytes(key.toPath()),java.nio.charset.StandardCharsets.UTF_8);
+                Bitmap decoded=android.graphics.BitmapFactory.decodeFile(image.getPath());
+                if (decoded==null) return;
+                Bitmap uploaded=decoded.copy(Bitmap.Config.HARDWARE,false);
+                decoded.recycle();
+                if (uploaded==null) return;
+                savedLook=look;
+                diskTexture=uploaded;
+                diskLook=look; // Published last: a reader that sees the look also sees the texture.
+            } catch (Throwable unreadable) {
+                // A missing or damaged cache only means the first chat waits for its render.
+            }
+        });
+    }
+
+    /** Bubble glass switched off: nothing of the wallpaper is kept. */
+    public static void clearDisk(java.io.File cacheDir) {
+        if (cacheDir==null) return;
+        final java.io.File dir=new java.io.File(cacheDir,DISK_DIR);
+        WORKER.execute(() -> {
+            new java.io.File(dir,DISK_KEY).delete();
+            new java.io.File(dir,DISK_IMAGE).delete();
+            savedLook=null;
+        });
+    }
+
+    /** WORKER: stores a quarter-resolution copy of a finished texture when its look is new. */
+    private static void saveDisk(Bitmap texture, String look) {
+        java.io.File dir=diskDir;
+        if (dir==null || look==null || look.equals(savedLook)) return;
+        int w=Math.max(1,texture.getWidth()/DISK_SCALE), h=Math.max(1,texture.getHeight()/DISK_SCALE);
+        RenderNode scaled=new RenderNode("WaEX-backdrop-disk");
+        try {
+            scaled.setPosition(0,0,w,h);
+            Canvas canvas=scaled.beginRecording(w,h);
+            try { canvas.drawBitmap(texture,null,new Rect(0,0,w,h),new Paint(Paint.FILTER_BITMAP_FLAG)); }
+            finally { scaled.endRecording(); }
+            Render small=draw(scaled,w,h);
+            if (small.bitmap==null) return;
+            Bitmap software=small.bitmap.copy(Bitmap.Config.ARGB_8888,false);
+            if (software==null) return;
+            try {
+                if (!dir.isDirectory() && !dir.mkdirs()) return;
+                java.io.File image=new java.io.File(dir,DISK_IMAGE), key=new java.io.File(dir,DISK_KEY);
+                java.io.File imageTmp=new java.io.File(dir,DISK_IMAGE+".tmp"), keyTmp=new java.io.File(dir,DISK_KEY+".tmp");
+                try (java.io.FileOutputStream out=new java.io.FileOutputStream(imageTmp)) {
+                    if (!software.compress(Bitmap.CompressFormat.WEBP_LOSSY,90,out)) return;
+                }
+                java.nio.file.Files.write(keyTmp.toPath(),look.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                // Key removed first: a crash in between leaves no key rather than a wrong pair.
+                key.delete();
+                if (!imageTmp.renameTo(image) || !keyTmp.renameTo(key)) return;
+                savedLook=look;
+            } finally {
+                software.recycle();
+            }
+        } catch (Throwable unwritable) {
+            // Disk cache is an optimisation only.
+        } finally {
+            scaled.discardDisplayList();
+        }
+    }
     public ConversationBackdropSource(Runnable changed) { this.changed=changed; }
     /**
      * A texture is presentable while a newer revision prepares (stale-while-revalidate): a
@@ -99,10 +188,17 @@ public final class ConversationBackdropSource {
         }
         debounce.changed(android.os.SystemClock.uptimeMillis());
         if (desired==null && texture!=null) { texture=null; main.post(changed); }
-        if (texture==null && desiredLook!=null && desiredLook.equals(lastLook) && lastTexture!=null) {
-            texture=lastTexture; // Provisional: same look; this chat's render still replaces it.
-            BubbleGlassTelemetry.source("provisional", "shared-look");
-            main.post(changed);
+        if (texture==null && desiredLook!=null) {
+            // Provisional: same look (this process, else the disk copy); this chat's render still
+            // replaces it.
+            boolean memory=desiredLook.equals(lastLook) && lastTexture!=null;
+            String stored=diskLook;
+            Bitmap shared=memory ? lastTexture : desiredLook.equals(stored) ? diskTexture : null;
+            if (shared!=null) {
+                texture=shared; textureWidth=capture.width; textureHeight=capture.height;
+                BubbleGlassTelemetry.source("provisional", memory ? "shared-look" : "disk");
+                main.post(changed);
+            }
         }
         liveToken.set(epoch.revision());
         main.removeCallbacks(retryStart);
@@ -123,6 +219,7 @@ public final class ConversationBackdropSource {
         PENDING.incrementAndGet();
         final long token=epoch.revision(); final WallpaperCapture snapshot=desired; final float radius=blur;
         final RenderNode content=desiredContent;
+        final String look=desiredLook;
         BubbleGlassTelemetry.source("preparing", "revision="+token);
         WORKER.execute(() -> {
             Render rendered;
@@ -143,6 +240,7 @@ public final class ConversationBackdropSource {
                 if (result.outcome==SourceRetryPolicy.Outcome.READY) {
                     epoch.complete(token,true);
                     texture=result.bitmap;
+                    textureWidth=result.bitmap.getWidth(); textureHeight=result.bitmap.getHeight();
                     if (desiredLook!=null) { lastTexture=result.bitmap; lastLook=desiredLook; }
                     BubbleGlassTelemetry.source("ready", result.bitmap.getWidth()+"x"+result.bitmap.getHeight());
                     probe("SOURCE_READY","revision="+token+" size="+result.bitmap.getWidth()+"x"+result.bitmap.getHeight());
@@ -160,6 +258,8 @@ public final class ConversationBackdropSource {
                     changed.run();
                 }
             });
+            // After the result is posted: the UI thread does not wait for the disk copy.
+            if (result.outcome==SourceRetryPolicy.Outcome.READY) saveDisk(result.bitmap, look);
         });
     }
 

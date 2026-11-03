@@ -145,6 +145,66 @@ public class BubbleGlassStabilityTest {
         assertTrue(app.contains("if (owner!=null && owner.bubbleGlass!=null) owner.bubbleGlass.nativeRow(host);"));
     }
 
+    // --- Rows that leave the frame lose their glass display lists (device 2026-11-03) -----
+
+    @Test public void glassNodesDroppedByHwuiAreRebuilt() throws IOException {
+        // AOSP libs/hwui RenderNode: MarkAndSweepRemoved -> onRemovedFromTree ->
+        // destroyHardwareResources deletes the display lists of the removed subtree, our
+        // lens/wallpaper children included. Keys alone (size, texture) cannot detect that.
+        String glass = read(GLASS);
+        int start = glass.indexOf("void prepare(Drawable bubble");
+        String prepare = glass.substring(start, glass.indexOf("void retexture(Bitmap source, int w, int h)", start));
+        assertTrue(prepare.contains("boolean wallpaperDropped = texture == source && !wallpaper.hasDisplayList();"));
+        assertTrue(prepare.contains("if (texture != source || wallpaperDropped) retexture(source, sourceW, sourceH);"));
+        assertTrue(prepare.contains("boolean lensDropped = lensW >= 0 && !lens.hasDisplayList();"));
+        assertTrue(prepare.contains("if (w != lensW || h != lensH || lensDropped) {"));
+        assertTrue("the wallpaper child is rebuilt before the lens that draws it",
+                prepare.indexOf("retexture(source, sourceW, sourceH);") < prepare.indexOf("lens.beginRecording"));
+    }
+
+    // --- Cold start: first chat after a restart (owner choice 2026-11-03, option 2) --------
+
+    @Test public void diskCopyHoldsOnlyTheReplayedWallpaperAndIsBounded() throws IOException {
+        String source = read(SOURCE);
+        int start = source.indexOf("private static void saveDisk(");
+        String save = source.substring(start, source.indexOf("\n    }\n", start));
+        assertTrue("never rewritten for the same look", save.contains("if (dir==null || look==null || look.equals(savedLook)) return;"));
+        assertTrue("quarter resolution", save.contains("texture.getWidth()/DISK_SCALE"));
+        assertEquals(4, ConversationBackdropSource.DISK_SCALE);
+        assertTrue("no key for a half-written pair", save.indexOf("key.delete();") < save.indexOf("imageTmp.renameTo(image)"));
+        assertTrue("a look exists only for replay plans (copies have no contentKey)",
+                source.contains("desiredLook=usable && capture.contentKey!=null ?"));
+        assertTrue("saved after the result reaches the UI thread",
+                source.indexOf("saveDisk(result.bitmap, look);") > source.indexOf("final Render result=rendered;"));
+        String app = read(APP);
+        int prep = app.indexOf("private void prepareBubbleDiskCache()");
+        String body = app.substring(prep, app.indexOf("\n    }\n", prep));
+        assertTrue("WhatsApp's cache directory: OS-clearable, not backed up", body.contains("app.getCacheDir()"));
+        assertTrue("deleted when bubble glass is off", body.contains("ConversationBackdropSource.clearDisk("));
+    }
+
+    @Test public void diskTextureIsProvisionalAndScaledToTheWindow() throws IOException {
+        String source = read(SOURCE);
+        assertTrue(source.contains("Bitmap shared=memory ? lastTexture : desiredLook.equals(stored) ? diskTexture : null;"));
+        assertTrue(source.contains("texture=shared; textureWidth=capture.width; textureHeight=capture.height;"));
+        String glass = read(GLASS);
+        assertTrue(glass.contains("else content.drawBitmap(source, null, new Rect(0, 0, w, h), SCALED);"));
+        assertTrue(glass.contains("source.textureWidth(), source.textureHeight()"));
+    }
+
+    @Test public void rowDrawIsObservedFromStartup() throws IOException {
+        String app = read(APP);
+        int start = app.indexOf("private void observeRowsEarly()");
+        String body = app.substring(start, app.indexOf("\n    }\n", start));
+        assertTrue("only when bubble glass can run",
+                body.indexOf("BubbleScope.OFF") < body.indexOf("hookRowDraw("));
+        assertTrue(body.contains("hookRowDraw(View.class.getDeclaredMethod(\"draw\", Canvas.class));"));
+        assertTrue(body.contains("if (id != 0) rememberRowId(id);"));
+        assertTrue("installed with the factory hook",
+                app.contains("installSharedBubbleFactoryHook();\n        observeRowsEarly();"));
+        assertTrue("one hook per method", app.contains("if (!rowDrawHooks.add(method)) return;"));
+    }
+
     @Test public void incompleteFingerprintNeverSharesATexture() {
         // Codex review on #138: a hardware-bitmap wallpaper is skipped by the software probe, so
         // two different wallpapers could fingerprint alike once identities are dropped.
@@ -157,9 +217,9 @@ public class BubbleGlassStabilityTest {
     @Test public void provisionalTextureIsKeyedByLookNotIdentity() throws IOException {
         String source = read(SOURCE);
         assertTrue(source.contains("desiredLook=usable && capture.contentKey!=null ? capture.contentKey+\"|blur=\"+radius : null;"));
-        assertTrue(source.contains("if (texture==null && desiredLook!=null && desiredLook.equals(lastLook) && lastTexture!=null) {"));
+        assertTrue(source.contains("boolean memory=desiredLook.equals(lastLook) && lastTexture!=null;"));
         assertTrue("the chat's own render still replaces it",
-                source.indexOf("texture=lastTexture;") < source.indexOf("start();\n    }\n    public static float blurRadius"));
+                source.indexOf("texture=shared;") < source.indexOf("start();\n    }\n    public static float blurRadius"));
         String capture = read("src/main/java/com/waenhancer/theme/WallpaperCapture.java");
         assertTrue("no look key when a drawable could not be fingerprinted",
                 capture.contains("if (lookKeyAllowed(pixels, complete[0])) plan.contentKey"));
