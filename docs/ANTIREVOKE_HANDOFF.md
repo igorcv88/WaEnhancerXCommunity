@@ -1,47 +1,42 @@
-# AntiRevoke implementation handoff
+# AntiRevoke state and legacy marker handoff
 
-Review-ready PR: https://github.com/igorcv88/WaEnhancerXCommunity/pull/136
-Branch: `fix/antirevoke-durable-snapshots`, based on `master@8cc6c517`.
+Current branch: `fix/antirevoke-legacy-marker-bind`, based on `master@41de3b31`.
+Previous storage implementation: merged PR https://github.com/igorcv88/WaEnhancerXCommunity/pull/136.
+See `ANTIREVOKE_PERSISTENCE.md` for the full storage contract and remaining coverage limits.
 
-The implementation commits encrypted text/caption snapshots, stable account/key/chat
-identity, row aliases and legacy markers before acknowledging protection. Version 13 is
-additive and verifies integrity/counts while preserving v12 history and media references.
-The SQLiteStatement barrier is installed independently of optional WhatsApp resolvers.
-Typed result handling delegates unknown signatures explicitly to that barrier. Indexed
-bounded caches invalidate misses on commit; asynchronous placeholder-text recovery checks
-binding identity before publishing. Existing notifications remain independent of whether
-protection is enabled. Player and Liquid Glass sources are unchanged.
+The owner reports that preserved content survives the module updates tested so far.
+Older preserved messages can lack their revocation marker. The supplied Inspector data
+contains structural/glass evidence, not a query of message keys or durable revocation
+records. Neither a missing icon nor retained audio alone establishes the historical
+revocation identity or the availability of an archived original.
 
-See `ANTIREVOKE_PERSISTENCE.md` for the storage contract, supported SQL shapes, failure
-behavior, limits and test commands. Media preservation is references only; files are not
-copied. Unknown native writes and unidentifiable/missing historical rows are not claimed
-recoverable. A failed durable write is reported, while matched SQL retains the original
-row as emergency retention without a successful persistence acknowledgement.
+Two source regressions in #136 are corrected:
 
-Validation: Debug and Release Java compilation passed; 622 JVM tests passed with zero
-failures/errors/skips; Android instrumentation sources compiled, including 12 synthetic
-SQLite/AndroidKeyStore tests. Seven host SQLite migration/durability/identity tests passed,
-as did existing message-history migration, app-only runtime/IPC, bubble-lifecycle and diff
-checks. Android test-rules was added solely for existing UiThreadTest annotations.
-Instrumentation was not executed. No device/LSPosed/WhatsApp signature, APK-update or UI
-latency acceptance is claimed. No workflow was dispatched and no merge was performed.
+- Binding had stopped using an explicit `message_add_on` relationship when the current
+  key did not identify the old event. The fallback is restored on a bounded worker,
+  with current-account/current-row/key verification and indexed, limited queries.
+  Only a unique linked durable event qualifies; ambiguous, oversized, unindexed or
+  unknown relationships leave the native unmarked state unchanged.
+- Binding had conflated an existing old event whose timestamp is zero with a missing
+  event. `RevokedMarker`/`Match` now keep presence separate from time. Such an event
+  retains the configured icon/label without displaying a made-up deletion date.
 
-Review follow-up: the callback barrier is now armed before snapshot size checks,
-encryption or commit. Six JVM regressions execute the production checkpoint/context with
-size/key/storage failures, assert that key-based SQL fallback and media retention still
-have the correct account/row identity, reject false acknowledgements, and check nested
-callbacks, explicit pass, cleanup and thread isolation. Matching message writes do not
-perform an additional archive-state query that could reopen the same storage failure.
-Placeholder INSERT/REPLACE values may change key_id: the actual overwritten row or an
-identified callback still names the original, while an alias lookup must reject an unrelated
-reused row. Three additional SQL-policy tests cover those distinctions.
-The legacy SQLite test executes the production compatibility query after migration and
-reopen without modifying source rows or generating a new revocation. The additional
-Android test covers legacy helper reads across repeated reopen; it is compiled, not run.
+Positive/negative link results use a 256-entry identity cache; misses expire in five
+seconds. At most 64 pending jobs are coalesced. Recycled/outgoing/disabled bindings change
+identity before worker completions, and cleanup only removes owned decorations. Neither
+source/history rows, schema, snapshot contents, encryption, the SQL protection nor player/
+Liquid Glass sources are changed by this follow-up. No new device telemetry is added.
 
-Next: validate the module APK update with an already preserved message as the baseline.
-Compare that same message's original content and marker after the update, WhatsApp restart,
-scrolling and conversation reentry. Do not repeat basic new-revocation acceptance as proof
-of update persistence. Historical placeholders require a separate earlier content source;
-no recovery or association is fabricated. Keep runtime compatibility and measured UI
-latency separate from host test results. Do not merge without explicit instruction.
+Validation: Debug/Release Java compilation passed; **655 JVM tests, zero failures/errors/
+skips**; Android instrumentation sources compiled, including six new synthetic link/store
+compatibility tests (18 AntiRevoke SQLite/KeyStore/link tests total). Eight host SQLite
+migration/legacy-read tests passed, including presence with timestamp zero and unchanged
+historical rows. Instrumentation was compiled, not executed. Diff checks passed; no
+workflow dispatch, merge, private image/capture or phone database is included.
+
+Next: normal visual acceptance on already preserved legacy voice/text rows, including
+transcription, scroll/recycling and conversation reentry. This is not a repeat of basic
+new-revocation testing and does not claim a recovery of unidentifiable historical
+placeholders. If metadata never existed or the source has no verifiable relationship,
+these changes cannot safely manufacture it. A structural capture alone does not select
+between that case and a later native view redraw. Do not merge automatically.

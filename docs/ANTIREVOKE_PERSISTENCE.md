@@ -116,3 +116,30 @@ check content/marker across scrolling and conversation reentry. This is independ
 already demonstrated interception of a newly revoked message. Recovery of older, already
 unidentifiable placeholders requires an earlier source containing the original content;
 this implementation does not invent that association or replace the active database.
+
+## Legacy marker compatibility follow-up
+
+Marker presence is separate from deletion time: a legacy row with timestamp zero is a
+known revocation with an unknown date. Its icon/label remains available, without an
+invented date, underline or date-click action. No historical row is rewritten to assign
+it a new timestamp.
+
+The v13 binding refactor had also omitted the prior `message_add_on` key lookup. When
+current-key reads have no event, a bounded worker may consult explicit add-on links for
+the current incoming row. It verifies the physical account path and the row's current key,
+requires an indexed parent lookup, and refuses results exceeding eight rows. Only one
+unambiguous linked key with a durable legacy or same-account event qualifies. Preserved
+content, audio type, a similar time, or the existence of an add-on alone never invents a
+revocation. This path reads metadata only; it writes neither WhatsApp nor archive rows.
+
+Linked marker results are cached for 256 account/row/current-key identities. Negative
+results expire after five seconds; work is coalesced with at most 64 pending identities
+on the existing bounded worker. New bindings, including outgoing/disabled recycled views,
+replace their identity before an asynchronous result may publish. Cleanup removes only
+owned decoration and does not overwrite a newly bound native date with an old label.
+The SQL protection, durable checkpoint and cryptography paths are unchanged.
+
+These source fixes restore two previous compatibility behaviors. A structural Inspector
+capture cannot prove that a particular old message still has its revocation record/link,
+or that WhatsApp has not subsequently changed its views. Actual visual acceptance remains
+separate from host tests; missing historical metadata is not reconstructed from content.

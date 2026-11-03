@@ -72,6 +72,15 @@ class AntiRevokeMigrationTest(unittest.TestCase):
             self.assertEqual(rows, self.db.execute(f'SELECT * FROM {table}').fetchall())
         self.assertEqual(0, self.db.execute('SELECT COUNT(*) FROM revoked_snapshots').fetchone()[0])
 
+    def test_legacy_zero_date_is_an_existing_event_not_a_missing_row(self):
+        self.db.execute("UPDATE delmessages SET timestamp=0 WHERE msgid='key-1'")
+        self.db.commit()
+        original = self.db.execute("SELECT * FROM delmessages WHERE msgid='key-1'").fetchone()
+        self.migrate()
+        self.assertEqual((0,), self.db.execute(LEGACY_QUERY, ('key-1','key-1')).fetchone())
+        self.assertIsNone(self.db.execute(LEGACY_QUERY, ('missing','missing')).fetchone())
+        self.assertEqual(original, self.db.execute("SELECT * FROM delmessages WHERE msgid='key-1'").fetchone())
+
     def test_failure_rolls_back_schema_and_version(self):
         with self.assertRaises(sqlite3.OperationalError):
             self.migrate(fail=True)
