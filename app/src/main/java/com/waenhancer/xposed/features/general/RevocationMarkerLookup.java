@@ -32,10 +32,17 @@ public final class RevocationMarkerLookup {
     public synchronized boolean begin(Identity identity) {
         return pending.size() < MAX_PENDING && pending.add(identity);
     }
-    public synchronized void complete(Identity identity, Match match, long now) {
-        pending.remove(identity);
-        cache.put(identity, new Cached(match, now));
-        while (cache.size() > MAX_CACHE) cache.remove(cache.keySet().iterator().next());
+    public void complete(Identity identity, Match match, long now) {
+        complete(identity, match, now, () -> {});
+    }
+    /** Publish before refreshing all current bindings, without retaining the initiating view. */
+    public void complete(Identity identity, Match match, long now, Runnable refreshBindings) {
+        synchronized (this) {
+            pending.remove(identity);
+            cache.put(identity, new Cached(match, now));
+            while (cache.size() > MAX_CACHE) cache.remove(cache.keySet().iterator().next());
+        }
+        if (match.known()) refreshBindings.run();
     }
     public synchronized void cancel(Identity identity) { pending.remove(identity); }
 

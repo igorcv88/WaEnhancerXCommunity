@@ -91,9 +91,9 @@ public class BubbleGlassStabilityTest {
         int start = app.indexOf("private void observeNativeRowDraw(View row)");
         String body = app.substring(start, app.indexOf("afterHookedMethod", start));
         assertTrue(body.contains("rememberRowId(row.getId());"));
-        assertTrue(body.contains("if (!knownRowId(host.getId()) || bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF) return;"));
+        assertTrue(body.contains("if (!messageRow(host) || bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF) return;"));
         assertTrue("captures are still skipped first",
-                body.indexOf("GlassPane.isCaptureCanvas") < body.indexOf("knownRowId(host.getId())"));
+                body.indexOf("GlassPane.isCaptureCanvas") < body.indexOf("messageRow(host)"));
     }
 
     // --- Opening a chat with a known wallpaper look shows glass at once -------------------
@@ -131,12 +131,14 @@ public class BubbleGlassStabilityTest {
     @Test public void replySnippetFollowsTheRowsGlassAndIsRestored() throws IOException {
         String app = read(APP);
         int start = app.indexOf("private void syncReplyText(View row)");
-        String body = app.substring(start, app.indexOf("private void restoreReplyTexts()", start));
+        String body = app.substring(start, app.indexOf("private void tintText(", start));
         assertTrue("snippet only; the sender title keeps its participant colour",
-                body.contains("\"quoted_text\"") && !body.contains("quoted_title"));
+                body.contains("rowChild(row, \"quoted_text\")") && !body.contains("quoted_title"));
         assertTrue(body.contains("bubbleGlass.hasGlass(row)"));
+        int tint = app.indexOf("private void tintText(");
+        String text = app.substring(tint, app.indexOf("private void tintIcon(", tint));
         assertTrue("a row without glass gets WhatsApp's colour back",
-                body.contains("if (state != null && current == state[1]) text.setTextColor(state[0]);"));
+                text.contains("if (state != null && current == state[1]) text.setTextColor(state[0]);"));
         assertTrue(app.contains("bubbleGlass.onGlassChanged(row -> row.post("));
         assertTrue(app.contains("restoreReplyCorners();\n            restoreReplyTexts();"));
         String glass = read(GLASS);
@@ -145,7 +147,34 @@ public class BubbleGlassStabilityTest {
         assertTrue(app.contains("if (owner!=null && owner.bubbleGlass!=null) owner.bubbleGlass.nativeRow(host);"));
     }
 
-    // --- Rows that leave the frame lose their glass display lists (device 2026-11-03) -----
+    @Test public void voiceNoteControlsFollowTheGlassAndAreRestored() throws IOException {
+        String app = read(APP);
+        int start = app.indexOf("private void syncReplyText(View row)");
+        String body = app.substring(start, app.indexOf("private void tintText(", start));
+        assertTrue(body.contains("rowChild(row, \"control_btn\")"));
+        assertTrue(body.contains("tintText(rowChild(row, \"description\"), glass, secondary);"));
+        assertTrue("seek thumb keeps its accent", !body.contains("audio_seekbar"));
+        int lift = app.indexOf("private void liftLayer(View view, boolean glass)");
+        String layer = app.substring(lift, app.indexOf("private void restoreReplyTexts()", lift));
+        assertTrue("original layer type restored", layer.contains("view.setLayerType(original, null);"));
+        int restore = app.indexOf("private void restoreReplyTexts()");
+        String all = app.substring(restore, app.indexOf("private void restoreReplyCorners()", restore));
+        assertTrue(all.contains("icon.setImageTintList(entry.getValue()[0]);"));
+        assertTrue(all.contains("entry.getKey().setLayerType(entry.getValue(), null);"));
+    }
+
+    @Test public void anyChildOfAVerifiedMessageListIsARow() throws IOException {
+        // Device 2026-11-03: view-once and call rows (other IDs) drew registered incoming
+        // bubbles on 1440x222 row canvases with frame=none.
+        String app = read(APP);
+        assertTrue(app.contains("if (row.getParent() != null && knownRowId(row.getId())) rowLists.put(row.getParent(), Boolean.TRUE);"));
+        assertTrue(app.contains("if (!messageRow(host) || bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF) return;"));
+        assertTrue("Codex review on #142: rows registered by the early draw path also teach their list",
+                app.contains("if (knownRowId(host.getId()) && host.getParent() != null) rowLists.put(host.getParent(), Boolean.TRUE);"));
+        int bind = app.indexOf("private void bindNativeBubbleRow(View row)");
+        String body = app.substring(bind, app.indexOf("observeNativeRowDraw(row);", bind));
+        assertTrue(body.contains("if (!named && (row.getParent() == null || !rowLists.containsKey(row.getParent()))) return;"));
+    }
 
     @Test public void glassNodesDroppedByHwuiAreRebuilt() throws IOException {
         // AOSP libs/hwui RenderNode: MarkAndSweepRemoved -> onRemovedFromTree ->

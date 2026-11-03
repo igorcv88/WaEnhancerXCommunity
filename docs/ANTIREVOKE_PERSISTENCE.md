@@ -137,6 +137,14 @@ results expire after five seconds; work is coalesced with at most 64 pending ide
 on the existing bounded worker. New bindings, including outgoing/disabled recycled views,
 replace their identity before an asynchronous result may publish. Cleanup removes only
 owned decoration and does not overwrite a newly bound native date with an old label.
+A successful coalesced lookup publishes its cache result before refreshing the conversation
+adapter on the UI thread. Every current binding can then read the result, even if the
+initiating view was recycled; misses do not trigger adapter refreshes. The worker does
+not retain that initiating view or its message wrapper.
+
+Glass contrast honours the explicit AntiRevoke colour while a text view is marked.
+Unmarked views and markers without a custom colour retain ordinary glass contrast.
+Glass colour updates do not remove the marker's compound drawable, text or click action.
 The SQL protection, durable checkpoint and cryptography paths are unchanged.
 
 These source fixes restore two previous compatibility behaviors. A structural Inspector

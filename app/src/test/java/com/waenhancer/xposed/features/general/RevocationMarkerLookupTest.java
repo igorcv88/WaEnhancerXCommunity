@@ -83,4 +83,38 @@ public class RevocationMarkerLookupTest {
         assertTrue(lookup.cached(id,100000).known());
     }
 
+    @Test public void coalescedCompletionRefreshesReplacementBindingAfterFirstWasRecycled() {
+        var lookup = new RevocationMarkerLookup();
+        var id = new RevocationMarkerLookup.Identity("account",42,"current");
+        var replacement = new RevocationMarkerLookup.Identity("account",43,"other");
+        var bindings = new java.util.ArrayList<RevocationMarkerLookup.Identity>();
+        bindings.add(id);
+        assertTrue(lookup.begin(id));
+        bindings.add(id); // Same message gets a second view while the worker is busy.
+        assertFalse(lookup.begin(id));
+        bindings.set(0,replacement); // The initiating view now belongs to another message.
+        boolean[] marked = new boolean[2];
+        int[] refreshes = {0};
+        lookup.complete(id,new RevocationMarkerLookup.Match("old",0),100,() -> {
+            refreshes[0]++;
+            for (int index = 0; index < bindings.size(); index++) {
+                var match = lookup.cached(bindings.get(index),100);
+                marked[index] = match != null && match.known();
+            }
+        });
+        assertEquals(1,refreshes[0]);
+        assertFalse(marked[0]);
+        assertTrue(marked[1]); // No extra native bind is needed to discover the cached marker.
+    }
+
+    @Test public void missingMarkerDoesNotCauseAdapterRefreshLoop() {
+        var lookup = new RevocationMarkerLookup();
+        var id = new RevocationMarkerLookup.Identity("account",42,"current");
+        assertTrue(lookup.begin(id));
+        lookup.complete(id,RevocationMarkerLookup.Match.NONE,100,() -> {
+            throw new AssertionError("Unknown events must not trigger another adapter bind");
+        });
+        assertEquals(RevocationMarkerLookup.Match.NONE,lookup.cached(id,100));
+    }
+
 }

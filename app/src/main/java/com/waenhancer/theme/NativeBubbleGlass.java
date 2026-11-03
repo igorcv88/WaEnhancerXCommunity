@@ -50,7 +50,10 @@ public final class NativeBubbleGlass {
      * too much attention"; the reference is a thin, quiet hairline. Gain and highlight scale the
      * user's rim setting, so the rim slider still works on bubbles.
      */
-    static final float BUBBLE_RIM_GAIN = 0.4f, BUBBLE_HIGHLIGHT_GAIN = 0.4f, BUBBLE_STROKE_DP = 0.8f;
+    // Second owner review 2026-11-03: 0.4/0.4/0.8dp went "from one extreme to the other" (rim
+    // barely visible). The reference keeps a continuous, clearly visible thin hairline, so the
+    // all-round contour is raised more than the directional highlight.
+    static final float BUBBLE_RIM_GAIN = 0.65f, BUBBLE_HIGHLIGHT_GAIN = 0.5f, BUBBLE_STROKE_DP = 1.0f;
     /** Native mask alpha × this (clamped): a 15%-alpha palette still masks the glass fully. */
     static final float MASK_ALPHA_GAIN = 8f;
     /** Fallback corner when the silhouette cannot be measured. */

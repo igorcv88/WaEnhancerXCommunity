@@ -126,8 +126,7 @@ public class AntiRevoke extends Feature {
     private final com.waenhancer.xposed.core.db.RevocationLinkQuery markerLinks =
             new com.waenhancer.xposed.core.db.RevocationLinkQuery();
 
-    private void requestLinkedMarker(RevocationMarkerLookup.Identity identity, String binding,
-            FMessageWpp message, TextView date, TextView text, String preference) {
+    private void requestLinkedMarker(RevocationMarkerLookup.Identity identity) {
         if (identity.row() <= 0 || identity.key() == null || identity.key().isEmpty()
                 || !linkedMarkers.begin(identity)) return;
         try {
@@ -149,12 +148,10 @@ public class AntiRevoke extends Feature {
                                     : RevocationMarkerLookup.Match.NONE;
                         });
                     }
-                    linkedMarkers.complete(identity, match, android.os.SystemClock.uptimeMillis());
-                    if (match.known()) date.post(() -> {
-                        if (date.isAttachedToWindow() && identity.scope().equals(uiScope)
-                                && binding.equals(XposedHelpers.getAdditionalInstanceField(date, "waexRevokeIdentity")))
-                            bindRevokedMessageUI(message, date, text, preference);
-                    });
+                    // Refresh the adapter, not the first captured view: other bindings may have
+                    // joined this lookup, and that first view may already have been recycled.
+                    linkedMarkers.complete(identity, match, android.os.SystemClock.uptimeMillis(),
+                            this::refreshConversation);
                 } catch (Exception failure) {
                     linkedMarkers.complete(identity, RevocationMarkerLookup.Match.NONE,
                             android.os.SystemClock.uptimeMillis());
@@ -165,6 +162,8 @@ public class AntiRevoke extends Feature {
     }
 
     private static void clearOwnedMarker(TextView date, TextView text) {
+        XposedHelpers.setAdditionalInstanceField(date, "waexRevokeColor", null);
+        if (text != null) XposedHelpers.setAdditionalInstanceField(text, "waexRevokeColor", null);
         if (!Boolean.TRUE.equals(XposedHelpers.getAdditionalInstanceField(date, "waexRevokeMarked"))) return;
         Integer dateColour = (Integer) XposedHelpers.getAdditionalInstanceField(date, "originalColor");
         if (dateColour != null) date.setTextColor(dateColour);
@@ -402,12 +401,16 @@ public class AntiRevoke extends Feature {
         if (!known) {
             var identity = new RevocationMarkerLookup.Identity(uiScope, fMessage.getRowId(), key.messageID);
             var cached = linkedMarkers.cached(identity, android.os.SystemClock.uptimeMillis());
-            if (cached == null) requestLinkedMarker(identity, boundIdentity, fMessage,
-                    dateTextView, messageTextView, antirevokeType);
+            if (cached == null) requestLinkedMarker(identity);
             else { known = cached.known(); timestamp = cached.timestamp(); markerKey = cached.key(); }
         }
         if (known) {
             XposedHelpers.setAdditionalInstanceField(dateTextView, "waexRevokeMarked", true);
+            // Glass contrast may run after this bind; keep the explicit revocation colour.
+            Integer ownedColor = customColor != 0 ? customColor : null;
+            XposedHelpers.setAdditionalInstanceField(dateTextView, "waexRevokeColor", ownedColor);
+            if (messageTextView != null)
+                XposedHelpers.setAdditionalInstanceField(messageTextView, "waexRevokeColor", ownedColor);
             if (messageTextView != null && fMessage.getMediaType() == 15) {
                 restorePlaceholderText(uiScope, fMessage.getRowId(), markerKey, boundIdentity,
                         dateTextView, messageTextView);
