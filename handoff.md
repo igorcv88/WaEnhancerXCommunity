@@ -1481,3 +1481,25 @@ Four findings, all confirmed in code and fixed:
 
 Tests: new `WallpaperSourceReviewTest` (10) executes the consumer decision (custom-named and obfuscated recyclers, rows/composer, plain wallpaper views), content-key change with same identity, first-unsupported telemetry state, and debounce timing during an active render; source checks cover wiring that needs Android Views/HWUI. Full suite 584 tests, 0 failures; Debug/Release compile; Python and AGSL checks as before. These do not prove drawable selection or texture invalidation on the device.
 
+## Automatic bare-wallpaper copy for bubble glass — 2026-11-03
+
+Branch `ccr-a55049bc-m310s8` restarted from `master@d4d634a` (#134 merged); new PR. Owner request: option 1 of the discussion — when the module cannot reproduce a chat's wallpaper, it copies the bare wallpaper itself (no user screenshot), once per wallpaper, since chats can have their own.
+
+`WallpaperFallback` (see ARCHITECTURE "Automatic bare-wallpaper copy"): triggered from `syncSharedBubbles` when `WallpaperCapture.plan` is unsupported for a copyable reason or `ConversationBackdropSource.failed()`; hides the covering siblings for one committed frame, verifies no message list/row/pane is visible, `PixelCopy` at half resolution, restores; keyed by `WallpaperCapture.identity(wallpaper)`; cover-mapped on geometry change; memory only; two attempts per identity. Telemetry: `source=fallback-scheduled|fallback-waiting|fallback-capturing|fallback-ready|fallback-failed(reason)`.
+
+Not changed: the replay path from #134 stays first; bubble drawing (#131); composer/header/recorder/player.
+
+Validation: Debug/Release compile; 592 unit tests 0 failures (new `WallpaperFallbackTest`, 8: eligibility, cover geometry, hide→verify→copy order, restore on every path, identity cache, attempts, session wiring); Python checks as before. Not proven locally: PixelCopy result, flash duration, that hiding covers all overlays on the Galaxy.
+
+Device next: test #134 first. If `source=unsupported(...)` or `unavailable`, this PR should show `fallback-ready` and glass after a brief bare-wallpaper flash on first open; switching to a chat with another wallpaper copies again; keyboard reuses it. If `fallback-failed(consumer-visible)`, a view over the wallpaper was not identified — report the log line.
+
+### Device result on #134 and root cause of glass=0 — 2026-11-03
+
+Owner device report (WhatsApp 2.26.38.74, module 0.0.42-beta-4): still no glass. Evidence: `SOURCE_READY 1440x3120` ~70 ms after opening (the #134 source works); `FREQUENCY calls=1327 glass=0 source=ready not_registered=70 capture=1212 switch_off=10 no_texture=35` — the reasons sum exactly to the calls, so after the source was ready no bubble draw reached the glass path. Inspector tree: `conversation_background` (`WDSWallpaper`) and `conversation_layout` → `content` → `list` (`ConversationListViewImpl`) are siblings under `coordinator`; rows `X.DQH`/`X.Dof` with `X.Fyn` backgrounds; bubble drawable `NinePatchDrawable`.
+
+Root cause (code-proven, consistent with the counts): `GlassPane`/`BehindRecorder` capture in pre-draw with `src.draw(captureCanvas)`; dirty rows re-record their own RenderNode inside it (`updateDisplayListIfDirty`), and the real frame reuses that list. The row draw hook and bubble hook bailed on `GlassPane.isCapturing()`, so every row was recorded natively — including the re-record after `SOURCE_READY`, which the pre-draw capture always consumes first. Fix on this branch (PR #135): `LiveBackdrop` tracks the capture's own canvas; only draws straight into it are skipped. New `CaptureCanvasScopeTest` (3); lifecycle check updated. 595 unit tests 0 failures; Debug/Release compile.
+
+Expected on device: `FREQUENCY` shows `glass>0` and `capture` near zero; glass on incoming/outgoing bubbles with the source ready. `switch_off=10` means some draws were for a side the scope excludes (or non-OneMate) — check the incoming/outgoing setting if one side stays native. The PixelCopy fallback in this PR stays inactive while the replay source is ready.
+
+
+Codex review on #135 (`94c9b4b`), three P2 findings, all confirmed and fixed: (1) a replay that failed for good is remembered per wallpaper identity (`WallpaperFallback.replayFailed/sticky`), so the copy stays selected instead of flipping back to the failing plan on the next scan; (2) a `capture.record()` exception now sets `failed`, making it eligible for the copy; (3) a wallpaper view that hosts messages/panes is never copied (`wallpaper-hosts-consumers`), since only views over it are hidden. Handler created lazily so the object is testable on the host JVM. 598 unit tests 0 failures.

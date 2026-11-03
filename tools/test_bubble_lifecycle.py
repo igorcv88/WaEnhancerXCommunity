@@ -39,8 +39,9 @@ source=(theme/'ConversationBackdropSource.java').read_text()
 consumer=(theme/'NativeBubbleGlass.java').read_text()
 app=(ROOT/'app/src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java').read_text()
 assert 'LiveBackdrop' not in source and 'captureBehind' not in source+consumer
-# The consumer may only *skip* while another surface captures; it never creates a capture.
-assert consumer.count('LiveBackdrop')==1 and 'LiveBackdrop.isCapturing()' in consumer
+# The consumer only skips draws straight into a capture canvas; it never creates a capture.
+# (A row re-recording its own RenderNode during a capture is the frame's display list.)
+assert consumer.count('LiveBackdrop')==1 and 'LiveBackdrop.isCaptureCanvas(canvas)' in consumer
 capture=(theme/'WallpaperCapture.java').read_text()
 assert 'view.draw(' not in source+capture and 'root.draw(' not in source and 'window.draw(' not in source+capture
 assert 'drawRenderNode' not in capture and 'hostsConsumers(wallpaper, 0)' in capture

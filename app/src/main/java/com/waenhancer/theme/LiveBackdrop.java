@@ -35,6 +35,12 @@ final class LiveBackdrop {
 
     /** Main thread only. True while any backdrop is drawing the host's views into its recording. */
     private static boolean capturing;
+    /**
+     * The pane recording canvas while {@link #capturing}. Views drawn straight into it are part
+     * of a capture; a row re-recording its own RenderNode during that capture is not (its display
+     * list is reused by the real frame).
+     */
+    private static Canvas captureCanvas;
     /** Off when the touch-feedback guards could not be installed: recording would crash on ripples. */
     private static boolean captureAllowed = true;
 
@@ -103,6 +109,11 @@ final class LiveBackdrop {
         float netScaleY() {
             return recordScale * replayScaleY;
         }
+    }
+
+    /** Main thread only: {@code canvas} is the recording of a live capture in progress. */
+    static boolean isCaptureCanvas(Canvas canvas) {
+        return capturing && canvas != null && canvas == captureCanvas;
     }
 
     static boolean isCapturing() {
@@ -181,12 +192,15 @@ final class LiveBackdrop {
         RecordingCanvas canvas = node.beginRecording(w, h);
         boolean painted;
         capturing = true;
+        Canvas previousCapture = captureCanvas;
+        captureCanvas = canvas;
         try {
             canvas.scale(1f / DOWNSAMPLE, 1f / DOWNSAMPLE);
             canvas.clipRect(0, 0, width, height);
             painted = painter.paint(canvas, 0);
         } finally {
             capturing = false;
+            captureCanvas = previousCapture;
             // endRecording must run even if draw() throws, or every later beginRecording throws.
             node.endRecording();
         }
@@ -226,6 +240,8 @@ final class LiveBackdrop {
         RecordingCanvas canvas = node.beginRecording(layout.nodeWidth, layout.nodeHeight);
         boolean painted;
         capturing = true;
+        Canvas previousCapture = captureCanvas;
+        captureCanvas = canvas;
         try {
             canvas.scale(layout.recordScale, layout.recordScale);
             canvas.translate(padding, padding);
@@ -233,6 +249,7 @@ final class LiveBackdrop {
             painted = painter.paint(canvas, padding);
         } finally {
             capturing = false;
+            captureCanvas = previousCapture;
             node.endRecording();
         }
         if (!painted) {
@@ -290,12 +307,15 @@ final class LiveBackdrop {
         RecordingCanvas canvas = node.beginRecording(layout.nodeWidth, layout.nodeHeight);
         boolean painted;
         capturing = true;
+        Canvas previousCapture = captureCanvas;
+        captureCanvas = canvas;
         try {
             canvas.translate(padding, padding);
             canvas.clipRect(-padding, -padding, width + padding, height + padding);
             painted = painter.paint(canvas, padding);
         } finally {
             capturing = false;
+            captureCanvas = previousCapture;
             node.endRecording();
         }
         if (!painted) {
