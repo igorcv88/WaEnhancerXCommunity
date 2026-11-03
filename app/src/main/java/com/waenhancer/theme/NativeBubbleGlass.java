@@ -53,7 +53,13 @@ public final class NativeBubbleGlass {
     // Second owner review 2026-11-03: 0.4/0.4/0.8dp went "from one extreme to the other" (rim
     // barely visible). The reference keeps a continuous, clearly visible thin hairline, so the
     // all-round contour is raised more than the directional highlight.
-    static final float BUBBLE_RIM_GAIN = 0.65f, BUBBLE_HIGHLIGHT_GAIN = 0.5f, BUBBLE_STROKE_DP = 1.0f;
+    // Third owner review 2026-11-03: weight and thickness right, but the line read as a dull grey
+    // rather than a lit edge, dimmer than the other surfaces. The rim blends towards white by
+    // contour * gain, so a low gain over a dark body lands on grey. The contour peak now matches
+    // the composer/header (gain 1.0) and the directional highlight is closer to it, while the
+    // Gaussian is narrowed (1.0 -> 0.85dp) so the visible width stays about the same:
+    // width ~ sigma * sqrt(2 ln(peak / threshold)) grows only logarithmically with the peak.
+    static final float BUBBLE_RIM_GAIN = 1.0f, BUBBLE_HIGHLIGHT_GAIN = 0.8f, BUBBLE_STROKE_DP = 0.85f;
     /**
      * Bubble Colors pigment on glass. The shared material washes with the opacity slider's alpha
      * (18% by default), which made a dark grey or dark blue palette almost invisible over a
