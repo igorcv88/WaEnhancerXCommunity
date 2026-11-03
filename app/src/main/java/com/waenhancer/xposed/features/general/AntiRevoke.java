@@ -96,7 +96,7 @@ public class AntiRevoke extends Feature {
             });
     private final java.util.Set<String> pendingText = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final java.util.concurrent.ThreadPoolExecutor restoreWorker = new java.util.concurrent.ThreadPoolExecutor(
-            1, 1, 0, java.util.concurrent.TimeUnit.MILLISECONDS, new java.util.concurrent.ArrayBlockingQueue<>(16),
+            1, 1, 0, java.util.concurrent.TimeUnit.MILLISECONDS, new java.util.concurrent.ArrayBlockingQueue<>(64),
             runnable -> { Thread thread = new Thread(runnable, "WaEX-RevokeRestore"); thread.setDaemon(true); return thread; });
 
     private void restorePlaceholderText(String scope, long row, String key, String identity,
@@ -120,6 +120,66 @@ public class AntiRevoke extends Feature {
                 finally { pendingText.remove(identity); }
             });
         } catch (java.util.concurrent.RejectedExecutionException busy) { pendingText.remove(identity); }
+    }
+
+    private final RevocationMarkerLookup linkedMarkers = new RevocationMarkerLookup();
+    private final com.waenhancer.xposed.core.db.RevocationLinkQuery markerLinks =
+            new com.waenhancer.xposed.core.db.RevocationLinkQuery();
+
+    private void requestLinkedMarker(RevocationMarkerLookup.Identity identity) {
+        if (identity.row() <= 0 || identity.key() == null || identity.key().isEmpty()
+                || !linkedMarkers.begin(identity)) return;
+        try {
+            restoreWorker.execute(() -> {
+                try {
+                    var source = MessageStore.getInstance().getDatabase();
+                    RevocationMarkerLookup.Match match = RevocationMarkerLookup.Match.NONE;
+                    if (source != null && identity.scope().equals(RevocationArchive.scope(source))) {
+                        var candidates = markerLinks.read(source, identity.scope(), identity.row(), identity.key());
+                        var store = DelMessageStore.getInstance(Utils.getApplication());
+                        long direct = archive.timestamp(identity.scope(), identity.row(), identity.key());
+                        var legacy = store.getLegacyRevokedMarker(identity.key());
+                        var current = direct > 0 ? new RevocationMarkerLookup.Match(identity.key(), direct)
+                                : legacy.known() ? new RevocationMarkerLookup.Match(identity.key(), legacy.timestamp())
+                                : RevocationMarkerLookup.Match.NONE;
+                        match = RevocationMarkerLookup.resolve(current, candidates, key -> {
+                            var marker = store.getLinkedRevokedMarker(identity.scope(), key);
+                            return marker.known() ? new RevocationMarkerLookup.Match(key, marker.timestamp())
+                                    : RevocationMarkerLookup.Match.NONE;
+                        });
+                    }
+                    // Refresh the adapter, not the first captured view: other bindings may have
+                    // joined this lookup, and that first view may already have been recycled.
+                    linkedMarkers.complete(identity, match, android.os.SystemClock.uptimeMillis(),
+                            this::refreshConversation);
+                } catch (Exception failure) {
+                    linkedMarkers.complete(identity, RevocationMarkerLookup.Match.NONE,
+                            android.os.SystemClock.uptimeMillis());
+                    sqlGuard.warn("marker-link-lookup-failed", failure);
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException busy) { linkedMarkers.cancel(identity); }
+    }
+
+    private static void clearOwnedMarker(TextView date, TextView text) {
+        XposedHelpers.setAdditionalInstanceField(date, "waexRevokeColor", null);
+        if (text != null) XposedHelpers.setAdditionalInstanceField(text, "waexRevokeColor", null);
+        if (!Boolean.TRUE.equals(XposedHelpers.getAdditionalInstanceField(date, "waexRevokeMarked"))) return;
+        Integer dateColour = (Integer) XposedHelpers.getAdditionalInstanceField(date, "originalColor");
+        if (dateColour != null) date.setTextColor(dateColour);
+        if (text != null) {
+            Integer colour = (Integer) XposedHelpers.getAdditionalInstanceField(text, "originalColor");
+            if (colour != null) text.setTextColor(colour);
+        }
+        String label = (String) XposedHelpers.getAdditionalInstanceField(date, "waexRevokeLabel");
+        String original = (String) XposedHelpers.getAdditionalInstanceField(date, "originalMessage");
+        if (label != null && original != null && label.contentEquals(date.getText())) date.setText(original);
+        date.setCompoundDrawables(null, null, null, null);
+        date.getPaint().setUnderlineText(false);
+        date.setOnClickListener(null);
+        XposedHelpers.setAdditionalInstanceField(date, "waexRevokeMarked", false);
+        XposedHelpers.setAdditionalInstanceField(date, "waexRevokeLabel", null);
+        XposedHelpers.setAdditionalInstanceField(date, "originalMessage", null);
     }
 
     private void refreshConversation() {
@@ -146,7 +206,6 @@ public class AntiRevoke extends Feature {
         installStatusHooks();
         ConversationItemListener.conversationListeners.add(new ConversationItemListener.OnConversationItemListener() {
             @Override public void onItemBind(FMessageWpp fMessage, ViewGroup viewGroup) {
-                if (fMessage.getKey().isFromMe) return;
                 var date = (TextView) viewGroup.findViewById(Utils.getID("date", "id"));
                 var text = (TextView) viewGroup.findViewById(Utils.getID("message_text", "id"));
                 bindRevokedMessageUI(fMessage, date, text, "antirevoke");
@@ -279,18 +338,24 @@ public class AntiRevoke extends Feature {
     private void bindRevokedMessageUI(FMessageWpp fMessage, TextView dateTextView, TextView messageTextView, String antirevokeType) {
         if (dateTextView == null) return;
 
-        int antirevokeValue = 0;
-        try {
-            antirevokeValue = Integer.parseInt(prefs.getString(antirevokeType, "0"));
-        } catch (Exception ignored) {}
-        if (antirevokeValue == 0) return;
-
         var key = fMessage.getKey();
         String boundIdentity = uiScope + ":" + fMessage.getRowId() + ":" + key.messageID;
         String oldIdentity = (String) XposedHelpers.getAdditionalInstanceField(dateTextView, "waexRevokeIdentity");
         if (!boundIdentity.equals(oldIdentity)) {
+            clearOwnedMarker(dateTextView, messageTextView);
             XposedHelpers.setAdditionalInstanceField(dateTextView, "originalMessage", null);
+            XposedHelpers.setAdditionalInstanceField(dateTextView, "originalColor", null);
+            if (messageTextView != null) XposedHelpers.setAdditionalInstanceField(messageTextView, "originalColor", null);
             XposedHelpers.setAdditionalInstanceField(dateTextView, "waexRevokeIdentity", boundIdentity);
+        }
+        int antirevokeValue = 0;
+        try { antirevokeValue = Integer.parseInt(prefs.getString(antirevokeType, "0")); }
+        catch (Exception ignored) { }
+        // Always replace binding identity, including an outgoing/disabled recycled view, so
+        // an old worker can never decorate that view on behalf of its previous message.
+        if (antirevokeValue == 0 || key.isFromMe) {
+            clearOwnedMarker(dateTextView, messageTextView);
+            return;
         }
         String originalMessage = (String) XposedHelpers.getAdditionalInstanceField(dateTextView, "originalMessage");
 
@@ -326,12 +391,28 @@ public class AntiRevoke extends Feature {
         }
 
         long timestamp = archive.timestamp(uiScope, fMessage.getRowId(), key.messageID);
-        // v12 has no account field. Do not reuse a newly scoped record from another account.
-        if (timestamp == 0) timestamp = DelMessageStore.getInstance(Utils.getApplication())
-                .getLegacyRevokedTimestamp(key.messageID);
-        if (timestamp > 0) {
+        boolean known = timestamp > 0;
+        if (!known) {
+            var legacy = DelMessageStore.getInstance(Utils.getApplication()).getLegacyRevokedMarker(key.messageID);
+            known = legacy.known();
+            timestamp = legacy.timestamp();
+        }
+        String markerKey = key.messageID;
+        if (!known) {
+            var identity = new RevocationMarkerLookup.Identity(uiScope, fMessage.getRowId(), key.messageID);
+            var cached = linkedMarkers.cached(identity, android.os.SystemClock.uptimeMillis());
+            if (cached == null) requestLinkedMarker(identity);
+            else { known = cached.known(); timestamp = cached.timestamp(); markerKey = cached.key(); }
+        }
+        if (known) {
+            XposedHelpers.setAdditionalInstanceField(dateTextView, "waexRevokeMarked", true);
+            // Glass contrast may run after this bind; keep the explicit revocation colour.
+            Integer ownedColor = customColor != 0 ? customColor : null;
+            XposedHelpers.setAdditionalInstanceField(dateTextView, "waexRevokeColor", ownedColor);
+            if (messageTextView != null)
+                XposedHelpers.setAdditionalInstanceField(messageTextView, "waexRevokeColor", ownedColor);
             if (messageTextView != null && fMessage.getMediaType() == 15) {
-                restorePlaceholderText(uiScope, fMessage.getRowId(), key.messageID, boundIdentity,
+                restorePlaceholderText(uiScope, fMessage.getRowId(), markerKey, boundIdentity,
                         dateTextView, messageTextView);
             }
             if (timestamp > 0) {
@@ -345,6 +426,9 @@ public class AntiRevoke extends Feature {
                     String toastMessage = String.format(toastFormat, date);
                     Utils.showToast(toastMessage, Toast.LENGTH_LONG);
                 });
+            } else {
+                dateTextView.getPaint().setUnderlineText(false);
+                dateTextView.setOnClickListener(null); // Known revocation; its date was never recorded.
             }
 
             if (customColor != 0) {
@@ -361,6 +445,7 @@ public class AntiRevoke extends Feature {
                 }
                 String newTextData = (stringMessageDeleted != null ? stringMessageDeleted : "Deleted") + " | " + messageText;
                 dateTextView.setText(newTextData);
+                XposedHelpers.setAdditionalInstanceField(dateTextView, "waexRevokeLabel", newTextData);
                 XposedHelpers.setAdditionalInstanceField(dateTextView, "originalMessage", messageText);
             } else if (antirevokeValue == 2) {
                 var drawable = com.waenhancer.xposed.utils.DesignUtils.getDrawable(R.drawable.deleted);
@@ -368,18 +453,7 @@ public class AntiRevoke extends Feature {
                 dateTextView.setCompoundDrawablePadding(5);
             }
         } else {
-            if (originalDateColor != null) {
-                dateTextView.setTextColor(originalDateColor);
-            }
-            if (messageTextView != null && originalMessageColor != null) {
-                messageTextView.setTextColor(originalMessageColor);
-            }
-            dateTextView.setCompoundDrawables(null, null, null, null);
-            if (originalMessage != null) {
-                dateTextView.setText(originalMessage);
-            }
-            dateTextView.getPaint().setUnderlineText(false);
-            dateTextView.setOnClickListener(null);
+            clearOwnedMarker(dateTextView, messageTextView);
         }
     }
 

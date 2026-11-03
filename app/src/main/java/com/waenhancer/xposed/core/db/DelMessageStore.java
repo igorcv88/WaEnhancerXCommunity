@@ -405,6 +405,25 @@ public class DelMessageStore extends SQLiteOpenHelper {
         }
     }
 
+    public record RevokedMarker(boolean known, long timestamp) {
+        public static final RevokedMarker NONE = new RevokedMarker(false, 0);
+    }
+
+    /** Only for an explicit native link, after the worker verified the current account/row. */
+    public synchronized RevokedMarker getLinkedRevokedMarker(String scope, String key) {
+        try (Cursor result = getReadableDatabase().query(RevokedSnapshotSchema.TABLE,
+                new String[]{"revoked_at"}, "scope=? AND key_id=?", new String[]{scope, key},
+                null, null, null, "2")) {
+            if (!result.moveToFirst()) return getLegacyRevokedMarker(key);
+            long timestamp = result.getLong(0);
+            return result.moveToNext() ? RevokedMarker.NONE : new RevokedMarker(true, timestamp);
+        }
+    }
+
+    public synchronized long getLinkedRevokedTimestamp(String scope, String key) {
+        return getLinkedRevokedMarker(scope, key).timestamp();
+    }
+
     public synchronized long getRevokedRow(String scope, String key, long chat) {
         try (Cursor result = getReadableDatabase().query("revoked_snapshot_aliases",
                 new String[]{"row_id"}, "scope=? AND key_id=? AND chat_row_id=?",
@@ -647,21 +666,26 @@ public class DelMessageStore extends SQLiteOpenHelper {
         }
     }
 
-    private final Map<String, Long> legacyTimestampCache = Collections.synchronizedMap(
-            new LinkedHashMap<String, Long>(64, .75f, true) {
-                @Override protected boolean removeEldestEntry(Map.Entry<String, Long> entry) { return size() > 1000; }
+    private final Map<String, RevokedMarker> legacyTimestampCache = Collections.synchronizedMap(
+            new LinkedHashMap<String, RevokedMarker>(64, .75f, true) {
+                @Override protected boolean removeEldestEntry(Map.Entry<String, RevokedMarker> entry) { return size() > 1000; }
             });
 
     public synchronized long getLegacyRevokedTimestamp(String key) {
-        if (key == null) return 0;
-        Long cached = legacyTimestampCache.get(key);
+        return getLegacyRevokedMarker(key).timestamp();
+    }
+
+    public synchronized RevokedMarker getLegacyRevokedMarker(String key) {
+        if (key == null) return RevokedMarker.NONE;
+        RevokedMarker cached = legacyTimestampCache.get(key);
         if (cached != null) return cached;
         try (Cursor result = getReadableDatabase().rawQuery(
                 "SELECT timestamp FROM delmessages WHERE msgid=? AND NOT EXISTS "
                 + "(SELECT 1 FROM revoked_snapshots WHERE key_id=?) LIMIT 1", new String[]{key, key})) {
-            long timestamp = result.moveToFirst() ? result.getLong(0) : 0;
-            legacyTimestampCache.put(key, timestamp);
-            return timestamp;
+            RevokedMarker marker = result.moveToFirst()
+                    ? new RevokedMarker(true, Math.max(0, result.getLong(0))) : RevokedMarker.NONE;
+            legacyTimestampCache.put(key, marker);
+            return marker;
         }
     }
 

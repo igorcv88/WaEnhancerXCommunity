@@ -1138,6 +1138,10 @@ public final class AppLiquidGlass extends Feature {
         private void tintText(View found, boolean glass, int color) {
             if (!(found instanceof TextView)) return;
             TextView text = (TextView) found;
+            // AntiRevoke's explicit colour owns this label while it is marked. Keep its
+            // icon/label intact and use normal glass contrast when no override is present.
+            Object revokeColor = de.robv.android.xposed.XposedHelpers.getAdditionalInstanceField(text, "waexRevokeColor");
+            if (glass && revokeColor instanceof Integer) color = (Integer) revokeColor;
             android.content.res.ColorStateList[] state = quoteTexts.get(text);
             android.content.res.ColorStateList current = text.getTextColors();
             if (!glass) {
