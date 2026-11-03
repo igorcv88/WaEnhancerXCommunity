@@ -1607,7 +1607,7 @@ Same PR #144 (open): owner reports the glass ignores the Bubble Colors palette (
 
 ### Content colours held at their setters — 2026-11-03
 
-Branch `ccr-a55049bc-m310s8` restarted from `master@70958e3` (#144 merged); new PR.
+Branch `ccr-a55049bc-m310s8` restarted from `master@70958e3` (#144 merged); PR [#145](https://github.com/igorcv88/WaEnhancerXCommunity/pull/145).
 
 Owner video after #144: bubble glass itself is stable ("a parte das bolhas em si tá perfeito"); content colours are not: reply snippet text, the voice-note play button, duration/time and similar flicker white → grey → white on every scroll or tap, and sometimes stay grey until the next touch. The composer icons/recorder had the same symptom earlier and were fixed by answering the colour setters (`installTintObserver` → `ConversationGlassPanes.onComposerVisualChanged`).
 
