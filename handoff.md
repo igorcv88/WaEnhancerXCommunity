@@ -1503,3 +1503,17 @@ Expected on device: `FREQUENCY` shows `glass>0` and `capture` near zero; glass o
 
 
 Codex review on #135 (`94c9b4b`), three P2 findings, all confirmed and fixed: (1) a replay that failed for good is remembered per wallpaper identity (`WallpaperFallback.replayFailed/sticky`), so the copy stays selected instead of flipping back to the failing plan on the next scan; (2) a `capture.record()` exception now sets `failed`, making it eligible for the copy; (3) a wallpaper view that hosts messages/panes is never copied (`wallpaper-hosts-consumers`), since only views over it are hidden. Handler created lazily so the object is testable on the host JVM. 598 unit tests 0 failures.
+
+## Bubble glass on device — aesthetics and scroll fixes — 2026-11-03
+
+Owner builds of `master@8cc6c51` (#135): glass applies (`glass=863…1316`, `capture=0`) but (a) some bubbles have no body and more disappear while scrolling, (b) the tail of the first message of a group sticks out, (c) replies inside bubbles show black corner wedges, (d) overall look heavy/dark. Evidence: `switch_off` 270–963 per window with both sides enabled; `SILHOUETTE_FALLBACK no-opaque-body` on a NinePatch (translucent Bubble Colors palette); fallback copy taken ~200 ms after `SOURCE_READY`.
+
+Causes and fixes (branch `ccr-a55049bc-m310s8` from `master@8cc6c51`, new PR):
+- (a) `sharedFactoryWanted` read the scope through `prefs.getAll()` on the bridge **per bubble draw**; any failed read meant OFF and the row was recorded native (transparent with a translucent palette); scrolling re-records rows, so more of them disappeared. Scope now cached per resume (`bubbleScopeOrNull` keeps the last good value), no preference access in the draw path. Also the mask used the native alpha, so translucent palettes made the glass itself faint: mask alpha ×8 (shape only); silhouette threshold 16.
+- (b) Glass is the rounded body only (`fullCover=0`). Owner offered "remove the tail" or "rim follows the tail"; removal chosen (uniform squircle; a tail-following rim needs a contour derived from the mask and is a larger change).
+- (c) Reply frames clipped to an 8dp rounded outline (reversible). A `QUOTE_FRAME` probe logs the frame's class chain/drawables once, in case the wedges come from another view.
+- (d) Material = composer/header (`appSurface` + Bubble Colors tint at the slider opacity), lens 12dp/8dp; `VEIL_MIN` removed.
+- Fallback copy re-checks before hiding views (`fallback-skipped(replay-ready)`); `FREQUENCY` adds `switch_off_dirs`; `NATIVE_ROW` names rows left native by the side switch.
+
+Validation: Debug/Release compile; 604 unit tests 0 failures; Python/AGSL as before. Device next: scroll fast/slow — `switch_off` should be 0 with both sides on and no bubble should lose its body; check the reply corners and the squircle look; tune the opacity slider for contrast.
+

@@ -69,10 +69,20 @@ public class NativeBubbleGlassTest {
         assertNull(BubbleSilhouette.measure(1, 80, empty, 36f));
     }
 
-    @Test public void translucentFillHasNoTintColour() {
+    @Test public void translucentBubbleColorsStillHaveABody() {
+        // Device 2026-11-03: a translucent palette gave SILHOUETTE_FALLBACK no-opaque-body.
         Shape faint = new Shape(200, 80, 0, 0, 200, 80, 10f, false, 0x40FFFFFF);
-        assertNull("alpha below the mask threshold is not a body",
-                BubbleSilhouette.measure(faint.w, faint.h, faint, 12f));
+        BubbleSilhouette s = BubbleSilhouette.measure(faint.w, faint.h, faint, 12f);
+        assertNotNull(s);
+        assertEquals(0, s.left); assertEquals(200, s.right);
+        Shape invisible = new Shape(200, 80, 0, 0, 200, 80, 10f, false, 0x08FFFFFF);
+        assertNull("near-zero alpha is still not a body", BubbleSilhouette.measure(invisible.w, invisible.h, invisible, 12f));
+    }
+
+    @Test public void maskUsesShapeNotPaletteAlpha() throws IOException {
+        String glass = read("src/main/java/com/waenhancer/theme/NativeBubbleGlass.java");
+        assertTrue(glass.contains("dstIn.setColorFilter(new android.graphics.ColorMatrixColorFilter(shapeOnly));"));
+        assertEquals(8f, NativeBubbleGlass.MASK_ALPHA_GAIN, 0f);
     }
 
     // --- Contracts that need HWUI: checked in source -------------------------------------
@@ -92,8 +102,8 @@ public class NativeBubbleGlassTest {
         String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
         int start = app.indexOf("private void drawNativeBubble(");
         String hook = app.substring(start, app.indexOf("\n    }\n", start));
-        assertTrue(hook.contains("if (!sharedFactoryWanted(outgoing)) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative("));
-        assertTrue(hook.contains("if (session.drawBubble(bubble, canvas)) param.setResult(null);"));
+        assertTrue(hook.contains("if (!sharedFactoryWanted(outgoing)) {"));
+        assertTrue(hook.contains("if (session.drawBubble(bubble, canvas, outgoing)) param.setResult(null);"));
         assertTrue(hook.indexOf("nativePass()") < hook.indexOf("param.setResult(null)"));
         String glass = read("src/main/java/com/waenhancer/theme/NativeBubbleGlass.java");
         assertTrue("no glass without a texture: native paints", glass.contains(
@@ -121,7 +131,7 @@ public class NativeBubbleGlassTest {
         String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
         int start = app.indexOf("private void syncSharedBubbles()");
         String sync = app.substring(start, app.indexOf("void wallpaperChanged(View target)", start));
-        assertTrue(sync.contains("LiquidGlassSettings.bubbleScope(prefs).name()"));
+        assertTrue(sync.contains("String settings=bubbleScopeCache.name() + \":\""));
         assertTrue(sync.contains("NativeBubbleGlass.settingsKey(material)"));
         assertTrue(sync.contains("if (bubbleSettings!=null && !bubbleSettings.equals(settings)) invalidateBubbleRows(window);"));
         String glass = read("src/main/java/com/waenhancer/theme/NativeBubbleGlass.java");
@@ -175,8 +185,68 @@ public class NativeBubbleGlassTest {
                 glass.contains("canvas.saveLayer(bounds.left, bounds.top, bounds.right, bounds.bottom, dstIn);"));
     }
 
-    @Test public void veilFloorIsUnchangedForTheGeometryBuild() {
-        assertEquals(0.50f, NativeBubbleGlass.VEIL_MIN, 0f);
+    @Test public void bubblesUseTheComposerMaterialWithAGentleLens() throws IOException {
+        String glass = read("src/main/java/com/waenhancer/theme/NativeBubbleGlass.java");
+        int prep = glass.indexOf("void prepare(Drawable bubble");
+        String body = glass.substring(prep, glass.indexOf("void retexture(", prep));
+        assertTrue(body.contains("KyantLens.appSurface(spec, silhouette.height(), density,"));
+        assertFalse("no forced 50% native-colour veil", body.contains("VEIL_MIN") || body.contains("params.tint ="));
+        assertTrue(body.contains("params.refractHeight = Math.min(BUBBLE_REFRACT_HEIGHT_DP * density, silhouette.height() / 2f);"));
+        assertEquals(12f, NativeBubbleGlass.BUBBLE_REFRACT_HEIGHT_DP, 0f);
+        assertEquals(8f, NativeBubbleGlass.BUBBLE_REFRACT_AMOUNT_DP, 0f);
+        String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
+        assertTrue("Bubble Colors tints the glass at the slider opacity",
+                app.contains("return bubbleGlass.draw(bubble, canvas, bubbleDrawMaterial(outgoing, resolvedMaterial()));"));
+    }
+
+    // --- Device review 2026-11-03: transparent rows, tail, reply corners ------------------
+
+    @Test public void drawPathNeverReadsPreferences() throws IOException {
+        String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
+        int start = app.indexOf("private boolean sharedFactoryWanted(boolean outgoing)");
+        String gate = app.substring(start, app.indexOf("\n    }\n", start));
+        assertFalse("no prefs.getAll() per bubble draw", gate.contains("prefs"));
+        assertTrue(gate.contains("LiquidGlassSettings.scopeIncludes(bubbleScopeCache, outgoing)"));
+        assertTrue("a failed read keeps the last good scope",
+                app.contains("if (read != null) bubbleScopeCache = read;"));
+        int hook = app.indexOf("private void drawNativeBubble(");
+        String body = app.substring(hook, app.indexOf("\n    }\n", hook));
+        assertFalse(body.contains("prefs"));
+        assertTrue(app.contains("return bubbleGlass.draw(bubble, canvas, bubbleDrawMaterial(outgoing, resolvedMaterial()));"));
+    }
+
+    @Test public void scopeDecisionIsPure() {
+        com.waenhancer.config.LiquidGlassSettings.BubbleScope both = com.waenhancer.config.LiquidGlassSettings.BubbleScope.BOTH;
+        com.waenhancer.config.LiquidGlassSettings.BubbleScope in = com.waenhancer.config.LiquidGlassSettings.BubbleScope.INCOMING;
+        assertTrue(com.waenhancer.config.LiquidGlassSettings.scopeIncludes(both, true));
+        assertTrue(com.waenhancer.config.LiquidGlassSettings.scopeIncludes(both, false));
+        assertTrue(com.waenhancer.config.LiquidGlassSettings.scopeIncludes(in, false));
+        assertFalse(com.waenhancer.config.LiquidGlassSettings.scopeIncludes(in, true));
+        assertFalse(com.waenhancer.config.LiquidGlassSettings.scopeIncludes(
+                com.waenhancer.config.LiquidGlassSettings.BubbleScope.OFF, false));
+        assertNull("unreadable prefs keep the cached value", com.waenhancer.config.LiquidGlassSettings.bubbleScopeOrNull(null));
+    }
+
+    @Test public void glassHasNoTail() throws IOException {
+        String glass = read("src/main/java/com/waenhancer/theme/NativeBubbleGlass.java");
+        assertTrue(glass.contains("params.fullCover = 0f;"));
+        assertFalse(glass.contains("params.fullCover = 1f;"));
+    }
+
+    @Test public void replyCornersAreClippedReversibly() throws IOException {
+        String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
+        assertTrue(app.contains("\"bubble_quoted_message_frame\", \"id\""));
+        assertTrue(app.contains("outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);"));
+        assertTrue(app.contains("clippedQuotes.put(frame, new Object[]{frame.getOutlineProvider(), frame.getClipToOutline()});"));
+        int release = app.indexOf("private void releaseSharedBubbles()");
+        assertTrue(app.indexOf("restoreReplyCorners();", release) > release);
+    }
+
+    @Test public void fallbackCopyIsSkippedWhenTheReplayBecameReady() throws IOException {
+        String f = read("src/main/java/com/waenhancer/theme/WallpaperFallback.java");
+        int check = f.indexOf("if (!stillNeeded.getAsBoolean()) {");
+        assertTrue(check > 0 && check < f.indexOf("copy(wallpaperRef.get()"));
+        assertTrue(f.contains("BubbleGlassTelemetry.source(\"fallback-skipped\", \"replay-ready\");"));
     }
 
     @Test public void hookCountsEveryCallAndLeavesUnrecognizedDrawsNative() throws IOException {

@@ -73,7 +73,8 @@ public final class WallpaperFallback {
     }
 
     /** Schedules one copy for this wallpaper identity (UI thread); no-op while one is pending. */
-    public void request(View wallpaper, View window, Window activityWindow, String wallpaperIdentity, Host host) {
+    public void request(View wallpaper, View window, Window activityWindow, String wallpaperIdentity, Host host,
+                        java.util.function.BooleanSupplier stillNeeded) {
         if (released || pending || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || activityWindow == null) return;
         if (wallpaperIdentity.equals(failedIdentity) && attempts >= MAX_ATTEMPTS) return;
         if (!wallpaperIdentity.equals(failedIdentity)) attempts = 0;
@@ -83,7 +84,16 @@ public final class WallpaperFallback {
         if (main == null) main = new Handler(Looper.getMainLooper());
         BubbleGlassTelemetry.source("fallback-scheduled", "attempt=" + (attempts + 1));
         // Let the chat finish laying out (and the keyboard settle) before the one-frame copy.
-        main.postDelayed(() -> copy(wallpaperRef.get(), windowRef.get(), activityRef.get(), wallpaperIdentity, host), SETTLE_MS);
+        main.postDelayed(() -> {
+            // The replay often becomes usable within the settle delay (wallpaper drawn late):
+            // then there is nothing to copy and no reason to hide the chat for a frame.
+            if (!stillNeeded.getAsBoolean()) {
+                pending = false;
+                BubbleGlassTelemetry.source("fallback-skipped", "replay-ready");
+                return;
+            }
+            copy(wallpaperRef.get(), windowRef.get(), activityRef.get(), wallpaperIdentity, host);
+        }, SETTLE_MS);
     }
 
     private void copy(View wallpaper, View window, Window activityWindow, String wallpaperIdentity, Host host) {

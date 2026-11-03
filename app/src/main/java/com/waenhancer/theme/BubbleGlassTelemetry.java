@@ -67,6 +67,13 @@ public final class BubbleGlassTelemetry {
 
     public static void stayedNative(Native reason) { NATIVE[reason.ordinal()]++; }
 
+    private static final Map<Integer, Long> SWITCH_OFF_DIRECTIONS = new java.util.TreeMap<>();
+
+    /** Factory direction of a draw left native by the side switch (UI thread). */
+    public static void switchOff(Integer direction) {
+        SWITCH_OFF_DIRECTIONS.merge(direction == null ? -1 : direction, 1L, Long::sum);
+    }
+
     /** Pre-draw: one frequency line every five seconds while something changed. */
     static void report() {
         if (!on()) return;
@@ -79,6 +86,7 @@ public final class BubbleGlassTelemetry {
             long n = NATIVE[reason.ordinal()];
             if (n != 0) out.append(' ').append(reason.name().toLowerCase(java.util.Locale.ROOT)).append('=').append(n);
         }
+        if (!SWITCH_OFF_DIRECTIONS.isEmpty()) out.append(" switch_off_dirs=").append(SWITCH_OFF_DIRECTIONS);
         log("FREQUENCY", out.toString());
     }
 
@@ -165,6 +173,35 @@ public final class BubbleGlassTelemetry {
                 + " previousRect=" + previousRect.toShortString()
                 + " sameInstance=" + (current == previous) + " areaRatio=" + ratio);
     }
+
+    /** A hosted bubble left native for a non-transient reason, with its row (capped). */
+    public static void nativeRow(String reason, View host, Integer direction, String detail) {
+        if (!on() || !allowed("NATIVE_ROW:" + reason)) return;
+        log("NATIVE_ROW", "reason=" + reason + " dir=" + direction + " host=" + describe(host) + " detail=" + detail);
+    }
+
+    /** Reply frame inside a bubble: who could paint its corner wedges (class chain, drawables). */
+    public static void quoteFrame(View frame) {
+        if (!on() || !allowed("QUOTE_FRAME")) return;
+        StringBuilder chain = new StringBuilder();
+        for (Class<?> c = frame.getClass(); c != null && c != View.class; c = c.getSuperclass()) {
+            chain.append(c.getName());
+            for (String m : new String[]{"draw", "onDraw", "dispatchDraw", "onDrawForeground"}) {
+                try { c.getDeclaredMethod(m, Canvas.class); chain.append('+').append(m); }
+                catch (NoSuchMethodException absent) { /* inherited */ }
+            }
+            chain.append('<');
+        }
+        View parent = frame.getParent() instanceof View ? (View) frame.getParent() : null;
+        View child = frame instanceof ViewGroup && ((ViewGroup) frame).getChildCount() > 0 ? ((ViewGroup) frame).getChildAt(0) : null;
+        log("QUOTE_FRAME", "frame=" + describe(frame) + " chain=" + chain
+                + " bg=" + name(frame.getBackground()) + " fg=" + name(frame.getForeground())
+                + " parent=" + describe(parent) + " parentBg=" + (parent == null ? "-" : name(parent.getBackground()))
+                + " parentFg=" + (parent == null ? "-" : name(parent.getForeground()))
+                + " child=" + describe(child) + " childBg=" + (child == null ? "-" : name(child.getBackground())));
+    }
+
+    private static String name(Drawable d) { return d == null ? "none" : d.getClass().getName(); }
 
     /** Point 4: the native silhouette could not be measured; the 12dp fallback is in use. */
     static void silhouetteFallback(String reason, Drawable drawable, int width, int height) {

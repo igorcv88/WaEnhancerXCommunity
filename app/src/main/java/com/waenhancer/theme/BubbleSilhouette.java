@@ -33,7 +33,8 @@ public final class BubbleSilhouette {
         int[] column(int x);
     }
 
-    static final int OPAQUE = 128;
+    /** Body threshold; low so a translucent Bubble Colors palette still has a body. */
+    static final int OPAQUE = 16;
 
     /** Pure contour logic, shared with the host-JVM tests. Returns null when no body is found. */
     static BubbleSilhouette measure(int width, int height, Sampler sampler, float fallbackRadius) {
