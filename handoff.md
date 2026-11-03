@@ -1517,3 +1517,24 @@ Causes and fixes (branch `ccr-a55049bc-m310s8` from `master@8cc6c51`, new PR):
 
 Validation: Debug/Release compile; 604 unit tests 0 failures; Python/AGSL as before. Device next: scroll fast/slow — `switch_off` should be 0 with both sides on and no bubble should lose its body; check the reply corners and the squircle look; tune the opacity slider for contrast.
 
+
+## Bubble glass stability — taps, rebinding, chat-open blink — 2026-11-03
+
+Branch `ccr-a55049bc-m310s8` restarted from `master@e2ca84b` (#137 and #136 merged); new PR.
+
+Owner report on `master` with #137: a blink when a chat opens (glass appears a moment later; earlier builds were instant); every simple tap on a message destroys that glass surface; some other movements destroy random bubbles. Inspector trace (content-free): `SOURCE_INVALIDATED revision=1` → `ready 1440x3120` 65 ms later (`no_texture=184` before it); `FREQUENCY calls=11287 glass=3386 not_registered=329 native_pass=4052 unhosted=432 switch_off=2904 no_texture=184 switch_off_dirs={3=2904}`.
+
+Correction of an earlier assumption: previous entries say "`switch_off` with both sides on". The owner never stated the side setting. In this trace every `NATIVE_ROW switch_off` carries `detail=INCOMING` (the cached scope), so all 2,904 outgoing draws (direction 3) stayed native by design. **Question for the owner: is the side setting "Received messages only"?** If it shows "Both sides" in the module, the bridge is serving a stale value; that is a separate bug.
+
+No trace evidence pins the tap mechanism (no tap was marked in the log; `UNHOSTED` and `SOURCE unsupported` events are rate-limited and absent). Code-proven paths that leave a row native although glass is possible, all fixed:
+1. Slots per drawable instance (4 per row, freed only by GC): rows rebound with new or cached factory drawables painted native (`SLOT_FULL`) until a collection. Now positional per recording (`NativeBubbleGlass.RowSlots.claim`); the recording scope is held weakly (it references the row, the weak map key); the silhouette key includes the drawable identity.
+2. A plan unsupported for a single scan withdrew the texture and discarded every bubble's glass until a later scan. Now kept while the wallpaper identity is unchanged and no copy-based source applies (`SOURCE_KEPT`).
+3. Rows inflated after the last discovery painted native until the posted discovery bound them. Rows with an already verified `conversation_row_*` ID are now hosted from their first draw.
+4. Chat-open blink: a process-wide provisional texture keyed by the wallpaper's look (window size, coverage, fingerprint, blur; no drawable identities) is shown at once; the chat's own render still replaces it. Cost: one extra full-window hardware bitmap stays alive after chats close.
+Telemetry added: `LOST` (row that had glass recorded natively: reason, pressed/selected/activated, alpha, layer type, transient state, parent, source state), `NATIVE_ROW` for `no_session`/`no_renderer`, `BUBBLE_GLASS_RESET`.
+
+Inferred, not traced: a tap on an `AbsListView` row runs its tap layout pass, which re-attaches and re-records the visible rows; that is why taps expose any path that records natively.
+
+Validation: Debug/Release compile; 636 unit tests 0 failures (new `BubbleGlassStabilityTest`, 8 tests); Python checks pass except the pre-existing `test_glass_rim_contrast.py`; `test_app_only_runtime.py` must run without `-I` (it imports a sibling module; same on master). Not validated on device.
+
+Device next: open a chat (no blink expected after the first chat with that wallpaper this process), tap several messages, scroll. With the inspector armed, any remaining loss appears as `BUBBLE_GLASS_LOST reason=...`, `NATIVE_ROW reason=no_renderer|no_session` or `BUBBLE_GLASS_RESET`; that names the next fix. Outgoing glass requires the side setting to include sent messages.

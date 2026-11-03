@@ -54,6 +54,15 @@ public final class ConversationBackdropSource {
      * source has been quiet for SETTLE_MS, whichever path starts it (update, stale completion).
      */
     private final RenderDebounce debounce=new RenderDebounce(SETTLE_MS);
+    /**
+     * Last finished texture in this process and what it shows (content key + blur). Every chat
+     * opens a new source whose first render takes a few frames; with this, a chat with the same
+     * wallpaper look shows that blur at once instead of native bubbles (the "blink" on open),
+     * and its own render still replaces it. One texture, replaced by each newer render.
+     */
+    private static Bitmap lastTexture;
+    private static String lastLook;
+    private String desiredLook;
     public ConversationBackdropSource(Runnable changed) { this.changed=changed; }
     /**
      * A texture is presentable while a newer revision prepares (stale-while-revalidate): a
@@ -79,6 +88,7 @@ public final class ConversationBackdropSource {
         if (!epoch.update(usable ? java.util.Arrays.asList(capture.key,radius) : null)) return;
         desired=usable ? capture : null; blur=radius; failed=false;
         desiredContent=null;
+        desiredLook=usable && capture.contentKey!=null ? capture.contentKey+"|blur="+radius : null;
         if (usable) {
             try { desiredContent=capture.record(); }
             catch (RuntimeException | LinkageError failure) {
@@ -89,6 +99,11 @@ public final class ConversationBackdropSource {
         }
         debounce.changed(android.os.SystemClock.uptimeMillis());
         if (desired==null && texture!=null) { texture=null; main.post(changed); }
+        if (texture==null && desiredLook!=null && desiredLook.equals(lastLook) && lastTexture!=null) {
+            texture=lastTexture; // Provisional: same look; this chat's render still replaces it.
+            BubbleGlassTelemetry.source("provisional", "shared-look");
+            main.post(changed);
+        }
         liveToken.set(epoch.revision());
         main.removeCallbacks(retryStart);
         probe("SOURCE_INVALIDATED", "revision="+epoch.revision()+(desired==null ? " unsupported" : ""));
@@ -128,6 +143,7 @@ public final class ConversationBackdropSource {
                 if (result.outcome==SourceRetryPolicy.Outcome.READY) {
                     epoch.complete(token,true);
                     texture=result.bitmap;
+                    if (desiredLook!=null) { lastTexture=result.bitmap; lastLook=desiredLook; }
                     BubbleGlassTelemetry.source("ready", result.bitmap.getWidth()+"x"+result.bitmap.getHeight());
                     probe("SOURCE_READY","revision="+token+" size="+result.bitmap.getWidth()+"x"+result.bitmap.getHeight());
                     changed.run();
