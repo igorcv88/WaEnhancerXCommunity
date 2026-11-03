@@ -1591,10 +1591,18 @@ public final class AppLiquidGlass extends Feature {
             bubbleSettings=settings;
             com.waenhancer.theme.WallpaperCapture plan=com.waenhancer.theme.WallpaperCapture.plan(wallpaper,window);
             String unsupported=plan.unsupportedReason();
-            if (unsupported!=null || bubbleSource.failed()) {
+            String identity=wallpaperFallback!=null || unsupported!=null || bubbleSource.failed()
+                    ? com.waenhancer.theme.WallpaperCapture.identity(wallpaper) : null;
+            // A replay that failed for good stays failed for this wallpaper: once the copy is in
+            // use the source no longer reports failure, so remember it per wallpaper identity.
+            if (unsupported==null && bubbleSource.failed()) {
+                if (wallpaperFallback==null) wallpaperFallback=new com.waenhancer.theme.WallpaperFallback();
+                wallpaperFallback.replayFailed(identity);
+            }
+            if (unsupported!=null || bubbleSource.failed()
+                    || (wallpaperFallback!=null && wallpaperFallback.sticky(identity))) {
                 // Cannot replay this wallpaper: use (or take, once) a copy of the bare wallpaper.
                 if (wallpaperFallback==null) wallpaperFallback=new com.waenhancer.theme.WallpaperFallback();
-                String identity=com.waenhancer.theme.WallpaperCapture.identity(wallpaper);
                 com.waenhancer.theme.WallpaperCapture copied=wallpaperFallback.plan(wallpaper,window,identity);
                 if (copied!=null) plan=copied;
                 else if (unsupported==null || com.waenhancer.theme.WallpaperFallback.eligible(unsupported))

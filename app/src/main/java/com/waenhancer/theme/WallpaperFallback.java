@@ -38,15 +38,24 @@ public final class WallpaperFallback {
 
     public interface Host { void captured(); }
 
-    private final Handler main = new Handler(Looper.getMainLooper());
+    /** Created on the first copy request (main thread); nothing is posted before that. */
+    private Handler main;
     private Bitmap image;
     private final Rect imageRect = new Rect();
     private String identity, failedIdentity;
+    /** Wallpaper identities whose replay failed for good: keep using the copy for them. */
+    private final java.util.Set<String> replayFailed = new java.util.HashSet<>();
     private int attempts;
     private boolean pending, released;
     private final ArrayList<View> hidden = new ArrayList<>();
     private final ArrayList<Float> hiddenAlpha = new ArrayList<>();
     private Runnable timeout;
+
+    /** The replay of this wallpaper failed for good; the copy stays selected until it changes. */
+    public void replayFailed(String wallpaperIdentity) { replayFailed.add(wallpaperIdentity); }
+
+    /** Whether this wallpaper must use the copy even though its plan looks supported. */
+    public boolean sticky(String wallpaperIdentity) { return replayFailed.contains(wallpaperIdentity); }
 
     /** Reasons for which a screen copy cannot help (no visible wallpaper to copy). */
     public static boolean eligible(String unsupportedReason) {
@@ -71,6 +80,7 @@ public final class WallpaperFallback {
         pending = true;
         final WeakReference<View> wallpaperRef = new WeakReference<>(wallpaper), windowRef = new WeakReference<>(window);
         final WeakReference<Window> activityRef = new WeakReference<>(activityWindow);
+        if (main == null) main = new Handler(Looper.getMainLooper());
         BubbleGlassTelemetry.source("fallback-scheduled", "attempt=" + (attempts + 1));
         // Let the chat finish laying out (and the keyboard settle) before the one-frame copy.
         main.postDelayed(() -> copy(wallpaperRef.get(), windowRef.get(), activityRef.get(), wallpaperIdentity, host), SETTLE_MS);
@@ -86,6 +96,9 @@ public final class WallpaperFallback {
         }
         Rect rect = WallpaperCapture.rectInWindow(wallpaper, window);
         if (rect == null) { fail(wallpaperIdentity, "no-rect"); return; }
+        // Only views over the wallpaper are hidden; a wallpaper view that itself hosts messages
+        // or panes would be copied with them, so it is never copied.
+        if (WallpaperCapture.hostsConsumers(wallpaper, 0)) { fail(wallpaperIdentity, "wallpaper-hosts-consumers"); return; }
         hideAbove(wallpaper, window);
         if (!consumersHidden(window, wallpaper, 0, new int[1])) { restore(); fail(wallpaperIdentity, "consumer-visible"); return; }
         final Bitmap destination;
@@ -174,9 +187,12 @@ public final class WallpaperFallback {
 
     public void release() {
         released = true;
-        if (timeout != null) { main.removeCallbacks(timeout); timeout = null; }
+        if (main != null) {
+            if (timeout != null) main.removeCallbacks(timeout);
+            main.removeCallbacksAndMessages(null);
+        }
+        timeout = null;
         restore();
-        main.removeCallbacksAndMessages(null);
         if (image != null) { image.recycle(); image = null; }
     }
 }

@@ -1501,3 +1501,5 @@ Root cause (code-proven, consistent with the counts): `GlassPane`/`BehindRecorde
 
 Expected on device: `FREQUENCY` shows `glass>0` and `capture` near zero; glass on incoming/outgoing bubbles with the source ready. `switch_off=10` means some draws were for a side the scope excludes (or non-OneMate) — check the incoming/outgoing setting if one side stays native. The PixelCopy fallback in this PR stays inactive while the replay source is ready.
 
+
+Codex review on #135 (`94c9b4b`), three P2 findings, all confirmed and fixed: (1) a replay that failed for good is remembered per wallpaper identity (`WallpaperFallback.replayFailed/sticky`), so the copy stays selected instead of flipping back to the failing plan on the next scan; (2) a `capture.record()` exception now sets `failed`, making it eligible for the copy; (3) a wallpaper view that hosts messages/panes is never copied (`wallpaper-hosts-consumers`), since only views over it are hidden. Handler created lazily so the object is testable on the host JVM. 598 unit tests 0 failures.

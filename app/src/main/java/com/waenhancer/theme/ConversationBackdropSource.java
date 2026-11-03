@@ -83,6 +83,7 @@ public final class ConversationBackdropSource {
             try { desiredContent=capture.record(); }
             catch (RuntimeException | LinkageError failure) {
                 desired=null;
+                failed=true; // Same as a permanent render failure: eligible for the bare-wallpaper copy.
                 BubbleGlassTelemetry.source("unsupported", "record-"+failure.getClass().getSimpleName());
             }
         }

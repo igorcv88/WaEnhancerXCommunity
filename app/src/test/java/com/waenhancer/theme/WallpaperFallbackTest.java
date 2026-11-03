@@ -89,11 +89,40 @@ public class WallpaperFallbackTest {
             assertTrue(state, f.contains("\"" + state + "\""));
     }
 
+    // --- Codex review on #135 ---------------------------------------------------------------
+
+    @Test public void replayFailureKeepsTheCopySelectedForThatWallpaper() throws IOException {
+        assertTrue(stickyAfterFailure("wp-A"));
+        String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
+        assertTrue(app.contains("wallpaperFallback.replayFailed(identity);"));
+        assertTrue(app.contains("|| (wallpaperFallback!=null && wallpaperFallback.sticky(identity))) {"));
+    }
+
+    private static boolean stickyAfterFailure(String id) {
+        WallpaperFallback fallback = new WallpaperFallback();
+        assertFalse(fallback.sticky(id));
+        fallback.replayFailed(id);
+        return fallback.sticky(id) && !fallback.sticky("wp-B");
+    }
+
+    @Test public void recordingExceptionIsAFailureEligibleForTheCopy() throws IOException {
+        String src = read("src/main/java/com/waenhancer/theme/ConversationBackdropSource.java");
+        int record = src.indexOf("try { desiredContent=capture.record(); }");
+        int flag = src.indexOf("failed=true; // Same as a permanent render failure", record);
+        assertTrue(record > 0 && flag > record);
+    }
+
+    @Test public void aWallpaperHostingConsumersIsNeverCopied() throws IOException {
+        String f = read("src/main/java/com/waenhancer/theme/WallpaperFallback.java");
+        int guard = f.indexOf("if (WallpaperCapture.hostsConsumers(wallpaper, 0)) { fail(wallpaperIdentity, \"wallpaper-hosts-consumers\"); return; }");
+        assertTrue("checked before anything is hidden or copied", guard > 0 && guard < f.indexOf("hideAbove(wallpaper, window);"));
+    }
+
     @Test public void sessionUsesTheCopyOnlyWhenReplayIsImpossible() throws IOException {
         String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
         int sync = app.indexOf("private void syncSharedBubbles()");
         String body = app.substring(sync, app.indexOf("void wallpaperChanged(View target)", sync));
-        assertTrue(body.contains("if (unsupported!=null || bubbleSource.failed()) {"));
+        assertTrue(body.contains("if (unsupported!=null || bubbleSource.failed()\n"));
         assertTrue(body.contains("com.waenhancer.theme.WallpaperCapture.identity(wallpaper)"));
         assertTrue(body.contains("if (copied!=null) plan=copied;"));
         assertTrue(app.contains("if (wallpaperFallback != null) wallpaperFallback.release();"));
