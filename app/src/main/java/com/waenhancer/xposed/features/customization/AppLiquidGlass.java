@@ -114,6 +114,7 @@ public final class AppLiquidGlass extends Feature {
                 Session session = watch(decor);
                 foreground = new WeakReference<>(session);
                 if (session != null) {
+                    session.activityWindow = new WeakReference<>(activity.getWindow());
                     GlassTrace.resumed(decor);
                     session.cachedMaterial = null;
                     session.resume();
@@ -757,6 +758,9 @@ public final class AppLiquidGlass extends Feature {
         private final WeakHashMap<View, Surface> candidates = new WeakHashMap<>();
         private com.waenhancer.theme.ConversationBackdropSource bubbleSource;
         private com.waenhancer.theme.NativeBubbleGlass bubbleGlass;
+        /** One-frame PixelCopy of the bare wallpaper when it cannot be replayed (per wallpaper). */
+        private com.waenhancer.theme.WallpaperFallback wallpaperFallback;
+        private WeakReference<android.view.Window> activityWindow = new WeakReference<>(null);
         /** Bubble scope + material/optics the observed rows were last recorded with. */
         private String bubbleSettings;
         private WeakReference<View> sharedWallpaper = new WeakReference<>(null);
@@ -1536,7 +1540,8 @@ public final class AppLiquidGlass extends Feature {
         private void releaseSharedBubbles() {
             if (bubbleGlass != null) bubbleGlass.release();
             if (bubbleSource != null) bubbleSource.release();
-            bubbleGlass = null; bubbleSource = null; bubbleSettings = null; sharedWallpaper.clear();
+            if (wallpaperFallback != null) wallpaperFallback.release();
+            bubbleGlass = null; bubbleSource = null; wallpaperFallback = null; bubbleSettings = null; sharedWallpaper.clear();
         }
 
         /** Re-records observed rows once; their display lists bake in glass or native bubbles. */
@@ -1576,7 +1581,20 @@ public final class AppLiquidGlass extends Feature {
                     + com.waenhancer.theme.NativeBubbleGlass.settingsKey(material);
             if (bubbleSettings!=null && !bubbleSettings.equals(settings)) invalidateBubbleRows(window);
             bubbleSettings=settings;
-            bubbleSource.update(com.waenhancer.theme.WallpaperCapture.plan(wallpaper,window),
+            com.waenhancer.theme.WallpaperCapture plan=com.waenhancer.theme.WallpaperCapture.plan(wallpaper,window);
+            String unsupported=plan.unsupportedReason();
+            if (unsupported!=null || bubbleSource.failed()) {
+                // Cannot replay this wallpaper: use (or take, once) a copy of the bare wallpaper.
+                if (wallpaperFallback==null) wallpaperFallback=new com.waenhancer.theme.WallpaperFallback();
+                String identity=com.waenhancer.theme.WallpaperCapture.identity(wallpaper);
+                com.waenhancer.theme.WallpaperCapture copied=wallpaperFallback.plan(wallpaper,window,identity);
+                if (copied!=null) plan=copied;
+                else if (unsupported==null || com.waenhancer.theme.WallpaperFallback.eligible(unsupported))
+                    wallpaperFallback.request(wallpaper,window,activityWindow.get(),identity,() -> {
+                        if (!closed && !suspended) scan();
+                    });
+            }
+            bubbleSource.update(plan,
                     com.waenhancer.theme.ConversationBackdropSource.blurRadius(material,window.getResources().getDisplayMetrics().density));
         }
         void wallpaperChanged(View target) {

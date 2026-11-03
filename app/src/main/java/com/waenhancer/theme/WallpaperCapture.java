@@ -190,6 +190,87 @@ public final class WallpaperCapture {
         catch (RuntimeException unknown) { return null; }
     }
 
+    static boolean consumerView(View view) { return consumer(view); }
+
+    /** Null when the plan is usable; otherwise why the wallpaper cannot be replayed. */
+    public String unsupportedReason() { return unsupported; }
+
+    /** The wallpaper view's rectangle in window coordinates, clipped to the window; null if empty. */
+    static Rect rectInWindow(View wallpaper, View window) {
+        if (wallpaper == null || window == null || wallpaper.getWidth() <= 0 || wallpaper.getHeight() <= 0) return null;
+        Matrix toWindow = new Matrix(), rootGlobal = new Matrix(), rootInverse = new Matrix();
+        wallpaper.transformMatrixToGlobal(toWindow);
+        window.transformMatrixToGlobal(rootGlobal);
+        if (!rootGlobal.invert(rootInverse)) return null;
+        toWindow.postConcat(rootInverse);
+        RectF r = new RectF(0, 0, wallpaper.getWidth(), wallpaper.getHeight());
+        toWindow.mapRect(r);
+        Rect out = new Rect();
+        r.roundOut(out);
+        return out.intersect(0, 0, window.getWidth(), window.getHeight()) && out.width() > 1 && out.height() > 1 ? out : null;
+    }
+
+    /**
+     * Identity of the wallpaper the chat shows (drawable/bitmap identities and generations of the
+     * non-consumer wallpaper subtree), even when its content cannot be replayed. Chats with their
+     * own wallpaper differ; keyboard/geometry changes do not.
+     */
+    public static String identity(View wallpaper) {
+        StringBuilder out = new StringBuilder();
+        identity(wallpaper, 0, out, new int[1]);
+        return out.length() == 0 ? "none" : out.toString();
+    }
+
+    private static void identity(View view, int depth, StringBuilder out, int[] count) {
+        if (view == null || depth > MAX_DEPTH || ++count[0] > MAX_VIEWS || out.length() > 2000
+                || view.getVisibility() != View.VISIBLE || consumer(view)) return;
+        append(out, view.getBackground());
+        if (view instanceof ImageView) append(out, ((ImageView) view).getDrawable());
+        append(out, view.getForeground());
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = group.getChildAt(i);
+                if (!hostsConsumers(child, 0)) identity(child, depth + 1, out, count);
+            }
+        }
+    }
+
+    private static void append(StringBuilder out, Drawable drawable) {
+        if (drawable == null) return;
+        out.append(drawable.getClass().getSimpleName()).append('@').append(System.identityHashCode(drawable));
+        if (drawable instanceof BitmapDrawable) {
+            Bitmap bitmap = ((BitmapDrawable) drawable).getBitmap();
+            if (bitmap != null) out.append(":bmp").append(System.identityHashCode(bitmap)).append('/').append(bitmap.getGenerationId());
+        }
+        out.append(';');
+    }
+
+    /**
+     * A copied wallpaper image as a plan: cover-mapped from the rectangle it was copied from into
+     * the wallpaper's current rectangle (keyboard/geometry), clipped there. Pure geometry is in
+     * {@link #coverRect}.
+     */
+    static WallpaperCapture fromImage(Bitmap image, Rect copiedFrom, Rect now, int width, int height, String imageKey) {
+        BitmapDrawable drawable = new BitmapDrawable(null, image);
+        drawable.setFilterBitmap(true);
+        Rect target = coverRect(copiedFrom.width(), copiedFrom.height(), now);
+        drawable.setBounds(target);
+        ArrayList<Item> items = new ArrayList<>();
+        items.add(new Item(drawable, new Matrix(), 255, new Rect(now)));
+        String key = width + "x" + height + "|" + now.toShortString() + "|" + imageKey;
+        return new WallpaperCapture(width, height, new Rect(now), key, null, items);
+    }
+
+    /** Pure: centre a source-aspect rectangle that covers {@code target} (centre-crop scaling). */
+    static Rect coverRect(int sourceWidth, int sourceHeight, Rect target) {
+        float scale = Math.max((float) target.width() / Math.max(1, sourceWidth),
+                (float) target.height() / Math.max(1, sourceHeight));
+        int w = Math.round(sourceWidth * scale), h = Math.round(sourceHeight * scale);
+        int left = target.left + (target.width() - w) / 2, top = target.top + (target.height() - h) / 2;
+        return new Rect(left, top, left + w, top + h);
+    }
+
     private static WallpaperCapture unsupported(View window, String reason) {
         int w = window == null ? 0 : window.getWidth(), h = window == null ? 0 : window.getHeight();
         return new WallpaperCapture(w, h, new Rect(), "unsupported:" + reason, reason, new ArrayList<>());

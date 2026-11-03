@@ -1481,3 +1481,15 @@ Four findings, all confirmed in code and fixed:
 
 Tests: new `WallpaperSourceReviewTest` (10) executes the consumer decision (custom-named and obfuscated recyclers, rows/composer, plain wallpaper views), content-key change with same identity, first-unsupported telemetry state, and debounce timing during an active render; source checks cover wiring that needs Android Views/HWUI. Full suite 584 tests, 0 failures; Debug/Release compile; Python and AGSL checks as before. These do not prove drawable selection or texture invalidation on the device.
 
+## Automatic bare-wallpaper copy for bubble glass — 2026-11-03
+
+Branch `ccr-a55049bc-m310s8` restarted from `master@d4d634a` (#134 merged); new PR. Owner request: option 1 of the discussion — when the module cannot reproduce a chat's wallpaper, it copies the bare wallpaper itself (no user screenshot), once per wallpaper, since chats can have their own.
+
+`WallpaperFallback` (see ARCHITECTURE "Automatic bare-wallpaper copy"): triggered from `syncSharedBubbles` when `WallpaperCapture.plan` is unsupported for a copyable reason or `ConversationBackdropSource.failed()`; hides the covering siblings for one committed frame, verifies no message list/row/pane is visible, `PixelCopy` at half resolution, restores; keyed by `WallpaperCapture.identity(wallpaper)`; cover-mapped on geometry change; memory only; two attempts per identity. Telemetry: `source=fallback-scheduled|fallback-waiting|fallback-capturing|fallback-ready|fallback-failed(reason)`.
+
+Not changed: the replay path from #134 stays first; bubble drawing (#131); composer/header/recorder/player.
+
+Validation: Debug/Release compile; 592 unit tests 0 failures (new `WallpaperFallbackTest`, 8: eligibility, cover geometry, hide→verify→copy order, restore on every path, identity cache, attempts, session wiring); Python checks as before. Not proven locally: PixelCopy result, flash duration, that hiding covers all overlays on the Galaxy.
+
+Device next: test #134 first. If `source=unsupported(...)` or `unavailable`, this PR should show `fallback-ready` and glass after a brief bare-wallpaper flash on first open; switching to a chat with another wallpaper copies again; keyboard reuses it. If `fallback-failed(consumer-visible)`, a view over the wallpaper was not identified — report the log line.
+

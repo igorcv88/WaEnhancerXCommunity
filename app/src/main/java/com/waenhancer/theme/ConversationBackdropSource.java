@@ -62,6 +62,9 @@ public final class ConversationBackdropSource {
      */
     public boolean ready() { return texture!=null && !closed; }
     public Bitmap texture() { return texture; }
+    /** The current revision failed for good (render exception or retries exhausted). */
+    public boolean failed() { return failed && !closed; }
+    private boolean failed;
     public long revision() { return epoch.revision(); }
     /**
      * UI thread, on layout/scan. Records the wallpaper only when its identity, geometry or blur
@@ -74,7 +77,7 @@ public final class ConversationBackdropSource {
         // capture is "no change" for rendering but must still say why there is no texture.
         if (!usable) BubbleGlassTelemetry.source("unsupported", capture==null ? "no-capture" : capture.unsupported);
         if (!epoch.update(usable ? java.util.Arrays.asList(capture.key,radius) : null)) return;
-        desired=usable ? capture : null; blur=radius;
+        desired=usable ? capture : null; blur=radius; failed=false;
         desiredContent=null;
         if (usable) {
             try { desiredContent=capture.record(); }
@@ -134,6 +137,7 @@ public final class ConversationBackdropSource {
                 } else if (result.outcome!=SourceRetryPolicy.Outcome.STALE) {
                     epoch.complete(token,false);
                     texture=null; // The previous wallpaper no longer describes this chat.
+                    failed=true;
                     BubbleGlassTelemetry.source("unavailable", String.valueOf(result.outcome));
                     probe("SOURCE_UNAVAILABLE","revision="+token+" reason="+result.outcome);
                     changed.run();
