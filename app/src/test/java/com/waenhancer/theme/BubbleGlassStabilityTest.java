@@ -210,6 +210,34 @@ public class BubbleGlassStabilityTest {
                 .contains("try { syncContrast(row); } finally { applyingContrast = outer; }"));
     }
 
+    @Test public void contrastHasHysteresisAndFollowsTheGlassRecording() throws IOException {
+        // Device trace 2026-11-03 after #145: reply text and play button still flickered while
+        // WhatsApp setter resets were rare (reasserted_text=4, reasserted_icon=0): the colours
+        // followed every single native recording and every session scan landing in one.
+        String app = read(APP);
+        int hold = app.indexOf("private boolean contrastGlass(View row, GlassSpec material)");
+        String body = app.substring(hold, app.indexOf("private void syncContrast(View row)", hold));
+        assertTrue(body.contains("if (bubbleGlass.hasGlass(row)) { nativeSince.remove(row); return true; }"));
+        assertTrue("only rows that had glass colours are held",
+                body.contains("if (!rowsWithGlassContrast.contains(row)) return false;"));
+        assertTrue("a real native transition still restores after the hold",
+                body.contains("row.postDelayed(() -> { holdPending.remove(row); if (!closed) syncReplyText(row); }, left + 16);"));
+        assertTrue("short enough that a real native row recolours promptly",
+                app.contains("static final long CONTRAST_HOLD_MS = 500;"));
+        int sync = app.indexOf("private void syncContrast(View row)");
+        String contrast = app.substring(sync, app.indexOf("private void clearFill(", sync));
+        assertTrue(contrast.contains("boolean glass = contrastGlass(row, material);"));
+        assertTrue("no layer change inside a recording",
+                contrast.contains("if (visualizer != null && !contrastInDraw) liftLayer(visualizer, glass);"));
+        assertTrue(contrast.contains("if (!contrastInDraw) {\n                    clearFill(group.getBackground(), glass);"));
+        assertTrue("tints applied in the glass recording itself, the posted sync still follows",
+                app.contains("if (glassNow != null && glassNow.hasGlass(row)) syncTintsInDraw(row);\n"
+                        + "                    if (contrastPending.add(row)) row.post("));
+        int restore = app.indexOf("private void restoreReplyTexts()");
+        String all = app.substring(restore, app.indexOf("private void restoreContrast()", restore));
+        assertTrue(all.contains("rowsWithGlassContrast.clear();") && all.contains("nativeSince.clear();"));
+    }
+
     @Test public void callAndViewOnceRowsFollowTheGlass() throws IOException {
         String app = read(APP);
         int start = app.indexOf("private void syncReplyText(View row)");

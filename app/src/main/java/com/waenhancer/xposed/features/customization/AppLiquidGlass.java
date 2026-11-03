@@ -1006,6 +1006,22 @@ public final class AppLiquidGlass extends Feature {
         private final Map<String, Integer> contrastIds = new java.util.HashMap<>();
         private final Set<View> contrastPending = java.util.Collections.newSetFromMap(new WeakHashMap<>());
         /**
+         * Glass-row contrast with hysteresis (owner 2026-11-03: reply text and play button still
+         * flickered white/grey with almost no WhatsApp setter resets in the trace). A row whose
+         * latest recording has no glass keeps the glass colours for CONTRAST_HOLD_MS from the
+         * first such observation; only a row still without glass after it gets native colours.
+         * Single native recordings (texture gaps, re-record passes) and session scans landing in
+         * them no longer flip the colours. rowsWithGlassContrast: rows whose colours were last
+         * set for glass; nativeSince: first time each of them was seen without glass.
+         */
+        static final long CONTRAST_HOLD_MS = 500;
+        private final Set<View> rowsWithGlassContrast = java.util.Collections.newSetFromMap(new WeakHashMap<>());
+        private final WeakHashMap<View, Long> nativeSince = new WeakHashMap<>();
+        private final Set<View> holdPending = java.util.Collections.newSetFromMap(new WeakHashMap<>());
+        /** True while syncContrast runs inside a row's glass recording: no layer or fill changes. */
+        private boolean contrastInDraw;
+        private boolean countFresh;
+        /**
          * Native fills cleared inside glass bubbles: drawable -> original colour. The full colour,
          * not getAlpha(): ColorDrawable.setAlpha multiplies the base colour's own alpha, so
          * restoring an effective alpha would fade a translucent fill at every transition.
@@ -1076,9 +1092,47 @@ public final class AppLiquidGlass extends Feature {
             } finally { applyingContrast = outer; }
         }
 
+        /**
+         * Inside the row's glass recording (the bubble draws before the row's children): text and
+         * icon tints set here are recorded by the children in this same recording, so a new or
+         * rebound view never shows one native-colour frame. Layer types and fills are left to the
+         * posted sync, which also catches anything this pass skips.
+         */
+        private void syncTintsInDraw(View row) {
+            if (row == null || closed) return;
+            boolean outer = applyingContrast, outerDraw = contrastInDraw;
+            applyingContrast = true; contrastInDraw = true;
+            try { syncContrast(row); com.waenhancer.theme.BubbleGlassTelemetry.contrast(3); }
+            finally { applyingContrast = outer; contrastInDraw = outerDraw; }
+        }
+
+        /** Glass state for contrast, with the hold described at {@link #CONTRAST_HOLD_MS}. */
+        private boolean contrastGlass(View row, GlassSpec material) {
+            if (bubbleGlass == null || material == null) return false;
+            if (bubbleGlass.hasGlass(row)) { nativeSince.remove(row); return true; }
+            if (!rowsWithGlassContrast.contains(row)) return false;
+            long now = android.os.SystemClock.uptimeMillis();
+            Long since = nativeSince.get(row);
+            if (since == null) { since = now; nativeSince.put(row, now); }
+            long left = CONTRAST_HOLD_MS - (now - since);
+            if (left <= 0) {
+                nativeSince.remove(row);
+                com.waenhancer.theme.BubbleGlassTelemetry.contrast(1);
+                return false;
+            }
+            com.waenhancer.theme.BubbleGlassTelemetry.contrast(0);
+            if (holdPending.add(row))
+                row.postDelayed(() -> { holdPending.remove(row); if (!closed) syncReplyText(row); }, left + 16);
+            return true;
+        }
+
         private void syncContrast(View row) {
             GlassSpec material = resolvedMaterial();
-            boolean glass = bubbleGlass != null && material != null && bubbleGlass.hasGlass(row);
+            boolean glass = contrastGlass(row, material);
+            // A view tinted for the first time in a row that already had glass colours was
+            // replaced by WhatsApp (counted as "fresh"); first tints of a new row are not.
+            countFresh = glass && rowsWithGlassContrast.contains(row);
+            if (glass) rowsWithGlassContrast.add(row); else rowsWithGlassContrast.remove(row);
             int content = material == null ? 0 : material.contentColor & 0x00FFFFFF;
             int secondary = content | (REPLY_TEXT_ALPHA << 24);
             tintText(rowChild(row, "quoted_text"), glass, secondary);
@@ -1089,7 +1143,7 @@ public final class AppLiquidGlass extends Feature {
                 View play = rowChild(row, "control_btn");
                 if (play instanceof android.widget.ImageView)
                     tintIcon((android.widget.ImageView) play, glass, content | 0xFF000000);
-                if (visualizer != null) liftLayer(visualizer, glass);
+                if (visualizer != null && !contrastInDraw) liftLayer(visualizer, glass);
             }
             // Call rows: the missed/incoming call glyph loses contrast on glass once its native
             // bubble is gone (owner 2026-11-03: "the phone symbol could be white").
@@ -1104,8 +1158,10 @@ public final class AppLiquidGlass extends Feature {
             if (viewOnce == null) viewOnce = rowChild(row, "view_once_media_container");
             if (viewOnce instanceof android.view.ViewGroup) {
                 android.view.ViewGroup group = (android.view.ViewGroup) viewOnce;
-                clearFill(group.getBackground(), glass);
-                for (int i = 0; i < group.getChildCount(); i++) clearFill(group.getChildAt(i).getBackground(), glass);
+                if (!contrastInDraw) {
+                    clearFill(group.getBackground(), glass);
+                    for (int i = 0; i < group.getChildCount(); i++) clearFill(group.getChildAt(i).getBackground(), glass);
+                }
                 tintTree(group, glass, content | 0xFF000000, 0);
             }
         }
@@ -1150,6 +1206,7 @@ public final class AppLiquidGlass extends Feature {
                 return;
             }
             if (state != null && current == state[1] && state[1].getDefaultColor() == color) return;
+            if (state == null && countFresh) com.waenhancer.theme.BubbleGlassTelemetry.contrast(2);
             android.content.res.ColorStateList original = state != null && current == state[1] ? state[0] : current;
             android.content.res.ColorStateList wanted = android.content.res.ColorStateList.valueOf(color);
             quoteTexts.put(text, new android.content.res.ColorStateList[]{original, wanted});
@@ -1166,6 +1223,7 @@ public final class AppLiquidGlass extends Feature {
                 return;
             }
             if (state != null && current == state[1] && state[1].getDefaultColor() == color) return;
+            if (state == null && countFresh) com.waenhancer.theme.BubbleGlassTelemetry.contrast(2);
             android.content.res.ColorStateList original = state != null && current == state[1] ? state[0] : current;
             android.content.res.ColorStateList wanted = android.content.res.ColorStateList.valueOf(color);
             glassIcons.put(icon, new android.content.res.ColorStateList[]{original, wanted});
@@ -1213,6 +1271,8 @@ public final class AppLiquidGlass extends Feature {
             applyingContrast = true;
             try { restoreContrast(); } finally { applyingContrast = outer; }
             contrastOwners.values().removeIf(owner -> owner == this);
+            rowsWithGlassContrast.clear();
+            nativeSince.clear();
         }
 
         private void restoreContrast() {
@@ -2072,10 +2132,14 @@ public final class AppLiquidGlass extends Feature {
                     invalidateBubbleRows(window);
                 });
                 bubbleGlass=new com.waenhancer.theme.NativeBubbleGlass(window, bubbleSource);
-                // Reply text follows the row's glass; changed after the draw, never inside it.
-                // One posted sync per row however many bubbles it records; idempotent when the
-                // colours are already applied, so a re-record it causes ends the cycle.
+                // Reply text follows the row's glass. A glass recording applies text and icon
+                // tints in place (the bubble draws before the row's children, so this recording
+                // already uses them); everything, including layers and fills and the way back to
+                // native, is (re)applied by one posted sync per row. Both are idempotent when the
+                // colours are already applied, so a re-record they cause ends the cycle.
                 bubbleGlass.onGlassChanged(row -> {
+                    com.waenhancer.theme.NativeBubbleGlass glassNow = bubbleGlass;
+                    if (glassNow != null && glassNow.hasGlass(row)) syncTintsInDraw(row);
                     if (contrastPending.add(row)) row.post(() -> { contrastPending.remove(row); if (!closed) syncReplyText(row); });
                 });
             }
