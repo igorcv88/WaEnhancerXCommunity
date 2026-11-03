@@ -1629,7 +1629,7 @@ Device next: compare bubble rim brightness with the composer/header over the sam
 
 ### Bubble Colors pull the blur's hue, not its opacity — 2026-11-03
 
-Branch `ccr-a55049bc-m310s8` restarted from `master@e2b1090` (#145 and #143 merged); new PR (see below).
+Branch `ccr-a55049bc-m310s8` restarted from `master@e2b1090` (#145 and #143 merged); PR [#146](https://github.com/igorcv88/WaEnhancerXCommunity/pull/146).
 
 Owner screenshots (build before #145): with Bubble Colors off the bubble glass is transparent; with it on, the glass is fully opaque and nothing behind it shows. Owner intent: Bubble Colors must only pull the blur's colour a little towards the chosen colour, never change opacity.
 
