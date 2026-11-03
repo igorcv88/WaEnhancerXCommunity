@@ -42,6 +42,8 @@ public final class BubbleGlassTelemetry {
     private static final long[] NATIVE = new long[Native.values().length];
     private static long calls, glass, reported = -1, window = -1, lastReport, enabledAt = -1;
     private static boolean enabled;
+    /** Last wallpaper-source state and its reason: why bubbles have (no) texture. */
+    private static String sourceState = "none", sourceReason = "-";
 
     private BubbleGlassTelemetry() { }
 
@@ -65,12 +67,21 @@ public final class BubbleGlassTelemetry {
         long now = SystemClock.uptimeMillis();
         if (now - lastReport < REPORT_MS || calls == reported) return;
         lastReport = now; reported = calls;
-        StringBuilder out = new StringBuilder("calls=").append(calls).append(" glass=").append(glass);
+        StringBuilder out = new StringBuilder("calls=").append(calls).append(" glass=").append(glass)
+                .append(" source=").append(sourceState).append('(').append(sourceReason).append(')');
         for (Native reason : Native.values()) {
             long n = NATIVE[reason.ordinal()];
             if (n != 0) out.append(' ').append(reason.name().toLowerCase(java.util.Locale.ROOT)).append('=').append(n);
         }
         log("FREQUENCY", out.toString());
+    }
+
+    /** Wallpaper source transitions (UI thread). Logged on change, also carried by FREQUENCY. */
+    public static void source(String state, String reason) {
+        String why = reason == null ? "-" : reason;
+        boolean changed = !state.equals(sourceState) || !why.equals(sourceReason);
+        sourceState = state; sourceReason = why;
+        if (changed && on() && allowed("SOURCE:" + state)) log("SOURCE", "state=" + state + " reason=" + why);
     }
 
     /** Factory primitives per drawable: a candidate structural signal for bubble versus quote. */

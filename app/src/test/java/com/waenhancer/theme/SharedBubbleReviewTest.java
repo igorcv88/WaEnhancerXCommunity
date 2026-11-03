@@ -57,7 +57,7 @@ public class SharedBubbleReviewTest {
 
     @Test public void staleJobsSkipRenderingAndQueueIsBounded() throws IOException {
         String src = read("src/main/java/com/waenhancer/theme/ConversationBackdropSource.java");
-        assertTrue(src.contains("token!=liveToken.get() ? Render.stale() : render(snapshot,radius)"));
+        assertTrue(src.contains("token!=liveToken.get() ? Render.stale() : render(snapshot,content,radius)"));
         assertTrue(src.contains("liveToken.set(-1)"));
         assertTrue(src.contains("if (PENDING.get()>=MAX_PENDING)"));
         assertTrue(src.contains("PENDING.decrementAndGet();"));
