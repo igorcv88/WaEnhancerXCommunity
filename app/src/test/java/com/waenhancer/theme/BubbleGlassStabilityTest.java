@@ -264,6 +264,17 @@ public class BubbleGlassStabilityTest {
         assertTrue("one hook per method", app.contains("if (!rowDrawHooks.add(method)) return;"));
     }
 
+    @Test public void bubbleColorsTintIsVisibleButFollowsTheSlider() throws IOException {
+        // Default slider wash 18% (46/255): the palette colour was barely visible.
+        assertEquals(138, NativeBubbleGlass.tintedWashAlpha(46));
+        assertEquals("capped at 62%", 158, NativeBubbleGlass.tintedWashAlpha(100));
+        assertEquals("never weaker than the slider", 200, NativeBubbleGlass.tintedWashAlpha(200));
+        assertEquals("slider at zero stays clear", 0, NativeBubbleGlass.tintedWashAlpha(0));
+        assertTrue(NativeBubbleGlass.tintedWashAlpha(20) < NativeBubbleGlass.tintedWashAlpha(40));
+        String glass = read(GLASS);
+        assertTrue("only for Bubble Colors tinted bubbles", glass.contains("if (spec.bubbleTint)\n                params.tint ="));
+    }
+
     @Test public void incompleteFingerprintNeverSharesATexture() {
         // Codex review on #138: a hardware-bitmap wallpaper is skipped by the software probe, so
         // two different wallpapers could fingerprint alike once identities are dropped.
