@@ -228,6 +228,15 @@ public final class GlassPane extends FrameLayout {
         return LiveBackdrop.isCapturing();
     }
 
+    /**
+     * Main thread only: {@code canvas} is a live capture's own recording. A view re-recording its
+     * own RenderNode while a capture runs (View.updateDisplayListIfDirty inside src.draw) uses a
+     * different canvas and is not part of the capture.
+     */
+    public static boolean isCaptureCanvas(android.graphics.Canvas canvas) {
+        return LiveBackdrop.isCaptureCanvas(canvas);
+    }
+
     /** Panes currently attached; read by {@link BehindRecorder} to avoid recording a loop. */
     static List<GlassPane> live() {
         return LIVE;

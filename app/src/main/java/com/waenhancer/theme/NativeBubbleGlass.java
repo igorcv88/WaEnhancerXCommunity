@@ -114,7 +114,7 @@ public final class NativeBubbleGlass {
     public boolean draw(Drawable bubble, Canvas canvas, GlassSpec spec) {
         if (broken || released || spec == null || !supported()) return stay(BubbleGlassTelemetry.Native.UNSUPPORTED);
         if (!canvas.isHardwareAccelerated()) return stay(BubbleGlassTelemetry.Native.NOT_HARDWARE);
-        if (LiveBackdrop.isCapturing()) return stay(BubbleGlassTelemetry.Native.CAPTURE);
+        if (LiveBackdrop.isCaptureCanvas(canvas)) return stay(BubbleGlassTelemetry.Native.CAPTURE);
         GlassMaterialDrawable.DrawHost frame = GlassMaterialDrawable.currentRowDraw();
         if (frame == null || frame.canvas != canvas) { unhosted(bubble, canvas); return false; }
         View host = frame.view;

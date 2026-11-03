@@ -234,7 +234,12 @@ public final class AppLiquidGlass extends Feature {
                     if (rowDrawHooks.add(method)) XposedBridge.hookMethod(method, new XC_MethodHook() {
                         @Override protected void beforeHookedMethod(MethodHookParam param) {
                             View host = (View) param.thisObject;
-                            if (GlassPane.isCapturing() || !nativeDrawRows.containsKey(host)) return;
+                            // A pane capture runs in pre-draw, before the real frame, and makes dirty
+                            // rows re-record their own RenderNode inside it. That recording is the
+                            // one the real frame reuses, so only a draw straight into the capture
+                            // canvas is skipped.
+                            if (GlassPane.isCaptureCanvas((Canvas) param.args[0])
+                                    || !nativeDrawRows.containsKey(host)) return;
                             param.setObjectExtra("waex-row-scope", Boolean.TRUE);
                             param.setObjectExtra("waex-row-previous", GlassMaterialDrawable.enterRowDraw(
                                     host, (Canvas) param.args[0]));
@@ -352,10 +357,13 @@ public final class AppLiquidGlass extends Feature {
         Boolean outgoing=bubbleSides.get(bubble);
         // Anything not recognized as a registered native bubble on a canvas is left untouched.
         if (outgoing==null || !(param.args[0] instanceof Canvas)) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NOT_REGISTERED); return; }
-        if (GlassPane.isCapturing()) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.CAPTURE); return; }
+        Canvas canvas=(Canvas) param.args[0];
+        // Skip only a bubble drawn straight into a pane capture. Rows re-recorded during a capture
+        // keep that display list for the real frame: skipping them there left every bubble native
+        // (device probe: capture=1212 of 1327 calls, glass=0, with the source ready).
+        if (GlassPane.isCaptureCanvas(canvas)) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.CAPTURE); return; }
         com.waenhancer.diagnostics.InspectorTrace.glassEventOnce(
                 "shared-bubble-draw", "class=" + bubble.getClass().getName());
-        Canvas canvas=(Canvas) param.args[0];
         View host=com.waenhancer.theme.NativeBubbleGlass.hostFor(canvas);
         if (host==null) { com.waenhancer.theme.NativeBubbleGlass.unhosted(bubble, canvas); return; }
         if (!sharedFactoryWanted(outgoing)) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.SWITCH_OFF); return; }

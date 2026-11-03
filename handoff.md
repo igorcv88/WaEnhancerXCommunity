@@ -1493,3 +1493,11 @@ Validation: Debug/Release compile; 592 unit tests 0 failures (new `WallpaperFall
 
 Device next: test #134 first. If `source=unsupported(...)` or `unavailable`, this PR should show `fallback-ready` and glass after a brief bare-wallpaper flash on first open; switching to a chat with another wallpaper copies again; keyboard reuses it. If `fallback-failed(consumer-visible)`, a view over the wallpaper was not identified — report the log line.
 
+### Device result on #134 and root cause of glass=0 — 2026-11-03
+
+Owner device report (WhatsApp 2.26.38.74, module 0.0.42-beta-4): still no glass. Evidence: `SOURCE_READY 1440x3120` ~70 ms after opening (the #134 source works); `FREQUENCY calls=1327 glass=0 source=ready not_registered=70 capture=1212 switch_off=10 no_texture=35` — the reasons sum exactly to the calls, so after the source was ready no bubble draw reached the glass path. Inspector tree: `conversation_background` (`WDSWallpaper`) and `conversation_layout` → `content` → `list` (`ConversationListViewImpl`) are siblings under `coordinator`; rows `X.DQH`/`X.Dof` with `X.Fyn` backgrounds; bubble drawable `NinePatchDrawable`.
+
+Root cause (code-proven, consistent with the counts): `GlassPane`/`BehindRecorder` capture in pre-draw with `src.draw(captureCanvas)`; dirty rows re-record their own RenderNode inside it (`updateDisplayListIfDirty`), and the real frame reuses that list. The row draw hook and bubble hook bailed on `GlassPane.isCapturing()`, so every row was recorded natively — including the re-record after `SOURCE_READY`, which the pre-draw capture always consumes first. Fix on this branch (PR #135): `LiveBackdrop` tracks the capture's own canvas; only draws straight into it are skipped. New `CaptureCanvasScopeTest` (3); lifecycle check updated. 595 unit tests 0 failures; Debug/Release compile.
+
+Expected on device: `FREQUENCY` shows `glass>0` and `capture` near zero; glass on incoming/outgoing bubbles with the source ready. `switch_off=10` means some draws were for a side the scope excludes (or non-OneMate) — check the incoming/outgoing setting if one side stays native. The PixelCopy fallback in this PR stays inactive while the replay source is ready.
+
