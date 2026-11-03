@@ -1648,7 +1648,7 @@ Device next: Bubble Colors on vs off should show the same transparency; the bubb
 
 ### Glass-row contrast hysteresis — 2026-11-03
 
-Branch `ccr-a55049bc-m310s8` restarted from `master@4056a81` (#146 merged); PR opened for this change (number recorded below).
+Branch `ccr-a55049bc-m310s8` restarted from `master@4056a81` (#146 merged); PR [#147](https://github.com/igorcv88/WaEnhancerXCommunity/pull/147).
 
 Owner report on #146: the reply snippet and voice-note play button still flicker white/grey on glass rows. Trace `FREQUENCY`: `reasserted_text=4 reasserted_icon=0` over `calls=5655 glass=2464 no_texture=47`. WhatsApp setter resets are rare, so #145's setter guard is not the missing piece.
 
