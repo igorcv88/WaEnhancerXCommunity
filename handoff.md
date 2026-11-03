@@ -1676,7 +1676,7 @@ External review (owner-supplied, from another instance; treated as hypotheses, n
 
 ### Bubble Colors as tinted glass; wash follows the untinted material — 2026-11-03
 
-Branch `ccr-a55049bc-m310s8` restarted from `master@8f09471` (#147 merged); PR number recorded below.
+Branch `ccr-a55049bc-m310s8` restarted from `master@8f09471` (#147 merged); PR [#148](https://github.com/igorcv88/WaEnhancerXCommunity/pull/148).
 
 Owner photos on #147 (colours #002D29 left, #0A2D49 right; amount 70% and 10%, plus a light-colour pair): "it mixes the colour with a whitish tone". Measured:
 - dark colours at 70%: saturation 0.45 vs the wallpaper's 0.99. #147's Oklab move lifts the dark choice to the wallpaper's lightness, which makes it pastel.
