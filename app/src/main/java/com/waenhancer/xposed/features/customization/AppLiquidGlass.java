@@ -233,6 +233,19 @@ public final class AppLiquidGlass extends Feature {
      */
     private volatile int[] nativeRowIds = new int[0];
 
+    /**
+     * Message lists that hold a verified conversation_row_*: every direct child of such a list
+     * is a message row. View-once and call rows use other IDs (device trace 2026-11-03:
+     * registered incoming bubbles drawn on 1440x222 row canvases with frame=none) and stayed
+     * native. Identity only; weak.
+     */
+    private final Map<Object, Boolean> rowLists =
+            java.util.Collections.synchronizedMap(new WeakHashMap<>());
+
+    private boolean messageRow(View view) {
+        return knownRowId(view.getId()) || (view.getParent() != null && rowLists.containsKey(view.getParent()));
+    }
+
     private boolean knownRowId(int id) {
         if (id == View.NO_ID) return false;
         for (int known : nativeRowIds) if (known == id) return true;
@@ -253,6 +266,7 @@ public final class AppLiquidGlass extends Feature {
     private void observeNativeRowDraw(View row) {
         nativeDrawRows.put(row, Boolean.TRUE);
         rememberRowId(row.getId());
+        if (row.getParent() != null && knownRowId(row.getId())) rowLists.put(row.getParent(), Boolean.TRUE);
         for (String name : new String[]{"draw", "onDraw", "dispatchDraw"}) {
             for (Class<?> type = row.getClass(); type != null; type = type.getSuperclass()) {
                 try {
@@ -329,7 +343,7 @@ public final class AppLiquidGlass extends Feature {
                 if (!nativeDrawRows.containsKey(host)) {
                     // Same row class and ID as a verified row: host it now. The
                     // bubble hook still needs this window's session and renderer.
-                    if (!knownRowId(host.getId()) || bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF) return;
+                    if (!messageRow(host) || bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF) return;
                     nativeDrawRows.put(host, Boolean.TRUE);
                 }
                 param.setObjectExtra("waex-row-scope", Boolean.TRUE);
@@ -925,6 +939,8 @@ public final class AppLiquidGlass extends Feature {
         static final float QUOTE_CORNER_DP = 8f;
         /** Reply snippet alpha on glass bubbles (composer reply: 86%). */
         static final int REPLY_TEXT_ALPHA = 0xDB;
+        /** Waveform colour scale toward white on glass rows (0.5 = halfway). */
+        static final float WAVE_LIFT = 0.5f;
 
         private void clipReplyCorners(View window) {
             if (quoteFrameId == -1) quoteFrameId = window.getResources().getIdentifier(
@@ -947,26 +963,55 @@ public final class AppLiquidGlass extends Feature {
             }
         }
 
-        /** Quoted snippet colour per TextView: {native, applied}. */
+        /** Content colour applied over native colours on glass rows: view -> {native, applied}. */
         private final WeakHashMap<TextView, android.content.res.ColorStateList[]> quoteTexts = new WeakHashMap<>();
-        private int quoteTextId = -1;
+        private final WeakHashMap<android.widget.ImageView, android.content.res.ColorStateList[]> glassIcons = new WeakHashMap<>();
+        /** Waveforms lifted through a layer colour filter: view -> original layer type. */
+        private final WeakHashMap<View, Integer> liftedLayers = new WeakHashMap<>();
+        private final Map<String, Integer> contrastIds = new java.util.HashMap<>();
+
+        private int contrastId(View row, String name) {
+            Integer id = contrastIds.get(name);
+            if (id == null) {
+                id = row.getResources().getIdentifier(name, "id", row.getContext().getPackageName());
+                contrastIds.put(name, id);
+            }
+            return id;
+        }
+
+        private View rowChild(View row, String name) {
+            int id = contrastId(row, name);
+            return id == 0 ? null : row.findViewById(id);
+        }
 
         /**
-         * A reply inside a glass bubble keeps WhatsApp's grey snippet colour, made for its opaque
-         * bubble and nearly unreadable on glass (owner report 2026-11-03). Same treatment as the
-         * composer reply: the material's content colour at 86%. Only the snippet: the sender
-         * title keeps its participant colour. Restored when the row no longer has glass.
+         * WhatsApp's secondary colours inside a received bubble (reply snippet, voice-note play
+         * button, duration, time, waveform) are made for its opaque bubble and nearly unreadable
+         * on glass (owner reports 2026-11-03). On a glass row they follow the material's content
+         * colour, like the composer reply; the reply's sender title keeps its participant colour
+         * and the seek thumb keeps its accent. Everything is restored when the row has no glass.
          */
         private void syncReplyText(View row) {
             if (row == null || closed) return;
-            if (quoteTextId == -1) quoteTextId = row.getResources().getIdentifier(
-                    "quoted_text", "id", row.getContext().getPackageName());
-            if (quoteTextId == 0) return;
-            View found = row.findViewById(quoteTextId);
-            if (!(found instanceof TextView)) return;
-            TextView text = (TextView) found;
             GlassSpec material = resolvedMaterial();
             boolean glass = bubbleGlass != null && material != null && bubbleGlass.hasGlass(row);
+            int content = material == null ? 0 : material.contentColor & 0x00FFFFFF;
+            int secondary = content | (REPLY_TEXT_ALPHA << 24);
+            tintText(rowChild(row, "quoted_text"), glass, secondary);
+            View visualizer = rowChild(row, "audio_visualizer");
+            if (visualizer != null || rowChild(row, "conversation_row_audio_player_view") != null) {
+                tintText(rowChild(row, "description"), glass, secondary);
+                tintText(rowChild(row, "date"), glass, secondary);
+                View play = rowChild(row, "control_btn");
+                if (play instanceof android.widget.ImageView)
+                    tintIcon((android.widget.ImageView) play, glass, content | 0xFF000000);
+                if (visualizer != null) liftLayer(visualizer, glass);
+            }
+        }
+
+        private void tintText(View found, boolean glass, int color) {
+            if (!(found instanceof TextView)) return;
+            TextView text = (TextView) found;
             android.content.res.ColorStateList[] state = quoteTexts.get(text);
             android.content.res.ColorStateList current = text.getTextColors();
             if (!glass) {
@@ -974,12 +1019,48 @@ public final class AppLiquidGlass extends Feature {
                 quoteTexts.remove(text);
                 return;
             }
-            int color = (material.contentColor & 0x00FFFFFF) | (REPLY_TEXT_ALPHA << 24);
             if (state != null && current == state[1] && state[1].getDefaultColor() == color) return;
             android.content.res.ColorStateList original = state != null && current == state[1] ? state[0] : current;
             android.content.res.ColorStateList wanted = android.content.res.ColorStateList.valueOf(color);
             quoteTexts.put(text, new android.content.res.ColorStateList[]{original, wanted});
             text.setTextColor(wanted);
+        }
+
+        private void tintIcon(android.widget.ImageView icon, boolean glass, int color) {
+            android.content.res.ColorStateList[] state = glassIcons.get(icon);
+            android.content.res.ColorStateList current = icon.getImageTintList();
+            if (!glass) {
+                if (state != null && current == state[1]) icon.setImageTintList(state[0]);
+                glassIcons.remove(icon);
+                return;
+            }
+            if (state != null && current == state[1] && state[1].getDefaultColor() == color) return;
+            android.content.res.ColorStateList original = state != null && current == state[1] ? state[0] : current;
+            android.content.res.ColorStateList wanted = android.content.res.ColorStateList.valueOf(color);
+            glassIcons.put(icon, new android.content.res.ColorStateList[]{original, wanted});
+            icon.setImageTintList(wanted);
+        }
+
+        /**
+         * The waveform is custom-drawn (played/unplayed colours inside WhatsApp's view), so it is
+         * lightened as a whole through its layer paint: every channel moves halfway to white.
+         * The played part stays distinguishable by its hue.
+         */
+        private void liftLayer(View view, boolean glass) {
+            Integer original = liftedLayers.get(view);
+            if (!glass) {
+                if (original != null) { view.setLayerType(original, null); liftedLayers.remove(view); }
+                return;
+            }
+            if (original != null) return;
+            liftedLayers.put(view, view.getLayerType());
+            android.graphics.Paint paint = new android.graphics.Paint();
+            paint.setColorFilter(new android.graphics.ColorMatrixColorFilter(new float[]{
+                    WAVE_LIFT, 0, 0, 0, 255 * (1 - WAVE_LIFT),
+                    0, WAVE_LIFT, 0, 0, 255 * (1 - WAVE_LIFT),
+                    0, 0, WAVE_LIFT, 0, 255 * (1 - WAVE_LIFT),
+                    0, 0, 0, 1, 0}));
+            view.setLayerType(View.LAYER_TYPE_HARDWARE, paint);
         }
 
         private void restoreReplyTexts() {
@@ -988,6 +1069,14 @@ public final class AppLiquidGlass extends Feature {
                 if (text != null && text.getTextColors() == entry.getValue()[1]) text.setTextColor(entry.getValue()[0]);
             }
             quoteTexts.clear();
+            for (Map.Entry<android.widget.ImageView, android.content.res.ColorStateList[]> entry : new ArrayList<>(glassIcons.entrySet())) {
+                android.widget.ImageView icon = entry.getKey();
+                if (icon != null && icon.getImageTintList() == entry.getValue()[1]) icon.setImageTintList(entry.getValue()[0]);
+            }
+            glassIcons.clear();
+            for (Map.Entry<View, Integer> entry : new ArrayList<>(liftedLayers.entrySet()))
+                if (entry.getKey() != null) entry.getKey().setLayerType(entry.getValue(), null);
+            liftedLayers.clear();
         }
 
         private void restoreReplyCorners() {
@@ -1759,10 +1848,12 @@ public final class AppLiquidGlass extends Feature {
          * the row itself, its background and its children are never modified.
          */
         private void bindNativeBubbleRow(View row) {
-            if (closed || row.getId() == View.NO_ID || nativeDrawRows.containsKey(row)
+            if (closed || nativeDrawRows.containsKey(row)
                     || bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF
-                    || !com.waenhancer.theme.NativeBubbleGlass.supported()
-                    || !resourceName(row).startsWith("conversation_row_")) return;
+                    || !com.waenhancer.theme.NativeBubbleGlass.supported()) return;
+            boolean named = row.getId() != View.NO_ID && resourceName(row).startsWith("conversation_row_");
+            // Any other child of a verified message list is a message row too (view-once, calls).
+            if (!named && (row.getParent() == null || !rowLists.containsKey(row.getParent()))) return;
             observeNativeRowDraw(row);
             // A row recorded before it was observed painted its bubble natively; record once more.
             row.invalidate();
