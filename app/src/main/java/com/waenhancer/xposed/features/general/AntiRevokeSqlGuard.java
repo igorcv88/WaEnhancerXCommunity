@@ -19,26 +19,15 @@ final class AntiRevokeSqlGuard {
     private final SharedPreferences prefs;
     private final Runnable changed;
     private final Set<String> warnings = ConcurrentHashMap.newKeySet();
-    private static final class Call {
-        String scope;
-        long row;
-        String key;
-        boolean allow;
-    }
-    private final ThreadLocal<java.util.ArrayDeque<Call>> calls = ThreadLocal.withInitial(java.util.ArrayDeque::new);
-    void enterCall() { calls.get().push(new Call()); }
-    void leaveCall() {
-        java.util.ArrayDeque<Call> stack = calls.get();
-        if (!stack.isEmpty()) stack.pop();
-        if (stack.isEmpty()) calls.remove();
-    }
+    private final RevokeCallContext calls = new RevokeCallContext();
+    void enterCall() { calls.enter(); }
+    void leaveCall() { calls.leave(); }
     void protectCall(SQLiteDatabase db, long row, String key, boolean allow) {
-        Call call = calls.get().peek();
-        if (call == null) return;
-        call.scope = RevocationArchive.scope(db);
-        call.row = row;
-        call.key = key;
-        call.allow = allow;
+        calls.protect(RevocationArchive.scope(db), row, key, allow);
+    }
+    long captureForCall(SQLiteDatabase db, long row, String key) throws Exception {
+        return calls.capture(RevocationArchive.scope(db), row, key,
+                () -> archive.capture(db, row, key));
     }
 
     private Field database, sql, bindings;
@@ -87,19 +76,24 @@ final class AntiRevokeSqlGuard {
             SQLiteDatabase db = (SQLiteDatabase) database.get(param.thisObject);
             if (db == null || !new File(db.getPath()).getName().equals("msgstore.db")) return;
             RevokeSql mutation = RevokeSql.parse(query, (Object[]) bindings.get(param.thisObject));
+            boolean scopedFallback = mutation == null;
             String scope = RevocationArchive.scope(db);
-            Call call = calls.get().peek();
+            RevokeCallContext.Call call = calls.current();
             if (call != null && scope.equals(call.scope) && call.allow) return;
-            if (mutation == null && call != null && scope.equals(call.scope)) {
-                mutation = RevokeSql.scopedMutation(query, call.row);
-            }
+            if (mutation == null) mutation = calls.fallback(scope, query);
             if (mutation == null) {
                 // Do not log SQL, bind args, paths or exception messages.
                 if (RevokeSql.scopedMutation(query, 1) != null) warn("unsupported-sql-shape", null);
                 return;
             }
-            long original = mutation.placeholder && mutation.key != null && mutation.chat > 0
-                    ? archive.recordedRow(scope, mutation.key, mutation.chat) : -1;
+            long original = -1;
+            if (mutation.placeholder) {
+                // The armed callback remains authoritative even if its archive is unavailable,
+                // or the placeholder has a different row/key and omits chat metadata.
+                if (call != null && !call.allow && scope.equals(call.scope)) original = call.row;
+                else if (mutation.key != null && mutation.chat > 0)
+                    original = archive.recordedRow(scope, mutation.key, mutation.chat);
+            }
             long targetRow = -1;
             String key = null;
             // Prefer the actual row, then a committed stable identity (replay with a new _id).
@@ -118,21 +112,26 @@ final class AntiRevokeSqlGuard {
                 try (Cursor row = db.rawQuery(selection.toString(), arguments.toArray(new String[0]))) {
                     if (!row.moveToFirst() || row.getInt(1) != 0 || row.getInt(2) == 15) continue;
                     String actualKey = row.getString(0);
+                    boolean identified = calls.owns(scope, candidate, actualKey);
                     if (actualKey == null || actualKey.isEmpty()
-                            || (mutation.key != null && !mutation.key.equals(actualKey))) continue;
+                            || !mutation.acceptsOriginalKey(candidate, actualKey, identified)
+                            || (scopedFallback && call != null && !actualKey.equals(call.key))) continue;
                     targetRow = candidate;
                     key = actualKey;
                     break;
                 }
             }
             if (targetRow <= 0) return;
-            boolean protectedAlready = archive.timestamp(scope, targetRow, key) > 0;
-            boolean enabled = (call != null && scope.equals(call.scope) && !call.allow
-                    && call.row == targetRow && key.equals(call.key)) || enabledForRow(db, targetRow);
+            boolean scopedTarget = calls.owns(scope, targetRow, key);
+            // A message write and an identified callback must not depend on another archive
+            // lookup succeeding after the checkpoint has failed (for example, disk failure).
+            boolean protectedAlready = mutation.table.equals("message_media") && !scopedTarget
+                    && archive.timestamp(scope, targetRow, key) > 0;
+            boolean enabled = scopedTarget || enabledForRow(db, targetRow);
             // Ordinary content updates are allowed. Match the existing single-row incoming
-            // DELETE protection; media cleanup is blocked only for a committed revocation.
+            // DELETE protection; media cleanup requires a committed event or identified callback.
             boolean block = mutation.table.equals("message_media")
-                    ? mutation.delete && protectedAlready && enabled
+                    ? mutation.delete && (protectedAlready || scopedTarget) && enabled
                     : enabled && (mutation.delete || mutation.placeholder);
             if (!block) return;
             try {

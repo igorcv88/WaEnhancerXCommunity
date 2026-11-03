@@ -140,7 +140,7 @@ public class RevocationArchiveDeviceTest {
         try { crypto.decrypt(encrypted, "account+message"); fail(); }
         catch (java.security.GeneralSecurityException expected) { }
     }
-    @Test public void version12MigrationPreservesAllFourTables() {
+    private void seedVersion12() {
         store.close();
         context.deleteDatabase("delmessages.db");
         try (SQLiteDatabase v12 = context.openOrCreateDatabase("delmessages.db", 0, null)) {
@@ -149,13 +149,17 @@ public class RevocationArchiveDeviceTest {
             v12.execSQL("CREATE TABLE deleted_media(_id INTEGER PRIMARY KEY,message_id INTEGER)");
             v12.execSQL("CREATE TABLE deleted_media_refs(media_id INTEGER,message_id INTEGER,PRIMARY KEY(media_id,message_id))");
             for (int i = 1; i <= 154; i++) v12.execSQL("INSERT INTO delmessages VALUES(?,?,?,?)",
-                    new Object[]{i,"synthetic-chat","synthetic-"+i,1000+i});
+                    new Object[]{i,"synthetic-chat",i == 42 ? "synthetic-key" : "synthetic-"+i,1000+i});
             v12.execSQL("INSERT INTO deleted_for_me VALUES(1,'synthetic recovered')");
             v12.execSQL("INSERT INTO deleted_media VALUES(1,1)");
             v12.execSQL("INSERT INTO deleted_media_refs VALUES(1,1)");
             v12.setVersion(12);
         }
         store = new DelMessageStore(context);
+    }
+
+    @Test public void version12MigrationPreservesAllFourTables() {
+        seedVersion12();
         SQLiteDatabase v13 = store.getWritableDatabase();
         assertEquals(13, v13.getVersion());
         for (String table : new String[]{"delmessages","deleted_for_me","deleted_media","deleted_media_refs"}) {
@@ -169,4 +173,35 @@ public class RevocationArchiveDeviceTest {
             assertEquals("ok", integrity.getString(0));
         }
     }
+    @Test public void oldMarkerAndContentStayReadableAcrossMigrationAndReopenWithoutNewRevoke() {
+        seedVersion12();
+        java.util.List<String> originalRows;
+        try (SQLiteDatabase before = context.openOrCreateDatabase("delmessages.db", 0, null)) {
+            originalRows = legacyRows(before);
+        }
+        for (int reopen = 0; reopen < 3; reopen++) {
+            assertEquals(1042, store.getTimestampByMessageId("synthetic-key"));
+            assertEquals(1042, store.getLegacyRevokedTimestamp("synthetic-key"));
+            assertTrue(store.getMessagesByJid("synthetic-chat").contains("synthetic-key"));
+            assertEquals(originalRows, legacyRows(store.getReadableDatabase()));
+            // A v12 event has no snapshot; its marker must remain usable through the legacy path.
+            assertEquals(0, new RevocationArchive(store).timestamp(RevocationArchive.scope(source), 42, "synthetic-key"));
+            try (Cursor message = source.rawQuery("SELECT text_data FROM message WHERE _id=42", null)) {
+                assertTrue(message.moveToFirst());
+                assertEquals("synthetic original", message.getString(0));
+            }
+            store.close();
+            store = new DelMessageStore(context);
+        }
+    }
+
+    private static java.util.List<String> legacyRows(SQLiteDatabase database) {
+        java.util.List<String> rows = new java.util.ArrayList<>();
+        try (Cursor cursor = database.rawQuery("SELECT _id,jid,msgid,timestamp FROM delmessages ORDER BY _id", null)) {
+            while (cursor.moveToNext()) rows.add(cursor.getLong(0) + ":" + cursor.getString(1)
+                    + ":" + cursor.getString(2) + ":" + cursor.getLong(3));
+        }
+        return rows;
+    }
+
 }

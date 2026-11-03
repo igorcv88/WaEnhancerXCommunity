@@ -74,6 +74,25 @@ public class RevokeSqlTest {
         assertNull(RevokeSql.scopedMutation("DELETE FROM message WHERE _id=?", 0));
     }
 
+    @Test public void replacementKeyDoesNotHideTheOriginalRowBeingOverwritten() {
+        RevokeSql parsed = RevokeSql.parse("INSERT OR REPLACE INTO message(_id,key_id,message_type) VALUES(?,?,15)",
+                new Object[]{42, "replacement-key"});
+        assertTrue(parsed.acceptsOriginalKey(42, "original-key", false));
+        assertTrue(parsed.predicates.isEmpty());
+    }
+    @Test public void aliasLookupCannotCaptureAnUnrelatedReusedRow() {
+        RevokeSql parsed = RevokeSql.parse("INSERT INTO message(key_id,chat_row_id,message_type) VALUES(?,?,15)",
+                new Object[]{"recorded-key", 3});
+        assertFalse(parsed.acceptsOriginalKey(42, "unrelated-reused-key", false));
+        assertTrue(parsed.acceptsOriginalKey(42, "recorded-key", false));
+    }
+    @Test public void identifiedCallbackPreservesOriginalAcrossReplacementKeyChanges() {
+        RevokeSql parsed = RevokeSql.parse("INSERT INTO message(key_id,chat_row_id,message_type) VALUES(?,?,15)",
+                new Object[]{"replacement-key", 3});
+        assertTrue(parsed.acceptsOriginalKey(42, "original-key", true));
+        assertFalse(parsed.acceptsOriginalKey(42, "original-key", false));
+    }
+
     @Test public void missingBindingsAndInvalidIdsDoNotCrash() {
         assertNull(RevokeSql.parse("DELETE FROM message WHERE _id=?", null));
         assertNull(RevokeSql.parse("DELETE FROM message WHERE _id=?", new Object[]{"not-a-row"}));

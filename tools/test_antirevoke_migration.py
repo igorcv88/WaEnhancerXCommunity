@@ -13,6 +13,11 @@ SOURCE = ROOT / 'app/src/main/java/com/waenhancer/xposed/core/db/RevokedSnapshot
 DDL = [json.loads(value) for value in re.findall(r'"(?:[^"\\]|\\.)*"',
     SOURCE.read_text().split('CREATE = {', 1)[1].split('};', 1)[0])]
 
+STORE_SOURCE = (ROOT / 'app/src/main/java/com/waenhancer/xposed/core/db/DelMessageStore.java').read_text()
+LEGACY_METHOD = STORE_SOURCE.split('public synchronized long getLegacyRevokedTimestamp', 1)[1]
+LEGACY_QUERY = re.search(r'rawQuery\((.*?)new String\[\]', LEGACY_METHOD, re.S).group(1)
+LEGACY_QUERY = ''.join(json.loads(value) for value in re.findall(r'"(?:[^"\\]|\\.)*"', LEGACY_QUERY))
+
 
 class AntiRevokeMigrationTest(unittest.TestCase):
     def setUp(self):
@@ -54,6 +59,18 @@ class AntiRevokeMigrationTest(unittest.TestCase):
             self.assertEqual(rows, self.db.execute(f'SELECT * FROM {table}').fetchall())
         self.assertEqual(('ok',), self.db.execute('PRAGMA integrity_check').fetchone())
         self.assertEqual((13,), self.db.execute('PRAGMA user_version').fetchone())
+
+    def test_old_markers_read_through_production_legacy_query_after_reopen(self):
+        self.migrate()
+        self.db.close()
+        self.db = sqlite3.connect(self.path)
+        self.addCleanup(self.db.close)
+        for row in (1, 42, 154):
+            key = f'key-{row}'
+            self.assertEqual((1000+row,), self.db.execute(LEGACY_QUERY, (key, key)).fetchone())
+        for table, rows in self.before.items():
+            self.assertEqual(rows, self.db.execute(f'SELECT * FROM {table}').fetchall())
+        self.assertEqual(0, self.db.execute('SELECT COUNT(*) FROM revoked_snapshots').fetchone()[0])
 
     def test_failure_rolls_back_schema_and_version(self):
         with self.assertRaises(sqlite3.OperationalError):

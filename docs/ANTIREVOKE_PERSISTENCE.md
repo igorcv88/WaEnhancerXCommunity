@@ -71,6 +71,11 @@ A missing barrier or unrecognized unscoped SQL emits a bounded feature warning. 
 not a claim that an arbitrary future WhatsApp signature or native database implementation
 has been validated.
 
+An identified callback arms its account/row/key barrier before any snapshot size check,
+key access or database write. A failed checkpoint leaves that barrier armed until the
+callback returns; message writes in that scope do not require another archive lookup to
+succeed. Scoped media cleanup is also retained while the checkpoint is unavailable.
+
 On snapshot failure, method hooks do not report successful persistence. A matched SQL
 write still leaves the original native row intact as emergency retention and records
 `snapshot-not-committed`; that emergency path has no durability acknowledgement. There is
@@ -95,11 +100,19 @@ removed native message/media row. No recovery of previously lost historical text
 Host tests: `tools/test_antirevoke_migration.py` executes production DDL using real SQLite,
 checks v12 records/references, rollback, identity separation, aliases, query plans, and a
 committed event followed by immediate subprocess termination. JVM tests exercise the SQL
-parser and typed result/None-ack policy. Android instrumentation tests in
+parser, typed result/None-ack policy and failed-checkpoint callback barriers. Android instrumentation tests in
 `RevocationArchiveDeviceTest` use isolated synthetic databases and AndroidKeyStore to cover
 commit/reopen, negative misses, encryption/authentication, account isolation, replay,
-row aliases, missing JID, group/LID, text/caption, size rejection and migration.
+row aliases, missing JID, group/LID, text/caption, size rejection, migration and read-only
+legacy access after repeated reopen without a new revocation.
 
 Host checks and instrumentation compilation do not validate LSPosed hooking, obfuscated
 WhatsApp resolvers, APK-update behavior or scroll/input/player latency on a phone. Those
 remain the device acceptance boundary; no new diagnostic collection is required here.
+
+For APK-update acceptance, start with an already preserved message and its existing marker.
+Reopen that same message after the module APK update and a WhatsApp process restart, then
+check content/marker across scrolling and conversation reentry. This is independent of the
+already demonstrated interception of a newly revoked message. Recovery of older, already
+unidentifiable placeholders requires an earlier source containing the original content;
+this implementation does not invent that association or replace the active database.

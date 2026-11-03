@@ -404,8 +404,7 @@ public class AntiRevoke extends Feature {
             if (source == null || !source.isOpen()) throw new IllegalStateException("Message database unavailable");
             // Read from the original row before the native callback can replace its content.
             // The archive uses the row's actual key, not the event/wrapper's obfuscated ID.
-            archive.capture(source, fMessage.getRowId(), fMessage.getKey().messageID);
-            sqlGuard.protectCall(source, fMessage.getRowId(), fMessage.getKey().messageID, false);
+            sqlGuard.captureForCall(source, fMessage.getRowId(), fMessage.getKey().messageID);
         } catch (Exception failure) {
             sqlGuard.warn("snapshot-not-committed", failure);
             return 0; // SQL guard retains the original if a destructive write follows.

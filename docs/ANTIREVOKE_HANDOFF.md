@@ -18,15 +18,30 @@ copied. Unknown native writes and unidentifiable/missing historical rows are not
 recoverable. A failed durable write is reported, while matched SQL retains the original
 row as emergency retention without a successful persistence acknowledgement.
 
-Validation: Debug and Release Java compilation passed; 613 JVM tests passed with zero
-failures/errors/skips; Android instrumentation sources compiled, including 11 new synthetic
-SQLite/AndroidKeyStore tests. Six host SQLite migration/durability/identity tests passed,
+Validation: Debug and Release Java compilation passed; 622 JVM tests passed with zero
+failures/errors/skips; Android instrumentation sources compiled, including 12 synthetic
+SQLite/AndroidKeyStore tests. Seven host SQLite migration/durability/identity tests passed,
 as did existing message-history migration, app-only runtime/IPC, bubble-lifecycle and diff
 checks. Android test-rules was added solely for existing UiThreadTest annotations.
 Instrumentation was not executed. No device/LSPosed/WhatsApp signature, APK-update or UI
 latency acceptance is claimed. No workflow was dispatched and no merge was performed.
 
-Next: complete the established functional device acceptance for newly revoked text,
-reply/media, restart, module APK update and recycled/scrolling markers. Keep runtime
-compatibility and measured UI latency separate from host test results. Do not merge
-without explicit instruction.
+Review follow-up: the callback barrier is now armed before snapshot size checks,
+encryption or commit. Six JVM regressions execute the production checkpoint/context with
+size/key/storage failures, assert that key-based SQL fallback and media retention still
+have the correct account/row identity, reject false acknowledgements, and check nested
+callbacks, explicit pass, cleanup and thread isolation. Matching message writes do not
+perform an additional archive-state query that could reopen the same storage failure.
+Placeholder INSERT/REPLACE values may change key_id: the actual overwritten row or an
+identified callback still names the original, while an alias lookup must reject an unrelated
+reused row. Three additional SQL-policy tests cover those distinctions.
+The legacy SQLite test executes the production compatibility query after migration and
+reopen without modifying source rows or generating a new revocation. The additional
+Android test covers legacy helper reads across repeated reopen; it is compiled, not run.
+
+Next: validate the module APK update with an already preserved message as the baseline.
+Compare that same message's original content and marker after the update, WhatsApp restart,
+scrolling and conversation reentry. Do not repeat basic new-revocation acceptance as proof
+of update persistence. Historical placeholders require a separate earlier content source;
+no recovery or association is fabricated. Keep runtime compatibility and measured UI
+latency separate from host test results. Do not merge without explicit instruction.

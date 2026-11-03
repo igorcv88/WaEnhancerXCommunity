@@ -79,6 +79,14 @@ public final class RevokeSql {
         return new RevokeSql(table, row, verb.startsWith("DELETE"), !verb.startsWith("DELETE"), null, -1, Map.of());
     }
 
+    boolean acceptsOriginalKey(long candidate, String actualKey, boolean identifiedCallback) {
+        // INSERT/REPLACE placeholder values can carry a new key. The row being overwritten,
+        // or an identified callback, still names the original; WHERE predicates are separately
+        // checked against the source row by the guard before this decision.
+        return key == null || key.equals(actualKey) || identifiedCallback
+                || (placeholder && row > 0 && row == candidate);
+    }
+
     private static boolean target(String table) { return table.equals("message") || table.equals("message_media"); }
     private static RevokeSql mutation(String table, Map<String, Object> values, boolean delete, boolean placeholder, Map<String, Object> predicates) {
         long row = number(values.get(table.equals("message") ? "_id" : "message_row_id"));
