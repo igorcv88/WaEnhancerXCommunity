@@ -34,6 +34,10 @@ class GlobalPlayerScopeTest(unittest.TestCase):
         self.assertIn('WppCore.addListenerActivity', source)
         self.assertIn('observer.addOnGlobalLayoutListener(this)', source)
         self.assertIn('observer.removeOnGlobalLayoutListener(this)', source)
+        # A re-shown strip is hidden before its frame draws, and that frame is cancelled.
+        self.assertIn('observer.addOnPreDrawListener(this)', source)
+        self.assertIn('observer.removeOnPreDrawListener(this)', source)
+        self.assertIn('return !hide();', source)
         for state in ('RESUMED', 'PAUSED', 'ENDED', 'DESTROYED'):
             self.assertIn('case ' + state + ':', source)
         self.assertIn('watchers.remove(activity)', source)

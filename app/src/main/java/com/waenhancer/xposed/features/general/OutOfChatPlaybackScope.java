@@ -90,7 +90,8 @@ public final class OutOfChatPlaybackScope extends Feature {
         return activity.getResources().getIdentifier(entry, "id", activity.getPackageName());
     }
 
-    private static final class Watcher implements ViewTreeObserver.OnGlobalLayoutListener {
+    private static final class Watcher implements ViewTreeObserver.OnGlobalLayoutListener,
+            ViewTreeObserver.OnPreDrawListener {
         private final View decor;
         private final int holderId;
         private final int parentId;
@@ -107,24 +108,43 @@ public final class OutOfChatPlaybackScope extends Feature {
         void start() {
             observer = decor.getViewTreeObserver();
             observer.addOnGlobalLayoutListener(this);
-            onGlobalLayout();
+            observer.addOnPreDrawListener(this);
+            hide();
         }
 
         void stop() {
-            if (observer != null && observer.isAlive()) observer.removeOnGlobalLayoutListener(this);
+            if (observer != null && observer.isAlive()) {
+                observer.removeOnGlobalLayoutListener(this);
+                observer.removeOnPreDrawListener(this);
+            }
             observer = null;
         }
 
         @Override
         public void onGlobalLayout() {
+            hide();
+        }
+
+        /**
+         * WhatsApp can re-show the strip between layouts (playback state change). Hiding it here
+         * and cancelling that one frame means it is never drawn, nor its empty space shown.
+         */
+        @Override
+        public boolean onPreDraw() {
+            return !hide();
+        }
+
+        /** @return true when the strip was visible in this Conversation and is now gone */
+        private boolean hide() {
             View holder = decor.findViewById(holderId);
-            if (!(holder instanceof ViewGroup) || holder.getVisibility() == View.GONE) return;
+            if (!(holder instanceof ViewGroup) || holder.getVisibility() == View.GONE) return false;
             ViewParent parent = holder.getParent();
-            if (!(parent instanceof View) || ((View) parent).getId() != parentId) return;
+            if (!(parent instanceof View) || ((View) parent).getId() != parentId) return false;
             View content = holder.findViewById(contentId);
-            if (content == null || content.getParent() != holder) return;
+            if (content == null || content.getParent() != holder) return false;
             holder.setVisibility(View.GONE);
             GlassProbe.event("PLAYER_SCOPE_HIDDEN", holder, "owner=Conversation holder=out_of_chat_playback_holder");
+            return true;
         }
     }
 }
