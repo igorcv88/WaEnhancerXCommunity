@@ -4,6 +4,9 @@ import android.app.Activity;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -23,12 +26,16 @@ public class InspectorFeature extends Feature {
     private static final long POLL_INTERVAL_MILLIS = 30_000L;
     private static final long CLOCK_SKEW_MILLIS = 5_000L;
     private static final int MAX_TOKEN_LENGTH = 128;
+    private static final int MAX_ATTACH_ATTEMPTS = 3;
+    private static final long ATTACH_RETRY_MILLIS = 120L;
 
     private InspectorOverlay currentOverlay;
     private Activity attachedActivity;
     private InspectorSession retainedSession;
     private final Handler pollHandler = new Handler(Looper.getMainLooper());
     private Runnable pollRunnable;
+    private Runnable pendingAttach;
+    private Activity pendingActivity;
 
     public InspectorFeature(@NonNull ClassLoader classLoader,
                             @NonNull SharedPreferences preferences) {
@@ -73,11 +80,15 @@ public class InspectorFeature extends Feature {
 
             switch (type) {
                 case RESUMED:
-                    if (currentOverlay == null) attachTo(activity, persisted);
+                    if (currentOverlay == null) scheduleAttach(activity, persisted, 0, 0L);
                     break;
                 case PAUSED:
                 case ENDED:
-                    detachTransient();
+                case DESTROYED:
+                    // The previous Activity can stop *after* a new Activity resumes.
+                    // Its callback must not detach the new inspector window or cancel its retry.
+                    if (activity == attachedActivity || activity == pendingActivity)
+                        detachTransient();
                     break;
             }
         });
@@ -104,16 +115,80 @@ public class InspectorFeature extends Feature {
         }
     }
 
-    private void attachTo(@NonNull Activity activity, @NonNull InspectorSession freshlyParsed) {
+    private void scheduleAttach(Activity activity, InspectorSession session,
+                                int attempt, long delayMillis) {
+        cancelPendingAttach();
+        Runnable task = () -> {
+            pendingAttach = null;
+            pendingActivity = null;
+            if (currentOverlay != null || !session.isActive(System.currentTimeMillis())
+                    || activity.isFinishing() || activity.isDestroyed()
+                    || WppCore.getActivityState(activity)
+                    != WppCore.ActivityChangeState.ChangeType.RESUMED) return;
+
+            Window window = activity.getWindow();
+            View decor = window == null ? null : window.getDecorView();
+            if (decor == null || !decor.isAttachedToWindow()
+                    || decor.getWindowToken() == null) {
+                if (attempt + 1 < MAX_ATTACH_ATTEMPTS) {
+                    scheduleAttach(activity, session, attempt + 1, ATTACH_RETRY_MILLIS);
+                } else {
+                    de.robv.android.xposed.XposedBridge.log(
+                            "WaEnhancer Inspector: host window token unavailable after bounded retries");
+                }
+                return;
+            }
+            attachTo(activity, session, attempt);
+        };
+        pendingAttach = task;
+        pendingActivity = activity;
+        pollHandler.postDelayed(task, delayMillis);
+    }
+
+    private void cancelPendingAttach() {
+        if (pendingAttach != null) {
+            pollHandler.removeCallbacks(pendingAttach);
+            pendingAttach = null;
+        }
+        pendingActivity = null;
+    }
+
+    private void attachTo(@NonNull Activity activity, @NonNull InspectorSession freshlyParsed,
+                          int attempt) {
         if (currentOverlay != null) return;
         long now = System.currentTimeMillis();
         InspectorSession seed = retainedSession != null && retainedSession.isActive(now)
                 ? retainedSession : freshlyParsed;
-        currentOverlay = new InspectorOverlay(activity, () -> endSession(true));
-        attachedActivity = activity;
-        currentOverlay.setSession(seed);
-        currentOverlay.attach();
         InspectorTrace.arm(activity);
+        InspectorTrace.glassEvent("INSPECTOR_ARM_SEEN", "activity="
+                + activity.getClass().getName() + " attempt=" + attempt);
+        try {
+            currentOverlay = new InspectorOverlay(activity, () -> endSession(true));
+            attachedActivity = activity;
+            currentOverlay.setSession(seed);
+            currentOverlay.attach();
+        } catch (Throwable failure) {
+            InspectorTrace.glassEvent("INSPECTOR_ATTACH_FAILED", "type="
+                    + failure.getClass().getSimpleName() + " cause="
+                    + (failure.getCause() == null ? "none"
+                    : failure.getCause().getClass().getSimpleName()));
+            de.robv.android.xposed.XposedBridge.log("WaEnhancer Inspector overlay failed: " + failure);
+            if (currentOverlay != null) {
+                try { currentOverlay.detach(); } catch (Throwable ignored) { }
+            }
+            currentOverlay = null;
+            attachedActivity = null;
+            InspectorTrace.disarm();
+            // An Activity can be RESUMED before its token is accepted by WindowManager.
+            // Retry only BadToken failures, and never after a pause or session expiry.
+            if (failure instanceof WindowManager.BadTokenException
+                    && attempt + 1 < MAX_ATTACH_ATTEMPTS) {
+                scheduleAttach(activity, seed, attempt + 1, ATTACH_RETRY_MILLIS);
+            }
+            return;
+        }
+        InspectorTrace.glassEvent("INSPECTOR_ATTACH_OK", "activity="
+                + activity.getClass().getName());
         // Two bounded snapshots distinguish the home mini-player from the conversation header
         // without relying on UIAutomator's foreground timing or on WhatsApp class names.
         sampleAfter(activity, 400L);
@@ -129,6 +204,7 @@ public class InspectorFeature extends Feature {
     }
 
     private void detachTransient() {
+        cancelPendingAttach();
         if (currentOverlay != null) {
             retainedSession = currentOverlay.getSession();
             currentOverlay.detach();
@@ -140,6 +216,7 @@ public class InspectorFeature extends Feature {
     }
 
     private void endSession(boolean clearPref) {
+        cancelPendingAttach();
         if (currentOverlay != null) {
             currentOverlay.detach();
             currentOverlay = null;
