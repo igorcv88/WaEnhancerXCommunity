@@ -1626,3 +1626,22 @@ Device next: scroll and tap through replies and voice notes (play/pause); colour
 Owner report: the bubble rim's weight and thickness are right, but it reads dark, "a dull grey line" rather than a lit edge with dynamic shine, dimmer than the other glass surfaces. Cause (shader arithmetic, `KyantLens` app-chrome branch): the rim blends the body towards near-white by `contour * contourGain`; with 0.65× the chrome contour gain and 0.5× highlight, the blend over a dark/tinted body stays small and lands on grey (e.g. ~8% towards white over a dark wallpaper vs ~13% on the composer). Change: `BUBBLE_RIM_GAIN` 0.65 → 1.0 (composer/header contour peak), `BUBBLE_HIGHLIGHT_GAIN` 0.5 → 0.8 (directional bevel, the light-dependent part), `BUBBLE_STROKE_DP` 1.0 → 0.85 (narrower Gaussian; visible width ≈ σ·√(2 ln(peak/threshold)), so the brighter peak at a smaller σ keeps roughly the previous visible width). Still scaled by the user's rim setting. Shader unchanged; no cost change. Validation: debug compile and unit tests (see PR). Not validated on device.
 
 Device next: compare bubble rim brightness with the composer/header over the same wallpaper. If it is now bright but too wide, lower `BUBBLE_STROKE_DP` (0.75); if bright enough but the inner glow draws attention, lower `BUBBLE_HIGHLIGHT_GAIN` back towards 0.6. If it is still grey over dark wallpapers, the cause is the shader's 0.08 dark floor shared with all app chrome, which needs a bubble-only shader term (not done here).
+
+### Bubble Colors pull the blur's hue, not its opacity — 2026-11-03
+
+Branch `ccr-a55049bc-m310s8` restarted from `master@e2b1090` (#145 and #143 merged); PR [#146](https://github.com/igorcv88/WaEnhancerXCommunity/pull/146).
+
+Owner screenshots (build before #145): with Bubble Colors off the bubble glass is transparent; with it on, the glass is fully opaque and nothing behind it shows. Owner intent: Bubble Colors must only pull the blur's colour a little towards the chosen colour, never change opacity.
+
+Cause: #144 made tinted bubbles wash with the chosen (dark) colour at 3× the slider alpha, capped at 62% (`tintedWashAlpha`): over the blur that is a dark, nearly opaque plate.
+
+Change: `KyantLens.surface` always uses the neutral wash at the slider alpha (identical to Bubble Colors off). Bubble Colors set `Params.hue`/`hueAmount` (`BUBBLE_HUE_PULL` = 0.35), written as the new `uHue` uniform (zero for every other surface, part of `Params.key()`). The shader, before the wash, mixes the blurred backdrop towards the chosen colour's hue/saturation at the backdrop's own luminance (W3C color blend: SetLum + ClipColor). `tintedWashAlpha` and its constants are removed. The no-blur `neutralFallback` path for tinted specs is unchanged (there is no backdrop to tint there).
+
+Validation:
+- Debug compile; unit tests 664, 0 failures (new: hue pull keeps wash alpha/colour and sets the pull only for tinted specs; every `KyantLens` uniform is declared and written).
+- `tools/test_bubble_lifecycle.py` passes.
+- Shader compiled offline with Skia's SkSL compiler (`skia-python` 144, `RuntimeEffect.MakeForShader`; a deliberately broken shader is rejected), old and new versions both OK. Not an Android AGSL compile; the device's Skia is older.
+- Offline render (same Skia, blue wallpaper with white stripes, 18% wash): backdrop detail (luma std inside the glass) 0.124 with Bubble Colors off, 0.069 with the old 54% dark-blue wash, 0.124 with the new pull for dark blue, dark grey, red and purple choices. A first luminance-scaling formula lost detail on bright stripes (0.080) and was replaced by the color blend before commit.
+- Not validated on device.
+
+Device next: Bubble Colors on vs off should show the same transparency; the bubble only shifts towards the chosen hue. If the colour is too faint, raise `BUBBLE_HUE_PULL` (0.5); if a dark palette should also darken the glass slightly, that needs an explicit owner decision (it reduces transparency). If all glass falls back to the classic look after this build, the AGSL program failed on device (`OneMate lens unavailable` in logcat).

@@ -281,6 +281,23 @@ public class LensOpticsTest {
         assertTrue("declared but never written: " + declared, declared.isEmpty());
     }
 
+    /** Same contract for the OneMate/Kyant program used by the composer, header and bubbles. */
+    @Test
+    public void everyKyantUniformIsDeclaredAndWritten() throws Exception {
+        Path source = Paths.get("src/main/java/com/waenhancer/theme/KyantLens.java");
+        String java = new String(Files.readAllBytes(source), StandardCharsets.UTF_8);
+        String shader = KyantLens.SHADER;
+        Set<String> floats = names(java, "setFloatUniform\\(\"(\\w+)\"");
+        assertTrue(floats.contains("uHue"));
+        for (String name : floats) {
+            assertTrue(name + " not declared as a float uniform",
+                    Pattern.compile("\\nuniform float[234]? " + name + ";").matcher(shader).find());
+        }
+        Set<String> declared = names(shader, "uniform float[234]? (\\w+);");
+        declared.removeAll(floats);
+        assertTrue("declared but never written: " + declared, declared.isEmpty());
+    }
+
     private static Set<String> names(String text, String regex) {
         Set<String> out = new HashSet<>();
         Matcher m = Pattern.compile(regex).matcher(text);
