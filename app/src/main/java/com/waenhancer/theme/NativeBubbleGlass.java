@@ -60,20 +60,6 @@ public final class NativeBubbleGlass {
     // Gaussian is narrowed (1.0 -> 0.85dp) so the visible width stays about the same:
     // width ~ sigma * sqrt(2 ln(peak / threshold)) grows only logarithmically with the peak.
     static final float BUBBLE_RIM_GAIN = 1.0f, BUBBLE_HIGHLIGHT_GAIN = 0.8f, BUBBLE_STROKE_DP = 0.85f;
-    /**
-     * Bubble Colors pigment on glass. The shared material washes with the opacity slider's alpha
-     * (18% by default), which made a dark grey or dark blue palette almost invisible over a
-     * saturated wallpaper (owner 2026-11-03: "the glass does not represent the bubble colour").
-     * Tinted bubbles wash at this multiple of the slider, capped, so the slider still controls it.
-     */
-    static final float BUBBLE_TINT_GAIN = 3f, BUBBLE_TINT_MAX = 0.62f;
-
-    /** Wash alpha (0-255) of a Bubble Colors tinted bubble for a slider wash of {@code sliderAlpha}. */
-    static int tintedWashAlpha(int sliderAlpha) {
-        int boosted = Math.round(Math.min(sliderAlpha * BUBBLE_TINT_GAIN, BUBBLE_TINT_MAX * 255f));
-        return Math.max(sliderAlpha, Math.min(255, boosted));
-    }
-
     /** Native mask alpha × this (clamped): a 15%-alpha palette still masks the glass fully. */
     static final float MASK_ALPHA_GAIN = 8f;
     /** Fallback corner when the silhouette cannot be measured. */
@@ -431,8 +417,8 @@ public final class NativeBubbleGlass {
                         : new BubbleSilhouette(0, 0, w, h, Math.min(FALLBACK_RADIUS_DP * density, Math.min(w, h) / 2f), 0);
                 measuredKey = measure;
             }
-            // Same material as the approved composer/header: neutral wash at the opacity slider,
-            // or the user's Bubble Colors choice at that same opacity (GlassSpec bubble tint).
+            // Same material as the approved composer/header: neutral wash at the opacity slider.
+            // Bubble Colors only pull the blur's hue (KyantLens uHue); the opacity is unchanged.
             KyantLens.Params params = KyantLens.appSurface(spec, silhouette.height(), density,
                     KyantLens.surfaceAlpha255());
             // No tail: owner review 2026-11-03 ("the little stroke outside the first message").
@@ -440,8 +426,6 @@ public final class NativeBubbleGlass {
             params.fullCover = 0f;
             params.refractHeight = Math.min(BUBBLE_REFRACT_HEIGHT_DP * density, silhouette.height() / 2f);
             params.refractAmount = BUBBLE_REFRACT_AMOUNT_DP * density;
-            if (spec.bubbleTint)
-                params.tint = (tintedWashAlpha(params.tint >>> 24) << 24) | (params.tint & 0x00FFFFFF);
             params.contourGain *= BUBBLE_RIM_GAIN;
             params.highlight *= BUBBLE_HIGHLIGHT_GAIN;
             params.strokeWidth = BUBBLE_STROKE_DP * density;

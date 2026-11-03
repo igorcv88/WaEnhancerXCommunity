@@ -71,6 +71,9 @@ public final class KyantLens {
             // 1 only for message bubbles: the native silhouette (tail included) masks the
             // result, so pixels outside the rounded body stay plain glass instead of clear.
             + "uniform float uFullCover;\n"
+            // Bubble Colors: rgb = the chosen colour, a = how far the blur is pulled towards it.
+            // Zero for every other surface.
+            + "uniform float4 uHue;\n"
             + "\n"
             + "float sdRR(float2 p, float2 b, float r) {\n"
             + "    float2 q = abs(p) - b + r;\n"
@@ -154,6 +157,22 @@ public final class KyantLens {
             + "\n"
             // Retain the live refracted colour for the bevel reflection, before the wash.
             + "    float3 transmitted = clamp(col.rgb / max(col.a, 0.0001), 0.0, 1.0);\n"
+            // Bubble Colors pull the blurred backdrop's hue towards the chosen colour at the
+            // backdrop's own luminance: the glass stays as transparent as without Bubble Colors
+            // (same wash, same detail), only its colour moves. Owner review 2026-11-03.
+            + "    if (uHue.a > 0.0) {\n"
+            + "        float3 lumaW = float3(0.2126, 0.7152, 0.0722);\n"
+            + "        float backLuma = dot(transmitted, lumaW);\n"
+            // W3C color blend mode (SetLum + ClipColor): the chosen colour's hue and saturation
+            // at the backdrop's exact luminance, so highlights and shadows behind the glass
+            // keep their contrast. Clipping moves towards the luminance, never changes it.
+            + "        float3 shade = uHue.rgb + (backLuma - dot(uHue.rgb, lumaW));\n"
+            + "        float lo = min(min(shade.r, shade.g), shade.b);\n"
+            + "        float hi = max(max(shade.r, shade.g), shade.b);\n"
+            + "        if (lo < 0.0) shade = backLuma + (shade - backLuma) * backLuma / max(backLuma - lo, 0.0001);\n"
+            + "        if (hi > 1.0) shade = backLuma + (shade - backLuma) * (1.0 - backLuma) / max(hi - backLuma, 0.0001);\n"
+            + "        col.rgb = mix(col.rgb, clamp(shade, 0.0, 1.0) * col.a, uHue.a);\n"
+            + "    }\n"
             // Surface: the flat tint drawn over the lensed backdrop (premultiplied source-over).
             + "    col = col * (1.0 - uTint.a) + float4(uTint.rgb * uTint.a, uTint.a);\n"
             + "\n"
@@ -243,6 +262,9 @@ public final class KyantLens {
         float saturation, blurRadius;
         /** 1 for message bubbles (see uFullCover); 0 keeps every other surface unchanged. */
         float fullCover;
+        /** Bubble Colors hue pull (see uHue): colour (rgb) and amount; 0 for every other surface. */
+        int hue;
+        float hueAmount;
 
         String key() {
             return refractHeight + ":" + refractAmount + ":" + depth + ":" + chroma + ":" + tint
@@ -250,7 +272,7 @@ public final class KyantLens {
                     + ":" + l1x + ":" + l1y + ":" + l1z + ":" + l1i + ":" + l2x + ":" + l2y
                     + ":" + l2z + ":" + l2i + ":" + shadowRadius + ":" + shadowAlpha
                     + ":" + saturation + ":" + blurRadius + ":" + contourGain + ":" + appChrome
-                    + ":" + fullCover;
+                    + ":" + fullCover + ":" + hue + ":" + hueAmount;
         }
     }
 
@@ -264,6 +286,11 @@ public final class KyantLens {
      * rather than glass. 10dp gives sigma 4.5dp (~12 px at density 2.75).
      */
     static final float BLUR_DP = 10f;
+    /**
+     * How far Bubble Colors pull the blur's hue towards the chosen colour (0 none, 1 the full
+     * colour at the backdrop's luminance). Owner: "only pull the blur's colour a little".
+     */
+    static final float BUBBLE_HUE_PULL = 0.35f;
     /** Keep strong information suppression in the header and composer. */
     static final float APP_BLUR_DP = 30f;
     static final float VIEW_CONTOUR_GAIN = 1.6f;
@@ -383,10 +410,14 @@ public final class KyantLens {
         // recorded backdrop supplies all hue. Content colour selects dark/light.
         int neutral = SemanticTheme.relativeLuminance(spec.contentColor) > 0.5d
                 ? 0x000000 : 0xFFFFFF;
-        // Only explicit bubble customisation adds pigment. All existing app chrome stays
-        // neutral, including the composer whose appearance is already approved.
-        p.tint = (surfaceAlpha255 << 24)
-                | (spec.bubbleTint ? spec.fillColor & 0x00FFFFFF : neutral);
+        // Every surface keeps the same neutral wash at the opacity slider. Bubble Colors do not
+        // change it: they only pull the blur's hue towards the chosen colour (uHue). A pigment
+        // wash at a boosted alpha made tinted bubbles opaque (owner review 2026-11-03).
+        p.tint = (surfaceAlpha255 << 24) | neutral;
+        if (spec.bubbleTint) {
+            p.hue = spec.fillColor & 0x00FFFFFF;
+            p.hueAmount = BUBBLE_HUE_PULL;
+        }
         p.strokeWidth = VIEW_STROKE_DP * density;
         p.contourGain = VIEW_CONTOUR_GAIN * rimIntensity;
         p.bloom = BLOOM_DP * density;
@@ -559,6 +590,9 @@ public final class KyantLens {
         shader.setFloatUniform("uShadowR", params.shadowRadius);
         shader.setFloatUniform("uShadowA", params.shadowAlpha);
         shader.setFloatUniform("uFullCover", params.fullCover);
+        int h = params.hue;
+        shader.setFloatUniform("uHue", ((h >> 16) & 0xFF) / 255f, ((h >> 8) & 0xFF) / 255f,
+                (h & 0xFF) / 255f, params.hueAmount);
 
     }
 
