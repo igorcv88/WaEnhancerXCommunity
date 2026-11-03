@@ -116,10 +116,11 @@ public class BubbleGlassStabilityTest {
 
     // --- Quieter rim (owner review 2026-11-03) --------------------------------------------
 
-    @Test public void bubbleRimIsAFractionOfTheChromeRim() throws IOException {
-        assertTrue(NativeBubbleGlass.BUBBLE_RIM_GAIN > 0f && NativeBubbleGlass.BUBBLE_RIM_GAIN < 1f);
-        assertTrue(NativeBubbleGlass.BUBBLE_HIGHLIGHT_GAIN > 0f && NativeBubbleGlass.BUBBLE_HIGHLIGHT_GAIN < 1f);
-        assertTrue(NativeBubbleGlass.BUBBLE_STROKE_DP < 1.25f);
+    // Third review: as bright as the chrome rim, on a narrower Gaussian (same visible width).
+    @Test public void bubbleRimIsAsBrightAsTheChromeRimButNarrower() throws IOException {
+        assertEquals(1f, NativeBubbleGlass.BUBBLE_RIM_GAIN, 0f);
+        assertTrue(NativeBubbleGlass.BUBBLE_HIGHLIGHT_GAIN >= 0.75f && NativeBubbleGlass.BUBBLE_HIGHLIGHT_GAIN < 1f);
+        assertTrue(NativeBubbleGlass.BUBBLE_STROKE_DP < 1.0f && NativeBubbleGlass.BUBBLE_STROKE_DP >= 0.8f);
         String glass = read(GLASS);
         assertTrue("scales the user's rim setting instead of replacing it",
                 glass.contains("params.contourGain *= BUBBLE_RIM_GAIN;"));
