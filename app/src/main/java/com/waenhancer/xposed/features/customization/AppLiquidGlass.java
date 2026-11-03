@@ -971,6 +971,13 @@ public final class AppLiquidGlass extends Feature {
         /** Waveforms lifted through a layer colour filter: view -> original layer type. */
         private final WeakHashMap<View, Integer> liftedLayers = new WeakHashMap<>();
         private final Map<String, Integer> contrastIds = new java.util.HashMap<>();
+        private final Set<View> contrastPending = java.util.Collections.newSetFromMap(new WeakHashMap<>());
+        /**
+         * Native fills cleared inside glass bubbles: drawable -> original colour. The full colour,
+         * not getAlpha(): ColorDrawable.setAlpha multiplies the base colour's own alpha, so
+         * restoring an effective alpha would fade a translucent fill at every transition.
+         */
+        private final WeakHashMap<Drawable, Integer> clearedFills = new WeakHashMap<>();
 
         private int contrastId(View row, String name) {
             Integer id = contrastIds.get(name);
@@ -1008,6 +1015,48 @@ public final class AppLiquidGlass extends Feature {
                 if (play instanceof android.widget.ImageView)
                     tintIcon((android.widget.ImageView) play, glass, content | 0xFF000000);
                 if (visualizer != null) liftLayer(visualizer, glass);
+            }
+            // Call rows: the missed/incoming call glyph loses contrast on glass once its native
+            // bubble is gone (owner 2026-11-03: "the phone symbol could be white").
+            View callIcon = rowChild(row, "call_type_icon");
+            if (callIcon instanceof android.widget.ImageView) {
+                tintIcon((android.widget.ImageView) callIcon, glass, content | 0xFF000000);
+                tintText(rowChild(row, "call_log_subtitle"), glass, secondary);
+            }
+            // View-once rows: an inner dark rectangle 12px inside the bubble showed its square
+            // corners outside the glass's rounded ones, and its label was grey.
+            View viewOnce = rowChild(row, "view_once_media_container_large");
+            if (viewOnce == null) viewOnce = rowChild(row, "view_once_media_container");
+            if (viewOnce instanceof android.view.ViewGroup) {
+                android.view.ViewGroup group = (android.view.ViewGroup) viewOnce;
+                clearFill(group.getBackground(), glass);
+                for (int i = 0; i < group.getChildCount(); i++) clearFill(group.getChildAt(i).getBackground(), glass);
+                tintTree(group, glass, content | 0xFF000000, 0);
+            }
+        }
+
+        private void clearFill(Drawable fill, boolean glass) {
+            if (!(fill instanceof android.graphics.drawable.ColorDrawable)) return;
+            android.graphics.drawable.ColorDrawable flat = (android.graphics.drawable.ColorDrawable) fill;
+            Integer original = clearedFills.get(fill);
+            if (!glass) {
+                if (original != null) { flat.setColor(original); clearedFills.remove(fill); }
+                return;
+            }
+            if (original == null) {
+                flat.mutate();
+                clearedFills.put(fill, flat.getColor());
+            }
+            if (flat.getColor() != 0) flat.setColor(0);
+        }
+
+        private void tintTree(View view, boolean glass, int color, int depth) {
+            if (depth > 4 || view == null) return;
+            if (view instanceof TextView) tintText(view, glass, color);
+            else if (view instanceof android.widget.ImageView) tintIcon((android.widget.ImageView) view, glass, color);
+            else if (view instanceof android.view.ViewGroup) {
+                android.view.ViewGroup group = (android.view.ViewGroup) view;
+                for (int i = 0; i < group.getChildCount(); i++) tintTree(group.getChildAt(i), glass, color, depth + 1);
             }
         }
 
@@ -1054,8 +1103,8 @@ public final class AppLiquidGlass extends Feature {
                 if (original != null) { view.setLayerType(original, null); liftedLayers.remove(view); }
                 return;
             }
-            if (original != null) return;
-            liftedLayers.put(view, view.getLayerType());
+            if (original != null && view.getLayerType() == View.LAYER_TYPE_HARDWARE) return;
+            if (original == null) liftedLayers.put(view, view.getLayerType());
             android.graphics.Paint paint = new android.graphics.Paint();
             paint.setColorFilter(new android.graphics.ColorMatrixColorFilter(new float[]{
                     WAVE_LIFT, 0, 0, 0, 255 * (1 - WAVE_LIFT),
@@ -1079,6 +1128,10 @@ public final class AppLiquidGlass extends Feature {
             for (Map.Entry<View, Integer> entry : new ArrayList<>(liftedLayers.entrySet()))
                 if (entry.getKey() != null) entry.getKey().setLayerType(entry.getValue(), null);
             liftedLayers.clear();
+            for (Map.Entry<Drawable, Integer> entry : new ArrayList<>(clearedFills.entrySet()))
+                if (entry.getKey() instanceof android.graphics.drawable.ColorDrawable)
+                    ((android.graphics.drawable.ColorDrawable) entry.getKey()).setColor(entry.getValue());
+            clearedFills.clear();
         }
 
         private void restoreReplyCorners() {
@@ -1919,7 +1972,11 @@ public final class AppLiquidGlass extends Feature {
                 });
                 bubbleGlass=new com.waenhancer.theme.NativeBubbleGlass(window, bubbleSource);
                 // Reply text follows the row's glass; changed after the draw, never inside it.
-                bubbleGlass.onGlassChanged(row -> row.post(() -> { if (!closed) syncReplyText(row); }));
+                // One posted sync per row however many bubbles it records; idempotent when the
+                // colours are already applied, so a re-record it causes ends the cycle.
+                bubbleGlass.onGlassChanged(row -> {
+                    if (contrastPending.add(row)) row.post(() -> { contrastPending.remove(row); if (!closed) syncReplyText(row); });
+                });
             }
             // Scope (incoming/outgoing/both), opacity, rim or optics changed while the wallpaper
             // did not: recorded rows still hold the previous glass or native bubble.

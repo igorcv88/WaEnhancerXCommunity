@@ -190,7 +190,10 @@ public class NativeBubbleGlassTest {
         int prep = glass.indexOf("void prepare(Drawable bubble");
         String body = glass.substring(prep, glass.indexOf("void retexture(", prep));
         assertTrue(body.contains("KyantLens.appSurface(spec, silhouette.height(), density,"));
-        assertFalse("no forced 50% native-colour veil", body.contains("VEIL_MIN") || body.contains("params.tint ="));
+        assertFalse("no forced native-colour veil", body.contains("VEIL_MIN"));
+        // The wash is only strengthened for Bubble Colors tinted bubbles (owner 2026-11-03),
+        // and still follows the slider; untinted bubbles keep the composer material as is.
+        assertTrue(body.contains("if (spec.bubbleTint)\n                params.tint = (tintedWashAlpha(params.tint >>> 24) << 24)"));
         assertTrue(body.contains("params.refractHeight = Math.min(BUBBLE_REFRACT_HEIGHT_DP * density, silhouette.height() / 2f);"));
         assertEquals(12f, NativeBubbleGlass.BUBBLE_REFRACT_HEIGHT_DP, 0f);
         assertEquals(8f, NativeBubbleGlass.BUBBLE_REFRACT_AMOUNT_DP, 0f);

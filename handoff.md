@@ -1590,3 +1590,17 @@ Owner result on #141: stable ("estabilíssimo") through scrolling, entering/leav
 Not verified: which IDs the view-once/call rows have, and whether their bubble is the same factory drawable (trace says registered direction 2, so yes for at least one type). If they still stay native, the next trace should show `HOSTED` or `NATIVE_ROW` lines for them.
 
 Validation: Release compile, 646 unit tests 0 failures (2 new), Python checks as before. Not validated on device.
+
+### Contrast consistency, call icon, view-once corners — 2026-11-03
+
+Branch `ccr-a55049bc-m310s8` restarted from `master@46711fa` (#142 merged); new PR.
+
+Owner result on #142: call bubbles have glass ("ficou ótima"); rim intensity approved; glass quality approved. Remaining: call glyph red loses contrast (wants white); view-once bubble shows black corners and a grey label; voice notes and reply snippets are white or grey at random.
+
+Trace: view-once rows are `X.Dr5` (no ID) with `view_once_media_container_large` → `LinearLayout` with a `ColorDrawable` background inset 12px inside the bubble; call rows are `X.2OE` with `call_type_icon` (GradientDrawable circle bg), `call_log_title`, `call_log_subtitle`. Both are now `HOSTED` (the #142 row-list fix works).
+
+Causes/fixes: (a) colours were re-applied only when a row gained/lost glass, but WhatsApp rebinds rows that keep glass and resets its colours → `NativeBubbleGlass` now notifies after every glass recording; the session posts one idempotent `syncReplyText` per row (`contrastPending`); a waveform whose layer type WhatsApp reset is lifted again. (b) call: `call_type_icon` tinted with the content colour, `call_log_subtitle` at 86%. (c) view-once: flat fills of the container and its children set to alpha 0 on glass rows (restorable), texts and icon tinted with the content colour.
+
+Validation: Release compile, 648 unit tests 0 failures (2 new), Python checks as before. Not validated on device.
+
+Same PR #144 (open): owner reports the glass ignores the Bubble Colors palette (incoming should read dark grey, outgoing dark blue; both looked alike). Cause: `KyantLens.surface` keeps only the palette's RGB and washes it at the opacity slider's alpha (18% default), too faint over the bright blue wallpaper. Fix: `NativeBubbleGlass.tintedWashAlpha` = max(slider, min(3× slider, 62%)) for `spec.bubbleTint` only (138/255 at the default slider). The earlier "no forced veil" rule still holds for untinted bubbles; the test was narrowed accordingly. 649 unit tests 0 failures. Device next: confirm both sides now read in their palette colour; if too strong/weak, adjust `BUBBLE_TINT_GAIN`.

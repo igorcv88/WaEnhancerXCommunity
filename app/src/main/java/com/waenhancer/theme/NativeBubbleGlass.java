@@ -54,6 +54,20 @@ public final class NativeBubbleGlass {
     // barely visible). The reference keeps a continuous, clearly visible thin hairline, so the
     // all-round contour is raised more than the directional highlight.
     static final float BUBBLE_RIM_GAIN = 0.65f, BUBBLE_HIGHLIGHT_GAIN = 0.5f, BUBBLE_STROKE_DP = 1.0f;
+    /**
+     * Bubble Colors pigment on glass. The shared material washes with the opacity slider's alpha
+     * (18% by default), which made a dark grey or dark blue palette almost invisible over a
+     * saturated wallpaper (owner 2026-11-03: "the glass does not represent the bubble colour").
+     * Tinted bubbles wash at this multiple of the slider, capped, so the slider still controls it.
+     */
+    static final float BUBBLE_TINT_GAIN = 3f, BUBBLE_TINT_MAX = 0.62f;
+
+    /** Wash alpha (0-255) of a Bubble Colors tinted bubble for a slider wash of {@code sliderAlpha}. */
+    static int tintedWashAlpha(int sliderAlpha) {
+        int boosted = Math.round(Math.min(sliderAlpha * BUBBLE_TINT_GAIN, BUBBLE_TINT_MAX * 255f));
+        return Math.max(sliderAlpha, Math.min(255, boosted));
+    }
+
     /** Native mask alpha × this (clamped): a 15%-alpha palette still masks the glass fully. */
     static final float MASK_ALPHA_GAIN = 8f;
     /** Fallback corner when the silhouette cannot be measured. */
@@ -209,7 +223,10 @@ public final class NativeBubbleGlass {
         }
         if (!drawn) return false;
         lastEntry = entry; lastDrawable = bubble; lastRect.set(hostRect);
-        if (glassRows.add(host)) notifyChanged(host);
+        // Every glass recording, not only the first: WhatsApp rebinds a row that keeps its glass
+        // (recycling, playback state) and resets its own colours, which must be applied again.
+        glassRows.add(host);
+        notifyChanged(host);
         BubbleGlassTelemetry.glass();
         BubbleGlassTelemetry.hosted(bubble, canvas, host);
         if (!presented) {
@@ -245,7 +262,7 @@ public final class NativeBubbleGlass {
     /** Whether this row's latest recording painted glass (reply-text contrast follows it). */
     public boolean hasGlass(View row) { return glassRows.contains(row); }
 
-    /** Called (UI thread, inside a row draw) when a row gains or loses glass. */
+    /** Called (UI thread, inside a row draw) when a row records with glass or loses it. */
     private java.util.function.Consumer<View> glassChanged;
     public void onGlassChanged(java.util.function.Consumer<View> listener) { glassChanged = listener; }
 
@@ -417,6 +434,8 @@ public final class NativeBubbleGlass {
             params.fullCover = 0f;
             params.refractHeight = Math.min(BUBBLE_REFRACT_HEIGHT_DP * density, silhouette.height() / 2f);
             params.refractAmount = BUBBLE_REFRACT_AMOUNT_DP * density;
+            if (spec.bubbleTint)
+                params.tint = (tintedWashAlpha(params.tint >>> 24) << 24) | (params.tint & 0x00FFFFFF);
             params.contourGain *= BUBBLE_RIM_GAIN;
             params.highlight *= BUBBLE_HIGHLIGHT_GAIN;
             params.strokeWidth = BUBBLE_STROKE_DP * density;
