@@ -1538,3 +1538,21 @@ Inferred, not traced: a tap on an `AbsListView` row runs its tap layout pass, wh
 Validation: Debug/Release compile; 636 unit tests 0 failures (new `BubbleGlassStabilityTest`, 8 tests); Python checks pass except the pre-existing `test_glass_rim_contrast.py`; `test_app_only_runtime.py` must run without `-I` (it imports a sibling module; same on master). Not validated on device.
 
 Device next: open a chat (no blink expected after the first chat with that wallpaper this process), tap several messages, scroll. With the inspector armed, any remaining loss appears as `BUBBLE_GLASS_LOST reason=...`, `NATIVE_ROW reason=no_renderer|no_session` or `BUBBLE_GLASS_RESET`; that names the next fix. Judge only received bubbles; sent ones are native by the owner's setting.
+
+### Codex review on #138 (after merge) — 2026-11-03
+
+Branch `ccr-a55049bc-m310s8` restarted from `master` (#138 and #139 merged). One P2 finding, confirmed: `WallpaperCapture.fingerprint` skips drawables the software probe cannot draw (hardware bitmaps) and still returns pixels, and the identity-free look key from #138 could then match two different wallpapers, so a chat could briefly show the previous chat's wallpaper in its bubbles. Fix: the fingerprint reports whether every item was drawn; `lookKeyAllowed` publishes the look key only then. Consequence: a hardware-bitmap wallpaper gets no provisional texture (the open blink remains for it); the replay key, which keeps identities, is unchanged. Validation: Release compile, 637 unit tests 0 failures (`incompleteFingerprintNeverSharesATexture`), Python checks as before (pre-existing `test_glass_rim_contrast.py`). Device next: unchanged from the section above.
+
+### Scrolling copies, quieter rim, readable reply snippets — 2026-11-03
+
+Same branch/PR #140 (still open). Owner device report on `master@64490d0` (#138 + #139): a chat opens perfect (provisional texture visible in the trace); while scrolling, some received bubbles lose rim and blur (semi-opaque fill) or become fully transparent; taps no longer cause it. Reply snippets inside received bubbles are grey and hard to read. The rim reads too strong (reference image supplied: a thin, quiet hairline, iOS-style).
+
+Trace evidence (content-free): no `LOST`, no `BUBBLE_GLASS_RESET` during the chat, `not_registered` 174 → 529 while scrolling, `unhosted` 84 → 119. Both broken looks are native draws. Inference (not proven): rows bound while scrolling receive cached copies of factory bubbles (same `ConstantState`, new instance). Fix: the factory also records the `ConstantState`; a drawable with that state on a verified row canvas is adopted (`ADOPTED_COPY`), anything else on a row canvas is logged (`UNREGISTERED_ON_ROW`) so the next trace confirms or refutes it.
+
+`source=off(no-wallpaper-view)` in later `FREQUENCY` lines came from another session (glass kept being counted and no source was recreated); the telemetry source state is process-global, so it is misleading but harmless.
+
+Also: bubble rim at 0.4× contour gain and highlight with a 0.8dp stroke (still scaled by the rim setting); reply snippet (`quoted_text`) at the material content colour, 86%, following each row's glass state, restored otherwise.
+
+Open item: both screenshots show a light-blue square at the left edge just below the header, at the same screen position while scrolling (so not a row). Unknown source; ask the owner to PICK it with the inspector.
+
+Validation: Debug/Release compile, 640 unit tests 0 failures (3 new in `BubbleGlassStabilityTest`), Python checks as before. Not validated on device.

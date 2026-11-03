@@ -94,10 +94,13 @@ public final class WallpaperCapture {
         String identity = window.getWidth() + "x" + window.getHeight() + "|" + coverage.toShortString() + "|" + walk.key;
         // Identity alone misses in-place changes (ColorDrawable.setColor, tint, wrapper state):
         // the key also carries a tiny rendering of exactly what would be recorded.
-        int[] pixels = fingerprint(walk.items, coverage);
+        boolean[] complete = {true};
+        int[] pixels = fingerprint(walk.items, coverage, complete);
         String key = withContent(identity, pixels);
         WallpaperCapture plan = new WallpaperCapture(window.getWidth(), window.getHeight(), coverage, key, null, walk.items);
-        if (pixels != null) plan.contentKey = withContent(window.getWidth() + "x" + window.getHeight()
+        // The look key drops drawable identities, so it is valid only when the fingerprint shows
+        // every drawable: a skipped one (hardware bitmap) would let different wallpapers match.
+        if (lookKeyAllowed(pixels, complete[0])) plan.contentKey = withContent(window.getWidth() + "x" + window.getHeight()
                 + "|" + coverage.toShortString(), pixels);
         return plan;
     }
@@ -116,7 +119,12 @@ public final class WallpaperCapture {
      * Items that cannot be drawn in software (hardware bitmaps) are skipped; their bitmap identity
      * and generation remain in the identity part of the key.
      */
-    private static int[] fingerprint(ArrayList<Item> items, Rect coverage) {
+    /** Pure: a look key needs a fingerprint in which every recorded drawable was drawn. */
+    static boolean lookKeyAllowed(int[] pixels, boolean everyItemDrawn) {
+        return pixels != null && everyItemDrawn;
+    }
+
+    private static int[] fingerprint(ArrayList<Item> items, Rect coverage, boolean[] complete) {
         try {
             if (probe == null) { probe = Bitmap.createBitmap(PROBE_W, PROBE_H, Bitmap.Config.ARGB_8888); probePixels = new int[PROBE_W * PROBE_H]; }
             probe.eraseColor(0);
@@ -131,7 +139,9 @@ public final class WallpaperCapture {
                     if (item.alpha < 255) canvas.saveLayerAlpha(null, item.alpha);
                     item.drawable.draw(canvas);
                 } catch (RuntimeException softwareUnsupported) {
-                    // e.g. a hardware bitmap: identity/generation still describe it.
+                    // e.g. a hardware bitmap: identity/generation still describe it in the key,
+                    // but the identity-free look key must not be published.
+                    complete[0] = false;
                 } finally {
                     canvas.restoreToCount(save);
                 }

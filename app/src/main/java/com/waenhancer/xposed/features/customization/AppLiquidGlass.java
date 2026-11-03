@@ -310,6 +310,14 @@ public final class AppLiquidGlass extends Feature {
     /** Raw factory direction per drawable (3 = outgoing, as in BubbleColors). */
     private final Map<Drawable, Integer> bubbleSides =
             java.util.Collections.synchronizedMap(new WeakHashMap<>());
+    /**
+     * Side per factory ConstantState. The factory runs when a chat opens; rows bound later while
+     * scrolling can receive copies of a cached bubble (same ConstantState, new instance) that never
+     * pass through the factory. Device trace 2026-11-03: not_registered grew with scrolling while
+     * the affected bubbles stayed native (transparent/semi-opaque) with no LOST event.
+     */
+    private final Map<Drawable.ConstantState, Integer> bubbleStateSides =
+            java.util.Collections.synchronizedMap(new WeakHashMap<>());
     private final Set<Method> bubbleDrawHooks = new HashSet<>();
     /** Drawable classes seen while the switch was off; hooked once it is turned on. */
     private final Set<Class<?>> pendingBubbleClasses = new HashSet<>();
@@ -333,6 +341,8 @@ public final class AppLiquidGlass extends Feature {
                             || !(param.args[0] instanceof Integer)) return;
                     // Identity bookkeeping only: the result WhatsApp receives is unchanged.
                     bubbleSides.put((Drawable) result, (Integer) param.args[0]);
+                    Drawable.ConstantState state=((Drawable) result).getConstantState();
+                    if (state!=null) bubbleStateSides.put(state, (Integer) param.args[0]);
                     com.waenhancer.theme.BubbleGlassTelemetry.factory((Drawable) result, param.args);
                     Class<?> type=result.getClass();
                     if (bubbleScopeCache != LiquidGlassSettings.BubbleScope.OFF) hookBubbleDraw(type);
@@ -379,12 +389,32 @@ public final class AppLiquidGlass extends Feature {
         }
     }
 
+    /**
+     * A drawable that did not come from the factory but shares a factory result's ConstantState
+     * (a cached copy) is the same bubble. Only adopted inside a verified row draw, so a nine-patch
+     * from the same resource elsewhere in WhatsApp stays untouched.
+     */
+    private Integer adoptBubbleCopy(Drawable bubble, Object canvas) {
+        if (!(canvas instanceof Canvas) || com.waenhancer.theme.NativeBubbleGlass.hostFor((Canvas) canvas) == null) return null;
+        Drawable.ConstantState state=bubble.getConstantState();
+        Integer direction=state==null ? null : bubbleStateSides.get(state);
+        if (direction!=null) {
+            bubbleSides.put(bubble, direction);
+            com.waenhancer.theme.BubbleGlassTelemetry.adoptedCopy(bubble, direction);
+        } else {
+            com.waenhancer.theme.BubbleGlassTelemetry.unregisteredOnRow(bubble,
+                    com.waenhancer.theme.NativeBubbleGlass.hostFor((Canvas) canvas));
+        }
+        return direction;
+    }
+
     /** Glass for a registered native bubble, or nothing (the native draw then proceeds). */
     private void drawNativeBubble(XC_MethodHook.MethodHookParam param) {
         com.waenhancer.theme.BubbleGlassTelemetry.call();
         if (com.waenhancer.theme.NativeBubbleGlass.nativePass()) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NATIVE_PASS); return; }
         Drawable bubble=(Drawable) param.thisObject;
         Integer direction=bubbleSides.get(bubble);
+        if (direction==null) direction=adoptBubbleCopy(bubble, param.args.length > 0 ? param.args[0] : null);
         Boolean outgoing=direction==null ? null : direction==3;
         // Anything not recognized as a registered native bubble on a canvas is left untouched.
         if (outgoing==null || !(param.args[0] instanceof Canvas)) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NOT_REGISTERED); return; }
@@ -401,6 +431,8 @@ public final class AppLiquidGlass extends Feature {
             com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.SWITCH_OFF);
             com.waenhancer.theme.BubbleGlassTelemetry.switchOff(direction);
             com.waenhancer.theme.BubbleGlassTelemetry.nativeRow("switch_off", host, direction, bubbleScopeCache.name());
+            Session owner=sessionFor(host.getRootView());
+            if (owner!=null && owner.bubbleGlass!=null) owner.bubbleGlass.nativeRow(host);
             return;
         }
         Session session=sessionFor(host.getRootView());
@@ -837,6 +869,8 @@ public final class AppLiquidGlass extends Feature {
         private final WeakHashMap<View, Object[]> clippedQuotes = new WeakHashMap<>();
         private int quoteFrameId = -1;
         static final float QUOTE_CORNER_DP = 8f;
+        /** Reply snippet alpha on glass bubbles (composer reply: 86%). */
+        static final int REPLY_TEXT_ALPHA = 0xDB;
 
         private void clipReplyCorners(View window) {
             if (quoteFrameId == -1) quoteFrameId = window.getResources().getIdentifier(
@@ -845,6 +879,7 @@ public final class AppLiquidGlass extends Feature {
             final float radius = QUOTE_CORNER_DP * window.getResources().getDisplayMetrics().density;
             for (View row : new ArrayList<>(nativeDrawRows.keySet())) {
                 if (row == null || !row.isAttachedToWindow() || row.getRootView() != window) continue;
+                syncReplyText(row); // WhatsApp may have rebound the quote's colour.
                 View frame = row.findViewById(quoteFrameId);
                 if (frame == null || clippedQuotes.containsKey(frame)) continue;
                 clippedQuotes.put(frame, new Object[]{frame.getOutlineProvider(), frame.getClipToOutline()});
@@ -856,6 +891,49 @@ public final class AppLiquidGlass extends Feature {
                 });
                 frame.setClipToOutline(true);
             }
+        }
+
+        /** Quoted snippet colour per TextView: {native, applied}. */
+        private final WeakHashMap<TextView, android.content.res.ColorStateList[]> quoteTexts = new WeakHashMap<>();
+        private int quoteTextId = -1;
+
+        /**
+         * A reply inside a glass bubble keeps WhatsApp's grey snippet colour, made for its opaque
+         * bubble and nearly unreadable on glass (owner report 2026-11-03). Same treatment as the
+         * composer reply: the material's content colour at 86%. Only the snippet: the sender
+         * title keeps its participant colour. Restored when the row no longer has glass.
+         */
+        private void syncReplyText(View row) {
+            if (row == null || closed) return;
+            if (quoteTextId == -1) quoteTextId = row.getResources().getIdentifier(
+                    "quoted_text", "id", row.getContext().getPackageName());
+            if (quoteTextId == 0) return;
+            View found = row.findViewById(quoteTextId);
+            if (!(found instanceof TextView)) return;
+            TextView text = (TextView) found;
+            GlassSpec material = resolvedMaterial();
+            boolean glass = bubbleGlass != null && material != null && bubbleGlass.hasGlass(row);
+            android.content.res.ColorStateList[] state = quoteTexts.get(text);
+            android.content.res.ColorStateList current = text.getTextColors();
+            if (!glass) {
+                if (state != null && current == state[1]) text.setTextColor(state[0]);
+                quoteTexts.remove(text);
+                return;
+            }
+            int color = (material.contentColor & 0x00FFFFFF) | (REPLY_TEXT_ALPHA << 24);
+            if (state != null && current == state[1] && state[1].getDefaultColor() == color) return;
+            android.content.res.ColorStateList original = state != null && current == state[1] ? state[0] : current;
+            android.content.res.ColorStateList wanted = android.content.res.ColorStateList.valueOf(color);
+            quoteTexts.put(text, new android.content.res.ColorStateList[]{original, wanted});
+            text.setTextColor(wanted);
+        }
+
+        private void restoreReplyTexts() {
+            for (Map.Entry<TextView, android.content.res.ColorStateList[]> entry : new ArrayList<>(quoteTexts.entrySet())) {
+                TextView text = entry.getKey();
+                if (text != null && text.getTextColors() == entry.getValue()[1]) text.setTextColor(entry.getValue()[0]);
+            }
+            quoteTexts.clear();
         }
 
         private void restoreReplyCorners() {
@@ -1658,6 +1736,7 @@ public final class AppLiquidGlass extends Feature {
             if (bubbleSource != null) bubbleSource.release();
             if (wallpaperFallback != null) wallpaperFallback.release();
             restoreReplyCorners();
+            restoreReplyTexts();
             bubbleGlass = null; bubbleSource = null; wallpaperFallback = null; bubbleSettings = null; sharedWallpaper.clear();
             textureIdentity = null;
         }
@@ -1692,6 +1771,8 @@ public final class AppLiquidGlass extends Feature {
                     invalidateBubbleRows(window);
                 });
                 bubbleGlass=new com.waenhancer.theme.NativeBubbleGlass(window, bubbleSource);
+                // Reply text follows the row's glass; changed after the draw, never inside it.
+                bubbleGlass.onGlassChanged(row -> row.post(() -> { if (!closed) syncReplyText(row); }));
             }
             // Scope (incoming/outgoing/both), opacity, rim or optics changed while the wallpaper
             // did not: recorded rows still hold the previous glass or native bubble.

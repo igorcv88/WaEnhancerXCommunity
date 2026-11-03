@@ -72,7 +72,7 @@ public class WallpaperSourceReviewTest {
         int[] dimmed = blue.clone(); dimmed[dimmed.length - 1] = 0xFF10476F;
         assertNotEquals(WallpaperCapture.withContent(identity, blue), WallpaperCapture.withContent(identity, dimmed));
         String cap = read0();
-        assertTrue(cap.contains("int[] pixels = fingerprint(walk.items, coverage);"));
+        assertTrue(cap.contains("int[] pixels = fingerprint(walk.items, coverage, complete);"));
         assertTrue(cap.contains("String key = withContent(identity, pixels);"));
     }
 
