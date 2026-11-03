@@ -1554,6 +1554,9 @@ public final class AppLiquidGlass extends Feature {
             }
             if (wallpaper==null || !LiquidGlassSettings.isEnabled(prefs,Surface.BUBBLES)
                     || !com.waenhancer.theme.NativeBubbleGlass.supported() || !GlassOptics.current().oneMate) {
+                if (LiquidGlassSettings.isEnabled(prefs,Surface.BUBBLES))
+                    com.waenhancer.theme.BubbleGlassTelemetry.source("off", wallpaper==null ? "no-wallpaper-view"
+                            : !com.waenhancer.theme.NativeBubbleGlass.supported() ? "api-or-lens" : "classic-renderer");
                 releaseSharedBubbles(); return;
             }
             GlassSpec material=resolvedMaterial();
@@ -1573,7 +1576,7 @@ public final class AppLiquidGlass extends Feature {
                     + com.waenhancer.theme.NativeBubbleGlass.settingsKey(material);
             if (bubbleSettings!=null && !bubbleSettings.equals(settings)) invalidateBubbleRows(window);
             bubbleSettings=settings;
-            bubbleSource.update(com.waenhancer.theme.WallpaperSnapshot.read(wallpaper,window),
+            bubbleSource.update(com.waenhancer.theme.WallpaperCapture.plan(wallpaper,window),
                     com.waenhancer.theme.ConversationBackdropSource.blurRadius(material,window.getResources().getDisplayMetrics().density));
         }
         void wallpaperChanged(View target) {

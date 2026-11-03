@@ -41,7 +41,9 @@ app=(ROOT/'app/src/main/java/com/waenhancer/xposed/features/customization/AppLiq
 assert 'LiveBackdrop' not in source and 'captureBehind' not in source+consumer
 # The consumer may only *skip* while another surface captures; it never creates a capture.
 assert consumer.count('LiveBackdrop')==1 and 'LiveBackdrop.isCapturing()' in consumer
-assert 'view.draw(' not in source and 'root.draw(' not in source and 'window.draw(' not in source
+capture=(theme/'WallpaperCapture.java').read_text()
+assert 'view.draw(' not in source+capture and 'root.draw(' not in source and 'window.draw(' not in source+capture
+assert 'drawRenderNode' not in capture and 'hostsConsumers(wallpaper, 0)' in capture
 assert 'WORKER.execute' in source and 'setWaitForPresent(true)' in source
 assert 'token!=epoch.revision()' in source and 'retry.onResult(token,result.outcome)' in source
 # Review on #130: transient delivery retries a bounded number of times; stale jobs skip rendering.

@@ -40,6 +40,7 @@ import android.widget.ImageView;
 import com.waenhancer.xposed.features.customization.BubbleColors;
 import com.waenhancer.xposed.features.media.StatusDownload;
 import com.waenhancer.xposed.features.general.AntiRevoke;
+import com.waenhancer.xposed.features.general.OutOfChatPlaybackScope;
 import com.waenhancer.xposed.features.media.CallRecording;
 import com.waenhancer.xposed.features.media.AutoStatusForward;
 import com.waenhancer.xposed.features.customization.ChatScrollButtons;
@@ -963,6 +964,7 @@ public class FeatureLoader {
                 MenuStatusListener.class,
                 ShowEditMessage.class,
                 AntiRevoke.class,
+                OutOfChatPlaybackScope.class,
                 CustomToolbar.class,
                 CustomView.class,
                 ChatScrollButtons.class,

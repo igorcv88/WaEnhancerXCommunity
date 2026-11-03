@@ -190,6 +190,48 @@ public class NativeBubbleGlassTest {
         assertTrue(t.contains("log(\"FREQUENCY\""));
     }
 
+    // --- Wallpaper source: what WhatsApp paints, not one bitmap shape ------------------------
+
+    @Test public void sourceRecordsTheWallpaperDrawablesWithoutTheNarrowBitmapGate() throws IOException {
+        assertFalse("old bitmap-only gate removed", new java.io.File(
+                "src/main/java/com/waenhancer/theme/WallpaperSnapshot.java").exists());
+        String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
+        assertTrue(app.contains("com.waenhancer.theme.WallpaperCapture.plan(wallpaper,window)"));
+        String cap = read("src/main/java/com/waenhancer/theme/WallpaperCapture.java");
+        // Dimming and overlays are reproduced, not rejected.
+        assertTrue(cap.contains("view.getBackground()") && cap.contains("image.getImageMatrix()")
+                && cap.contains("view.getForeground()") && cap.contains("canvas.saveLayerAlpha(null, item.alpha)"));
+        assertFalse("no isMutable/colour-filter rejection", cap.contains("isMutable()"));
+    }
+
+    @Test public void captureNeverRecordsViewsOrConsumers() throws IOException {
+        String cap = read("src/main/java/com/waenhancer/theme/WallpaperCapture.java");
+        String code = cap.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("//[^\n]*", "");
+        assertFalse("drawables only: no View.draw", code.contains("view.draw(") || code.contains("wallpaper.draw("));
+        assertFalse(code.contains("drawRenderNode"));
+        assertTrue(code.contains("name.equals(\"android.widget.AbsListView\")"));
+        assertTrue(code.contains("name.equals(\"com.waenhancer.theme.GlassPane\")"));
+        assertTrue(code.contains("walk.leafOnly = hostsConsumers(wallpaper, 0);"));
+        assertTrue(code.contains("if (consumer(view)) return;"));
+        assertTrue("animated wallpaper stays native", code.contains("drawable instanceof Animatable"));
+        assertTrue("video wallpaper stays native", code.contains("view instanceof SurfaceView || view instanceof TextureView"));
+    }
+
+    @Test public void sourceExtendsCoverageAndReportsItsState() throws IOException {
+        String src = read("src/main/java/com/waenhancer/theme/ConversationBackdropSource.java");
+        assertTrue("wallpaper stopping short of the window still covers every bubble",
+                src.contains("new BitmapShader(region.bitmap,Shader.TileMode.CLAMP,Shader.TileMode.CLAMP)"));
+        assertTrue(src.contains("at.setTranslate(area.left,area.top);"));
+        assertTrue("recorded once per revision, not per scan",
+                src.indexOf("desiredContent=capture.record();") > src.indexOf("if (!epoch.update("));
+        for (String state : new String[]{"\"unsupported\"", "\"preparing\"", "\"ready\"", "\"retry\"", "\"unavailable\""})
+            assertTrue(state, src.contains("BubbleGlassTelemetry.source(" + state));
+        String t = read("src/main/java/com/waenhancer/theme/BubbleGlassTelemetry.java");
+        assertTrue(t.contains(".append(\" source=\").append(sourceState)"));
+        assertTrue("replacements are debounced; the first texture is immediate",
+                src.contains("private final RenderDebounce debounce=new RenderDebounce(SETTLE_MS);"));
+    }
+
     @Test public void otherSurfacesKeepTheApprovedShader() throws IOException {
         String lens = read("src/main/java/com/waenhancer/theme/KyantLens.java");
         assertTrue(lens.contains("if (cov <= 0.0 && uFullCover < 0.5) return half4(0.0);"));
@@ -201,6 +243,6 @@ public class NativeBubbleGlassTest {
         String src = read("src/main/java/com/waenhancer/theme/ConversationBackdropSource.java");
         assertTrue(src.contains("public boolean ready() { return texture!=null && !closed; }"));
         assertFalse(src.contains("desired=snapshot; blur=radius; texture=null;"));
-        assertTrue(src.contains("if (snapshot==null && texture!=null) { texture=null; main.post(changed); }"));
+        assertTrue(src.contains("if (desired==null && texture!=null) { texture=null; main.post(changed); }"));
     }
 }
