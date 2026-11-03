@@ -23,24 +23,17 @@ import com.waenhancer.xposed.utils.Utils;
 
 import java.lang.reflect.Field;
 import java.text.DateFormat;
-import java.util.Collections;
 import java.util.Date;
 import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import com.waenhancer.xposed.core.db.RevocationArchive;
 
 import de.robv.android.xposed.XC_MethodHook;
 import android.content.SharedPreferences;
-import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 
 public class AntiRevoke extends Feature {
 
-    private static final ConcurrentHashMap<String, Set<String>> messageRevokedMap = new ConcurrentHashMap<>();
-    // Global key_id → deletion timestamp map (bypasses JID mismatch between LID and phone number)
-    private static final ConcurrentHashMap<String, Long> revokedKeyIds = new ConcurrentHashMap<>();
     private static final ThreadLocal<DateFormat> DATE_FORMAT_THREAD_LOCAL = ThreadLocal
             .withInitial(() -> DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT,
                     Utils.getApplication().getResources().getConfiguration().getLocales().get(0)));
@@ -93,327 +86,199 @@ public class AntiRevoke extends Feature {
 
     }
 
-    private static void persistRevokedMessage(FMessageWpp fMessage, String messageId) {
-        var stripJID = fMessage.getKey().remoteJid.getPhoneNumber();
-        Set<String> messages = getRevokedMessagesForJid(fMessage);
-        messages.add(messageId);
-        DelMessageStore.getInstance(Utils.getApplication()).insertMessage(stripJID, messageId,
-                System.currentTimeMillis());
+    private RevocationArchive archive;
+    private AntiRevokeSqlGuard sqlGuard;
+    private volatile String uiScope;
+
+    private final java.util.Map<String, String> restoredText = java.util.Collections.synchronizedMap(
+            new java.util.LinkedHashMap<String, String>(32, .75f, true) {
+                @Override protected boolean removeEldestEntry(java.util.Map.Entry<String, String> entry) { return size() > 32; }
+            });
+    private final java.util.Set<String> pendingText = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.concurrent.ThreadPoolExecutor restoreWorker = new java.util.concurrent.ThreadPoolExecutor(
+            1, 1, 0, java.util.concurrent.TimeUnit.MILLISECONDS, new java.util.concurrent.ArrayBlockingQueue<>(16),
+            runnable -> { Thread thread = new Thread(runnable, "WaEX-RevokeRestore"); thread.setDaemon(true); return thread; });
+
+    private void restorePlaceholderText(String scope, long row, String key, String identity,
+            TextView date, TextView text) {
+        if (restoredText.containsKey(identity)) {
+            String archived = restoredText.get(identity);
+            if (archived != null) text.setText(archived);
+            return;
+        }
+        if (pendingText.size() >= 16 || !pendingText.add(identity)) return;
+        try {
+            restoreWorker.execute(() -> {
+                try {
+                    String archived = archive.archivedText(scope, row, key);
+                    restoredText.put(identity, archived);
+                    if (archived != null) text.post(() -> {
+                        if (identity.equals(XposedHelpers.getAdditionalInstanceField(date, "waexRevokeIdentity")))
+                            text.setText(archived);
+                    });
+                } catch (Exception failure) { sqlGuard.warn("snapshot-read-failed", failure); }
+                finally { pendingText.remove(identity); }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException busy) { pendingText.remove(identity); }
     }
 
-    private static Set<String> getRevokedMessagesForJid(FMessageWpp fMessage) {
-        String stripJID = fMessage.getKey().remoteJid.getPhoneNumber();
-        if (stripJID == null)
-            return Collections.synchronizedSet(new java.util.HashSet<>());
-        return messageRevokedMap.computeIfAbsent(stripJID, k -> {
-            var messages = DelMessageStore.getInstance(Utils.getApplication()).getMessagesByJid(k);
-            if (messages == null)
-                return Collections.synchronizedSet(new java.util.HashSet<>());
-            return Collections.synchronizedSet(messages);
-        });
+    private void refreshConversation() {
+        ConversationItemListener.notifyDataSetChanged();
     }
 
     @Override
     public void doHook() throws Exception {
 
-        var antiRevokeMessageMethod = Unobfuscator.loadAntiRevokeMessageMethod(classLoader);
-        /* Log removed */
-
-        var unknownStatusPlaybackMethod = Unobfuscator.loadUnknownStatusPlaybackMethod(classLoader);
-        /* Log removed */
-
-        Class<?> statusPlaybackClass = Unobfuscator.loadStatusPlaybackViewClass(classLoader);
-        /* Log removed */
-
-        var antiRevokeFStatusMethod = Unobfuscator.loadAntiRevokeFStatusMethod(classLoader);
-        /* Log removed */
-
-        XposedBridge.hookMethod(antiRevokeFStatusMethod, new XC_MethodHook() {
-            @Override
-            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                diagnosticTriggered();
-                if (param.args == null || param.args.length < 2 || param.args[1] == null) return;
-                var fStatusKey = new FStatusWpp.FStatusKey(param.args[1]);
-                var fStatus = fStatusKey.fStatus;
-                if (fStatus == null) return;
-                var fMessage = fStatus.getFMessage();
-                if (fMessage == null) return;
-                if (!fStatusKey.isFromMe && handleRevocationAttempt(fMessage, fStatusKey.messageID) != 0) {
-                    // Dev4Mod 01a8bb7: newer builds return a store-result enum, not int.
-                    Object blocked = RevokeResultPolicy.blockedStatusRevokeResult(
-                            ((java.lang.reflect.Method) param.method).getReturnType());
-                    if (blocked != RevokeResultPolicy.UNSUPPORTED) param.setResult(blocked);
-                }
-            }
+        archive = new RevocationArchive(DelMessageStore.getInstance(Utils.getApplication()));
+        uiScope = RevocationArchive.activeScope();
+        WppCore.addListenerActivity((activity, state) -> {
+            if (state == WppCore.ActivityChangeState.ChangeType.RESUMED)
+                uiScope = RevocationArchive.activeScope();
         });
-
-        XposedBridge.hookMethod(antiRevokeMessageMethod, new XC_MethodHook() {
-            @Override
-            protected void beforeHookedMethod(MethodHookParam param) throws Exception {
-                diagnosticTriggered();
-                if (param.args == null || param.args.length == 0) return;
-                
-                Object fMessageObj = ReflectionUtils.getArg(param.args, FMessageWpp.TYPE, 0);
-                if (fMessageObj == null) {
-                    /* Log removed */
-                    return;
-                }
-
-                var fMessage = new FMessageWpp(fMessageObj);
-                var messageKey = fMessage.getKey();
-                var deviceJid = fMessage.getDeviceJid();
-                String messageId;
-                try {
-                    messageId = (String) XposedHelpers.getObjectField(fMessage.getObject(), "A01");
-                } catch (Throwable t) {
-                    messageId = messageKey.messageID;
-                }
-
-                if (WppCore.getPrivBoolean(messageId + "_delpass", false)) {
-                    WppCore.removePrivKey(messageId + "_delpass");
-                    var activity = WppCore.getCurrentActivity();
-                    Class<?> StatusPlaybackActivityClass = classLoader
-                            .loadClass("com.whatsapp.status.playback.StatusPlaybackActivity");
-                    if (activity != null && StatusPlaybackActivityClass.isInstance(activity)) {
-                        activity.finish();
-                    }
-                    return;
-                }
-
-                boolean block;
-                if (messageKey.remoteJid.isGroup()) {
-                    block = deviceJid != null && handleRevocationAttempt(fMessage, messageId) != 0;
-                } else {
-                    block = !messageKey.isFromMe && handleRevocationAttempt(fMessage, messageId) != 0;
-                }
-                if (block) {
-                    Object blocked = blockedMessageRevokeResult(((java.lang.reflect.Method) param.method).getReturnType());
-                    if (blocked != RevokeResultPolicy.UNSUPPORTED) param.setResult(blocked);
-                }
-            }
-        });
-
+        // Install before any optional WhatsApp/status resolver can throw.
+        sqlGuard = new AntiRevokeSqlGuard(archive, prefs, this::refreshConversation);
+        if (protectionEnabled("antirevoke") || protectionEnabled("antirevokestatus")) {
+            sqlGuard.install();
+            try { archive.prepare(); }
+            catch (Exception unavailable) { sqlGuard.warn("archive-initialization-failed", unavailable); }
+        }
+        installMessageHook();
+        installStatusHooks();
         ConversationItemListener.conversationListeners.add(new ConversationItemListener.OnConversationItemListener() {
-            @Override
-            public void onItemBind(FMessageWpp fMessage, ViewGroup viewGroup) {
-                if (fMessage.getKey().isFromMe)
-                    return;
-                var dateTextView = (TextView) viewGroup.findViewById(Utils.getID("date", "id"));
-                var messageTextView = (TextView) viewGroup.findViewById(Utils.getID("message_text", "id"));
-                bindRevokedMessageUI(fMessage, dateTextView, messageTextView, "antirevoke");
+            @Override public void onItemBind(FMessageWpp fMessage, ViewGroup viewGroup) {
+                if (fMessage.getKey().isFromMe) return;
+                var date = (TextView) viewGroup.findViewById(Utils.getID("date", "id"));
+                var text = (TextView) viewGroup.findViewById(Utils.getID("message_text", "id"));
+                bindRevokedMessageUI(fMessage, date, text, "antirevoke");
             }
         });
+    }
 
-        XposedBridge.hookMethod(unknownStatusPlaybackMethod, new XC_MethodHook() {
-            @Override
-            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                Object obj = ReflectionUtils.getArg(param.args, param.method.getDeclaringClass(), 0);
-                var objFMessage = findObjectFMessage(param);
-                var field = ReflectionUtils.getFieldByType(param.method.getDeclaringClass(), statusPlaybackClass);
+    private void installMessageHook() {
+        try {
+            var antiRevokeMessageMethod = Unobfuscator.loadAntiRevokeMessageMethod(classLoader);
+            /* Log removed */
 
-                if (obj == null || field == null || objFMessage == null)
-                    return;
+            XposedBridge.hookMethod(antiRevokeMessageMethod, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) throws Exception {
+                    sqlGuard.enterCall();
+                    diagnosticTriggered();
+                    if (param.args == null || param.args.length == 0) return;
 
-                Object objView = field.get(obj);
-                if (objView == null)
-                    return;
+                    Object fMessageObj = ReflectionUtils.getArg(param.args, FMessageWpp.TYPE, 0);
+                    if (fMessageObj == null) {
+                        /* Log removed */
+                        return;
+                    }
 
-                var textViews = ReflectionUtils.getFieldsByType(statusPlaybackClass, TextView.class);
-                if (textViews.isEmpty()) {
-                    /* Log removed */
-                    return;
-                }
-                int dateId = Utils.getID("date", "id");
-                for (Field textView : textViews) {
-                    TextView textView1 = (TextView) textView.get(objView);
-                    if (textView1 != null && textView1.getId() == dateId) {
-                        bindRevokedMessageUI(new FMessageWpp(objFMessage), textView1, null, "antirevokestatus");
-                        break;
+                    var fMessage = new FMessageWpp(fMessageObj);
+                    var messageKey = fMessage.getKey();
+                    var deviceJid = fMessage.getDeviceJid();
+                    String messageId = messageKey.messageID;
+
+                    if (WppCore.getPrivBoolean(messageId + "_delpass", false)) {
+                        WppCore.removePrivKey(messageId + "_delpass");
+                        var source = MessageStore.getInstance().getDatabase();
+                        if (source != null) sqlGuard.protectCall(source, fMessage.getRowId(), messageId, true);
+                        var activity = WppCore.getCurrentActivity();
+                        Class<?> StatusPlaybackActivityClass = classLoader
+                                .loadClass("com.whatsapp.status.playback.StatusPlaybackActivity");
+                        if (activity != null && StatusPlaybackActivityClass.isInstance(activity)) {
+                            activity.finish();
+                        }
+                        return;
+                    }
+
+                    boolean block;
+                    if (messageKey.remoteJid.isGroup()) {
+                        block = deviceJid != null && handleRevocationAttempt(fMessage) != 0;
+                    } else {
+                        block = !messageKey.isFromMe && handleRevocationAttempt(fMessage) != 0;
+                    }
+                    if (block) {
+                        Object blocked = blockedMessageRevokeResult(((java.lang.reflect.Method) param.method).getReturnType());
+                        if (blocked != RevokeResultPolicy.UNSUPPORTED) param.setResult(blocked);
+                        else sqlGuard.warn(sqlGuard.isInstalled() ? "return-type-delegated-to-sql"
+                                : "unsupported-return-without-sql-guard", null);
                     }
                 }
-            }
-        });
+                @Override protected void afterHookedMethod(MethodHookParam param) { sqlGuard.leaveCall(); }
+            });
 
-        // SQL-level anti-revoke: block DELETE+INSERT revocation pattern
-        addAntiRevokeSqlHooks();
+        } catch (Throwable failure) { sqlGuard.warn("message-hook-unavailable", failure); }
     }
 
-    /**
-     * SQL-level anti-revoke protection.
-     * 
-     * WhatsApp's revocation flow (v2.26.19.2):
-     *   1. DELETE FROM message WHERE _id=? args=[N]
-     *   2. INSERT INTO message VALUES ... message_type=15 ... _id=N
-     * 
-     * Strategy: Block the INSERT of message_type=15 records (the "deleted" placeholder).
-     * This preserves the original message because:
-     *   - If we block the DELETE too, WhatsApp may retry or crash
-     *   - If we only block the INSERT, the original row is gone but no "deleted" placeholder appears
-     *   - Better: block the DELETE when followed by a type=15 INSERT
-     * 
-     * Refined strategy: Track recent DELETEs. When a type=15 INSERT arrives for the same _id,
-     * block both the INSERT AND retroactively we know the DELETE was a revocation.
-     * Since we can't undo the DELETE, we block the DELETE preemptively by checking if
-     * from_me=0 for that row before allowing it.
-     */
-    private final java.util.Set<String> recentDeletedIds = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
-
-    private void addAntiRevokeSqlHooks() {
-        int antiRevokeValue = Integer.parseInt(prefs.getString("antirevoke", "0"));
-        if (antiRevokeValue == 0) {
-            ;
-            return;
-        }
-
+    private void installStatusHooks() {
         try {
-            // HOOK 1: Block DELETE FROM message — this is step 1 of WhatsApp's revocation.
-            // We block ALL deletes on the message table for non-self messages.
-            // Normal "delete for me" uses a different code path (not raw SQL delete).
-            XposedBridge.hookAllMethods(android.database.sqlite.SQLiteDatabase.class, "delete", new XC_MethodHook() {
+            var antiRevokeFStatusMethod = Unobfuscator.loadAntiRevokeFStatusMethod(classLoader);
+            /* Log removed */
+
+            XposedBridge.hookMethod(antiRevokeFStatusMethod, new XC_MethodHook() {
                 @Override
-                protected void beforeHookedMethod(MethodHookParam param) {
-                    try {
-                        String table = (String) param.args[0];
-                        if (!"message".equals(table)) return;
-                        
-                        String where = (String) param.args[1];
-                        String[] whereArgs = param.args.length > 2 ? (String[]) param.args[2] : null;
-                        
-                        // Only intercept _id based deletes (revocation pattern)
-                        if (where != null && where.contains("_id=?") && whereArgs != null && whereArgs.length > 0) {
-                            String msgId = whereArgs[0];
-                            
-                            // Check if this message is from_me=0 (not our own message)
-                            // by querying the DB before the delete happens
-                            try {
-                                android.database.sqlite.SQLiteDatabase db = (android.database.sqlite.SQLiteDatabase) param.thisObject;
-                                android.database.Cursor cursor = db.rawQuery(
-                                    "SELECT from_me, message_type, key_id, chat_row_id FROM message WHERE _id=?", 
-                                    new String[]{msgId});
-                                if (cursor != null && cursor.moveToFirst()) {
-                                    int fromMe = cursor.getInt(0);
-                                    int msgType = cursor.getInt(1);
-                                    String keyId = cursor.getString(2);
-                                    long chatRowId = cursor.getLong(3);
-                                    cursor.close();
-                                    
-                                    // Block delete only for incoming messages (from_me=0) 
-                                    // that are normal messages (not already type 15)
-                                    if (fromMe == 0 && msgType != 15) {
-                                        ;
-                                        recentDeletedIds.add(msgId);
-                                        
-                                        // Record the revocation for UI display (red icon + timestamp)
-                                        try {
-                                            // Resolve phone number from chat_row_id
-                                            // The jid table has columns: _id, user, server, agent, device, type, raw_string
-                                            // We need the 'user' column which contains the phone number
-                                            String phoneNumber = null;
-                                            android.database.Cursor jidCursor = db.rawQuery(
-                                                "SELECT j.user, j.raw_string FROM jid j " +
-                                                "INNER JOIN chat c ON c.jid_row_id = j._id " +
-                                                "WHERE c._id=?",
-                                                new String[]{String.valueOf(chatRowId)});
-                                            if (jidCursor != null && jidCursor.moveToFirst()) {
-                                                phoneNumber = jidCursor.getString(0); // user column = phone number
-                                                String rawString = jidCursor.getString(1);
-                                                jidCursor.close();
-                                                ;
-                                                // Fallback: if user column is empty, parse from raw_string
-                                                if (phoneNumber == null || phoneNumber.isEmpty()) {
-                                                    if (rawString != null && rawString.contains("@")) {
-                                                        phoneNumber = rawString.substring(0, rawString.indexOf("@"));
-                                                    }
-                                                }
-                                            } else if (jidCursor != null) {
-                                                jidCursor.close();
-                                            }
-                                            
-                                            if (keyId != null) {
-                                                long now = System.currentTimeMillis();
-                                                
-                                                // Store in global key-based map (always works regardless of JID format)
-                                                revokedKeyIds.put(keyId, now);
-                                                
-                                                // Also try phone-number-based storage for backward compatibility
-                                                if (phoneNumber != null) {
-                                                    DelMessageStore.getInstance(Utils.getApplication())
-                                                        .insertMessage(phoneNumber, keyId, now);
-                                                    messageRevokedMap.computeIfAbsent(phoneNumber, k -> 
-                                                        Collections.synchronizedSet(new java.util.HashSet<>())).add(keyId);
-                                                }
-                                                
-                                                ;
-                                                
-                                                // Refresh the conversation UI if it's currently open
-                                                try {
-                                                    var mConversation = WppCore.getCurrentConversation();
-                                                    if (mConversation != null) {
-                                                        mConversation.runOnUiThread(() -> {
-                                                            if (mConversation.hasWindowFocus()) {
-                                                                mConversation.startActivity(mConversation.getIntent());
-                                                                mConversation.overridePendingTransition(0, 0);
-                                                            }
-                                                        });
-                                                    }
-                                                } catch (Exception ignored) {}
-                                            }
-                                        } catch (Exception e) {
-                                            XposedBridge.log("[WAEX] Error recording revocation: " + e.getMessage());
-                                        }
-                                        
-                                        param.setResult(0); // Block the delete
-                                        return;
-                                    }
-                                } else if (cursor != null) {
-                                    cursor.close();
-                                }
-                            } catch (Exception e) {
-                                XposedBridge.log("[WAEX] Error checking message before delete: " + e.getMessage());
-                            }
+                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    sqlGuard.enterCall();
+                    diagnosticTriggered();
+                    if (param.args == null || param.args.length < 2 || param.args[1] == null) return;
+                    var fStatusKey = new FStatusWpp.FStatusKey(param.args[1]);
+                    var fStatus = fStatusKey.fStatus;
+                    if (fStatus == null) return;
+                    var fMessage = fStatus.getFMessage();
+                    if (fMessage == null) return;
+                    if (!fStatusKey.isFromMe && handleRevocationAttempt(fMessage) != 0) {
+                        // Dev4Mod 01a8bb7: newer builds return a store-result enum, not int.
+                        Object blocked = RevokeResultPolicy.blockedStatusRevokeResult(
+                                ((java.lang.reflect.Method) param.method).getReturnType());
+                        if (blocked != RevokeResultPolicy.UNSUPPORTED) param.setResult(blocked);
+                        else sqlGuard.warn(sqlGuard.isInstalled() ? "return-type-delegated-to-sql"
+                                : "unsupported-return-without-sql-guard", null);
+                    }
+                }
+                @Override protected void afterHookedMethod(MethodHookParam param) { sqlGuard.leaveCall(); }
+            });
+
+        } catch (Throwable failure) { sqlGuard.warn("status-hook-unavailable", failure); }
+        try {
+            var unknownStatusPlaybackMethod = Unobfuscator.loadUnknownStatusPlaybackMethod(classLoader);
+            Class<?> statusPlaybackClass = Unobfuscator.loadStatusPlaybackViewClass(classLoader);
+            XposedBridge.hookMethod(unknownStatusPlaybackMethod, new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                    Object obj = ReflectionUtils.getArg(param.args, param.method.getDeclaringClass(), 0);
+                    var objFMessage = findObjectFMessage(param);
+                    var field = ReflectionUtils.getFieldByType(param.method.getDeclaringClass(), statusPlaybackClass);
+
+                    if (obj == null || field == null || objFMessage == null)
+                        return;
+
+                    Object objView = field.get(obj);
+                    if (objView == null)
+                        return;
+
+                    var textViews = ReflectionUtils.getFieldsByType(statusPlaybackClass, TextView.class);
+                    if (textViews.isEmpty()) {
+                        /* Log removed */
+                        return;
+                    }
+                    int dateId = Utils.getID("date", "id");
+                    for (Field textView : textViews) {
+                        TextView textView1 = (TextView) textView.get(objView);
+                        if (textView1 != null && textView1.getId() == dateId) {
+                            bindRevokedMessageUI(new FMessageWpp(objFMessage), textView1, null, "antirevokestatus");
+                            break;
                         }
-                    } catch (Throwable ignored) {}
+                    }
                 }
             });
 
-            // HOOK 2: Block INSERT of message_type=15 records (the "deleted" placeholder).
-            // This is step 2 of WhatsApp's revocation — it inserts a new row with type=15.
-            XposedBridge.hookAllMethods(android.database.sqlite.SQLiteDatabase.class, "insertWithOnConflict", new XC_MethodHook() {
-                @Override
-                protected void beforeHookedMethod(MethodHookParam param) {
-                    try {
-                        String table = (String) param.args[0];
-                        if (!"message".equals(table)) return;
-                        
-                        android.content.ContentValues cv = (android.content.ContentValues) param.args[2];
-                        if (cv == null) return;
-                        
-                        Integer msgType = cv.getAsInteger("message_type");
-                        Integer fromMe = cv.getAsInteger("from_me");
-                        
-                        // Block insertion of revocation placeholders (type=15) for incoming messages
-                        if (msgType != null && msgType == 15 && fromMe != null && fromMe == 0) {
-                            String keyId = cv.getAsString("key_id");
-                            ;
-                            param.setResult(-1L); // Return fake row ID, block the insert
-                        }
-                    } catch (Throwable ignored) {}
-                }
-            });
-
-         } catch (Exception e) {
-            XposedBridge.log("[WAEX] Failed to install anti-revoke SQL hooks: " + e.getMessage());
-        }
+        } catch (Throwable failure) { sqlGuard.warn("status-ui-hook-unavailable", failure); }
     }
-
 
     private static String stringMessageDeleted;
-    private static int antirevokeVal = -1;
-    private static int antirevokeStatusVal = -1;
 
     private void bindRevokedMessageUI(FMessageWpp fMessage, TextView dateTextView, TextView messageTextView, String antirevokeType) {
         if (dateTextView == null) return;
-        
+
         int antirevokeValue = 0;
         try {
             antirevokeValue = Integer.parseInt(prefs.getString(antirevokeType, "0"));
@@ -421,7 +286,12 @@ public class AntiRevoke extends Feature {
         if (antirevokeValue == 0) return;
 
         var key = fMessage.getKey();
-        var messageRevokedList = getRevokedMessagesForJid(fMessage);
+        String boundIdentity = uiScope + ":" + fMessage.getRowId() + ":" + key.messageID;
+        String oldIdentity = (String) XposedHelpers.getAdditionalInstanceField(dateTextView, "waexRevokeIdentity");
+        if (!boundIdentity.equals(oldIdentity)) {
+            XposedHelpers.setAdditionalInstanceField(dateTextView, "originalMessage", null);
+            XposedHelpers.setAdditionalInstanceField(dateTextView, "waexRevokeIdentity", boundIdentity);
+        }
         String originalMessage = (String) XposedHelpers.getAdditionalInstanceField(dateTextView, "originalMessage");
 
         Integer originalDateColor = (Integer) XposedHelpers.getAdditionalInstanceField(dateTextView, "originalColor");
@@ -455,20 +325,14 @@ public class AntiRevoke extends Feature {
             } catch (Exception ignored) {}
         }
 
-        String messageID = null;
-        if (messageRevokedList.contains(key.messageID) || revokedKeyIds.containsKey(key.messageID) || com.waenhancer.xposed.core.db.DelMessageStore.getInstance(com.waenhancer.xposed.utils.Utils.getApplication()).getTimestampByMessageId(key.messageID) > 0) {
-            messageID = key.messageID;
-        } else {
-            String originalKey = com.waenhancer.xposed.core.db.MessageStore.getInstance().getOriginalMessageKey(fMessage.getRowId());
-            if (originalKey != null && !originalKey.isEmpty() && (messageRevokedList.contains(originalKey) || revokedKeyIds.containsKey(originalKey) || com.waenhancer.xposed.core.db.DelMessageStore.getInstance(com.waenhancer.xposed.utils.Utils.getApplication()).getTimestampByMessageId(originalKey) > 0)) {
-                messageID = originalKey;
-            }
-        }
-
-        if (messageID != null) {
-            long timestamp = DelMessageStore.getInstance(Utils.getApplication()).getTimestampByMessageId(messageID);
-            if (timestamp <= 0 && revokedKeyIds.containsKey(messageID)) {
-                timestamp = revokedKeyIds.get(messageID);
+        long timestamp = archive.timestamp(uiScope, fMessage.getRowId(), key.messageID);
+        // v12 has no account field. Do not reuse a newly scoped record from another account.
+        if (timestamp == 0) timestamp = DelMessageStore.getInstance(Utils.getApplication())
+                .getLegacyRevokedTimestamp(key.messageID);
+        if (timestamp > 0) {
+            if (messageTextView != null && fMessage.getMediaType() == 15) {
+                restorePlaceholderText(uiScope, fMessage.getRowId(), key.messageID, boundIdentity,
+                        dateTextView, messageTextView);
             }
             if (timestamp > 0) {
                 var date = Objects.requireNonNull(DATE_FORMAT_THREAD_LOCAL.get()).format(new Date(timestamp));
@@ -519,57 +383,34 @@ public class AntiRevoke extends Feature {
         }
     }
 
-    private int handleRevocationAttempt(FMessageWpp fMessage, String messageId) {
-        try {
-            showRevocationToast(fMessage);
-        } catch (Exception e) {
-            log(e);
-        }
+    private boolean protectionEnabled(String preference) {
+        try { return Integer.parseInt(prefs.getString(preference, "0")) != 0; }
+        catch (RuntimeException invalidPreference) { return false; }
+    }
+
+    private int handleRevocationAttempt(FMessageWpp fMessage) {
+        // This reports the remote attempt, independently of whether preservation is enabled.
+        try { showRevocationToast(fMessage); }
+        catch (Exception failure) { sqlGuard.warn("notification-failed", failure); }
         String stripJID = fMessage.getKey().remoteJid.getPhoneNumber();
-        int revokeboolean = 0;
+        int enabled;
         try {
-            revokeboolean = "status".equals(stripJID) ? Integer.parseInt(prefs.getString("antirevokestatus", "0"))
-                    : Integer.parseInt(prefs.getString("antirevoke", "0"));
-        } catch (Exception ignored) {}
-        
-        if (revokeboolean == 0) return revokeboolean;
-        
-        var messageRevokedList = getRevokedMessagesForJid(fMessage);
-        if (!messageRevokedList.contains(messageId)) {
-            try {
-                CompletableFuture.runAsync(() -> {
-                    persistRevokedMessage(fMessage, messageId);
-                    try {
-                        var mConversation = WppCore.getCurrentConversation();
-                        if (mConversation != null && Objects.equals(stripJID, WppCore.getCurrentUserJid().getPhoneNumber())) {
-                            mConversation.runOnUiThread(() -> {
-                                if (mConversation.hasWindowFocus()) {
-                                    // Fix shuttering: notify the RecyclerView adapter directly instead of restarting Activity
-                                    android.view.View list = mConversation.findViewById(android.R.id.list);
-                                    if (list instanceof androidx.recyclerview.widget.RecyclerView) {
-                                        androidx.recyclerview.widget.RecyclerView rv = (androidx.recyclerview.widget.RecyclerView) list;
-                                        if (rv.getAdapter() != null) {
-                                            rv.getAdapter().notifyDataSetChanged();
-                                        }
-                                    } else if (list instanceof android.widget.ListView) {
-                                        ((android.widget.ListView) list).invalidateViews();
-                                    } else {
-                                        // Fallback
-                                        android.view.View contentView = mConversation.getWindow().getDecorView().findViewById(android.R.id.content);
-                                        if (contentView != null) contentView.postInvalidate();
-                                    }
-                                }
-                            });
-                        }
-                    } catch (Exception e) {
-                        logDebug(e);
-                    }
-                });
-            } catch (Exception e) {
-                logDebug(e);
-            }
+            enabled = Integer.parseInt(prefs.getString("status".equals(stripJID)
+                    ? "antirevokestatus" : "antirevoke", "0"));
+        } catch (RuntimeException invalidPreference) { return 0; }
+        if (enabled == 0) return 0;
+        try {
+            var source = MessageStore.getInstance().getDatabase();
+            if (source == null || !source.isOpen()) throw new IllegalStateException("Message database unavailable");
+            // Read from the original row before the native callback can replace its content.
+            // The archive uses the row's actual key, not the event/wrapper's obfuscated ID.
+            sqlGuard.captureForCall(source, fMessage.getRowId(), fMessage.getKey().messageID);
+        } catch (Exception failure) {
+            sqlGuard.warn("snapshot-not-committed", failure);
+            return 0; // SQL guard retains the original if a destructive write follows.
         }
-        return revokeboolean;
+        refreshConversation();
+        return enabled;
     }
 
     private void showRevocationToast(FMessageWpp fMessage) {
@@ -614,31 +455,12 @@ public class AntiRevoke extends Feature {
      * with WhatsApp's own "None" incoming-ack singleton instead of null where it can be found.
      */
     private Object blockedMessageRevokeResult(Class<?> returnType) {
-        if (RevokeResultPolicy.isBooleanResult(returnType)) return Boolean.TRUE;
-        if (returnType == void.class) return null;
-        try {
-            var constructors = returnType.getDeclaredConstructors();
-            if (constructors.length == 0) return RevokeResultPolicy.UNSUPPORTED;
-            var constructor = constructors[0];
-            constructor.setAccessible(true);
-            var types = constructor.getParameterTypes();
-            var params = ReflectionUtils.initArray(types);
-            for (int i = 0; i < types.length; i++) {
-                if (types[i].isPrimitive()) continue;
-                try {
-                    var none = Unobfuscator.loadNoneIncomingAckClass(classLoader, types[i]);
-                    var singleton = RevokeResultPolicy.staticSingleton(none);
-                    if (singleton != null) params[i] = singleton;
-                } catch (Throwable ignored) {
-                    // Keep the historical null argument for this parameter.
-                }
-            }
-            return constructor.newInstance(params);
-        } catch (Throwable t) {
-            XposedBridge.log("[WAE] AntiRevoke: unsupported revoke result " + returnType.getName()
-                    + " (" + t.getClass().getSimpleName() + ")");
-            return RevokeResultPolicy.UNSUPPORTED;
-        }
+        return RevokeResultPolicy.blockedMessageRevokeResult(returnType, type -> {
+            try {
+                Class<?> none = Unobfuscator.loadNoneIncomingAckClass(classLoader, type);
+                return RevokeResultPolicy.staticSingleton(none);
+            } catch (Throwable unavailable) { return null; }
+        });
     }
 
     @NonNull

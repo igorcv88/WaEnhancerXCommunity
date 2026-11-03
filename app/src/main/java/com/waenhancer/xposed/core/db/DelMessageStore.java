@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.ArrayList;
 
 public class DelMessageStore extends SQLiteOpenHelper {
-    private static DelMessageStore mInstance;
+    private static volatile DelMessageStore mInstance;
     private final Map<String, Long> timestampCache = Collections.synchronizedMap(new LinkedHashMap<String, Long>(100, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, Long> eldest) {
@@ -25,16 +25,18 @@ public class DelMessageStore extends SQLiteOpenHelper {
     });
 
     /**
+     * Version 13 adds encrypted, account-scoped AntiRevoke snapshots without altering v12 rows.
      * Version 11 adds the owned-media index; version 12 adds the media reference table that
      * lets one deduplicated file belong to several messages.  Never use a destructive fallback
      * here: this database is the only copy of a user's recovered-message history.
      */
-    private static final int DATABASE_VERSION = 12;
+    private static final int DATABASE_VERSION = 13;
     public static final String TABLE_DELETED_FOR_ME = "deleted_for_me";
     public static final String TABLE_DELETED_MEDIA = "deleted_media";
     public static final String TABLE_DELETED_MEDIA_REFS = "deleted_media_refs";
 
-    private DelMessageStore(@NonNull Context context) {
+    // Package visibility allows isolated Android SQLite regression tests without the singleton.
+    DelMessageStore(@NonNull Context context) {
         super(context, "delmessages.db", null, DATABASE_VERSION);
     }
 
@@ -60,6 +62,9 @@ public class DelMessageStore extends SQLiteOpenHelper {
             }
         }
         long messagesBefore = countRows(sqLiteDatabase, TABLE_DELETED_FOR_ME);
+        long revokedBefore = countRows(sqLiteDatabase, "delmessages");
+        long mediaBefore = countRows(sqLiteDatabase, TABLE_DELETED_MEDIA);
+        long refsBefore = countRows(sqLiteDatabase, TABLE_DELETED_MEDIA_REFS);
         if (oldVersion < 4) {
             if (!checkColumnExists(sqLiteDatabase, "delmessages", "timestamp")) {
                 sqLiteDatabase.execSQL("ALTER TABLE delmessages ADD COLUMN timestamp INTEGER DEFAULT 0;");
@@ -124,16 +129,29 @@ public class DelMessageStore extends SQLiteOpenHelper {
                 throw new SQLiteException("Media ownership was not fully migrated");
             }
         }
+        if (oldVersion < 13) createRevokedSnapshots(sqLiteDatabase);
+        if (countRows(sqLiteDatabase, "delmessages") != revokedBefore
+                || countRows(sqLiteDatabase, TABLE_DELETED_MEDIA) < mediaBefore
+                || countRows(sqLiteDatabase, TABLE_DELETED_MEDIA_REFS) < refsBefore) {
+            throw new SQLiteException("Deleted-data migration count mismatch");
+        }
+        try (Cursor check = sqLiteDatabase.rawQuery("PRAGMA integrity_check", null)) {
+            if (!check.moveToFirst() || !"ok".equalsIgnoreCase(check.getString(0))) {
+                throw new SQLiteException("Deleted-data migration integrity failure");
+            }
+        }
         if (countRows(sqLiteDatabase, TABLE_DELETED_FOR_ME) < messagesBefore) {
             throw new SQLiteException("The upgrade would have lost recovered messages");
         }
     }
 
     private static long countRows(SQLiteDatabase database, String table) {
+        try (Cursor exists = database.rawQuery("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                new String[]{table})) {
+            if (!exists.moveToFirst()) return 0;
+        }
         try (Cursor cursor = database.rawQuery("SELECT COUNT(*) FROM " + table, null)) {
             return cursor.moveToFirst() ? cursor.getLong(0) : 0L;
-        } catch (SQLiteException missingTable) {
-            return 0L;
         }
     }
 
@@ -307,33 +325,126 @@ public class DelMessageStore extends SQLiteOpenHelper {
                 cursor.getLong(cursor.getColumnIndexOrThrow("size_bytes")));
     }
 
-    public void insertMessage(String jid, String msgid, long timestamp) {
-        try (SQLiteDatabase dbWrite = this.getWritableDatabase()) {
-            ContentValues values = new ContentValues();
-            values.put("jid", jid);
-            values.put("msgid", msgid);
-            values.put("timestamp", timestamp);
-            dbWrite.insertWithOnConflict("delmessages", null, values, SQLiteDatabase.CONFLICT_IGNORE);
+    public synchronized void insertMessage(String jid, String msgid, long timestamp) {
+        SQLiteDatabase db = getWritableDatabase();
+        insertLegacyMarker(db, jid, msgid, timestamp);
+        timestampCache.remove(msgid);
+        legacyTimestampCache.remove(msgid);
+    }
+
+    private static void insertLegacyMarker(SQLiteDatabase db, String jid, String msgid, long timestamp) {
+        ContentValues values = new ContentValues();
+        values.put("jid", jid == null ? "" : jid);
+        values.put("msgid", msgid);
+        values.put("timestamp", timestamp);
+        db.insertWithOnConflict("delmessages", null, values, SQLiteDatabase.CONFLICT_IGNORE);
+        // CONFLICT_IGNORE also returns -1 on errors. Verify instead of acknowledging that.
+        try (Cursor result = db.query("delmessages", new String[]{"_id"}, "jid=? AND msgid=?",
+                new String[]{jid == null ? "" : jid, msgid}, null, null, null, "1")) {
+            if (!result.moveToFirst()) throw new SQLiteException("Revocation marker not committed");
         }
     }
 
-    public void insertDeletedMessage(DeletedMessage message) {
-        try (SQLiteDatabase dbWrite = this.getWritableDatabase()) {
+    private static void createRevokedSnapshots(SQLiteDatabase db) {
+        for (String sql : RevokedSnapshotSchema.CREATE) db.execSQL(sql);
+    }
+
+    /** One independent transaction, completed before the intercepted WhatsApp write returns. */
+    public synchronized long commitRevocation(String scope, String key, long chat, long row,
+            String legacyJid, long timestamp, byte[] encrypted) {
+        if (scope == null || scope.isEmpty() || key == null || key.isEmpty()
+                || encrypted == null || encrypted.length == 0 || row <= 0)
+            throw new IllegalArgumentException("Incomplete revocation snapshot");
+        SQLiteDatabase db = getWritableDatabase();
+        long committedAt;
+        db.beginTransaction();
+        try {
             ContentValues values = new ContentValues();
-            values.put("key_id", message.getKeyId());
-            values.put("chat_jid", message.getChatJid());
-            values.put("sender_jid", message.getSenderJid());
-            values.put("timestamp", message.getTimestamp());
-            values.put("original_timestamp", message.getOriginalTimestamp());
-            values.put("media_type", message.getMediaType());
-            values.put("text_content", message.getTextContent());
-            values.put("media_path", message.getMediaPath());
-            values.put("media_caption", message.getMediaCaption());
-            values.put("is_from_me", message.isFromMe() ? 1 : 0);
-            values.put("contact_name", message.getContactName());
-            values.put("package_name", message.getPackageName());
-            dbWrite.insertWithOnConflict(TABLE_DELETED_FOR_ME, null, values, SQLiteDatabase.CONFLICT_REPLACE);
+            values.put("scope", scope);
+            values.put("key_id", key);
+            values.put("chat_row_id", chat);
+            values.put("row_id", row);
+            values.put("revoked_at", timestamp);
+            values.put("payload", encrypted);
+            db.insertWithOnConflict(RevokedSnapshotSchema.TABLE, null, values, SQLiteDatabase.CONFLICT_IGNORE);
+            try (Cursor result = db.query(RevokedSnapshotSchema.TABLE, new String[]{"revoked_at", "payload"},
+                    "scope=? AND key_id=? AND chat_row_id=?", new String[]{scope, key, Long.toString(chat)},
+                    null, null, null, "1")) {
+                if (!result.moveToFirst() || result.isNull(1))
+                    throw new SQLiteException("Revocation snapshot not committed");
+                committedAt = result.getLong(0);
+            }
+            ContentValues alias = new ContentValues();
+            alias.put("scope", scope);
+            alias.put("row_id", row);
+            alias.put("key_id", key);
+            alias.put("chat_row_id", chat);
+            alias.put("observed_at", timestamp);
+            db.insertWithOnConflict("revoked_snapshot_aliases", null, alias, SQLiteDatabase.CONFLICT_IGNORE);
+            try (Cursor result = db.rawQuery("SELECT 1 FROM revoked_snapshot_aliases WHERE scope=? AND row_id=? AND key_id=? AND chat_row_id=?",
+                    new String[]{scope, Long.toString(row), key, Long.toString(chat)})) {
+                if (!result.moveToFirst()) throw new SQLiteException("Revocation alias not committed");
+            }
+            // Keep v12 readers functional, including their LID/PN-independent key fallback.
+            insertLegacyMarker(db, legacyJid, key, committedAt);
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
         }
+        timestampCache.remove(key);
+        legacyTimestampCache.remove(key);
+        return committedAt;
+    }
+
+    public synchronized long getRevokedTimestamp(String scope, long row, String key) {
+        try (Cursor result = getReadableDatabase().rawQuery("SELECT s.revoked_at FROM revoked_snapshot_aliases a "
+                + "JOIN revoked_snapshots s ON s.scope=a.scope AND s.key_id=a.key_id AND s.chat_row_id=a.chat_row_id "
+                + "WHERE a.scope=? AND a.row_id=? AND a.key_id=? LIMIT 1",
+                new String[]{scope, Long.toString(row), key})) {
+            return result.moveToFirst() ? result.getLong(0) : 0;
+        }
+    }
+
+    public synchronized long getRevokedRow(String scope, String key, long chat) {
+        try (Cursor result = getReadableDatabase().query("revoked_snapshot_aliases",
+                new String[]{"row_id"}, "scope=? AND key_id=? AND chat_row_id=?",
+                new String[]{scope, key, Long.toString(chat)}, null, null, "observed_at DESC", "1")) {
+            return result.moveToFirst() ? result.getLong(0) : -1;
+        }
+    }
+
+    public record RevokedData(byte[] payload, long originalRow, long chat) {}
+
+    public synchronized RevokedData getRevokedData(String scope, long row, String key) {
+        try (Cursor result = getReadableDatabase().rawQuery("SELECT s.payload,s.row_id,s.chat_row_id FROM revoked_snapshot_aliases a "
+                + "JOIN revoked_snapshots s ON s.scope=a.scope AND s.key_id=a.key_id AND s.chat_row_id=a.chat_row_id "
+                + "WHERE a.scope=? AND a.row_id=? AND a.key_id=? LIMIT 1",
+                new String[]{scope, Long.toString(row), key})) {
+            return result.moveToFirst() ? new RevokedData(result.getBlob(0), result.getLong(1), result.getLong(2)) : null;
+        }
+    }
+
+    public synchronized byte[] getRevokedPayload(String scope, long row, String key) {
+        RevokedData data = getRevokedData(scope, row, key);
+        return data == null ? null : data.payload();
+    }
+
+    public void insertDeletedMessage(DeletedMessage message) {
+        SQLiteDatabase dbWrite = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put("key_id", message.getKeyId());
+        values.put("chat_jid", message.getChatJid());
+        values.put("sender_jid", message.getSenderJid());
+        values.put("timestamp", message.getTimestamp());
+        values.put("original_timestamp", message.getOriginalTimestamp());
+        values.put("media_type", message.getMediaType());
+        values.put("text_content", message.getTextContent());
+        values.put("media_path", message.getMediaPath());
+        values.put("media_caption", message.getMediaCaption());
+        values.put("is_from_me", message.isFromMe() ? 1 : 0);
+        values.put("contact_name", message.getContactName());
+        values.put("package_name", message.getPackageName());
+        dbWrite.insertWithOnConflict(TABLE_DELETED_FOR_ME, null, values, SQLiteDatabase.CONFLICT_REPLACE);
     }
 
     public java.util.ArrayList<DeletedMessage> getDeletedMessagesByChat(String chatJid, String sortOrder) {
@@ -408,8 +519,7 @@ public class DelMessageStore extends SQLiteOpenHelper {
     public java.util.ArrayList<DeletedMessage> getAllDeletedMessagesInternal() {
         java.util.ArrayList<DeletedMessage> messages = new java.util.ArrayList<>();
         SQLiteDatabase dbReader = this.getReadableDatabase();
-        try (dbReader;
-                Cursor cursor = dbReader.query(TABLE_DELETED_FOR_ME, null, null, null, null, null, "timestamp DESC")) {
+        try (Cursor cursor = dbReader.query(TABLE_DELETED_FOR_ME, null, null, null, null, null, "timestamp DESC")) {
             if (cursor.moveToFirst()) {
                 do {
                     long originalTs = 0;
@@ -437,29 +547,26 @@ public class DelMessageStore extends SQLiteOpenHelper {
     }
 
     public void deleteMessage(String keyId) {
-        try (SQLiteDatabase dbWrite = this.getWritableDatabase()) {
-            dbWrite.delete(TABLE_DELETED_FOR_ME, "key_id=?", new String[] { keyId });
-        }
+        SQLiteDatabase dbWrite = this.getWritableDatabase();
+        dbWrite.delete(TABLE_DELETED_FOR_ME, "key_id=?", new String[] { keyId });
     }
 
     public void deleteMessages(java.util.List<String> keyIds) {
         if (keyIds == null || keyIds.isEmpty())
             return;
-        try (SQLiteDatabase dbWrite = this.getWritableDatabase()) {
-            StringBuilder args = new StringBuilder();
-            for (int i = 0; i < keyIds.size(); i++) {
-                args.append("?,");
-            }
-            if (args.length() > 0)
-                args.setLength(args.length() - 1); // remove last comma
-            dbWrite.delete(TABLE_DELETED_FOR_ME, "key_id IN (" + args.toString() + ")", keyIds.toArray(new String[0]));
+        SQLiteDatabase dbWrite = this.getWritableDatabase();
+        StringBuilder args = new StringBuilder();
+        for (int i = 0; i < keyIds.size(); i++) {
+            args.append("?,");
         }
+        if (args.length() > 0)
+            args.setLength(args.length() - 1); // remove last comma
+        dbWrite.delete(TABLE_DELETED_FOR_ME, "key_id IN (" + args.toString() + ")", keyIds.toArray(new String[0]));
     }
 
     public void deleteMessagesByChat(String chatJid) {
-        try (SQLiteDatabase dbWrite = this.getWritableDatabase()) {
-            dbWrite.delete(TABLE_DELETED_FOR_ME, "chat_jid=?", new String[] { chatJid });
-        }
+        SQLiteDatabase dbWrite = this.getWritableDatabase();
+        dbWrite.delete(TABLE_DELETED_FOR_ME, "chat_jid=?", new String[] { chatJid });
     }
 
     public HashSet<String> getMessagesByJid(String jid) {
@@ -467,8 +574,7 @@ public class DelMessageStore extends SQLiteOpenHelper {
         if (jid == null)
             return messages;
         SQLiteDatabase dbReader = this.getReadableDatabase();
-        try (dbReader;
-                Cursor query = dbReader.query("delmessages", new String[] { "_id", "jid", "msgid" }, "jid=?",
+        try (Cursor query = dbReader.query("delmessages", new String[] { "_id", "jid", "msgid" }, "jid=?",
                         new String[] { jid }, null, null, null)) {
             if (query.moveToFirst()) {
                 do {
@@ -487,12 +593,14 @@ public class DelMessageStore extends SQLiteOpenHelper {
         createDeletedMediaTable(sqLiteDatabase);
         createDeletedMediaIndexes(sqLiteDatabase);
         createDeletedMediaReferenceTable(sqLiteDatabase);
+        createRevokedSnapshots(sqLiteDatabase);
     }
 
     @Override
     public void onConfigure(SQLiteDatabase database) {
         super.onConfigure(database);
         database.setForeignKeyConstraintsEnabled(true);
+        database.execSQL("PRAGMA synchronous=FULL");
     }
 
     /** Set once the process has verified this database; the check is not worth repeating. */
@@ -522,7 +630,7 @@ public class DelMessageStore extends SQLiteOpenHelper {
         // damaged file is left untouched so it can still be salvaged or backed up.
     }
 
-    public long getTimestampByMessageId(String msgid) {
+    public synchronized long getTimestampByMessageId(String msgid) {
         if (msgid == null) return 0;
         Long cached = timestampCache.get(msgid);
         if (cached != null) return cached;
@@ -534,8 +642,26 @@ public class DelMessageStore extends SQLiteOpenHelper {
                 timestampCache.put(msgid, ts);
                 return ts;
             }
-            timestampCache.put(msgid, -1L);
+            timestampCache.put(msgid, 0L);
             return 0;
+        }
+    }
+
+    private final Map<String, Long> legacyTimestampCache = Collections.synchronizedMap(
+            new LinkedHashMap<String, Long>(64, .75f, true) {
+                @Override protected boolean removeEldestEntry(Map.Entry<String, Long> entry) { return size() > 1000; }
+            });
+
+    public synchronized long getLegacyRevokedTimestamp(String key) {
+        if (key == null) return 0;
+        Long cached = legacyTimestampCache.get(key);
+        if (cached != null) return cached;
+        try (Cursor result = getReadableDatabase().rawQuery(
+                "SELECT timestamp FROM delmessages WHERE msgid=? AND NOT EXISTS "
+                + "(SELECT 1 FROM revoked_snapshots WHERE key_id=?) LIMIT 1", new String[]{key, key})) {
+            long timestamp = result.moveToFirst() ? result.getLong(0) : 0;
+            legacyTimestampCache.put(key, timestamp);
+            return timestamp;
         }
     }
 

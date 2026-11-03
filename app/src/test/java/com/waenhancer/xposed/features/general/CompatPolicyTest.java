@@ -17,8 +17,8 @@ public class CompatPolicyTest {
 
     @Test public void statusRevokeResultFollowsReturnType() {
         assertEquals(StoreResult.DIDNT_STORE, RevokeResultPolicy.blockedStatusRevokeResult(StoreResult.class));
-        assertEquals(Renamed.D, RevokeResultPolicy.blockedStatusRevokeResult(Renamed.class));
-        assertEquals(Short.ONLY, RevokeResultPolicy.blockedStatusRevokeResult(Short.class));
+        assertSame(RevokeResultPolicy.UNSUPPORTED, RevokeResultPolicy.blockedStatusRevokeResult(Renamed.class));
+        assertSame(RevokeResultPolicy.UNSUPPORTED, RevokeResultPolicy.blockedStatusRevokeResult(Short.class));
         assertEquals(0, RevokeResultPolicy.blockedStatusRevokeResult(int.class));
         assertEquals(0L, RevokeResultPolicy.blockedStatusRevokeResult(long.class));
         assertEquals(Boolean.FALSE, RevokeResultPolicy.blockedStatusRevokeResult(boolean.class));
