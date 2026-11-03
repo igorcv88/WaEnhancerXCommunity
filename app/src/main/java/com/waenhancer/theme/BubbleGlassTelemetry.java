@@ -180,6 +180,22 @@ public final class BubbleGlassTelemetry {
         log("NATIVE_ROW", "reason=" + reason + " dir=" + direction + " host=" + describe(host) + " detail=" + detail);
     }
 
+    /**
+     * A row whose previous recording had glass recorded its bubble natively: the visible "glass
+     * destroyed" transition. Row state is included because taps and animations change it.
+     */
+    public static void lost(String reason, View host) {
+        if (!on() || !allowed("LOST:" + reason)) return;
+        android.view.ViewParent parent = host.getParent();
+        log("LOST", "reason=" + reason + " host=" + describe(host)
+                + " pressed=" + host.isPressed() + " selected=" + host.isSelected()
+                + " activated=" + host.isActivated() + " alpha=" + host.getAlpha()
+                + " layer=" + host.getLayerType() + " transient=" + host.hasTransientState()
+                + " attached=" + host.isAttachedToWindow()
+                + " parent=" + (parent == null ? "none" : parent.getClass().getName())
+                + " source=" + sourceState + "(" + sourceReason + ")");
+    }
+
     /** Reply frame inside a bubble: who could paint its corner wedges (class chain, drawables). */
     public static void quoteFrame(View frame) {
         if (!on() || !allowed("QUOTE_FRAME")) return;

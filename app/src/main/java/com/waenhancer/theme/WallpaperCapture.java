@@ -42,6 +42,12 @@ public final class WallpaperCapture {
     final String key;
     /** Non-null when the wallpaper cannot be reproduced; bubbles then stay native. */
     final String unsupported;
+    /**
+     * What the texture looks like, without drawable identities: window size, coverage and the
+     * rendered fingerprint. Another chat with this key shows the same blur, so its texture can be
+     * shown while this chat's own render runs. Null when unknown (copies, unsupported plans).
+     */
+    String contentKey;
     private final ArrayList<Item> items;
 
     private WallpaperCapture(int width, int height, Rect coverage, String key, String unsupported,
@@ -88,8 +94,12 @@ public final class WallpaperCapture {
         String identity = window.getWidth() + "x" + window.getHeight() + "|" + coverage.toShortString() + "|" + walk.key;
         // Identity alone misses in-place changes (ColorDrawable.setColor, tint, wrapper state):
         // the key also carries a tiny rendering of exactly what would be recorded.
-        String key = withContent(identity, fingerprint(walk.items, coverage));
-        return new WallpaperCapture(window.getWidth(), window.getHeight(), coverage, key, null, walk.items);
+        int[] pixels = fingerprint(walk.items, coverage);
+        String key = withContent(identity, pixels);
+        WallpaperCapture plan = new WallpaperCapture(window.getWidth(), window.getHeight(), coverage, key, null, walk.items);
+        if (pixels != null) plan.contentKey = withContent(window.getWidth() + "x" + window.getHeight()
+                + "|" + coverage.toShortString(), pixels);
+        return plan;
     }
 
     static final int PROBE_W = 12, PROBE_H = 24;

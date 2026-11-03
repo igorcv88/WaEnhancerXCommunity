@@ -54,7 +54,7 @@ assert not (theme/'BubbleGlassDrawable.java').exists() and not (theme/'BubbleFac
 factory=app[app.index('private void installSharedBubbleFactoryHook()'):app.index('private void hookPendingBubbleClasses()')]
 assert 'setResult(' not in factory and 'bubbleSides.put((Drawable) result' in factory
 assert 'realignSharedBubbles();' in app and 'sharedFactoryWanted(outgoing)' in app
-assert 'setBackground' not in consumer and 'if (texture == null) { waiting.add(host); return stay(BubbleGlassTelemetry.Native.NO_TEXTURE); }' in consumer
+assert 'setBackground' not in consumer and 'if (texture == null) { waiting.add(host); return lost(host, BubbleGlassTelemetry.Native.NO_TEXTURE); }' in consumer
 realign=consumer[consumer.index('public void realign()'):consumer.index('public void sourceChanged()')]
 assert 'invalidate' not in realign and 'beginRecording' not in realign
 assert 'new RuntimeShader' not in consumer[:consumer.index('private static final class Slot')]

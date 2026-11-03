@@ -49,7 +49,7 @@ public final class NativeBubbleGlass {
     static final float MASK_ALPHA_GAIN = 8f;
     /** Fallback corner when the silhouette cannot be measured. */
     static final float FALLBACK_RADIUS_DP = 12f;
-    private static final int MAX_SLOTS_PER_ROW = 4;
+    static final int MAX_SLOTS_PER_ROW = 4;
     /** CPU silhouette strips are w×1 and 1×h; larger drawables keep the fallback contour. */
     static final int MAX_MEASURE_PX = 4096;
 
@@ -80,8 +80,16 @@ public final class NativeBubbleGlass {
 
     private final WeakReference<View> root;
     private final ConversationBackdropSource source;
-    private final WeakHashMap<View, Slot[]> slots = new WeakHashMap<>();
+    /**
+     * Glass nodes of each row's latest recording, by draw order. A slot belongs to a position in
+     * the row's display list, never to a drawable instance: WhatsApp rebinds rows with new or
+     * cached factory drawables (taps, recycling), and per-drawable slots filled up until the old
+     * drawables were garbage-collected, leaving the row native (SLOT_FULL) meanwhile.
+     */
+    private final WeakHashMap<View, RowSlots> slots = new WeakHashMap<>();
     private final Set<View> waiting = Collections.newSetFromMap(new WeakHashMap<>());
+    /** Rows whose latest recording has glass; a native re-record of one is reported as LOST. */
+    private final Set<View> glassRows = Collections.newSetFromMap(new WeakHashMap<>());
     private final Paint dstIn = new Paint();
     private final Matrix current = new Matrix(), entryInverse = new Matrix(), rootGlobal = new Matrix(),
             rootInverse = new Matrix(), hostGlobal = new Matrix();
@@ -134,22 +142,22 @@ public final class NativeBubbleGlass {
         if (frame == null || frame.canvas != canvas) { unhosted(bubble, canvas); return false; }
         View host = frame.view;
         Bitmap texture = source.texture();
-        if (texture == null) { waiting.add(host); return stay(BubbleGlassTelemetry.Native.NO_TEXTURE); }
+        if (texture == null) { waiting.add(host); return lost(host, BubbleGlassTelemetry.Native.NO_TEXTURE); }
         Rect bounds = bubble.getBounds();
         int w = bounds.width(), h = bounds.height();
-        if (w < 2 || h < 2) return stay(BubbleGlassTelemetry.Native.TOO_SMALL);
+        if (w < 2 || h < 2) return lost(host, BubbleGlassTelemetry.Native.TOO_SMALL);
         // Outermost hooked draw of this row on this canvas: at its entry the canvas is at the
         // row's node origin translated by -scroll (View.updateDisplayListIfDirty).
         GlassMaterialDrawable.DrawHost entry = frame;
         while (entry.previous != null && entry.previous.view == host && entry.previous.canvas == canvas)
             entry = entry.previous;
         canvas.getMatrix(current);
-        if (!entry.matrix.invert(entryInverse)) return stay(BubbleGlassTelemetry.Native.MATRIX);
+        if (!entry.matrix.invert(entryInverse)) return lost(host, BubbleGlassTelemetry.Native.MATRIX);
         Matrix local = new Matrix(current);
         local.preTranslate(bounds.left, bounds.top);
         local.postConcat(entryInverse);
         local.postTranslate(-host.getScrollX(), -host.getScrollY());
-        if (!local.rectStaysRect()) return stay(BubbleGlassTelemetry.Native.MATRIX);
+        if (!local.rectStaysRect()) return lost(host, BubbleGlassTelemetry.Native.MATRIX);
         hostRect.set(0, 0, w, h);
         local.mapRect(hostRect);
         if (entry == lastEntry) {
@@ -167,14 +175,14 @@ public final class NativeBubbleGlass {
             }
         }
         float density = host.getResources().getDisplayMetrics().density;
-        Slot slot = slotFor(host, bubble);
-        if (slot == null) return stay(BubbleGlassTelemetry.Native.SLOT_FULL);
+        Slot slot = slotFor(host, entry);
+        if (slot == null) return lost(host, BubbleGlassTelemetry.Native.SLOT_FULL);
         int save = canvas.save();
         boolean drawn = false;
         try {
             slot.prepare(bubble, bounds, texture, spec, density);
             slot.local.set(local);
-            if (!rootTransform()) return stay(BubbleGlassTelemetry.Native.ROOT);
+            if (!rootTransform()) return lost(host, BubbleGlassTelemetry.Native.ROOT);
             slot.align(host, hostGlobal, rootInverse);
             canvas.saveLayer(bounds.left, bounds.top, bounds.right, bounds.bottom, null);
             canvas.translate(bounds.left, bounds.top);
@@ -185,13 +193,14 @@ public final class NativeBubbleGlass {
             drawn = true;
         } catch (RuntimeException | LinkageError failure) {
             broken = true; // Native for the rest of this conversation; never a transparent row.
-            BubbleGlassTelemetry.stayedNative(BubbleGlassTelemetry.Native.EXCEPTION);
+            lost(host, BubbleGlassTelemetry.Native.EXCEPTION);
             ConversationBackdropSource.probe("BUBBLE_GLASS_DISABLED", failure.getClass().getSimpleName());
         } finally {
             canvas.restoreToCount(save);
         }
         if (!drawn) return false;
         lastEntry = entry; lastDrawable = bubble; lastRect.set(hostRect);
+        glassRows.add(host);
         BubbleGlassTelemetry.glass();
         BubbleGlassTelemetry.hosted(bubble, canvas, host);
         if (!presented) {
@@ -211,15 +220,23 @@ public final class NativeBubbleGlass {
         BubbleGlassTelemetry.report();
         if (slots.isEmpty() || released || !rootTransform()) return;
         boolean sampled = false;
-        for (Map.Entry<View, Slot[]> entry : slots.entrySet()) {
+        for (Map.Entry<View, RowSlots> entry : slots.entrySet()) {
             View host = entry.getKey();
             if (host == null || !host.isAttachedToWindow()) continue;
-            for (Slot slot : entry.getValue()) {
+            RowSlots row = entry.getValue();
+            for (int i = 0; i < row.used; i++) {
+                Slot slot = row.slots[i];
                 if (slot == null || !slot.align(host, hostGlobal, rootInverse) || sampled) continue;
                 sampled = true; // One sample per moving frame; the telemetry caps the rate.
                 BubbleGlassTelemetry.alignment("moved", host, null, slot.local, hostGlobal, slot.applied);
             }
         }
+    }
+
+    /** Native for a known row; reported when that row's previous recording had glass. */
+    private boolean lost(View host, BubbleGlassTelemetry.Native reason) {
+        if (glassRows.remove(host)) BubbleGlassTelemetry.lost(reason.name(), host);
+        return stay(reason);
     }
 
     private static boolean stay(BubbleGlassTelemetry.Native reason) {
@@ -231,9 +248,9 @@ public final class NativeBubbleGlass {
     public void sourceChanged() {
         if (released) return;
         Bitmap texture = source.texture();
-        if (texture == null) { reset(); return; }
-        for (Slot[] row : slots.values())
-            for (Slot slot : row) if (slot != null) slot.retexture(texture);
+        if (texture == null) { reset("texture-withdrawn"); return; }
+        for (RowSlots row : slots.values())
+            for (Slot slot : row.slots) if (slot != null) slot.retexture(texture);
         // Rows that painted natively while the source was preparing re-record once.
         for (View host : new ArrayList<>(waiting)) if (host != null) host.invalidate();
         waiting.clear();
@@ -244,17 +261,20 @@ public final class NativeBubbleGlass {
     /** Back to native on every known row, e.g. when the switch is turned off. */
     public void release() {
         released = true;
-        reset();
+        reset("release");
     }
 
-    private void reset() {
-        for (Map.Entry<View, Slot[]> entry : new ArrayList<>(slots.entrySet())) {
-            for (Slot slot : entry.getValue()) if (slot != null) slot.discard();
+    private void reset(String reason) {
+        // Every glass bubble of this chat goes native: never silent in a device trace.
+        if (!slots.isEmpty()) ConversationBackdropSource.probe("BUBBLE_GLASS_RESET", "reason=" + reason + " rows=" + slots.size());
+        for (Map.Entry<View, RowSlots> entry : new ArrayList<>(slots.entrySet())) {
+            for (Slot slot : entry.getValue().slots) if (slot != null) slot.discard();
             View host = entry.getKey();
             if (host != null) host.invalidate();
         }
         slots.clear();
         waiting.clear();
+        glassRows.clear();
         lastEntry = null; lastDrawable = null;
     }
 
@@ -266,23 +286,38 @@ public final class NativeBubbleGlass {
         return rootGlobal.invert(rootInverse);
     }
 
-    private Slot slotFor(View host, Drawable bubble) {
-        Slot[] row = slots.get(host);
-        if (row == null) { row = new Slot[MAX_SLOTS_PER_ROW]; slots.put(host, row); }
-        int free = -1;
-        for (int i = 0; i < row.length; i++) {
-            Slot slot = row[i];
-            if (slot != null && slot.drawable.get() == bubble) return slot;
-            if (free < 0 && (slot == null || slot.drawable.get() == null)) free = i;
+    /**
+     * The next slot of this row's current recording. A new outermost row draw is a new recording
+     * that replaces the row's display list, so numbering restarts and earlier slots are reused.
+     */
+    private Slot slotFor(View host, Object recording) {
+        RowSlots row = slots.get(host);
+        if (row == null) { row = new RowSlots(); slots.put(host, row); }
+        int index = row.claim(recording);
+        if (index < 0) return null;
+        Slot slot = row.slots[index];
+        return slot != null ? slot : (row.slots[index] = new Slot());
+    }
+
+    /** Slots of one row, in the draw order of its latest recording. */
+    static final class RowSlots {
+        final Slot[] slots = new Slot[MAX_SLOTS_PER_ROW];
+        /**
+         * Outermost draw scope of the latest recording, compared by identity. Weak: the scope
+         * holds the row, which is this map's weak key. It is alive for the whole recording.
+         */
+        WeakReference<Object> recording = new WeakReference<>(null);
+        int used;
+
+        /** Index of the next bubble drawn in {@code recording}, or -1 when the row is full. */
+        int claim(Object recording) {
+            if (this.recording.get() != recording) { this.recording = new WeakReference<>(recording); used = 0; }
+            return used < slots.length ? used++ : -1;
         }
-        if (free < 0) return null;
-        if (row[free] != null) row[free].discard();
-        return row[free] = new Slot(bubble);
     }
 
     /** One native bubble on one row: a lens node whose child carries the wallpaper texture. */
     private static final class Slot {
-        final WeakReference<Drawable> drawable;
         final RenderNode lens = new RenderNode("WaEX-bubble-lens");
         final RenderNode wallpaper = new RenderNode("WaEX-bubble-wallpaper");
         /** Lens-local → host-row coordinates, from the last native recording. */
@@ -297,8 +332,7 @@ public final class NativeBubbleGlass {
         private int lensW = -1, lensH = -1;
         private boolean aligned;
 
-        Slot(Drawable drawable) {
-            this.drawable = new WeakReference<>(drawable);
+        Slot() {
             // Pivot pinned at the origin: the node matrix is then exactly T(translation)·S(scale).
             wallpaper.setPivotX(0f);
             wallpaper.setPivotY(0f);
@@ -313,7 +347,8 @@ public final class NativeBubbleGlass {
                 try { content.drawRenderNode(wallpaper); } finally { lens.endRecording(); }
                 lensW = w; lensH = h;
             }
-            String measure = w + "x" + h + ":" + System.identityHashCode(bubble.getColorFilter())
+            // Positional slot: another drawable (tail/no tail) can arrive at the same size.
+            String measure = System.identityHashCode(bubble) + ":" + w + "x" + h + ":" + System.identityHashCode(bubble.getColorFilter())
                     + ":" + bubble.getAlpha();
             if (!measure.equals(measuredKey)) {
                 // The native mask stays the authority for shape and tail; this only places the

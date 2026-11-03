@@ -107,7 +107,7 @@ public class NativeBubbleGlassTest {
         assertTrue(hook.indexOf("nativePass()") < hook.indexOf("param.setResult(null)"));
         String glass = read("src/main/java/com/waenhancer/theme/NativeBubbleGlass.java");
         assertTrue("no glass without a texture: native paints", glass.contains(
-                "if (texture == null) { waiting.add(host); return stay(BubbleGlassTelemetry.Native.NO_TEXTURE); }"));
+                "if (texture == null) { waiting.add(host); return lost(host, BubbleGlassTelemetry.Native.NO_TEXTURE); }"));
         assertTrue(glass.contains("if (!drawn) return false;"));
         assertFalse("never touches row backgrounds", glass.contains("setBackground"));
     }

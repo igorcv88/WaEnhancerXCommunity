@@ -224,11 +224,33 @@ public final class AppLiquidGlass extends Feature {
 
     private final java.util.Set<Method> rowDrawHooks = new java.util.HashSet<>();
     private final WeakHashMap<View, Boolean> nativeDrawRows = new WeakHashMap<>();
+    /**
+     * IDs of verified conversation rows (conversation_row_*). A row inflated after the last
+     * discovery is hosted from its first draw instead of painting natively until the posted
+     * discovery binds it (a visible blink, and a native row if no discovery followed).
+     */
+    private volatile int[] nativeRowIds = new int[0];
+
+    private boolean knownRowId(int id) {
+        if (id == View.NO_ID) return false;
+        for (int known : nativeRowIds) if (known == id) return true;
+        return false;
+    }
+
+    private void rememberRowId(int id) {
+        if (id == View.NO_ID || knownRowId(id)) return;
+        synchronized (this) {
+            int[] next = java.util.Arrays.copyOf(nativeRowIds, nativeRowIds.length + 1);
+            next[next.length - 1] = id;
+            nativeRowIds = next;
+        }
+    }
 
     /** Hook only implementations reached by a verified Fyn conversation row. Shared base
      * methods are filtered by identity, and nested scopes are restored even on native errors. */
     private void observeNativeRowDraw(View row) {
         nativeDrawRows.put(row, Boolean.TRUE);
+        rememberRowId(row.getId());
         for (String name : new String[]{"draw", "onDraw", "dispatchDraw"}) {
             for (Class<?> type = row.getClass(); type != null; type = type.getSuperclass()) {
                 try {
@@ -240,8 +262,13 @@ public final class AppLiquidGlass extends Feature {
                             // rows re-record their own RenderNode inside it. That recording is the
                             // one the real frame reuses, so only a draw straight into the capture
                             // canvas is skipped.
-                            if (GlassPane.isCaptureCanvas((Canvas) param.args[0])
-                                    || !nativeDrawRows.containsKey(host)) return;
+                            if (GlassPane.isCaptureCanvas((Canvas) param.args[0])) return;
+                            if (!nativeDrawRows.containsKey(host)) {
+                                // Same row class and ID as a verified row: host it now. The
+                                // bubble hook still needs this window's session and renderer.
+                                if (!knownRowId(host.getId()) || bubbleScopeCache == LiquidGlassSettings.BubbleScope.OFF) return;
+                                nativeDrawRows.put(host, Boolean.TRUE);
+                            }
                             param.setObjectExtra("waex-row-scope", Boolean.TRUE);
                             param.setObjectExtra("waex-row-previous", GlassMaterialDrawable.enterRowDraw(
                                     host, (Canvas) param.args[0]));
@@ -377,7 +404,11 @@ public final class AppLiquidGlass extends Feature {
             return;
         }
         Session session=sessionFor(host.getRootView());
-        if (session==null) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NO_SESSION); return; }
+        if (session==null) {
+            com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NO_SESSION);
+            com.waenhancer.theme.BubbleGlassTelemetry.nativeRow("no_session", host, direction, "-");
+            return;
+        }
         try {
             if (session.drawBubble(bubble, canvas, outgoing)) param.setResult(null);
         } catch (Throwable error) {
@@ -842,6 +873,8 @@ public final class AppLiquidGlass extends Feature {
         private WeakReference<android.view.Window> activityWindow = new WeakReference<>(null);
         /** Bubble scope + material/optics the observed rows were last recorded with. */
         private String bubbleSettings;
+        /** Wallpaper identity the current bubble texture was planned from. */
+        private String textureIdentity;
         private WeakReference<View> sharedWallpaper = new WeakReference<>(null);
         private final WeakHashMap<TextView, BubbleTextState> bubbleTexts = new WeakHashMap<>();
         private final WeakHashMap<View, Boolean> pendingCanvasChecks = new WeakHashMap<>();
@@ -1606,6 +1639,9 @@ public final class AppLiquidGlass extends Feature {
         boolean drawBubble(Drawable bubble, Canvas canvas, boolean outgoing) {
             if (closed || suspended || bubbleGlass == null || !sharedFactoryAvailable) {
                 com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NO_RENDERER);
+                View host=com.waenhancer.theme.NativeBubbleGlass.hostFor(canvas);
+                if (host!=null) com.waenhancer.theme.BubbleGlassTelemetry.nativeRow("no_renderer", host, null,
+                        closed ? "closed" : suspended ? "suspended" : bubbleGlass == null ? "no-glass" : "no-factory");
                 return false;
             }
             // Bubble Colors, when chosen, tints the glass like it tints native bubbles.
@@ -1623,6 +1659,7 @@ public final class AppLiquidGlass extends Feature {
             if (wallpaperFallback != null) wallpaperFallback.release();
             restoreReplyCorners();
             bubbleGlass = null; bubbleSource = null; wallpaperFallback = null; bubbleSettings = null; sharedWallpaper.clear();
+            textureIdentity = null;
         }
 
         /** Re-records observed rows once; their display lists bake in glass or native bubbles. */
@@ -1665,8 +1702,17 @@ public final class AppLiquidGlass extends Feature {
             clipReplyCorners(window);
             com.waenhancer.theme.WallpaperCapture plan=com.waenhancer.theme.WallpaperCapture.plan(wallpaper,window);
             String unsupported=plan.unsupportedReason();
-            String identity=wallpaperFallback!=null || unsupported!=null || bubbleSource.failed()
-                    ? com.waenhancer.theme.WallpaperCapture.identity(wallpaper) : null;
+            String identity=com.waenhancer.theme.WallpaperCapture.identity(wallpaper);
+            // The plan can be unsupported for a moment (mid-layout, a transition, the list laying
+            // out again after a tap) while the wallpaper itself is unchanged. Withdrawing the
+            // texture then discarded every bubble's glass until a later scan rendered the same
+            // wallpaper again; keep it. A changed wallpaper still withdraws (identity differs).
+            if (unsupported!=null && bubbleSource.texture()!=null && !bubbleSource.failed()
+                    && identity.equals(textureIdentity)
+                    && (wallpaperFallback==null || wallpaperFallback.plan(wallpaper,window,identity)==null)) {
+                com.waenhancer.theme.ConversationBackdropSource.probe("SOURCE_KEPT", "transient=" + unsupported);
+                return;
+            }
             // A replay that failed for good stays failed for this wallpaper: once the copy is in
             // use the source no longer reports failure, so remember it per wallpaper identity.
             if (unsupported==null && bubbleSource.failed()) {
@@ -1685,6 +1731,7 @@ public final class AppLiquidGlass extends Feature {
                     }, () -> !closed && bubbleSource!=null && (bubbleSource.texture()==null || bubbleSource.failed()
                             || com.waenhancer.theme.WallpaperCapture.plan(wallpaper,window).unsupportedReason()!=null));
             }
+            if (plan.unsupportedReason()==null) textureIdentity=identity;
             bubbleSource.update(plan,
                     com.waenhancer.theme.ConversationBackdropSource.blurRadius(material,window.getResources().getDisplayMetrics().density));
         }
