@@ -2,7 +2,7 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Inline home search prototype — 2026-11-04 (branch `fix/inline-home-search-20261104`)
+## Inline home search prototype — 2026-11-04 ([PR #152](https://github.com/igorcv88/WaEnhancerXCommunity/pull/152), branch `fix/inline-home-search-20261104`, review-ready)
 
 User request: search icon mode should expand an editable floating glass pill below the home header, filter existing conversations/contact names, numbers and groups in-place, and avoid replacing `pager_holder` with `search_fragment_holder`. This navigation is a reproducible trigger of untouchable black strips behind home header/footer after hiding the IME and returning. The persistent native search pill is used for its existing SEARCH glass host; the main-page list remains WhatsApp's own list. User wants at least twice the prior header-to-search clearance.
 
