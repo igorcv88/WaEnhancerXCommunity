@@ -26,6 +26,7 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.waenhancer.xposed.core.WppCore;
 import com.waenhancer.xposed.core.components.FMessageWpp;
@@ -43,6 +44,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -68,10 +70,13 @@ final class HomeInlineSearch {
     private final WeakHashMap<Activity, ActivityState> activities = new WeakHashMap<>();
     private final int searchId;
     private final int innerId;
+    private final int listId;
     private final int menuId;
     private final AtomicBoolean filterErrorReported = new AtomicBoolean();
     private final AtomicBoolean filterSeen = new AtomicBoolean();
-    private final AtomicInteger traceBudget = new AtomicInteger(45);
+    private final AtomicBoolean sourceSeen = new AtomicBoolean();
+    private final AtomicInteger traceBudget = new AtomicInteger(80);
+    private final Map<String, String> titleCache = new ConcurrentHashMap<>();
     private volatile String query = "";
     private Runnable pendingFilter;
 
@@ -79,6 +84,7 @@ final class HomeInlineSearch {
         this.loader = loader;
         this.searchId = Utils.getID("my_search_bar", "id");
         this.innerId = Utils.getID("search_bar_inner_layout", "id");
+        this.listId = Utils.getID("list", "id");
         this.menuId = Utils.getID("menuitem_search", "id");
     }
 
@@ -178,6 +184,58 @@ final class HomeInlineSearch {
                     }
                 }
             });
+
+            // Recent home lists do not call the old conversations Filter at all. This source
+            // is already resolved and hooked by SeparateGroup and returns the data consumed
+            // by ConversationsFragment's native list. Unknown row shapes remain untouched.
+            try {
+                Method source = Unobfuscator.loadTabFragmentMethod(loader);
+                XposedBridge.hookMethod(source, new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) {
+                        try {
+                            Object value = param.getResult();
+                            if (!(value instanceof List<?>)) return;
+                            List<?> rows = (List<?>) value;
+                            if (sourceSeen.compareAndSet(false, true)) {
+                                trace("home-source-seen", "rows=" + rows.size()
+                                        + " firstType=" + firstType(rows));
+                            }
+                            String requested = query;
+                            if (requested.isEmpty()) return;
+                            if (!hasChatRows(rows)) {
+                                trace("home-source-unknown-rows", "queryLength=" + requested.length()
+                                        + " rows=" + rows.size() + " firstType=" + firstType(rows));
+                                return;
+                            }
+                            List<Object> filtered = new ArrayList<>(rows.size());
+                            int recognized = 0;
+                            int matched = 0;
+                            for (Object row : rows) {
+                                Object jid = chatJid(row);
+                                if (jid != null) recognized++;
+                                boolean keep = jid == null || matches(jid, requested, titleCache);
+                                if (jid != null && keep) matched++;
+                                if (keep) filtered.add(row);
+                            }
+                            param.setResult(filtered);
+                            long namesAvailable = titleCache.values().stream()
+                                    .filter(name -> name != null && !name.isEmpty()
+                                            && !"Whatsapp Contact".equals(name)).count();
+                            trace("home-source-filtered", "queryLength=" + requested.length()
+                                    + " inputRows=" + rows.size() + " chatRows=" + recognized
+                                    + " matchedChats=" + matched + " cachedNames=" + titleCache.size()
+                                    + " namesAvailable=" + namesAvailable
+                                    + " outputRows=" + filtered.size());
+                        } catch (Throwable error) {
+                            trace("home-source-error", "type=" + error.getClass().getName());
+                        }
+                    }
+                });
+                trace("home-source-hook", "installed=true");
+            } catch (Throwable sourceError) {
+                trace("home-source-hook", "installed=false error="
+                        + sourceError.getClass().getName());
+            }
 
             Class<?> home = WppCore.getHomeActivityClass(loader);
             XposedHelpers.findAndHookMethod(home, "onCreate", android.os.Bundle.class, new XC_MethodHook() {
@@ -373,6 +431,7 @@ final class HomeInlineSearch {
         if (target == null) return false;
         state.lastActionAt = now;
         trace("icon-toggle", "state=open");
+        titleCache.clear();
         state.active = target;
         target.row.animate().cancel();
         target.row.setVisibility(View.VISIBLE);
@@ -423,6 +482,7 @@ final class HomeInlineSearch {
         if (keyboard != null) keyboard.hideSoftInputFromWindow(target.editor.getWindowToken(), 0);
         target.editor.clearFocus();
         target.editor.setText("");
+        titleCache.clear();
         target.editor.setVisibility(View.GONE);
         target.stopPlaceholderGuard();
         target.restoreNativePlaceholders();
@@ -451,8 +511,58 @@ final class HomeInlineSearch {
                 try { item.getKey().filter(item.getValue()); }
                 catch (Throwable ignored) { /* Unknown native filter: leave its list intact. */ }
             }
+            refreshHomeListAdapters();
         };
         main.postDelayed(pendingFilter, QUERY_DEBOUNCE_MS);
+    }
+
+    /** Rebind WhatsApp's own row adapter; the source hook decides the visible data. */
+    private void refreshHomeListAdapters() {
+        if (listId <= 0) {
+            trace("home-list-refresh", "idUnavailable=true");
+            return;
+        }
+        int views = 0;
+        int adapters = 0;
+        for (ActivityState state : new ArrayList<>(activities.values())) {
+            if (!state.root.isAttachedToWindow()) continue;
+            View pager = state.root.findViewById(Utils.getID("pager_holder", "id"));
+            if (pager == null) continue;
+            List<RecyclerView> found = new ArrayList<>();
+            collectListViews(pager, found, 0);
+            views += found.size();
+            for (RecyclerView list : found) {
+                RecyclerView.Adapter<?> adapter = list.getAdapter();
+                if (adapter == null) continue;
+                adapters++;
+                list.post(() -> {
+                    if (list.isAttachedToWindow() && list.getAdapter() == adapter) {
+                        try { adapter.notifyDataSetChanged(); }
+                        catch (RuntimeException error) {
+                            trace("home-list-refresh-error", "type=" + error.getClass().getName());
+                        }
+                    }
+                });
+            }
+        }
+        trace("home-list-refresh", "listViews=" + views + " adapters=" + adapters);
+    }
+
+    private void collectListViews(View view, List<RecyclerView> found, int depth) {
+        if (depth > 14 || found.size() >= 8) return;
+        if (view instanceof RecyclerView && view.getId() == listId) {
+            found.add((RecyclerView) view);
+            return;
+        }
+        if (!(view instanceof ViewGroup)) return;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            collectListViews(group.getChildAt(i), found, depth + 1);
+        }
+    }
+
+    private static String firstType(List<?> rows) {
+        return rows.isEmpty() || rows.get(0) == null ? "none" : rows.get(0).getClass().getName();
     }
 
     private static boolean hasChatRows(List<?> rows) {
@@ -462,6 +572,9 @@ final class HomeInlineSearch {
 
     private static Object chatJid(Object row) {
         if (row == null) return null;
+        if (XposedHelpers.findMethodExactIfExists(row.getClass(), "getRawString") != null) {
+            return row;
+        }
         for (String name : new String[]{"A00", "A01"}) {
             try {
                 Object jid = XposedHelpers.getObjectField(row, name);
