@@ -830,7 +830,54 @@ public final class AppLiquidGlass extends Feature {
      * native grey then showed for a frame or stayed until the row redrew (owner video
      * 2026-11-03). The reset is answered inside the same setter call, before any frame.
      */
+    /**
+     * Glass-row content enforced where it is drawn (owner trace 2026-11-04 after #148:
+     * contrast_held=0 contrast_restored=0 contrast_fresh=797 per ~1230 glass recordings).
+     * WhatsApp gives these rows new reply/voice views; while scrolling every row re-records and
+     * the in-draw tint caught them, but at rest a replaced view is recorded only by its own
+     * sub-tree, never by the row draw this module hooks, so it kept WhatsApp's grey. Before such
+     * a view draws itself inside a row that holds glass colours, the colour is applied in place.
+     */
+    static final String[] DRAW_WATCH = {"quoted_text", "description", "date", "call_log_subtitle", "control_btn", "call_type_icon"};
+    private int[] drawWatchIds;
+
+    private int drawWatchIndex(View view, int id) {
+        int[] ids = drawWatchIds;
+        if (ids == null) {
+            ids = new int[DRAW_WATCH.length];
+            String pkg = view.getContext().getPackageName();
+            for (int i = 0; i < ids.length; i++)
+                ids[i] = view.getResources().getIdentifier(DRAW_WATCH[i], "id", pkg);
+            drawWatchIds = ids;
+        }
+        for (int i = 0; i < ids.length; i++) if (ids[i] == id && id != 0) return i;
+        return -1;
+    }
+
     private void installContrastGuards() {
+        XC_MethodHook atDraw = new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                if (applyingContrast || sessions.isEmpty()) return;
+                View view = (View) param.thisObject;
+                int id = view.getId();
+                if (id == View.NO_ID || id == 0) return;
+                int which = drawWatchIndex(view, id);
+                if (which < 0 || android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) return;
+                for (WeakReference<Session> reference : sessions.values()) {
+                    Session session = reference == null ? null : reference.get();
+                    if (session == null) continue;
+                    View row = session.glassContrastRow(view);
+                    if (row != null) { session.enforceAtDraw(row, view, DRAW_WATCH[which]); return; }
+                }
+            }
+        };
+        try {
+            XposedBridge.hookAllMethods(TextView.class, "onDraw", atDraw);
+            XposedBridge.hookAllMethods(ImageView.class, "onDraw", atDraw);
+            report("contrast-at-draw", "glass-row content enforced before draw");
+        } catch (RuntimeException | LinkageError error) {
+            report("contrast-at-draw-missing", "draw-time contrast unavailable: " + error);
+        }
         XC_MethodHook guard = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
                 if (applyingContrast || android.os.Looper.myLooper() != android.os.Looper.getMainLooper()
@@ -1125,6 +1172,49 @@ public final class AppLiquidGlass extends Feature {
             if (holdPending.add(row))
                 row.postDelayed(() -> { holdPending.remove(row); if (!closed) syncReplyText(row); }, left + 16);
             return true;
+        }
+
+        /** The glass row, with glass colours applied, that contains {@code view}; else null. */
+        View glassContrastRow(View view) {
+            if (closed || rowsWithGlassContrast.isEmpty()) return null;
+            android.view.ViewParent parent = view.getParent();
+            for (int i = 0; i < 12 && parent instanceof View; i++, parent = parent.getParent())
+                if (rowsWithGlassContrast.contains(parent)) return (View) parent;
+            return null;
+        }
+
+        /** See {@link AppLiquidGlass#DRAW_WATCH}: called before the view draws itself (UI thread). */
+        void enforceAtDraw(View row, View view, String name) {
+            if (view instanceof TextView) {
+                android.content.res.ColorStateList[] state = quoteTexts.get(view);
+                if (state != null && ((TextView) view).getTextColors() == state[1]) return;
+            } else if (view instanceof android.widget.ImageView) {
+                android.content.res.ColorStateList[] state = glassIcons.get(view);
+                if (state != null && ((android.widget.ImageView) view).getImageTintList() == state[1]) return;
+            } else return;
+            GlassSpec material = resolvedMaterial();
+            if (material == null) return;
+            int content = material.contentColor & 0x00FFFFFF;
+            int secondary = content | (REPLY_TEXT_ALPHA << 24);
+            boolean voice = rowChild(row, "audio_visualizer") != null
+                    || rowChild(row, "conversation_row_audio_player_view") != null;
+            boolean outer = applyingContrast;
+            applyingContrast = true;
+            countFresh = false;
+            try {
+                switch (name) {
+                    case "quoted_text": tintText(view, true, secondary); break;
+                    case "description": case "date": if (!voice) return; tintText(view, true, secondary); break;
+                    case "control_btn": if (!voice || !(view instanceof android.widget.ImageView)) return;
+                        tintIcon((android.widget.ImageView) view, true, content | 0xFF000000); break;
+                    case "call_type_icon": if (!(view instanceof android.widget.ImageView)) return;
+                        tintIcon((android.widget.ImageView) view, true, content | 0xFF000000); break;
+                    case "call_log_subtitle": if (rowChild(row, "call_type_icon") == null) return;
+                        tintText(view, true, secondary); break;
+                    default: return;
+                }
+                com.waenhancer.theme.BubbleGlassTelemetry.contrast(4);
+            } finally { applyingContrast = outer; }
         }
 
         private void syncContrast(View row) {

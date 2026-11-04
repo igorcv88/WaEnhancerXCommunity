@@ -239,6 +239,31 @@ public class BubbleGlassStabilityTest {
         assertTrue(all.contains("rowsWithGlassContrast.clear();") && all.contains("nativeSince.clear();"));
     }
 
+    @Test public void replacedContentViewsGetTheGlassColourBeforeTheyDraw() throws IOException {
+        // Owner trace 2026-11-04: contrast_held=0 contrast_restored=0 contrast_fresh=797 per
+        // ~1230 glass recordings, white while scrolling and grey at rest: WhatsApp replaces the
+        // reply/voice views, and a replaced view at rest is recorded by its own sub-tree only.
+        String app = read(APP);
+        int install = app.indexOf("private void installContrastGuards()");
+        String guards = app.substring(install, app.indexOf("private Surface surfaceFor(", install));
+        assertTrue(guards.contains("XposedBridge.hookAllMethods(TextView.class, \"onDraw\", atDraw);"));
+        assertTrue(guards.contains("XposedBridge.hookAllMethods(ImageView.class, \"onDraw\", atDraw);"));
+        assertTrue("before the draw, so this recording already uses the colour",
+                guards.contains("@Override protected void beforeHookedMethod(MethodHookParam param) {\n                if (applyingContrast || sessions.isEmpty()) return;"));
+        assertTrue("cheap id gate before any lookup", guards.indexOf("int which = drawWatchIndex(view, id);")
+                < guards.indexOf("session.glassContrastRow(view)"));
+        assertTrue(app.contains("static final String[] DRAW_WATCH = {\"quoted_text\", \"description\", \"date\", \"call_log_subtitle\", \"control_btn\", \"call_type_icon\"};"));
+        int enforce = app.indexOf("void enforceAtDraw(View row, View view, String name)");
+        String body = app.substring(enforce, app.indexOf("private void syncContrast(View row)", enforce));
+        assertTrue("already white: no write", body.contains("if (state != null && ((TextView) view).getTextColors() == state[1]) return;"));
+        assertTrue("timestamps outside voice rows keep WhatsApp's colour",
+                body.contains("case \"description\": case \"date\": if (!voice) return;"));
+        assertTrue(body.contains("applyingContrast = true;") && body.contains("BubbleGlassTelemetry.contrast(4);"));
+        int row = app.indexOf("View glassContrastRow(View view)");
+        assertTrue("only rows whose colours are currently glass",
+                app.substring(row, enforce).contains("if (rowsWithGlassContrast.contains(parent)) return (View) parent;"));
+    }
+
     @Test public void callAndViewOnceRowsFollowTheGlass() throws IOException {
         String app = read(APP);
         int start = app.indexOf("private void syncReplyText(View row)");
