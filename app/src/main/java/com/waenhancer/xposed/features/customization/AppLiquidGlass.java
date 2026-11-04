@@ -1009,6 +1009,9 @@ public final class AppLiquidGlass extends Feature {
         private final WeakHashMap<View, WeakReference<GlassMaterialDrawable>> secondaryFactories = new WeakHashMap<>();
         private final WeakHashMap<View, Boolean> reportedRowOwners = new WeakHashMap<>();
         private final WeakHashMap<View, Surface> candidates = new WeakHashMap<>();
+        /** Only the two or three known search hosts; checked before drawing when native rebinding
+         * does not request layout (and therefore never triggers our normal scan). */
+        private final WeakHashMap<View, Boolean> searchCandidates = new WeakHashMap<>();
         private com.waenhancer.theme.ConversationBackdropSource bubbleSource;
         private com.waenhancer.theme.NativeBubbleGlass bubbleGlass;
         /**
@@ -1731,6 +1734,7 @@ public final class AppLiquidGlass extends Feature {
             if (returning) for (Binding binding : bindings.values()) {
                 binding.recovery.revalidate();
                 binding.glass.releaseLive();
+                if (binding.surface == Surface.SEARCH) binding.visible = false;
             }
             scheduler.activity(SystemClock.uptimeMillis());
             if (!pendingDiscovery.isEmpty()) runDiscovery();
@@ -1768,6 +1772,7 @@ public final class AppLiquidGlass extends Feature {
                 conversation.onFrame(root.get());
                 // Before the per-binding early return: shared bubbles are not bindings.
                 realignSharedBubbles();
+                reconcileSearch();
                 if (bindings.isEmpty()) return true;
                 long now = SystemClock.uptimeMillis();
                 boolean fresh = false;
@@ -1778,6 +1783,12 @@ public final class AppLiquidGlass extends Feature {
                     boolean eligible = target != null && target.isAttachedToWindow() && target.isShown()
                             && target.getWidth() > 0 && target.getHeight() > 0
                             && target.getGlobalVisibleRect(visibleRect) && binding.glass.wantsLiveCapture();
+                    if (binding.surface == Surface.SEARCH && !eligible && binding.visible) {
+                        // A tab can leave the viewport without a capture being scheduled.
+                        // Remember that visibility transition before it returns.
+                        binding.visible = false;
+                        binding.glass.releaseLive();
+                    }
                     boolean mayCapture = binding.recovery.mayCapture(now)
                             && binding.presentation.mayCapture(now, binding.glass.hasPresentedLive());
                     if (eligible && !mayCapture) {
@@ -1791,7 +1802,9 @@ public final class AppLiquidGlass extends Feature {
                     retryDue |= eligible && mayCapture && (binding.recovery.retryDue(now)
                             || binding.surface == Surface.BUBBLES && binding.glass.presentationPending());
                     fresh |= binding.glass.needsFreshCapture(eligible && mayCapture)
-                            || eligible && mayCapture && binding.glass.capturePending();
+                            || eligible && mayCapture && binding.glass.capturePending()
+                            || HomeSurfacePolicy.captureNewSearch(binding.surface == Surface.SEARCH,
+                                    eligible, binding.visible, mayCapture);
                 }
                 GlassOptics optics = GlassOptics.current();
                 // OneMate is the user-facing live renderer: it must always use sticky admissions
@@ -2106,6 +2119,31 @@ public final class AppLiquidGlass extends Feature {
             }
         }
 
+        /** Recover search glass on background-only updates that emit no layout notification.
+         * A full tree scan here would run on every frame; searchCandidates is a tiny weak set
+         * discovered by the existing layout/discovery walk. No extra view hierarchy traversal. */
+        private void reconcileSearch() {
+            if (!LiquidGlassSettings.isEnabled(prefs, Surface.SEARCH)) return;
+            View window = root.get();
+            if (window == null) return;
+            for (View target : searchCandidates.keySet()) {
+                if (target == null || !target.isAttachedToWindow() || target.getRootView() != window
+                        || !target.isShown()) continue;
+                Binding binding = bindings.get(target);
+                if (binding == null) {
+                    bind(target, Surface.SEARCH, false);
+                } else if (binding.surface == Surface.SEARCH && !binding.nested
+                        && target.getBackground() != binding.glass
+                        && !(target.getBackground() instanceof GlassMaterialDrawable)
+                        && keepGlass(target, binding)) {
+                    // The previous recording described the old native background. The next
+                    // presentation must be freshly captured against the replacement.
+                    binding.visible = false;
+                    binding.glass.releaseLive();
+                }
+            }
+        }
+
 
         void discoverLater(View view) {
             if (closed || GlassPane.isCapturing()) return;
@@ -2157,6 +2195,7 @@ public final class AppLiquidGlass extends Feature {
             Surface surface = surfaceFor(view);
             if (surface != null) {
                 candidates.put(view, surface);
+                if (surface == Surface.SEARCH) searchCandidates.put(view, Boolean.TRUE);
                 if (LiquidGlassSettings.isEnabled(prefs, surface)) bind(view, surface, false);
             }
             if (view instanceof ViewGroup) {
@@ -2530,7 +2569,7 @@ public final class AppLiquidGlass extends Feature {
                 if (secondary != null) { secondary.setPixelSuppressed(false); secondary.attachMaterial(() -> null); secondary.rearmCanvasHost(); }
             }
             secondaryFactories.clear(); reportedRowOwners.clear();
-            bindings.clear(); candidates.clear(); pendingDiscovery.clear();
+            bindings.clear(); candidates.clear(); searchCandidates.clear(); pendingDiscovery.clear();
             restoreAllBubbleText();
         }
         @Override public void onViewAttachedToWindow(View view) { }
