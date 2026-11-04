@@ -1718,7 +1718,7 @@ Device next: open a chat with replies, scroll for at least 10 s (past two `FREQU
 
 ### Glass-row colours enforced at draw time — 2026-11-04
 
-Branch `ccr-a55049bc-m310s8` restarted from `master@e3bdd0b` (#148 merged); PR number recorded below.
+Branch `ccr-a55049bc-m310s8` restarted from `master@e3bdd0b` (#148 merged); PR [#149](https://github.com/igorcv88/WaEnhancerXCommunity/pull/149).
 
 Owner on #148: the coloured glass is right ("a cor ficou linda"); replies and voice notes still alternate, now white while scrolling and grey once scrolling stops. Trace `FREQUENCY`: `reasserted_text=1 contrast_held=0 contrast_restored=0 contrast_fresh=797 contrast_in_draw=1231` (over glass=1231).
 - held/restored 0: the module never put the native colour back, so #147's single-native-recording theory was wrong.
