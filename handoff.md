@@ -2,7 +2,16 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Inline home search prototype — 2026-11-04 ([PR #152](https://github.com/igorcv88/WaEnhancerXCommunity/pull/152), branch `fix/inline-home-search-20261104`, review-ready)
+## Inline home search follow-up after merge — 2026-11-04 ([PR #153](https://github.com/igorcv88/WaEnhancerXCommunity/pull/153), branch `fix/home-inline-search-followup-20261104`, review-ready)
+
+The original inline-search [PR #152](https://github.com/igorcv88/WaEnhancerXCommunity/pull/152) was merged as `3cd2698` from head `1f86125` **before** the placeholder/toggle/telemetry correction `6019798` was pushed to its old branch. Current `master@9997a7f` (including merged #151) demonstrably still has `nativeTextId` single-label hiding and no `WAEX/HomeInlineSearch` trace. The user's subsequent screenshot `88486.png` still shows the two overlapping native/injected hints and an unfiltered conversations list while typing; the filtered `logcat` file is empty. The absent trace is expected for that master source, but the exact installed APK SHA cannot be established from the screenshot. Do not interpret it as proof that the newer instrumented hook fails.
+
+This follow-up puts the previously unmerged corrections on current master, preserving #151: magnifier open/close toggle with a 175ms duplicate callback guard, hide/restore of native text placeholders within the search pill during expansion, and bounded metadata-only logs across native filter discovery, filtering, matching and publishResults. It adds `HomeSearchActionPolicyTest`. No queries, names, numbers, JIDs or message contents are logged. The release ProGuard rules suppress `Log.v`/`Log.d` but not the new `Log.i` trace. **Search matching remains unverified and was broken in the tested old build.** Do not merge this follow-up until the newer device build has working results.
+
+Validation: Java syntax parsing and `git diff --cached --check` passed for the changes in the old branch; full Gradle build was blocked by unavailable Gradle 8.14.5. No GitHub Actions were dispatched by the agent. Next: build this follow-up PR through the user-operated manual signed preview workflow, search a known conversation name and a phone fragment, then capture from Termux using `su -c 'logcat -d -v time -s WAEX/HomeInlineSearch:I > /sdcard/Download/WAEX_INLINE_SEARCH.txt'`. If empty again, check broad `logcat -d -v time | grep -iE 'WAEX/HomeInlineSearch|Xposed|LSPosed'` and verify preview build provenance before changing the filter contract. Also verify hint separation, second-tap collapse, Back/IME and home phantom strips.
+
+
+## Inline home search prototype — 2026-11-04 ([merged PR #152](https://github.com/igorcv88/WaEnhancerXCommunity/pull/152), original branch `fix/inline-home-search-20261104`)
 
 User request: search icon mode should expand an editable floating glass pill below the home header, filter existing conversations/contact names, numbers and groups in-place, and avoid replacing `pager_holder` with `search_fragment_holder`. This navigation is a reproducible trigger of untouchable black strips behind home header/footer after hiding the IME and returning. The persistent native search pill is used for its existing SEARCH glass host; the main-page list remains WhatsApp's own list. User wants at least twice the prior header-to-search clearance.
 
