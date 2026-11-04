@@ -2,6 +2,12 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
+## Automatic pull request validation — 2026-11-04
+
+The owner explicitly re-authorized automatic CI in public repositories. Branch `ci/restore-pr-validation-20261104` adds `.github/workflows/pr-ci.yml`, triggered by `pull_request` and `workflow_dispatch`, with read-only repository permissions. It runs existing Python smoke/regression scripts, `:app:testWhatsappDebugUnitTest`, `:app:lintWhatsappDebug` and `:app:assembleWhatsappDebug`, without release signing secrets or release publication. The manual official release and manually dispatched signed PR preview workflows are unchanged. `AGENTS.md` and `ARCHITECTURE.md` document this distinction.
+
+Validation: workflow syntax and task names were reviewed against existing manual preview and Gradle setup; no runner has completed yet. Next steps: inspect the first PR check run, fix environment or baseline failures in this branch, and merge only at the owner's direction. Android runtime and signing identity still need physical/manual preview validation.
+
 ## Inline home search native list reroute — 2026-11-04 (new follow-up after merged [PR #153](https://github.com/igorcv88/WaEnhancerXCommunity/pull/153), branch `fix/home-inline-list-search-20261104`)
 
 The user tested the corrected PR #153 APK. Screenshot `88490.png` confirms one clean editable search label and the previously reported UI/toggle corrections; entering a known name still leaves the entire home chat list unfiltered. The attached `WAEX_INLINE_SEARCH.txt` has six lines: `pill-bound nativeTextCount=0` twice, `icon-toggle state=open`, then `query-refresh queryLength=2 filterCount=0` and `query-refresh queryLength=4 filterCount=0`. No `native-filter-seen` event occurred. **This directly rules out using the old conversations `Filter.performFiltering` callback as an active refresh path during this reproduction.** It does not establish that the alternative native list method is called on each adapter rebind.
