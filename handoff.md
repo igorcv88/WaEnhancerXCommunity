@@ -2,7 +2,7 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Inline home search follow-up after merge — 2026-11-04 (branch `fix/home-inline-search-followup-20261104`, review-ready PR pending)
+## Inline home search follow-up after merge — 2026-11-04 ([PR #153](https://github.com/igorcv88/WaEnhancerXCommunity/pull/153), branch `fix/home-inline-search-followup-20261104`, review-ready)
 
 The original inline-search [PR #152](https://github.com/igorcv88/WaEnhancerXCommunity/pull/152) was merged as `3cd2698` from head `1f86125` **before** the placeholder/toggle/telemetry correction `6019798` was pushed to its old branch. Current `master@9997a7f` (including merged #151) demonstrably still has `nativeTextId` single-label hiding and no `WAEX/HomeInlineSearch` trace. The user's subsequent screenshot `88486.png` still shows the two overlapping native/injected hints and an unfiltered conversations list while typing; the filtered `logcat` file is empty. The absent trace is expected for that master source, but the exact installed APK SHA cannot be established from the screenshot. Do not interpret it as proof that the newer instrumented hook fails.
 
