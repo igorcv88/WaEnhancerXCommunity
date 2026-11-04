@@ -1799,6 +1799,16 @@ public class Others extends Feature {
     }
 
     private void hookSearchbar(String filterChats) throws Exception {
+        if ("1".equals(filterChats)) {
+            try {
+                if (new HomeInlineSearch(classLoader).install()) {
+                    // An unresolved host filter leaves the legacy icon/search route intact.
+                    return;
+                }
+            } catch (Throwable error) {
+                XposedBridge.log("[WAEX/HomeInlineSearch] skipped: " + error);
+            }
+        }
         Method searchbar = Unobfuscator.loadViewAddSearchBarMethod(classLoader);
         /* Log removed */
         var searchBarID = Utils.getID("my_search_bar", "id");
@@ -1836,29 +1846,30 @@ public class Others extends Feature {
             Method addSeachBar = Unobfuscator.loadAddOptionSearchBarMethod(classLoader);
             Field curPageField = Unobfuscator.loadGetCurrentPageInHomeField(classLoader);
             XposedBridge.hookMethod(addSeachBar, new XC_MethodHook() {
-                private Object homeActivity;
-                private int originPageId;
-
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                     if (!Objects.equals(filterChats, "1")) {
                         return;
                     }
-                    homeActivity = param.thisObject;
+                    Object homeActivity = param.thisObject;
                     if (Modifier.isStatic(param.method.getModifiers())) {
                         homeActivity = param.args[0];
                     }
-                    originPageId = 0;
-                    if (curPageField.getType() == int.class) {
-                        originPageId = curPageField.getInt(homeActivity);
+                    if (homeActivity != null && curPageField.getType() == int.class) {
+                        curPageField.setAccessible(true);
+                        param.setObjectExtra("home-page-owner", homeActivity);
+                        param.setObjectExtra("home-page-original", curPageField.getInt(homeActivity));
                         curPageField.setInt(homeActivity, 1);
                     }
                 }
 
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    if (originPageId != 0) {
-                        curPageField.setInt(homeActivity, originPageId);
+                    Object owner = param.getObjectExtra("home-page-owner");
+                    Object original = param.getObjectExtra("home-page-original");
+                    if (owner != null && original instanceof Integer) {
+                        // Page 0 is valid; failing to restore it corrupts home tab state.
+                        curPageField.setInt(owner, (Integer) original);
                     }
                 }
             });
