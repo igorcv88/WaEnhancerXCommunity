@@ -43,6 +43,17 @@ final class HomeGlassChrome {
     }
 
     private static final float SEARCH_Z = 1f;
+    private static final int HEADER_SIDE_MARGIN_DP = 8;
+    private static final int HEADER_MAX_HEIGHT_DP = 52;
+
+    private static final class ToolbarState {
+        final int left, right, height;
+        ToolbarState(ViewGroup.MarginLayoutParams params) {
+            left = params.leftMargin;
+            right = params.rightMargin;
+            height = params.height;
+        }
+    }
 
     private static final class ListState {
         final WeakReference<ViewGroup> container;
@@ -64,6 +75,7 @@ final class HomeGlassChrome {
     private final WeakHashMap<View, Drawable> cleared = new WeakHashMap<>();
     /** Our transparent replacement per fill; any other background on the fill is native. */
     private final WeakHashMap<View, Drawable> replacements = new WeakHashMap<>();
+    private final WeakHashMap<View, ToolbarState> toolbarSizes = new WeakHashMap<>();
     private final java.util.Map<String, Integer> ids = new java.util.HashMap<>();
     /** The header and its fill from the last matching sync, for the per-frame check. */
     private WeakReference<View> headerRef = new WeakReference<>(null);
@@ -99,6 +111,9 @@ final class HomeGlassChrome {
                 return;
             }
             View fill = find(header, "toolbar_container");
+            View toolbar = find(header, "toolbar");
+            if (host.toolbarsEnabled()) sizeToolbar(toolbar);
+            else restoreToolbar(toolbar);
             headerRef = new WeakReference<>(header);
             fillRef = new WeakReference<>(fill);
             if (fill != null) {
@@ -159,6 +174,32 @@ final class HomeGlassChrome {
             return name + "#" + Integer.toHexString(((ColorDrawable) drawable).getColor());
         }
         return name + "@" + Integer.toHexString(System.identityHashCode(drawable)) + "/a" + drawable.getAlpha();
+    }
+
+    /** Insets only the home glass capsule, preserving its native child controls and hit targets. */
+    private void sizeToolbar(View toolbar) {
+        if (toolbar == null || toolbarSizes.containsKey(toolbar)
+                || !(toolbar.getLayoutParams() instanceof ViewGroup.MarginLayoutParams)) return;
+        ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) toolbar.getLayoutParams();
+        int side = (int) (HEADER_SIDE_MARGIN_DP * toolbar.getResources().getDisplayMetrics().density + .5f);
+        int maxHeight = (int) (HEADER_MAX_HEIGHT_DP * toolbar.getResources().getDisplayMetrics().density + .5f);
+        if (toolbar.getWidth() < 2 * side + maxHeight) return;
+        toolbarSizes.put(toolbar, new ToolbarState(lp));
+        lp.leftMargin += side;
+        lp.rightMargin += side;
+        if (lp.height > maxHeight) lp.height = maxHeight;
+        toolbar.setLayoutParams(lp);
+    }
+
+    private void restoreToolbar(View toolbar) {
+        if (toolbar == null) return;
+        ToolbarState state = toolbarSizes.remove(toolbar);
+        if (state == null || !(toolbar.getLayoutParams() instanceof ViewGroup.MarginLayoutParams)) return;
+        ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) toolbar.getLayoutParams();
+        lp.leftMargin = state.left;
+        lp.rightMargin = state.right;
+        lp.height = state.height;
+        toolbar.setLayoutParams(lp);
     }
 
     /** The chats pages: ConversationsContainer, a vertical LinearLayout of search row and list. */
@@ -298,6 +339,9 @@ final class HomeGlassChrome {
             list.setPadding(list.getPaddingLeft(), state.paddingTop, list.getPaddingRight(), list.getPaddingBottom());
             ((ViewGroup) list).setClipToPadding(state.clipToPadding);
             lists.remove(list);
+        }
+        for (View toolbar : new ArrayList<>(toolbarSizes.keySet())) {
+            if (toolbar != null && toolbar.getRootView() == root) restoreToolbar(toolbar);
         }
         for (java.util.Map.Entry<View, Float> entry : new ArrayList<>(raised.entrySet())) {
             View search = entry.getKey();
