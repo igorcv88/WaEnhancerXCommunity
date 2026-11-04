@@ -25,10 +25,7 @@ public class HideTabs extends Feature {
     private static final int STATUS_TAB_ID = 300;
     private Object mTabPagerInstance;
 
-    /**
-     * Original ordered tab IDs, built by recording each tab as it's added to the
-     * bottom-nav menu. The index here == ViewPager child position.
-     */
+    /** Native bottom-menu IDs. This snapshot can omit a subsequently injected Groups tab. */
     private final ArrayList<Integer> originalTabs = new ArrayList<>();
     
     /**
@@ -77,7 +74,8 @@ public class HideTabs extends Feature {
                 Object result = param.getResult();
                 if (result instanceof ArrayList) {
                     var tabs = (ArrayList<Integer>) result;
-                    // Sync originalTabs in case OnTabItemAddMethod hasn't fired yet
+                    // Keep the menu-order snapshot only as a fallback. The tab producer
+                    // can insert Groups after this hook, so it must not own pager indices.
                     synchronized (originalTabs) {
                         if (originalTabs.isEmpty()) {
                             originalTabs.addAll(tabs);
@@ -165,7 +163,7 @@ public class HideTabs extends Feature {
         });
 
         // Intercepts ViewPager scroll settlement (both swipe AND bottom-nav tap).
-        // Redirects away from hidden-tab positions using the originalTabs mapping.
+        // Only redirect when a current tab list agrees with the real adapter count.
         var onMenuItemSelected = Unobfuscator.loadOnMenuItemSelected(classLoader);
         XposedBridge.hookMethod(onMenuItemSelected, new XC_MethodHook() {
             @Override
@@ -174,7 +172,8 @@ public class HideTabs extends Feature {
                 if (param.thisObject == mTabPagerInstance) {
                     var index = (int) param.args[0];
                     var idxAtual = (int) XposedHelpers.callMethod(param.thisObject, "getCurrentItem");
-                    int newIndex = getNewTabIndex(hideTabsList, idxAtual, index);
+                    List<Integer> order = pagerOrder(param.thisObject);
+                    int newIndex = HomeTabSelection.target(order, hideTabsList, idxAtual, index);
                     param.args[0] = newIndex;
                 }
                 PerfLogger.end("HideTabs.onMenuItemSelected", perfStart, 1);
@@ -192,7 +191,7 @@ public class HideTabs extends Feature {
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                         if (param.thisObject != mTabPagerInstance) return;
                         int index = (int) param.args[1];
-                        int tabId = getTabIdAt(index);
+                        int tabId = getTabIdAt(param.thisObject, index);
                         if (tabId != -1 && hideTabsList.contains(tabId)) {
                             ((View) param.args[0]).setVisibility(View.GONE);
                         }
@@ -207,8 +206,8 @@ public class HideTabs extends Feature {
     }
 
     /**
-     * Returns the correct ViewPager target index, skipping any hidden-tab positions.
-     * Recursively steps away from the hidden position until a visible tab is found.
+     * Legacy entry point retained for callers that pass the original ordered menu.
+     * The ViewPager hook above must use its validated live adapter order instead.
      */
     public int getNewTabIndex(List<?> hidetabs, int indexAtual, int index) {
         ArrayList<Integer> tabsSnapshot;
@@ -217,30 +216,27 @@ public class HideTabs extends Feature {
             tabsSnapshot = new ArrayList<>(originalTabs);
         }
 
-        if (index < 0 || index >= tabsSnapshot.size()) return index;
-        if (!hidetabs.contains(tabsSnapshot.get(index))) return index;
-
-        // Step away from the hidden position in the direction of travel.
-        int newIndex = index > indexAtual ? index + 1 : index - 1;
-        if (newIndex < 0) return 0;
-        if (newIndex >= tabsSnapshot.size()) return indexAtual;
-        return getNewTabIndex(hidetabs, indexAtual, newIndex);
+        return HomeTabSelection.target(tabsSnapshot, hidetabs, indexAtual, index);
     }
 
-    private int getTabIdAt(int index) {
-        synchronized (activeTabs) {
-            if (!activeTabs.isEmpty()) {
-                if (index >= 0 && index < activeTabs.size()) {
-                    return activeTabs.get(index);
-                }
-                return -1;
-            }
-        }
+    private List<Integer> pagerOrder(Object pager) {
+        int count = -1;
+        try {
+            Object adapter = XposedHelpers.callMethod(pager, "getAdapter");
+            if (adapter != null) count = (int) XposedHelpers.callMethod(adapter, "getCount");
+        } catch (Throwable ignored) { }
+        ArrayList<Integer> adapterSnapshot;
+        ArrayList<Integer> menuSnapshot;
+        synchronized (activeTabs) { adapterSnapshot = new ArrayList<>(activeTabs); }
         synchronized (originalTabs) {
-            if (index >= 0 && index < originalTabs.size()) {
-                return originalTabs.get(index);
-            }
+            menuSnapshot = new ArrayList<>(originalTabs);
         }
-        return -1;
+        return HomeTabSelection.currentOrder(count, prefs.getBoolean("separategroups", false),
+                new ArrayList<>(SeparateGroup.tabs), adapterSnapshot, menuSnapshot);
+    }
+
+    private int getTabIdAt(Object pager, int index) {
+        List<Integer> order = pagerOrder(pager);
+        return index >= 0 && index < order.size() ? order.get(index) : -1;
     }
 }

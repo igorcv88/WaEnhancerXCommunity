@@ -1070,7 +1070,10 @@ public class FloatingBottomBar extends Feature {
                 if (fab.getVisibility() != View.GONE) fab.setVisibility(View.GONE);
                 return false;
             }
-            if (fab.getVisibility() == View.GONE) fab.setVisibility(View.VISIBLE);
+            // GONE/INVISIBLE is the WhatsApp page owner's decision (notably Calls' FAB
+            // after navigating away). Re-showing it here leaked "Start a call" into Chats.
+            if (!HomeSurfacePolicy.mayStyleFab(fab.getVisibility() == View.VISIBLE))
+                return false;
 
             float density = fab.getResources().getDisplayMetrics().density;
             // Rebuilding the minimal background on every layout pass would allocate a drawable
