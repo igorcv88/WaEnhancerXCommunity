@@ -8,9 +8,11 @@ import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -42,6 +44,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
@@ -57,6 +60,7 @@ final class HomeInlineSearch {
     private static final int ANIMATION_MS = 190;
     private static final int QUERY_DEBOUNCE_MS = 90;
     private static final int SEARCH_GAP_DP = 8;
+    private static final String TRACE_TAG = "WAEX/HomeInlineSearch";
 
     private final ClassLoader loader;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -64,9 +68,10 @@ final class HomeInlineSearch {
     private final WeakHashMap<Activity, ActivityState> activities = new WeakHashMap<>();
     private final int searchId;
     private final int innerId;
-    private final int nativeTextId;
     private final int menuId;
     private final AtomicBoolean filterErrorReported = new AtomicBoolean();
+    private final AtomicBoolean filterSeen = new AtomicBoolean();
+    private final AtomicInteger traceBudget = new AtomicInteger(45);
     private volatile String query = "";
     private Runnable pendingFilter;
 
@@ -74,7 +79,6 @@ final class HomeInlineSearch {
         this.loader = loader;
         this.searchId = Utils.getID("my_search_bar", "id");
         this.innerId = Utils.getID("search_bar_inner_layout", "id");
-        this.nativeTextId = Utils.getID("search_text", "id");
         this.menuId = Utils.getID("menuitem_search", "id");
     }
 
@@ -107,29 +111,70 @@ final class HomeInlineSearch {
                     Filter filter = (Filter) param.thisObject;
                     filters.put(filter, param.args[0] instanceof CharSequence
                             ? param.args[0].toString() : "");
+                    if (filterSeen.compareAndSet(false, true)) {
+                        trace("native-filter-seen", "class=" + filter.getClass().getName());
+                    }
                     String requested = query;
                     if (requested.isEmpty()) return;
                     Object result = param.getResult();
                     Object values;
                     try { values = XposedHelpers.getObjectField(result, "values"); }
                     catch (Throwable ignored) { return; }
-                    if (!(values instanceof List<?>)) return;
+                    if (!(values instanceof List<?>)) {
+                        trace("filter-result-type", "values=" + (values == null ? "null" : values.getClass().getName()));
+                        return;
+                    }
                     List<?> rows = (List<?>) values;
-                    if (!hasChatRows(rows)) return; // Unknown WhatsApp layout: leave results native.
+                    if (!hasChatRows(rows)) {
+                        trace("filter-without-chat-rows", "queryLength=" + requested.length()
+                                + " rows=" + rows.size()
+                                + " firstType=" + (rows.isEmpty() || rows.get(0) == null
+                                ? "none" : rows.get(0).getClass().getName()));
+                        return; // Unknown WhatsApp layout: leave results native.
+                    }
                     List<Object> matching = new ArrayList<>(rows.size());
                     Map<String, String> titles = new HashMap<>();
+                    int chatRows = 0;
+                    int matchedChats = 0;
                     for (Object row : rows) {
                         Object jid = chatJid(row);
-                        if (jid == null || matches(jid, requested, titles)) {
+                        if (jid != null) chatRows++;
+                        boolean accepted = jid == null || matches(jid, requested, titles);
+                        if (jid != null && accepted) matchedChats++;
+                        if (accepted) {
                             matching.add(row); // Keep native non-chat headers and separators.
                         }
                     }
                     XposedHelpers.setObjectField(result, "values", matching);
                     XposedHelpers.setIntField(result, "count", matching.size());
+                    long namesAvailable = titles.values().stream()
+                            .filter(name -> name != null && !name.isEmpty()
+                                    && !"Whatsapp Contact".equals(name)).count();
+                    trace("filter-applied", "queryLength=" + requested.length()
+                            + " numeric=" + requested.trim().matches("[+() 0-9-]+")
+                            + " inputRows=" + rows.size() + " jidRows=" + chatRows
+                            + " matchedChats=" + matchedChats + " nameLookups=" + titles.size()
+                            + " namesAvailable=" + namesAvailable + " outputRows=" + matching.size());
                     } catch (Throwable error) {
+                        trace("filter-error", "type=" + error.getClass().getName());
                         if (filterErrorReported.compareAndSet(false, true)) {
                             XposedBridge.log("[WAEX/HomeInlineSearch] native filter left untouched: " + error);
                         }
+                    }
+                }
+            });
+            // A native filtering pass is not proof that the visible adapter accepted its rows.
+            // This hook records the publication boundary without inspecting contact data.
+            XposedBridge.hookMethod(publish, new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam param) {
+                    if (query.isEmpty() || param.args.length < 2 || param.args[1] == null) return;
+                    try {
+                        Object values = XposedHelpers.getObjectField(param.args[1], "values");
+                        trace("native-results-publish", "queryLength=" + query.length()
+                                + " resultType=" + (values == null ? "null" : values.getClass().getName())
+                                + " resultRows=" + (values instanceof List<?> ? ((List<?>) values).size() : -1));
+                    } catch (Throwable error) {
+                        trace("publish-inspection-error", "type=" + error.getClass().getName());
                     }
                 }
             });
@@ -163,7 +208,7 @@ final class HomeInlineSearch {
                     if (item == null) return;
                     item.setVisible(true);
                     Activity activity = (Activity) param.thisObject;
-                    item.setOnMenuItemClickListener(clicked -> expand(activity));
+                    item.setOnMenuItemClickListener(clicked -> toggle(activity));
                 }
             });
             Method selected = declared(home, "onOptionsItemSelected", MenuItem.class);
@@ -172,7 +217,7 @@ final class HomeInlineSearch {
                     @Override protected void beforeHookedMethod(MethodHookParam param) {
                         if (!(param.thisObject instanceof Activity) || !(param.args[0] instanceof MenuItem)) return;
                         if (((MenuItem) param.args[0]).getItemId() == menuId
-                                && expand((Activity) param.thisObject)) param.setResult(true);
+                                && toggle((Activity) param.thisObject)) param.setResult(true);
                     }
                 });
             }
@@ -181,6 +226,13 @@ final class HomeInlineSearch {
         } catch (Throwable t) {
             XposedBridge.log("[WAEX/HomeInlineSearch] compatibility unavailable; native search retained: " + t);
             return false;
+        }
+    }
+
+    private void trace(String event, String metadata) {
+        if (traceBudget.getAndDecrement() > 0) {
+            // Counts, class names and UI state only. Never log queries, names or JIDs.
+            Log.i(TRACE_TAG, event + " " + metadata);
         }
     }
 
@@ -276,11 +328,15 @@ final class HomeInlineSearch {
             if (state.rows.containsKey(nativeRow) || !(nativeRow instanceof FrameLayout)) continue;
             View inner = nativeRow.findViewById(innerId);
             if (inner == null || !inner.isAttachedToWindow()) continue;
-            SearchRow row = new SearchRow((FrameLayout) nativeRow, inner, nativeTextId);
+            SearchRow row = new SearchRow((FrameLayout) nativeRow, inner);
             state.rows.put(nativeRow, row);
             row.configure();
+            trace("pill-bound", "nativeTextCount=" + row.countNativeText());
         }
-        if (state.active != null) state.active.positionEditor();
+        if (state.active != null) {
+            state.active.positionEditor();
+            state.active.hideNativePlaceholders();
+        }
     }
 
     private void collect(View view, List<View> found, int depth) {
@@ -295,7 +351,7 @@ final class HomeInlineSearch {
     }
 
     /** Returns false if native search must handle the click because no supported pill is present. */
-    private boolean expand(Activity activity) {
+    private boolean toggle(Activity activity) {
         ActivityState state = activities.get(activity);
         if (state == null) {
             attach(activity);
@@ -303,12 +359,20 @@ final class HomeInlineSearch {
         }
         if (state == null) return false;
         scan(state);
+        long now = SystemClock.uptimeMillis();
+        // A single action can traverse both MenuItemClickListener and onOptionsItemSelected.
+        // Consume that second dispatch without reversing the first toggle.
+        if (HomeSearchActionPolicy.isDuplicate(now, state.lastActionAt)) return true;
         if (state.active != null) {
-            focus(state.active.editor);
+            state.lastActionAt = now;
+            trace("icon-toggle", "state=close");
+            collapse(state, true);
             return true;
         }
         SearchRow target = visibleRow(state);
         if (target == null) return false;
+        state.lastActionAt = now;
+        trace("icon-toggle", "state=open");
         state.active = target;
         target.row.animate().cancel();
         target.row.setVisibility(View.VISIBLE);
@@ -317,7 +381,7 @@ final class HomeInlineSearch {
         target.row.setAlpha(0f);
         target.row.setTranslationY(-dp(activity, 7));
         target.row.animate().alpha(1f).translationY(0).setDuration(ANIMATION_MS).start();
-        if (target.nativeLabel != null) target.nativeLabel.setAlpha(0f);
+        target.startPlaceholderGuard();
         target.editor.setVisibility(View.VISIBLE);
         focus(target.editor);
         registerBack(state);
@@ -359,7 +423,9 @@ final class HomeInlineSearch {
         if (keyboard != null) keyboard.hideSoftInputFromWindow(target.editor.getWindowToken(), 0);
         target.editor.clearFocus();
         target.editor.setText("");
-        if (target.nativeLabel != null) target.nativeLabel.setAlpha(1f);
+        target.editor.setVisibility(View.GONE);
+        target.stopPlaceholderGuard();
+        target.restoreNativePlaceholders();
         if (animate) {
             target.row.animate().cancel();
             target.row.animate().alpha(0f).translationY(-dp(state.activity, 7))
@@ -380,6 +446,7 @@ final class HomeInlineSearch {
         pendingFilter = () -> {
             Map<Filter, CharSequence> snapshot;
             synchronized (filters) { snapshot = new HashMap<>(filters); }
+            trace("query-refresh", "queryLength=" + query.length() + " filterCount=" + snapshot.size());
             for (Map.Entry<Filter, CharSequence> item : snapshot.entrySet()) {
                 try { item.getKey().filter(item.getValue()); }
                 catch (Throwable ignored) { /* Unknown native filter: leave its list intact. */ }
@@ -439,6 +506,7 @@ final class HomeInlineSearch {
         ViewTreeObserver.OnGlobalLayoutListener layoutListener;
         SearchRow active;
         boolean scheduled;
+        long lastActionAt = -1;
         android.window.OnBackInvokedCallback back;
 
         ActivityState(Activity activity, View root) {
@@ -450,16 +518,15 @@ final class HomeInlineSearch {
     private final class SearchRow {
         final FrameLayout row;
         final View inner;
-        final View nativeLabel;
         final View touchGuard;
         final EditText editor;
         final int nativeMargin;
+        final WeakHashMap<TextView, NativeTextState> nativeText = new WeakHashMap<>();
+        ViewTreeObserver.OnPreDrawListener placeholderGuard;
 
-        SearchRow(FrameLayout row, View inner, int textId) {
+        SearchRow(FrameLayout row, View inner) {
             this.row = row;
             this.inner = inner;
-            View text = textId > 0 ? row.findViewById(textId) : null;
-            this.nativeLabel = text;
             this.touchGuard = new View(row.getContext());
             this.editor = new EditText(row.getContext());
             this.nativeMargin = row.getLayoutParams() instanceof ViewGroup.MarginLayoutParams
@@ -533,9 +600,70 @@ final class HomeInlineSearch {
             }
         }
 
+        void startPlaceholderGuard() {
+            hideNativePlaceholders();
+            if (placeholderGuard != null) return;
+            placeholderGuard = () -> {
+                if (row.getVisibility() == View.VISIBLE) hideNativePlaceholders();
+                return true;
+            };
+            row.getViewTreeObserver().addOnPreDrawListener(placeholderGuard);
+        }
+
+        void stopPlaceholderGuard() {
+            if (placeholderGuard == null) return;
+            if (row.getViewTreeObserver().isAlive()) {
+                row.getViewTreeObserver().removeOnPreDrawListener(placeholderGuard);
+            }
+            placeholderGuard = null;
+        }
+
+        void hideNativePlaceholders() {
+            List<TextView> labels = new ArrayList<>();
+            findNativeText(inner, labels, 0);
+            for (TextView label : labels) {
+                if (label == editor || label.getVisibility() == View.GONE) continue;
+                if (!nativeText.containsKey(label)) {
+                    if (label.getVisibility() != View.VISIBLE) continue;
+                    nativeText.put(label, new NativeTextState(label));
+                }
+                if (label.getVisibility() != View.INVISIBLE) label.setVisibility(View.INVISIBLE);
+                if (label.getAlpha() != 0f) label.setAlpha(0f);
+            }
+        }
+
+        int countNativeText() {
+            List<TextView> labels = new ArrayList<>();
+            findNativeText(inner, labels, 0);
+            return labels.size();
+        }
+
+        void restoreNativePlaceholders() {
+            for (Map.Entry<TextView, NativeTextState> entry : new ArrayList<>(nativeText.entrySet())) {
+                TextView label = entry.getKey();
+                if (label == null) continue;
+                NativeTextState old = entry.getValue();
+                // A native removal must win; never resurrect a WhatsApp-hidden label.
+                if (label.getVisibility() != View.GONE) label.setVisibility(old.visibility);
+                label.setAlpha(old.alpha);
+            }
+            nativeText.clear();
+        }
+
+        private void findNativeText(View node, List<TextView> labels, int depth) {
+            if (depth > 6) return;
+            if (node instanceof TextView) labels.add((TextView) node);
+            if (!(node instanceof ViewGroup)) return;
+            ViewGroup group = (ViewGroup) node;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                findNativeText(group.getChildAt(i), labels, depth + 1);
+            }
+        }
+
         void restore() {
             row.animate().cancel();
-            if (nativeLabel != null) nativeLabel.setAlpha(1f);
+            stopPlaceholderGuard();
+            restoreNativePlaceholders();
             row.removeView(editor);
             row.removeView(touchGuard);
             if (row.getLayoutParams() instanceof ViewGroup.MarginLayoutParams) {
@@ -543,6 +671,16 @@ final class HomeInlineSearch {
                 lp.topMargin = nativeMargin;
                 row.setLayoutParams(lp);
             }
+        }
+    }
+
+    private static final class NativeTextState {
+        final int visibility;
+        final float alpha;
+
+        NativeTextState(TextView view) {
+            visibility = view.getVisibility();
+            alpha = view.getAlpha();
         }
     }
 
