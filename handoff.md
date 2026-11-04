@@ -1715,3 +1715,21 @@ Device next: open a chat with replies, scroll for at least 10 s (past two `FREQU
 - `colour_spans` > 0 with grey on screen: strip or neutralise colour spans on glass rows.
 - `CONTRAST_NATIVE` lines during the flicker: the row loses glass for longer than the 500 ms hold; look at `LOST` reasons.
 - `ours=false` without either: an unhooked colour path.
+
+### Glass-row colours enforced at draw time — 2026-11-04
+
+Branch `ccr-a55049bc-m310s8` restarted from `master@e3bdd0b` (#148 merged); PR [#149](https://github.com/igorcv88/WaEnhancerXCommunity/pull/149).
+
+Owner on #148: the coloured glass is right ("a cor ficou linda"); replies and voice notes still alternate, now white while scrolling and grey once scrolling stops. Trace `FREQUENCY`: `reasserted_text=1 contrast_held=0 contrast_restored=0 contrast_fresh=797 contrast_in_draw=1231` (over glass=1231).
+- held/restored 0: the module never put the native colour back, so #147's single-native-recording theory was wrong.
+- fresh ≈ 65% of glass recordings: in rows that already had glass colours, the watched views were new instances. WhatsApp replaces them.
+- Mechanism (inferred from the counters and HWUI; not traced view by view): while scrolling, rows re-record, and the in-draw tint (#147) paints each new view white. At rest, a view WhatsApp swaps in is recorded by its own parent sub-tree. The row's display list only references that node, so the row draw hook never runs and the new view keeps WhatsApp's grey.
+- `QUOTE_STATE`/`ICON_STATE` lines are absent although the inspector forwards `BUBBLE_*` reasons. Either the build predates commit b85f590 (pushed one minute before #148 merged), or the posted pass did not reach them. Not settled.
+
+Change: `installContrastGuards` also hooks `TextView.onDraw` and `ImageView.onDraw` (before). The ids are resolved once (`DRAW_WATCH`); on a match, a parent walk (≤ 12 levels) looks for a row in `rowsWithGlassContrast`, and `Session.enforceAtDraw` applies the same colours as `syncContrast` (voice-only ids require a voice row; `call_log_subtitle` requires a call row). An already-held view returns on an identity check. The work runs under `applyingContrast`. New counter `contrast_at_draw`.
+
+Cost: one Xposed callback plus an id compare per TextView/ImageView recording app-wide; a parent walk only for the six ids. At rest, display lists are reused and no recording happens.
+
+Validation: debug compile; 670 tests, 0 failures (new `replacedContentViewsGetTheGlassColourBeforeTheyDraw`); `tools/test_bubble_lifecycle.py` passes. Not validated on device.
+
+Device next: scroll, stop, and wait in a chat with replies and voice notes; the colours should stay white at rest. A rising `contrast_at_draw` confirms the replaced-view path. If grey persists with `contrast_at_draw` rising, the colour is inside the text (spans): check `QUOTE_STATE colour_spans`.

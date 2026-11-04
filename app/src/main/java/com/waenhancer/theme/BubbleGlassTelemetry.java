@@ -86,18 +86,19 @@ public final class BubbleGlassTelemetry {
         if (kind == 0) reassertedText++; else if (kind == 1) reassertedIcon++; else reassertedLayer++;
     }
 
-    private static long contrastHeld, contrastRestored, contrastFresh, contrastInDraw;
+    private static long contrastHeld, contrastRestored, contrastFresh, contrastInDraw, contrastAtDraw;
 
     /**
      * Glass-row contrast transitions (UI thread). 0 held: a row without glass in its latest
      * recording kept the glass colours inside the hold window; 1 restored: native colours put
      * back after the hold; 2 fresh: a view tinted for the first time in a row that already had
      * glass colours (WhatsApp replaced the view); 3 in-draw: tints applied inside the glass
-     * recording itself.
+     * recording itself; 4 at-draw: a watched view was about to draw without the glass colour
+     * (a replaced view recorded by its own sub-tree) and got it in place.
      */
     public static void contrast(int kind) {
         if (kind == 0) contrastHeld++; else if (kind == 1) contrastRestored++;
-        else if (kind == 2) contrastFresh++; else contrastInDraw++;
+        else if (kind == 2) contrastFresh++; else if (kind == 3) contrastInDraw++; else contrastAtDraw++;
     }
 
     /** A colour filter set on a managed icon: it overrides the tint, so it is evidence. */
@@ -174,9 +175,10 @@ public final class BubbleGlassTelemetry {
         if (reassertedText + reassertedIcon + reassertedLayer > 0)
             out.append(" reasserted_text=").append(reassertedText).append(" reasserted_icon=").append(reassertedIcon)
                     .append(" reasserted_layer=").append(reassertedLayer);
-        if (contrastHeld + contrastRestored + contrastFresh + contrastInDraw > 0)
+        if (contrastHeld + contrastRestored + contrastFresh + contrastInDraw + contrastAtDraw > 0)
             out.append(" contrast_held=").append(contrastHeld).append(" contrast_restored=").append(contrastRestored)
-                    .append(" contrast_fresh=").append(contrastFresh).append(" contrast_in_draw=").append(contrastInDraw);
+                    .append(" contrast_fresh=").append(contrastFresh).append(" contrast_in_draw=").append(contrastInDraw)
+                    .append(" contrast_at_draw=").append(contrastAtDraw);
         log("FREQUENCY", out.toString());
     }
 
