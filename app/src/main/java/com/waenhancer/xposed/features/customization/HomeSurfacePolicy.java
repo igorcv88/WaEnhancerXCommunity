@@ -9,6 +9,11 @@ public final class HomeSurfacePolicy {
         return nativeVisible;
     }
 
+    /** Only the positively resolved secondary FAB is an unwanted home-screen control. */
+    public static boolean isSecondaryFab(int viewId, int secondaryFabId) {
+        return secondaryFabId > 0 && viewId == secondaryFabId;
+    }
+
     /** A newly visible search bar must acquire a live backdrop on its first frame. */
     public static boolean captureNewSearch(boolean search, boolean eligible,
                                            boolean wasVisible, boolean mayCapture) {
