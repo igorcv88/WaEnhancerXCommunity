@@ -2,11 +2,11 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Home tabs, search glass and Calls FAB — 2026-11-04 (local, awaiting publication)
+## Home tabs, search glass and Calls FAB — 2026-11-04 (PR #150, review-ready)
 
 Request: a focused review-ready PR for three home-screen issues on Galaxy S25 Ultra / WhatsApp: a rare Groups page that becomes visible while dragging but is skipped when the finger is released (only a WhatsApp restart clears it); Calls' native "Start a call" FAB leaking into other tabs; and the search bar occasionally presenting transparent, without its live glass. The user supplied element-inspector metadata and `WAEX_HOME_GLASS.txt`; no message or contact contents were needed. This is a lifecycle/routing change, not a redesign or an Action workflow change.
 
-Baseline: `master@54130dd` (merge #149). Local branch `fix/home-tabs-search-fab-lifecycle-20261104`, local implementation commit `3d34725`. **Not pushed or opened as a PR:** publication to `github.com/igorcv88/WaEnhancerXCommunity` was explicitly blocked by an approval restriction; obtain the user's repository-specific permission before uploading source. Do not use another upload route to bypass it.
+Baseline: `master@54130dd` (merge #149). [PR #150](https://github.com/igorcv88/WaEnhancerXCommunity/pull/150), branch `fix/home-tabs-search-fab-lifecycle-20261104`, review-ready, not merged. The user explicitly approved source publication to this repository after the initial permission check.
 
 - `FloatingBottomBar.decorateFab()` previously forced every discovered FAB from `GONE` to `VISIBLE`, even if its Calls-page owner intentionally hid it after navigation. Styling and scroll animations now respect native visibility; the user's explicitly selected Hidden mode still hides FABs globally. This is a source-backed cause for the leak, pending device confirmation.
 - `AppLiquidGlass.Session` now tracks only already-discovered SEARCH hosts in a weak set. `onPreDraw()` reconciles their background when WhatsApp replaces it without issuing a layout callback, and a newly visible SEARCH binding requests an immediate fresh capture. Search visibility transitions and activity resume reset stale visibility state. It preserves the transparent-only behavior when live pixels cannot be safely recorded; no tinted/static fallback and no per-frame whole-view tree scan. The supplied trace observed SEARCH transitions through `PRESENTING_TRANSPARENT` / `INTENTIONALLY_RELEASED` before returning to LIVE, but does not prove a single root cause.
@@ -14,7 +14,7 @@ Baseline: `master@54130dd` (merge #149). Local branch `fix/home-tabs-search-fab-
 
 Validation: `git diff --cached --check` passed before the implementation commit. `./gradlew :app:testWhatsappDebugUnitTest --offline --no-daemon` could not run because Gradle 8.14.5 was not cached and this environment cannot reach `services.gradle.org`; `javac` is also not installed. No APK or device validation; no workflow was dispatched.
 
-Next steps after repository-specific permission: publish the branch, add this handoff to the PR, open a non-draft PR targeting `master`, then test native Calls-FAB dismissal across all tab transitions; search glass in repeated foreground/background and tab-return scenarios; and the rare Groups skip over an extended session with Hide Tabs / Separate Groups enabled. Do not claim the Groups defect fully solved without a device repro and confirmation.
+Next steps: test native Calls-FAB dismissal across all tab transitions; search glass in repeated foreground/background and tab-return scenarios; and the rare Groups skip over an extended session with Hide Tabs / Separate Groups enabled. Do not claim the Groups defect fully solved without a device repro and confirmation. Do not merge or dispatch GitHub Actions without user instruction.
 
 ## Upstream porting pass — 2026-11-01
 
