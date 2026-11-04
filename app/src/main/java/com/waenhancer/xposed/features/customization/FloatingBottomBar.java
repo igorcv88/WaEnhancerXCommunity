@@ -849,6 +849,10 @@ public class FloatingBottomBar extends Feature {
             });
 
             // 5. Style the FABs so they float above the pill in the mode the user picked.
+            // The stock secondary FAB can surface as an inert dial pad on Groups after a
+            // Chats/Calls swipe. It has no role with this floating home navigation, regardless
+            // of the user's styling choice for the primary FAB.
+            keepSecondaryFabHidden(rootLayout);
             if ("hidden".equals(fabMode)) keepFabsHidden(rootLayout);
             rootLayout.postDelayed(() -> {
                 try {
@@ -1095,6 +1099,47 @@ public class FloatingBottomBar extends Feature {
 
     /** Roots that already enforce the Hidden FAB mode after every layout pass. */
     private static final WeakHashMap<View, Boolean> fabHiders = new WeakHashMap<>();
+
+    /** Home windows with an observer that suppresses the unwanted fab_second by resource ID. */
+    private static final WeakHashMap<View, Boolean> secondaryFabHiders = new WeakHashMap<>();
+
+    /**
+     * A one-shot GONE does not survive WhatsApp showing or recreating fab_second on a page
+     * transition. Reconcile its visibility after home layouts, before the frame is drawn.
+     * Scope the observer to this home window and the exact resource ID: the primary Calls FAB
+     * and every other FAB keep their native lifecycle and selected styling.
+     */
+    private static void keepSecondaryFabHidden(ViewGroup root) {
+        View window = root.getRootView();
+        if (!(window instanceof ViewGroup) || secondaryFabHiders.containsKey(window)) return;
+        final int secondaryFabId = window.getResources().getIdentifier(
+                "fab_second", "id", window.getContext().getPackageName());
+        if (secondaryFabId <= 0) return;
+
+        secondaryFabHiders.put(window, true);
+        final ViewGroup windowRoot = (ViewGroup) window;
+        // Hide an already-inflated control immediately as well as subsequent replacements.
+        hideSecondaryFabViews(windowRoot, secondaryFabId);
+        windowRoot.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
+            try {
+                hideSecondaryFabViews(windowRoot, secondaryFabId);
+            } catch (Throwable ignored) {
+                // Cosmetic home-screen policy only.
+            }
+        });
+    }
+
+    private static void hideSecondaryFabViews(View view, int secondaryFabId) {
+        if (HomeSurfacePolicy.isSecondaryFab(view.getId(), secondaryFabId)) {
+            if (view.getVisibility() != View.GONE) view.setVisibility(View.GONE);
+            return;
+        }
+        if (!(view instanceof ViewGroup)) return;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            hideSecondaryFabViews(group.getChildAt(i), secondaryFabId);
+        }
+    }
 
     /**
      * Hidden mode, enforced after every layout pass of the home screen. The other hooks only hid

@@ -11,6 +11,13 @@ public class HomeSurfacePolicyTest {
         assertFalse(HomeSurfacePolicy.mayStyleFab(false));
     }
 
+    @Test public void onlyTheResolvedSecondaryFabIsSuppressed() {
+        assertTrue(HomeSurfacePolicy.isSecondaryFab(42, 42));
+        assertFalse(HomeSurfacePolicy.isSecondaryFab(41, 42));
+        assertFalse(HomeSurfacePolicy.isSecondaryFab(42, 0));
+        assertFalse(HomeSurfacePolicy.isSecondaryFab(-1, -1));
+    }
+
     @Test public void newlyVisibleSearchRequestsOneFreshFrame() {
         assertTrue(HomeSurfacePolicy.captureNewSearch(true, true, false, true));
         assertFalse(HomeSurfacePolicy.captureNewSearch(true, true, true, true));
