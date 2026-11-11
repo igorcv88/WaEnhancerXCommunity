@@ -121,6 +121,8 @@ public class BubbleGlassStabilityTest {
         String source = read(SOURCE);
         int look = source.indexOf("desiredLook=usable && capture.contentKey!=null");
         int provisional = source.indexOf("if (texture==null && desiredLook!=null)");
+        assertTrue("the first usable look reports cache eligibility without exposing pixels",
+                source.contains("BUBBLE_FIRST_LOOK_ROUTE") && source.contains("firstLookRouteReported"));
         assertTrue("cached texture may be reused only after matching this wallpaper's look",
                 look > 0 && provisional > look && source.contains("desiredLook.equals(lastLook)")
                         && source.contains("desiredLook.equals(stored)"));
