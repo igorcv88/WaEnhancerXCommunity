@@ -98,6 +98,36 @@ public class BubbleGlassStabilityTest {
 
     // --- Opening a chat with a known wallpaper look shows glass at once -------------------
 
+    @Test public void conversationWallpaperPrewarmsBeforeResumeAndFirstDraw() throws IOException {
+        String app = read(APP);
+        int started = app.indexOf("ChangeType.STARTED");
+        int resumed = app.indexOf("ChangeType.RESUMED");
+        assertTrue("conversation prewarm runs before the ordinary resume path", started > 0 && started < resumed);
+        String early = app.substring(started, resumed);
+        assertTrue("only conversation activities use early prewarm",
+                early.contains("\"Conversation\".equals(activity.getClass().getSimpleName())"));
+        assertTrue("early observer is attached before the first global layout",
+                early.indexOf("Session session = watch(decor);") < early.indexOf("session.syncSharedBubbles();"));
+        assertTrue(early.contains("session.resume();"));
+        assertTrue(early.contains("BUBBLE_EARLY_PREWARM"));
+        int init = app.indexOf("public void doHook()");
+        int disk = app.indexOf("prepareBubbleDiskCache();", init);
+        int hooks = app.indexOf("installCaptureGuards();", init);
+        assertTrue("decode of a previously verified wallpaper is queued before hook setup",
+                init < disk && disk < hooks);
+    }
+
+    @Test public void firstFramePrewarmNeverBorrowsAnUnverifiedWallpaper() throws IOException {
+        String source = read(SOURCE);
+        int look = source.indexOf("desiredLook=usable && capture.contentKey!=null");
+        int provisional = source.indexOf("if (texture==null && desiredLook!=null)");
+        assertTrue("cached texture may be reused only after matching this wallpaper's look",
+                look > 0 && provisional > look && source.contains("desiredLook.equals(lastLook)")
+                        && source.contains("desiredLook.equals(stored)"));
+        assertTrue("unavailable texture still falls back to an intact native bubble",
+                read(GLASS).contains("if (texture == null) { waiting.add(host); return lost(host, BubbleGlassTelemetry.Native.NO_TEXTURE); }"));
+    }
+
     // --- Scrolling: cached copies of a factory bubble (device 2026-11-03) ------------------
 
     @Test public void cachedBubbleCopiesAreAdoptedOnlyOnVerifiedRows() throws IOException {
