@@ -135,6 +135,7 @@ public final class AppLiquidGlass extends Feature {
         installTintObserver();
         installContrastGuards();
         installSharedBubbleFactoryHook();
+        installSharedBubbleDateFactoryHook();
         observeRowsEarly();
         prepareBubbleDiskCache();
         XposedBridge.hookAllMethods(Dialog.class, "show", new XC_MethodHook() {
@@ -394,6 +395,23 @@ public final class AppLiquidGlass extends Feature {
      */
     private final Map<Drawable.ConstantState, Integer> bubbleStateSides =
             java.util.Collections.synchronizedMap(new WeakHashMap<>());
+    /** Detached sticker/emoji timestamp backgrounds use a different native factory. */
+    private final Map<Drawable, Integer> dateSides =
+            java.util.Collections.synchronizedMap(new WeakHashMap<>());
+    private final Map<Drawable.ConstantState, Integer> dateStateSides =
+            java.util.Collections.synchronizedMap(new WeakHashMap<>());
+    private int dateWrapperId;
+    private int viewOnceLargeId, viewOnceSmallId;
+    private boolean specialViewIdsResolved;
+
+    private void resolveSpecialViewIds(View view) {
+        if (specialViewIdsResolved) return;
+        String pkg = view.getContext().getPackageName();
+        dateWrapperId = view.getResources().getIdentifier("date_wrapper", "id", pkg);
+        viewOnceLargeId = view.getResources().getIdentifier("view_once_media_container_large", "id", pkg);
+        viewOnceSmallId = view.getResources().getIdentifier("view_once_media_container", "id", pkg);
+        specialViewIdsResolved = true;
+    }
     private final Set<Method> bubbleDrawHooks = new HashSet<>();
     /** Drawable classes seen while the switch was off; hooked once it is turned on. */
     private final Set<Class<?>> pendingBubbleClasses = new HashSet<>();
@@ -428,6 +446,119 @@ public final class AppLiquidGlass extends Feature {
             sharedFactoryAvailable=true;
         } catch (Throwable error) {
             report("shared-bubble-factory","native bubble factory not observable: " + error);
+        }
+    }
+
+    /** Observe the existing timestamp-background factory without replacing its result. */
+    private void installSharedBubbleDateFactoryHook() {
+        if (android.os.Build.VERSION.SDK_INT < 33) return;
+        try {
+            Method method = Unobfuscator.loadBallonDateDrawable(classLoader);
+            Class<?>[] parameters = method.getParameterTypes();
+            if (!Drawable.class.isAssignableFrom(method.getReturnType())
+                    || parameters.length == 0 || parameters[0] != int.class) {
+                report("shared-date-factory", "timestamp background factory signature not verified");
+                return;
+            }
+            XposedBridge.hookMethod(method, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    if (!(param.getResult() instanceof Drawable) || !(param.args[0] instanceof Integer)) return;
+                    Drawable drawable = (Drawable) param.getResult();
+                    int direction = (Integer) param.args[0];
+                    dateSides.put(drawable, direction);
+                    Drawable.ConstantState state = drawable.getConstantState();
+                    if (state != null) {
+                        // A ConstantState shared by both directions cannot identify a copy.
+                        Integer previous = dateStateSides.get(state);
+                        dateStateSides.put(state, previous == null ? direction
+                                : previous == direction ? direction : -1);
+                    }
+                    if (bubbleScopeCache != LiquidGlassSettings.BubbleScope.OFF) hookBubbleDraw(drawable.getClass());
+                    else synchronized (pendingBubbleClasses) { pendingBubbleClasses.add(drawable.getClass()); }
+                }
+            });
+        } catch (Throwable error) {
+            report("shared-date-factory", "timestamp background factory unavailable; date backgrounds remain native: " + error);
+        }
+    }
+
+    /** Only native date_wrapper backgrounds within message rows, never arbitrary nine-patches. */
+    private View detachedDateOwner(Drawable drawable) {
+        if (!(drawable.getCallback() instanceof View)) return null;
+        View owner = (View) drawable.getCallback();
+        resolveSpecialViewIds(owner);
+        if (dateWrapperId == 0 || owner.getId() != dateWrapperId || owner.getBackground() != drawable) return null;
+        for (View ancestor = owner.getParent() instanceof View ? (View) owner.getParent() : null;
+                ancestor != null; ancestor = ancestor.getParent() instanceof View ? (View) ancestor.getParent() : null) {
+            if (messageRow(ancestor)) return owner;
+        }
+        return null;
+    }
+
+    /** The native timestamp drawable is drawn directly in its own view's HWUI recording. */
+    private boolean drawDetachedDate(Drawable drawable, Canvas canvas) {
+        View owner = detachedDateOwner(drawable);
+        if (owner == null) return false;
+        Integer direction = dateSides.get(drawable);
+        if (direction == null && drawable.getConstantState() != null) {
+            direction = dateStateSides.get(drawable.getConstantState());
+            if (direction != null && direction >= 0) dateSides.put(drawable, direction);
+        }
+        Session session = sessionFor(owner.getRootView());
+        if (session != null) session.trackSpecialBubbleHost(owner);
+        if (direction == null || direction < 0 || !sharedFactoryWanted(direction == 3) || session == null) return false;
+        GlassMaterialDrawable.DrawHost previous = GlassMaterialDrawable.enterRowDraw(owner, canvas);
+        try {
+            boolean drawn = session.drawBubble(drawable, canvas, direction == 3);
+            if (drawn) com.waenhancer.diagnostics.InspectorTrace.glassEventOnce(
+                    "detached-date-glass", "host=date_wrapper direction=" + direction);
+            return drawn;
+        } finally {
+            GlassMaterialDrawable.leaveRowDraw(previous);
+        }
+    }
+
+    /** View-once backgrounds paint in their own child RenderNode, outside row-draw scopes. */
+    private View viewOnceBackgroundOwner(Drawable drawable) {
+        if (!(drawable instanceof android.graphics.drawable.NinePatchDrawable)
+                || !(drawable.getCallback() instanceof View)) return null;
+        View owner = (View) drawable.getCallback();
+        resolveSpecialViewIds(owner);
+        if (owner.getId() == 0 || owner.getId() == View.NO_ID
+                || (owner.getId() != viewOnceLargeId && owner.getId() != viewOnceSmallId)
+                || (owner.getBackground() != drawable && owner.getForeground() != drawable)) return null;
+        return owner;
+    }
+
+    /** The view-once pill is a separate nine-patch, not returned by the normal bubble factory. */
+    private boolean drawViewOnceBackground(Drawable drawable, Canvas canvas) {
+        View owner = viewOnceBackgroundOwner(drawable);
+        if (owner == null) return false;
+        // No direction is supplied by the view-once factory. Derive it only when its native
+        // main_layout is clearly anchored to one side of its conversation row.
+        View main = owner;
+        while (main.getParent() instanceof View && !"main_layout".equals(resourceName(main)))
+            main = (View) main.getParent();
+        if (!"main_layout".equals(resourceName(main)) || !(main.getParent() instanceof View)) return false;
+        View row = (View) main.getParent();
+        if (!messageRow(row) || row.getWidth() <= 0) return false;
+        int leftGap = main.getLeft(), rightGap = row.getWidth() - main.getRight();
+        if (Math.abs(leftGap - rightGap) < row.getWidth() / 4) return false;
+        boolean outgoing = (leftGap > rightGap) != (row.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL);
+        Session session = sessionFor(owner.getRootView());
+        if (session == null) return false;
+        session.trackSpecialBubbleHost(owner);
+        if (!sharedFactoryWanted(outgoing)) return false;
+        // This view records its own display list. Establish a host only after its native
+        // callback, resource ID, background identity and message-row placement all agree.
+        GlassMaterialDrawable.DrawHost previous = GlassMaterialDrawable.enterRowDraw(owner, canvas);
+        try {
+            boolean drawn = session.drawBubble(drawable, canvas, outgoing);
+            if (drawn) com.waenhancer.diagnostics.InspectorTrace.glassEventOnce(
+                    "view-once-glass", "host=" + resourceName(owner) + " outgoing=" + outgoing);
+            return drawn;
+        } finally {
+            GlassMaterialDrawable.leaveRowDraw(previous);
         }
     }
 
@@ -489,6 +620,18 @@ public final class AppLiquidGlass extends Feature {
         com.waenhancer.theme.BubbleGlassTelemetry.call();
         if (com.waenhancer.theme.NativeBubbleGlass.nativePass()) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NATIVE_PASS); return; }
         Drawable bubble=(Drawable) param.thisObject;
+        if (param.args.length > 0 && param.args[0] instanceof Canvas) {
+            Canvas canvas = (Canvas) param.args[0];
+            if (GlassPane.isCaptureCanvas(canvas)) return;
+            try {
+                if (drawDetachedDate(bubble, canvas) || drawViewOnceBackground(bubble, canvas)) {
+                    param.setResult(null);
+                    return;
+                }
+            } catch (Throwable error) {
+                report("special-bubble-draw", "special bubble stayed native: " + error);
+            }
+        }
         Integer direction=bubbleSides.get(bubble);
         if (direction==null) direction=adoptBubbleCopy(bubble, param.args.length > 0 ? param.args[0] : null);
         Boolean outgoing=direction==null ? null : direction==3;
@@ -838,8 +981,10 @@ public final class AppLiquidGlass extends Feature {
      * sub-tree, never by the row draw this module hooks, so it kept WhatsApp's grey. Before such
      * a view draws itself inside a row that holds glass colours, the colour is applied in place.
      */
-    static final String[] DRAW_WATCH = {"quoted_text", "description", "date", "call_log_subtitle", "control_btn", "call_type_icon"};
+    static final String[] DRAW_WATCH = {"quoted_text", "description", "date", "call_log_subtitle", "control_btn", "call_type_icon",
+            "view_once_media_type_large", "view_once_media_type", "view_once_control_icon", "status"};
     private int[] drawWatchIds;
+    private int contactStatusId;
 
     private int drawWatchIndex(View view, int id) {
         int[] ids = drawWatchIds;
@@ -855,12 +1000,38 @@ public final class AppLiquidGlass extends Feature {
     }
 
     private void installContrastGuards() {
+        // The view-once ColorDrawable is drawn by View.draw *before* onDraw; a posted sync
+        // leaves one opaque frame when WhatsApp swaps it during a download or a scroll rebind.
+        try {
+            XposedBridge.hookMethod(View.class.getDeclaredMethod("draw", Canvas.class), new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam param) {
+                    if (applyingContrast || sessions.isEmpty()
+                            || android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) return;
+                    View view = (View) param.thisObject;
+                    if (!(view.getBackground() instanceof android.graphics.drawable.ColorDrawable)) return;
+                    resolveSpecialViewIds(view);
+                    View parent = view.getParent() instanceof View ? (View) view.getParent() : null;
+                    int id = view.getId(), parentId = parent == null ? 0 : parent.getId();
+                    if ((id != viewOnceLargeId && id != viewOnceSmallId)
+                            && (parentId != viewOnceLargeId && parentId != viewOnceSmallId)) return;
+                    for (WeakReference<Session> reference : sessions.values()) {
+                        Session session = reference == null ? null : reference.get();
+                        if (session != null && session.prepareViewOnceFillAtDraw(view)) return;
+                    }
+                }
+            });
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
+            report("view-once-draw-missing", "view-once fill guard unavailable: " + error);
+        }
         XC_MethodHook atDraw = new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam param) {
                 if (applyingContrast || sessions.isEmpty()) return;
                 View view = (View) param.thisObject;
                 int id = view.getId();
                 if (id == View.NO_ID || id == 0) return;
+                if (contactStatusId == 0) contactStatusId = view.getResources().getIdentifier(
+                        "conversation_contact_status", "id", view.getContext().getPackageName());
+                if (id == contactStatusId) { conversation.toneConversationStatusAtDraw(view); return; }
                 int which = drawWatchIndex(view, id);
                 if (which < 0 || android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) return;
                 for (WeakReference<Session> reference : sessions.values()) {
@@ -1186,6 +1357,19 @@ public final class AppLiquidGlass extends Feature {
             return null;
         }
 
+        /** Answer the downloaded-media fill in the same recording, including a replaced child. */
+        boolean prepareViewOnceFillAtDraw(View view) {
+            View row = rowsWithGlassContrast.contains(view) ? view : glassContrastRow(view);
+            if (row == null || !(row.getId() == viewOnceLargeId || row.getId() == viewOnceSmallId
+                    || rowChild(row, "view_once_media_container_large") != null
+                    || rowChild(row, "view_once_media_container") != null)) return false;
+            boolean previous = applyingContrast;
+            applyingContrast = true;
+            try { clearFill(view.getBackground(), true); }
+            finally { applyingContrast = previous; }
+            return true;
+        }
+
         /** See {@link AppLiquidGlass#DRAW_WATCH}: called before the view draws itself (UI thread). */
         void enforceAtDraw(View row, View view, String name) {
             if (view instanceof TextView) {
@@ -1207,7 +1391,20 @@ public final class AppLiquidGlass extends Feature {
             try {
                 switch (name) {
                     case "quoted_text": tintText(view, true, secondary); break;
-                    case "description": case "date": if (!voice) return; tintText(view, true, secondary); break;
+                    case "description": if (!voice) return; tintText(view, true, secondary); break;
+                    case "date": if (!voice && row.getId() != dateWrapperId) return;
+                        tintText(view, true, secondary); break;
+                    case "status": if (row.getId() != dateWrapperId || !(view instanceof ImageView)) return;
+                        tintIcon((ImageView) view, true, content | 0xFF000000); break;
+                    case "view_once_media_type_large": case "view_once_media_type":
+                        if (rowChild(row, "view_once_media_container_large") == null
+                                && rowChild(row, "view_once_media_container") == null) return;
+                        tintText(view, true, content | 0xFF000000); break;
+                    case "view_once_control_icon":
+                        if (!(view instanceof ImageView)
+                                || rowChild(row, "view_once_media_container_large") == null
+                                && rowChild(row, "view_once_media_container") == null) return;
+                        tintIcon((ImageView) view, true, content | 0xFF000000); break;
                     case "control_btn": if (!voice || !(view instanceof android.widget.ImageView)) return;
                         tintIcon((android.widget.ImageView) view, true, content | 0xFF000000); break;
                     case "call_type_icon": if (!(view instanceof android.widget.ImageView)) return;
@@ -1231,6 +1428,12 @@ public final class AppLiquidGlass extends Feature {
             int secondary = content | (REPLY_TEXT_ALPHA << 24);
             View quoted = rowChild(row, "quoted_text");
             tintText(quoted, glass, secondary);
+            // Detached sticker/emoji timestamp: the timestamp drawable itself is a glass host.
+            if (row.getId() == dateWrapperId) {
+                tintText(rowChild(row, "date"), glass, secondary);
+                View status = rowChild(row, "status");
+                if (status instanceof ImageView) tintIcon((ImageView) status, glass, content | 0xFF000000);
+            }
             if (glass && !contrastInDraw && quoted instanceof TextView) {
                 android.content.res.ColorStateList[] held = quoteTexts.get(quoted);
                 com.waenhancer.theme.BubbleGlassTelemetry.quoteState((TextView) quoted,
@@ -1283,6 +1486,9 @@ public final class AppLiquidGlass extends Feature {
             }
             if (original == null) {
                 flat.mutate();
+                clearedFills.put(fill, flat.getColor());
+            } else if (flat.getColor() != 0) {
+                // WhatsApp changed this fill while downloading; restore its latest native value.
                 clearedFills.put(fill, flat.getColor());
             }
             if (flat.getColor() != 0) flat.setColor(0);
@@ -1420,6 +1626,11 @@ public final class AppLiquidGlass extends Feature {
         private WeakReference<android.view.Window> activityWindow = new WeakReference<>(null);
         /** Bubble scope + material/optics the observed rows were last recorded with. */
         private String bubbleSettings;
+        /** Child RenderNodes (sticker date and view-once) are not dirtied by row.invalidate(). */
+        private final WeakHashMap<View, Boolean> specialBubbleHosts = new WeakHashMap<>();
+        void trackSpecialBubbleHost(View host) {
+            if (!closed && host != null) specialBubbleHosts.put(host, Boolean.TRUE);
+        }
         /** Wallpaper identity the current bubble texture was planned from. */
         private String textureIdentity;
         private WeakReference<View> sharedWallpaper = new WeakReference<>(null);
@@ -2254,6 +2465,9 @@ public final class AppLiquidGlass extends Feature {
         private void invalidateBubbleRows(View window) {
             for (View row : new ArrayList<>(nativeDrawRows.keySet()))
                 if (row != null && row.isAttachedToWindow() && row.getRootView() == window) row.invalidate();
+            // A parent invalidation can replay a child's old glass RenderNode unchanged.
+            for (View host : new ArrayList<>(specialBubbleHosts.keySet()))
+                if (host != null && host.isAttachedToWindow() && host.getRootView() == window) host.invalidate();
         }
 
         private void syncSharedBubbles() {
@@ -2268,6 +2482,8 @@ public final class AppLiquidGlass extends Feature {
                 if (bubbleScopeCache != LiquidGlassSettings.BubbleScope.OFF)
                     com.waenhancer.theme.BubbleGlassTelemetry.source("off", wallpaper==null ? "no-wallpaper-view"
                             : !com.waenhancer.theme.NativeBubbleGlass.supported() ? "api-or-lens" : "classic-renderer");
+                // A disabled side must not retain a previously recorded sticker/date glass node.
+                if (bubbleGlass != null) invalidateBubbleRows(window);
                 releaseSharedBubbles(); return;
             }
             GlassSpec material=resolvedMaterial();

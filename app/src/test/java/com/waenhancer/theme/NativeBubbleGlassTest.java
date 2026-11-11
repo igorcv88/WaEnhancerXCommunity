@@ -98,6 +98,37 @@ public class NativeBubbleGlassTest {
         assertFalse(app.contains("BubbleGlassDrawable"));
     }
 
+    @Test public void reviewViewOnceOwnsItsDrawScope() throws IOException {
+        String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
+        int owner = app.indexOf("private View viewOnceBackgroundOwner(");
+        int draw = app.indexOf("private boolean drawViewOnceBackground(", owner);
+        int next = app.indexOf("private void hookPendingBubbleClasses()", draw);
+        assertTrue(owner > 0 && draw > owner && next > draw);
+        String gate = app.substring(owner, draw);
+        String path = app.substring(draw, next);
+        assertTrue(gate.contains("drawable.getCallback() instanceof View"));
+        assertTrue(gate.contains("owner.getBackground() != drawable && owner.getForeground() != drawable"));
+        assertTrue(path.contains("if (!messageRow(row)"));
+        assertTrue(path.contains("GlassMaterialDrawable.enterRowDraw(owner, canvas)"));
+        assertTrue(path.contains("GlassMaterialDrawable.leaveRowDraw(previous)"));
+        assertTrue(path.indexOf("if (!sharedFactoryWanted(outgoing))") < path.indexOf("enterRowDraw(owner, canvas)"));
+    }
+
+    @Test public void reviewDetachedHostsAreInvalidatedOnSettingsAndDisable() throws IOException {
+        String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
+        assertTrue(app.contains("session.trackSpecialBubbleHost(owner);"));
+        assertTrue(app.contains("private final WeakHashMap<View, Boolean> specialBubbleHosts"));
+        int start = app.indexOf("private void invalidateBubbleRows(View window)");
+        int end = app.indexOf("private void syncSharedBubbles()", start);
+        String invalidation = app.substring(start, end);
+        assertTrue(invalidation.contains("new ArrayList<>(specialBubbleHosts.keySet())"));
+        assertTrue(invalidation.contains("host.invalidate();"));
+        int sync = app.indexOf("private void syncSharedBubbles()");
+        String body = app.substring(sync, app.indexOf("void wallpaperChanged(View target)", sync));
+        assertTrue(body.contains("if (bubbleGlass != null) invalidateBubbleRows(window);"));
+        assertTrue(body.contains("if (bubbleSettings!=null && !bubbleSettings.equals(settings)) invalidateBubbleRows(window);"));
+    }
+
     @Test public void glassReplacesTheNativeDrawOnlyWhenRecorded() throws IOException {
         String app = read("src/main/java/com/waenhancer/xposed/features/customization/AppLiquidGlass.java");
         int start = app.indexOf("private void drawNativeBubble(");
@@ -259,7 +290,10 @@ public class NativeBubbleGlassTest {
         String hook = app.substring(start, app.indexOf("\n    }\n", start));
         assertTrue(hook.indexOf("BubbleGlassTelemetry.call();") < hook.indexOf("bubbleSides.get(bubble)"));
         assertTrue(hook.contains("Native.NOT_REGISTERED); return; }"));
-        assertEquals("setResult only after a recorded glass draw", 1, hook.split("setResult", -1).length - 1);
+        assertEquals("only the verified special-media and registered bubble paths suppress native draw",
+                2, hook.split("setResult", -1).length - 1);
+        assertTrue(hook.contains("if (drawDetachedDate(bubble, canvas) || drawViewOnceBackground(bubble, canvas)) {"));
+        assertTrue(hook.contains("if (session.drawBubble(bubble, canvas, outgoing)) param.setResult(null);"));
         String t = read("src/main/java/com/waenhancer/theme/BubbleGlassTelemetry.java");
         assertTrue(t.contains("log(\"FREQUENCY\""));
     }

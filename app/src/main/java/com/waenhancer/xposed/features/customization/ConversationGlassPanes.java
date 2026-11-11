@@ -148,6 +148,11 @@ final class ConversationGlassPanes {
         final WeakHashMap<ImageView, ColorStateList> headerAppliedTints = new WeakHashMap<>();
         final WeakHashMap<TextView, ColorStateList> headerCompoundTints = new WeakHashMap<>();
         final WeakHashMap<TextView, ColorStateList> headerAppliedCompound = new WeakHashMap<>();
+        /** The typing/recording subtitle is a native TextEmojiLabel, outside action-icon traversal. */
+        final WeakHashMap<TextView, ColorStateList> headerStatusTexts = new WeakHashMap<>();
+        final WeakHashMap<TextView, ColorStateList> headerStatusApplied = new WeakHashMap<>();
+        final WeakHashMap<TextView, ColorStateList> headerStatusCompounds = new WeakHashMap<>();
+        final WeakHashMap<TextView, ColorStateList> headerStatusCompoundApplied = new WeakHashMap<>();
         final WeakHashMap<ImageView, ColorStateList> appliedInputIconTints = new WeakHashMap<>();
         final WeakHashMap<TextView, ColorStateList> inputTextColors = new WeakHashMap<>(), inputAppliedTextColors = new WeakHashMap<>();
         final WeakHashMap<ImageView, ColorStateList> replyAppliedTints = new WeakHashMap<>();
@@ -711,6 +716,43 @@ final class ConversationGlassPanes {
         if (title == null) return;
         ColorStateList foreground = ColorStateList.valueOf(title.getCurrentTextColor());
         syncHeaderActionTree(screen, toolbar, foreground, 0);
+        View status = findById(toolbar, "conversation_contact_status");
+        if (status instanceof TextView) toneHeaderStatus(screen, (TextView) status, title);
+    }
+
+    /** Reassert the status tint during its own draw when WhatsApp changes typing/audio state. */
+    void toneConversationStatusAtDraw(View view) {
+        if (!(view instanceof TextView)) return;
+        Screen screen = screens.get(view.getRootView());
+        if (screen == null || !screen.headerOn || screen.suspended) return;
+        View holder = screen.holder.get();
+        if (holder == null || !isAncestor(holder, view)) return;
+        View title = findById(holder, "conversation_contact_name");
+        if (title instanceof TextView) toneHeaderStatus(screen, (TextView) view, (TextView) title);
+    }
+
+    private static void toneHeaderStatus(Screen screen, TextView status, TextView title) {
+        if (!status.isShown()) return;
+        int foreground = title.getCurrentTextColor();
+        int color = (foreground & 0x00FFFFFF) | (Math.min(255, Math.round(
+                android.graphics.Color.alpha(foreground) * 0.84f)) << 24);
+        ColorStateList original = status.getTextColors();
+        ColorStateList applied = screen.headerStatusApplied.get(status);
+        if (original != applied || applied == null || applied.getDefaultColor() != color) {
+            if (original != applied) screen.headerStatusTexts.put(status, original);
+            ColorStateList tint = ColorStateList.valueOf(color);
+            status.setTextColor(tint);
+            screen.headerStatusApplied.put(status, tint);
+        }
+        // Some WhatsApp builds attach the typing/recording glyph as a compound drawable.
+        ColorStateList compound = status.getCompoundDrawableTintList();
+        ColorStateList current = screen.headerStatusCompoundApplied.get(status);
+        if (compound != current || current == null || current.getDefaultColor() != color) {
+            if (compound != current) screen.headerStatusCompounds.put(status, compound);
+            ColorStateList tint = ColorStateList.valueOf(color);
+            status.setCompoundDrawableTintList(tint);
+            screen.headerStatusCompoundApplied.put(status, tint);
+        }
     }
 
     private static TextView findTitle(ViewGroup toolbar) {
@@ -789,6 +831,18 @@ final class ConversationGlassPanes {
                 item.setCompoundDrawableTintList(screen.headerCompoundTints.get(item));
         screen.headerCompoundTints.clear();
         screen.headerAppliedCompound.clear();
+        for (TextView status : new ArrayList<>(screen.headerStatusTexts.keySet())) {
+            if (status != null && status.getTextColors() == screen.headerStatusApplied.get(status))
+                status.setTextColor(screen.headerStatusTexts.get(status));
+        }
+        for (TextView status : new ArrayList<>(screen.headerStatusCompounds.keySet())) {
+            if (status != null && status.getCompoundDrawableTintList() == screen.headerStatusCompoundApplied.get(status))
+                status.setCompoundDrawableTintList(screen.headerStatusCompounds.get(status));
+        }
+        screen.headerStatusTexts.clear();
+        screen.headerStatusApplied.clear();
+        screen.headerStatusCompounds.clear();
+        screen.headerStatusCompoundApplied.clear();
     }
 
     /**

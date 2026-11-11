@@ -252,12 +252,12 @@ public class BubbleGlassStabilityTest {
                 guards.contains("@Override protected void beforeHookedMethod(MethodHookParam param) {\n                if (applyingContrast || sessions.isEmpty()) return;"));
         assertTrue("cheap id gate before any lookup", guards.indexOf("int which = drawWatchIndex(view, id);")
                 < guards.indexOf("session.glassContrastRow(view)"));
-        assertTrue(app.contains("static final String[] DRAW_WATCH = {\"quoted_text\", \"description\", \"date\", \"call_log_subtitle\", \"control_btn\", \"call_type_icon\"};"));
+        assertTrue(app.contains("static final String[] DRAW_WATCH = {\"quoted_text\", \"description\", \"date\", \"call_log_subtitle\", \"control_btn\", \"call_type_icon\","));
         int enforce = app.indexOf("void enforceAtDraw(View row, View view, String name)");
         String body = app.substring(enforce, app.indexOf("private void syncContrast(View row)", enforce));
         assertTrue("already white: no write", body.contains("if (state != null && ((TextView) view).getTextColors() == state[1]) return;"));
-        assertTrue("timestamps outside voice rows keep WhatsApp's colour",
-                body.contains("case \"description\": case \"date\": if (!voice) return;"));
+        assertTrue("regular timestamps outside voice rows keep WhatsApp's colour",
+                body.contains("case \"date\": if (!voice && row.getId() != dateWrapperId) return;"));
         assertTrue(body.contains("applyingContrast = true;") && body.contains("BubbleGlassTelemetry.contrast(4);"));
         int row = app.indexOf("View glassContrastRow(View view)");
         assertTrue("only rows whose colours are currently glass",
@@ -280,6 +280,79 @@ public class BubbleGlassStabilityTest {
         int restore = app.indexOf("private void restoreReplyTexts()");
         String all = app.substring(restore, app.indexOf("private void restoreReplyCorners()", restore));
         assertTrue(all.contains("((android.graphics.drawable.ColorDrawable) entry.getKey()).setColor(entry.getValue());"));
+    }
+
+    @Test public void detachedStickerTimesUseOnlyTheirNativeBackgroundFactory() throws IOException {
+        String app = read(APP);
+        assertTrue("the date factory is separate from the regular bubble factory",
+                app.contains("installSharedBubbleDateFactoryHook();"));
+        int start = app.indexOf("private void installSharedBubbleDateFactoryHook()");
+        String registration = app.substring(start, app.indexOf("private View detachedDateOwner(", start));
+        assertTrue(registration.contains("Unobfuscator.loadBallonDateDrawable(classLoader)"));
+        assertTrue("keeps the native drawable result", !registration.contains("param.setResult("));
+        assertTrue(registration.contains("dateStateSides.put(state, previous == null ? direction"));
+        int owner = app.indexOf("private View detachedDateOwner(Drawable drawable)");
+        String scope = app.substring(owner, app.indexOf("private boolean drawViewOnceBackground(", owner));
+        assertTrue("only a date_wrapper's own background is eligible",
+                scope.contains("owner.getId() != dateWrapperId || owner.getBackground() != drawable"));
+        assertTrue("only inside a verified conversation row", scope.contains("if (messageRow(ancestor)) return owner;"));
+        assertTrue("the renderer uses the same session and wallpaper source",
+                scope.contains("session.drawBubble(drawable, canvas, direction == 3)"));
+        assertTrue("draw context is always restored", scope.contains("GlassMaterialDrawable.leaveRowDraw(previous);"));
+        assertTrue("the detached timestamp and delivery glyph use the same glass foreground",
+                app.contains("if (row.getId() == dateWrapperId) {")
+                        && app.contains("tintText(rowChild(row, \"date\"), glass, secondary);"));
+    }
+
+    @Test public void viewOncePillHasItsOwnScopedNativeDrawableAndSameFrameColours() throws IOException {
+        String app = read(APP);
+        int start = app.indexOf("private boolean drawViewOnceBackground(");
+        String body = app.substring(start, app.indexOf("private void hookPendingBubbleClasses()", start));
+        int ownerGateStart = app.indexOf("private View viewOnceBackgroundOwner(");
+        String ownerGate = app.substring(ownerGateStart, start);
+        assertTrue("background callback identifies the container drawing this nine-patch",
+                ownerGate.contains("drawable.getCallback() instanceof View")
+                        && ownerGate.contains("owner.getBackground() != drawable && owner.getForeground() != drawable"));
+        assertTrue("verified container has a scoped host while its own RenderNode is recorded",
+                body.contains("GlassMaterialDrawable.enterRowDraw(owner, canvas)")
+                        && body.contains("GlassMaterialDrawable.leaveRowDraw(previous)"));
+        assertTrue("the verified host ID is resolved once from native resources",
+                app.contains("getIdentifier(\"view_once_media_container_large\", \"id\", pkg)"));
+        assertTrue(ownerGate.contains("owner.getId() != viewOnceLargeId && owner.getId() != viewOnceSmallId"));
+        assertTrue("verified native row and side: ambiguous alignments stay native",
+                body.contains("if (!messageRow(row) || row.getWidth() <= 0) return false;")
+                        && body.contains("if (Math.abs(leftGap - rightGap) < row.getWidth() / 4) return false;"));
+        assertTrue(body.contains("if (!sharedFactoryWanted(outgoing)) return false;"));
+        assertTrue(body.contains("session.drawBubble(drawable, canvas, outgoing)"));
+        int guards = app.indexOf("private void installContrastGuards()");
+        String guard = app.substring(guards, app.indexOf("XC_MethodHook atDraw =", guards));
+        assertTrue("the opaque download fill is handled before View.draw paints its background",
+                guard.contains("View.class.getDeclaredMethod(\"draw\", Canvas.class)"));
+        assertTrue(guard.contains("session.prepareViewOnceFillAtDraw(view)"));
+        assertTrue("replacement labels and icons are retinted before their own draw",
+                app.contains("\"view_once_media_type_large\", \"view_once_media_type\", \"view_once_control_icon\""));
+        int enforce = app.indexOf("void enforceAtDraw(View row, View view, String name)");
+        String tint = app.substring(enforce, app.indexOf("private void syncContrast(View row)", enforce));
+        assertTrue(tint.contains("case \"view_once_media_type_large\": case \"view_once_media_type\":"));
+        assertTrue(tint.contains("case \"view_once_control_icon\":"));
+        assertTrue("the latest native fill remains restorable after a download state update",
+                app.contains("clearedFills.put(fill, flat.getColor());\n            } else if (flat.getColor() != 0) {"));
+    }
+
+    @Test public void conversationTypingAndRecordingStatusFollowsHeaderAndRestores() throws IOException {
+        String pane = read("src/main/java/com/waenhancer/xposed/features/customization/ConversationGlassPanes.java");
+        String app = read(APP);
+        assertTrue("the contact status is distinct from the title",
+                pane.contains("findById(toolbar, \"conversation_contact_status\")"));
+        assertTrue("status changes are recoloured before the native TextEmojiLabel draws",
+                app.contains("conversation.toneConversationStatusAtDraw(view); return;"));
+        assertTrue("the native title owns the status contrast",
+                pane.contains("int foreground = title.getCurrentTextColor();"));
+        assertTrue("the compound typing/recording icon is tinted when exposed by WhatsApp",
+                pane.contains("status.setCompoundDrawableTintList(tint);"));
+        assertTrue("native text and compound tint are restored when header glass is released",
+                pane.contains("status.setTextColor(screen.headerStatusTexts.get(status));")
+                        && pane.contains("status.setCompoundDrawableTintList(screen.headerStatusCompounds.get(status));"));
     }
 
     @Test public void anyChildOfAVerifiedMessageListIsARow() throws IOException {
@@ -349,7 +422,7 @@ public class BubbleGlassStabilityTest {
         assertTrue(body.contains("hookRowDraw(View.class.getDeclaredMethod(\"draw\", Canvas.class));"));
         assertTrue(body.contains("if (id != 0) rememberRowId(id);"));
         assertTrue("installed with the factory hook",
-                app.contains("installSharedBubbleFactoryHook();\n        observeRowsEarly();"));
+                app.contains("installSharedBubbleFactoryHook();\n        installSharedBubbleDateFactoryHook();\n        observeRowsEarly();"));
         assertTrue("one hook per method", app.contains("if (!rowDrawHooks.add(method)) return;"));
     }
 
