@@ -35,8 +35,8 @@ jobs:
         run: bash ./gradlew --no-daemon :app:testWhatsappDebugUnitTest
       - name: Run Android lint
         run: bash ./gradlew --no-daemon :app:lintWhatsappDebug
-      - name: Compile debug APK for build verification (not published)
-        run: bash ./gradlew --no-daemon :app:assembleWhatsappDebug
+      - name: Verify debug compilation without packaging an unsigned preview APK
+        run: bash ./gradlew --no-daemon :app:compileWhatsappDebugJavaWithJavac
 
   signed-preview:
     name: Signed PR APK (24-hour artifact)
