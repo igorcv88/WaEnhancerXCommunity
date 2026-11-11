@@ -63,6 +63,8 @@ public final class ConversationBackdropSource {
     private static Bitmap lastTexture;
     private static String lastLook;
     private String desiredLook;
+    /** First usable plan only: explain why the fast cached path did or did not qualify. */
+    private boolean firstLookRouteReported;
     /** Window size the texture covers (a provisional disk texture is smaller and scaled up). */
     private int textureWidth, textureHeight;
     public int textureWidth() { return textureWidth; }
@@ -178,6 +180,14 @@ public final class ConversationBackdropSource {
         desired=usable ? capture : null; blur=radius; failed=false;
         desiredContent=null;
         desiredLook=usable && capture.contentKey!=null ? capture.contentKey+"|blur="+radius : null;
+        if (usable && !firstLookRouteReported) {
+            firstLookRouteReported=true;
+            boolean memoryMatch=desiredLook!=null && desiredLook.equals(lastLook) && lastTexture!=null;
+            boolean diskMatch=desiredLook!=null && desiredLook.equals(diskLook) && diskTexture!=null;
+            probe("BUBBLE_FIRST_LOOK_ROUTE", "eligible="+(desiredLook!=null)
+                    +" memoryMatch="+memoryMatch+" diskMatch="+diskMatch
+                    +" memoryReady="+(lastTexture!=null)+" diskReady="+(diskTexture!=null));
+        }
         if (usable) {
             try { desiredContent=capture.record(); }
             catch (RuntimeException | LinkageError failure) {

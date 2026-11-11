@@ -99,6 +99,9 @@ public final class AppLiquidGlass extends Feature {
     @Override public void doHook() {
         refreshBubblePalette();
         refreshBubbleScope();
+        // Queue the last verified wallpaper preview before registering the heavier hooks:
+        // an Activity can start rendering rows while the cache is still loading.
+        prepareBubbleDiskCache();
         // Always register lifecycle: switches can be enabled after WhatsApp has started.
         WppCore.addListenerActivity((activity, state) -> {
             if (activity == null || activity.getWindow() == null) return;
@@ -110,6 +113,25 @@ public final class AppLiquidGlass extends Feature {
             } else if (state == WppCore.ActivityChangeState.ChangeType.DESTROYED) {
                 Session session = sessionFor(decor);
                 if (session != null) session.close();
+            } else if (state == WppCore.ActivityChangeState.ChangeType.STARTED
+                    && "Conversation".equals(activity.getClass().getSimpleName())) {
+                // STARTED precedes RESUMED and the first frame. Attach the wallpaper
+                // observer now, so the first global layout can queue its isolated
+                // texture while WhatsApp is still setting up the conversation.
+                // Do not substitute a previous chat's unverified wallpaper.
+                reloadPrefs();
+                refreshBubbleScope();
+                refreshBubblePalette();
+                hookPendingBubbleClasses();
+                publishOptics();
+                Session session = watch(decor);
+                if (session != null) {
+                    session.activityWindow = new WeakReference<>(activity.getWindow());
+                    session.resume();
+                    session.syncSharedBubbles();
+                    com.waenhancer.theme.ConversationBackdropSource.probe(
+                            "BUBBLE_EARLY_PREWARM", "stage=started");
+                }
             } else if (state == WppCore.ActivityChangeState.ChangeType.RESUMED) {
                 conversation.setActivityWindow(decor, activity.getWindow());
                 reloadPrefs();
@@ -137,7 +159,6 @@ public final class AppLiquidGlass extends Feature {
         installSharedBubbleFactoryHook();
         installSharedBubbleDateFactoryHook();
         observeRowsEarly();
-        prepareBubbleDiskCache();
         XposedBridge.hookAllMethods(Dialog.class, "show", new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
                 Dialog dialog = (Dialog) param.thisObject;
