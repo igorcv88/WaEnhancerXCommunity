@@ -24,6 +24,7 @@ public final class ReceiptSignalProbe {
     public static final String PREF = "receipt_signal_probe";
     private static final long MAX_MS = 10 * 60 * 1000L;
     private static final int MAX_RECORDS = 128;
+    private static final int MAX_OBSERVED = 512;
     private static Window window;
 
     private ReceiptSignalProbe() {}
@@ -54,10 +55,12 @@ public final class ReceiptSignalProbe {
             window = new Window(now);
             Log.i(TAG, "stage=armed scope=next_outgoing_direct duration_sec=600");
         }
-        if (now - window.start >= MAX_MS || window.records >= MAX_RECORDS) {
+        if (now - window.start >= MAX_MS || window.records >= MAX_RECORDS
+                || window.records + window.unmatched >= MAX_OBSERVED) {
             if (!window.expiredLogged) {
                 window.expiredLogged = true;
-                Log.i(TAG, "stage=stopped reason=" + (window.records >= MAX_RECORDS ? "budget" : "timeout")
+                Log.i(TAG, "stage=stopped reason=" + ((window.records >= MAX_RECORDS
+                        || window.records + window.unmatched >= MAX_OBSERVED) ? "budget" : "timeout")
                         + " records=" + window.records + " unmatched=" + window.unmatched);
             }
             return null;
