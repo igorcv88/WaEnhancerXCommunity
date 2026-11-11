@@ -318,7 +318,7 @@ public class BubbleGlassStabilityTest {
                         && body.contains("GlassMaterialDrawable.leaveRowDraw(previous)"));
         assertTrue("the verified host ID is resolved once from native resources",
                 app.contains("getIdentifier(\"view_once_media_container_large\", \"id\", pkg)"));
-        assertTrue(body.contains("owner.getId() != viewOnceLargeId && owner.getId() != viewOnceSmallId"));
+        assertTrue(ownerGate.contains("owner.getId() != viewOnceLargeId && owner.getId() != viewOnceSmallId"));
         assertTrue("verified native row and side: ambiguous alignments stay native",
                 body.contains("if (!messageRow(row) || row.getWidth() <= 0) return false;")
                         && body.contains("if (Math.abs(leftGap - rightGap) < row.getWidth() / 4) return false;"));
