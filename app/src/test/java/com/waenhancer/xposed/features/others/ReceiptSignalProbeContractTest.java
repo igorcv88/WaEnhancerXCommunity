@@ -23,7 +23,9 @@ public class ReceiptSignalProbeContractTest {
         assertTrue(s.contains("MAX_RECORDS = 128"));
         assertTrue(s.contains("MAX_OBSERVED = 512"));
         assertTrue(s.contains("window.records + window.unmatched >= MAX_OBSERVED"));
-        assertTrue(s.contains("w.messageId == null"));
+        assertTrue(s.contains("w.messageIds.size() < MAX_TARGETS"));
+        assertTrue(s.contains("MAX_TARGETS = 12"));
+        assertTrue(s.contains("if (w.messageIds.contains(messageId)) return;"));
         assertFalse(s.contains("param.setResult("));
         assertFalse(s.contains("setRead("));
         assertFalse(s.contains("sendBroadcast("));
@@ -48,11 +50,24 @@ public class ReceiptSignalProbeContractTest {
         int filter = s.indexOf("if (type != 13) continue;");
         assertTrue(probe > 0 && filter > probe);
         String watcher = source("com/waenhancer/xposed/features/others/ReceiptSignalProbe.java");
-        assertTrue(watcher.contains("messageMatch"));
-        assertTrue(watcher.contains("rowMatch"));
+        assertTrue(watcher.contains("matchedSlot"));
+        assertTrue(watcher.contains("indexForMessage(w"));
+        assertTrue(watcher.contains("indexForRow(w"));
         assertTrue(watcher.contains("chatMatch"));
         assertTrue(watcher.contains("stage=unmatched_aggregate"));
         assertTrue(watcher.contains("stage=receipt_insert"));
+    }
+
+    @Test public void reactionSendIsSeparateFromIncomingReadAcknowledgement() throws Exception {
+        String src = source("com/waenhancer/xposed/features/others/ReceiptSignalProbe.java");
+        String toast = source("com/waenhancer/xposed/features/others/ToastViewer.java");
+        assertTrue(toast.contains("ReceiptSignalProbe.installReactionSendProbe(classLoader, prefs);"));
+        assertTrue(src.contains("Unobfuscator.loadActionUser(loader)"));
+        assertTrue(src.contains("new Class[]{FMessageWpp.TYPE, String.class, boolean.class}"));
+        assertTrue(src.contains("stage=reaction_attempt"));
+        assertTrue(src.contains("original_direction="));
+        assertTrue(src.contains("if (w == null || w.chatJid == null || referencedMessage == null) return;"));
+        assertFalse(src.contains("Log.i(TAG, emoji"));
     }
 
     @Test public void noRawIdentifiersOrContentEnterLogcat() throws Exception {
@@ -61,7 +76,8 @@ public class ReceiptSignalProbeContractTest {
         assertFalse(s.contains("Log.i(TAG, primaryJid"));
         assertFalse(s.contains("Log.i(TAG, incoming"));
         assertFalse(s.contains("Log.i(TAG, event.toString()"));
-        assertTrue(s.contains("messageMatch |= w.messageId.equals("));
+        assertTrue(s.contains("w.messageIds.indexOf(incoming)"));
+        assertTrue(s.contains("stage=receipt_schema"));
         assertTrue(s.contains("field_count="));
     }
 }
