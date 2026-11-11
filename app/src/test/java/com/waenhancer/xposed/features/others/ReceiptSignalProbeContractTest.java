@@ -21,6 +21,8 @@ public class ReceiptSignalProbeContractTest {
         assertTrue(s.contains("prefs.getBoolean(PREF, false)"));
         assertTrue(s.contains("10 * 60 * 1000L"));
         assertTrue(s.contains("MAX_RECORDS = 128"));
+        assertTrue(s.contains("MAX_OBSERVED = 512"));
+        assertTrue(s.contains("window.records + window.unmatched >= MAX_OBSERVED"));
         assertTrue(s.contains("w.messageId == null"));
         assertFalse(s.contains("param.setResult("));
         assertFalse(s.contains("setRead("));
