@@ -254,7 +254,7 @@
     <string name="toast_on_viewed_message">Mostrar toast de visualização de mensagem</string>
     <string name="toast_on_viewed_message_sum">Mostra uma notificação toast se alguém visualizar sua mensagem</string>
     <string name="receipt_signal_probe_title">Investigar sinais de leitura (temporário)</string>
-    <string name="receipt_signal_probe_summary">Apenas diagnóstico: observa metadados dos recibos da próxima mensagem enviada em conversa individual por até 10 minutos. Não registra conteúdo nem identificadores. Consulte o log WaEXReceiptProbe. Desative após testar. Não altera os tiques.</string>
+    <string name="receipt_signal_probe_summary">Apenas diagnóstico: observa recibos de até 12 mensagens enviadas na mesma conversa e tentativas de reação por 10 minutos. Não registra conteúdo nem identificadores. Ainda não observa visualização da reação. Reinicie o WhatsApp após ativar, consulte o log WaEXReceiptProbe e desative após testar. Não altera os tiques.</string>
     <string name="textonahora_sum">Adicione um texto ao lado dos horários</string>
     <string name="delete_for_me">Apagar (para mim)</string>
     <string name="send_audio_as_voice_audio_note">Tipo de envio de áudio</string>
