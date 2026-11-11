@@ -299,9 +299,45 @@ public class BubbleGlassStabilityTest {
         assertTrue("the renderer uses the same session and wallpaper source",
                 scope.contains("session.drawBubble(drawable, canvas, direction == 3)"));
         assertTrue("draw context is always restored", scope.contains("GlassMaterialDrawable.leaveRowDraw(previous);"));
-        assertTrue("the detached timestamp and delivery glyph use the same glass foreground",
+        assertTrue("only the detached timestamp text is recoloured for glass",
                 app.contains("if (row.getId() == dateWrapperId) {")
                         && app.contains("tintText(rowChild(row, \"date\"), glass, secondary);"));
+    }
+
+    @Test public void readReceiptsKeepWhatsAppNativeStateOnStickersAndMedia() throws IOException {
+        String app = read(APP);
+        int names = app.indexOf("static final String[] DRAW_WATCH");
+        int nameEnd = app.indexOf("};", names);
+        String watched = app.substring(names, nameEnd);
+        assertFalse("status ticks must not be recoloured before ImageView.onDraw",
+                watched.contains("\"status\""));
+
+        int enforce = app.indexOf("void enforceAtDraw(View row, View view, String name)");
+        String atDraw = app.substring(enforce, app.indexOf("private void syncContrast(View row)", enforce));
+        assertFalse("the at-draw contrast pass must not turn blue read ticks white",
+                atDraw.contains("case \"status\":"));
+        assertTrue("timestamp text still follows the glass foreground",
+                atDraw.contains("case \"date\":"));
+
+        int sync = app.indexOf("private void syncContrast(View row)");
+        String contrast = app.substring(sync, app.indexOf("private void clearFill(", sync));
+        int detached = contrast.indexOf("if (row.getId() == dateWrapperId) {");
+        String date = contrast.substring(detached, contrast.indexOf("\n            }", detached));
+        assertTrue("sticker time keeps its glass contrast",
+                date.contains("tintText(rowChild(row, \"date\"), glass, secondary);"));
+        assertTrue("existing status overrides must be returned to WhatsApp",
+                date.contains("tintIcon((ImageView) status, false, 0);"));
+        assertFalse("glass foreground cannot overwrite a read receipt",
+                date.contains("tintIcon((ImageView) status, glass,"));
+
+        int tree = app.indexOf("private void tintTree(View view, boolean glass, int color, int depth)");
+        String subtree = app.substring(tree, app.indexOf("private void tintText(", tree));
+        assertTrue("view-once/media subtrees must also protect native receipt states",
+                subtree.contains("\"status\".equals(resourceName(icon))")
+                        && subtree.contains("tintIcon(icon, false, 0);"));
+        assertTrue("restore uses the most recent WhatsApp-owned tint and releases the setter guard",
+                app.contains("if (state != null && current == state[1]) icon.setImageTintList(state[0]);")
+                        && app.contains("if (glassIcons.remove(icon) != null) contrastOwners.remove(icon);"));
     }
 
     @Test public void viewOncePillHasItsOwnScopedNativeDrawableAndSameFrameColours() throws IOException {
