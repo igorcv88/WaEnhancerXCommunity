@@ -67,6 +67,10 @@ public class ToastViewer extends Feature {
             XposedBridge.log(e);
         }
 
+        // Optional research observer at the same reaction-action method already
+        // used by WppCore. Does not intercept incoming reaction read acknowledgements.
+        ReceiptSignalProbe.installReactionSendProbe(classLoader, prefs);
+
         try {
             var onSeenReceiptForStatus = Unobfuscator.loadSeenReceiptForStatus(classLoader);
             XposedBridge.hookMethod(onSeenReceiptForStatus, new XC_MethodHook() {
