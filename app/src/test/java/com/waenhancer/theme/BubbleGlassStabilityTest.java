@@ -124,8 +124,14 @@ public class BubbleGlassStabilityTest {
         assertTrue("cached texture may be reused only after matching this wallpaper's look",
                 look > 0 && provisional > look && source.contains("desiredLook.equals(lastLook)")
                         && source.contains("desiredLook.equals(stored)"));
+        String glass = read(GLASS);
         assertTrue("unavailable texture still falls back to an intact native bubble",
-                read(GLASS).contains("if (texture == null) { waiting.add(host); return lost(host, BubbleGlassTelemetry.Native.NO_TEXTURE); }"));
+                glass.contains("if (texture == null) {")
+                        && glass.contains("waiting.add(host);")
+                        && glass.contains("return lost(host, BubbleGlassTelemetry.Native.NO_TEXTURE);"));
+        assertTrue("first-frame miss is logged once, without revealing message or wallpaper content",
+                glass.contains("!presented && !firstTextureMissReported")
+                        && glass.contains("BUBBLE_FIRST_FRAME_NATIVE"));
     }
 
     // --- Scrolling: cached copies of a factory bubble (device 2026-11-03) ------------------
