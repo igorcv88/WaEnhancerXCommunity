@@ -504,9 +504,9 @@ public final class AppLiquidGlass extends Feature {
             direction = dateStateSides.get(drawable.getConstantState());
             if (direction != null && direction >= 0) dateSides.put(drawable, direction);
         }
-        if (direction == null || direction < 0 || !sharedFactoryWanted(direction == 3)) return false;
         Session session = sessionFor(owner.getRootView());
-        if (session == null) return false;
+        if (session != null) session.trackSpecialBubbleHost(owner);
+        if (direction == null || direction < 0 || !sharedFactoryWanted(direction == 3) || session == null) return false;
         GlassMaterialDrawable.DrawHost previous = GlassMaterialDrawable.enterRowDraw(owner, canvas);
         try {
             boolean drawn = session.drawBubble(drawable, canvas, direction == 3);
@@ -518,13 +518,22 @@ public final class AppLiquidGlass extends Feature {
         }
     }
 
-    /** The view-once pill is a separate nine-patch, not returned by the normal bubble factory. */
-    private boolean drawViewOnceBackground(Drawable drawable, Canvas canvas) {
-        View owner = com.waenhancer.theme.NativeBubbleGlass.hostFor(canvas);
-        if (owner == null || !(drawable instanceof android.graphics.drawable.NinePatchDrawable)) return false;
+    /** View-once backgrounds paint in their own child RenderNode, outside row-draw scopes. */
+    private View viewOnceBackgroundOwner(Drawable drawable) {
+        if (!(drawable instanceof android.graphics.drawable.NinePatchDrawable)
+                || !(drawable.getCallback() instanceof View)) return null;
+        View owner = (View) drawable.getCallback();
         resolveSpecialViewIds(owner);
         if (owner.getId() == 0 || owner.getId() == View.NO_ID
-                || (owner.getId() != viewOnceLargeId && owner.getId() != viewOnceSmallId)) return false;
+                || (owner.getId() != viewOnceLargeId && owner.getId() != viewOnceSmallId)
+                || (owner.getBackground() != drawable && owner.getForeground() != drawable)) return null;
+        return owner;
+    }
+
+    /** The view-once pill is a separate nine-patch, not returned by the normal bubble factory. */
+    private boolean drawViewOnceBackground(Drawable drawable, Canvas canvas) {
+        View owner = viewOnceBackgroundOwner(drawable);
+        if (owner == null) return false;
         // No direction is supplied by the view-once factory. Derive it only when its native
         // main_layout is clearly anchored to one side of its conversation row.
         View main = owner;
@@ -536,12 +545,21 @@ public final class AppLiquidGlass extends Feature {
         int leftGap = main.getLeft(), rightGap = row.getWidth() - main.getRight();
         if (Math.abs(leftGap - rightGap) < row.getWidth() / 4) return false;
         boolean outgoing = (leftGap > rightGap) != (row.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL);
-        if (!sharedFactoryWanted(outgoing)) return false;
         Session session = sessionFor(owner.getRootView());
-        boolean drawn = session != null && session.drawBubble(drawable, canvas, outgoing);
-        if (drawn) com.waenhancer.diagnostics.InspectorTrace.glassEventOnce(
-                "view-once-glass", "host=" + resourceName(owner) + " outgoing=" + outgoing);
-        return drawn;
+        if (session == null) return false;
+        session.trackSpecialBubbleHost(owner);
+        if (!sharedFactoryWanted(outgoing)) return false;
+        // This view records its own display list. Establish a host only after its native
+        // callback, resource ID, background identity and message-row placement all agree.
+        GlassMaterialDrawable.DrawHost previous = GlassMaterialDrawable.enterRowDraw(owner, canvas);
+        try {
+            boolean drawn = session.drawBubble(drawable, canvas, outgoing);
+            if (drawn) com.waenhancer.diagnostics.InspectorTrace.glassEventOnce(
+                    "view-once-glass", "host=" + resourceName(owner) + " outgoing=" + outgoing);
+            return drawn;
+        } finally {
+            GlassMaterialDrawable.leaveRowDraw(previous);
+        }
     }
 
     private void hookPendingBubbleClasses() {
@@ -1608,6 +1626,11 @@ public final class AppLiquidGlass extends Feature {
         private WeakReference<android.view.Window> activityWindow = new WeakReference<>(null);
         /** Bubble scope + material/optics the observed rows were last recorded with. */
         private String bubbleSettings;
+        /** Child RenderNodes (sticker date and view-once) are not dirtied by row.invalidate(). */
+        private final WeakHashMap<View, Boolean> specialBubbleHosts = new WeakHashMap<>();
+        void trackSpecialBubbleHost(View host) {
+            if (!closed && host != null) specialBubbleHosts.put(host, Boolean.TRUE);
+        }
         /** Wallpaper identity the current bubble texture was planned from. */
         private String textureIdentity;
         private WeakReference<View> sharedWallpaper = new WeakReference<>(null);
@@ -2442,6 +2465,9 @@ public final class AppLiquidGlass extends Feature {
         private void invalidateBubbleRows(View window) {
             for (View row : new ArrayList<>(nativeDrawRows.keySet()))
                 if (row != null && row.isAttachedToWindow() && row.getRootView() == window) row.invalidate();
+            // A parent invalidation can replay a child's old glass RenderNode unchanged.
+            for (View host : new ArrayList<>(specialBubbleHosts.keySet()))
+                if (host != null && host.isAttachedToWindow() && host.getRootView() == window) host.invalidate();
         }
 
         private void syncSharedBubbles() {
@@ -2456,6 +2482,8 @@ public final class AppLiquidGlass extends Feature {
                 if (bubbleScopeCache != LiquidGlassSettings.BubbleScope.OFF)
                     com.waenhancer.theme.BubbleGlassTelemetry.source("off", wallpaper==null ? "no-wallpaper-view"
                             : !com.waenhancer.theme.NativeBubbleGlass.supported() ? "api-or-lens" : "classic-renderer");
+                // A disabled side must not retain a previously recorded sticker/date glass node.
+                if (bubbleGlass != null) invalidateBubbleRows(window);
                 releaseSharedBubbles(); return;
             }
             GlassSpec material=resolvedMaterial();
