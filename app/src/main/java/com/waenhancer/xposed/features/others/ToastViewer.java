@@ -112,6 +112,9 @@ public class ToastViewer extends Feature {
     private void processNewWA(XC_MethodHook.MethodHookParam param, boolean toastViewedMessage,
                               boolean toastViewedStatus) throws Exception {
         if (param.args == null || param.args.length == 0 || param.args[0] == null) return;
+        // Passive capture of all receipt record types (including unknown codes), bounded
+        // to one explicitly armed outgoing message. The normal toast path is unchanged.
+        ReceiptSignalProbe.inspectReceiptInsert(prefs, param.args[0]);
         Collection<?> collection;
         if (!(param.args[0] instanceof Collection)) {
             collection = Collections.singleton(param.args[0]);
