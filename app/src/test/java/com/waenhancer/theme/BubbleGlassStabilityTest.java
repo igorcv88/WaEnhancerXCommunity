@@ -309,7 +309,9 @@ public class BubbleGlassStabilityTest {
         int start = app.indexOf("private boolean drawViewOnceBackground(");
         String body = app.substring(start, app.indexOf("private void hookPendingBubbleClasses()", start));
         assertTrue(body.contains("NativeBubbleGlass.hostFor(canvas)"));
-        assertTrue(body.contains("view_once_media_container_large"));
+        assertTrue("the verified host ID is resolved once from native resources",
+                app.contains("getIdentifier(\"view_once_media_container_large\", \"id\", pkg)"));
+        assertTrue(body.contains("owner.getId() != viewOnceLargeId && owner.getId() != viewOnceSmallId"));
         assertTrue("verified native row and side: ambiguous alignments stay native",
                 body.contains("if (!messageRow(row) || row.getWidth() <= 0) return false;")
                         && body.contains("if (Math.abs(leftGap - rightGap) < row.getWidth() / 4) return false;"));
@@ -413,7 +415,7 @@ public class BubbleGlassStabilityTest {
         assertTrue(body.contains("hookRowDraw(View.class.getDeclaredMethod(\"draw\", Canvas.class));"));
         assertTrue(body.contains("if (id != 0) rememberRowId(id);"));
         assertTrue("installed with the factory hook",
-                app.contains("installSharedBubbleFactoryHook();\n        observeRowsEarly();"));
+                app.contains("installSharedBubbleFactoryHook();\n        installSharedBubbleDateFactoryHook();\n        observeRowsEarly();"));
         assertTrue("one hook per method", app.contains("if (!rowDrawHooks.add(method)) return;"));
     }
 
