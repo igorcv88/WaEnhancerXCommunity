@@ -259,7 +259,10 @@ public class NativeBubbleGlassTest {
         String hook = app.substring(start, app.indexOf("\n    }\n", start));
         assertTrue(hook.indexOf("BubbleGlassTelemetry.call();") < hook.indexOf("bubbleSides.get(bubble)"));
         assertTrue(hook.contains("Native.NOT_REGISTERED); return; }"));
-        assertEquals("setResult only after a recorded glass draw", 1, hook.split("setResult", -1).length - 1);
+        assertEquals("only the verified special-media and registered bubble paths suppress native draw",
+                2, hook.split("setResult", -1).length - 1);
+        assertTrue(hook.contains("if (drawDetachedDate(bubble, canvas) || drawViewOnceBackground(bubble, canvas)) {"));
+        assertTrue(hook.contains("if (session.drawBubble(bubble, canvas, outgoing)) param.setResult(null);"));
         String t = read("src/main/java/com/waenhancer/theme/BubbleGlassTelemetry.java");
         assertTrue(t.contains("log(\"FREQUENCY\""));
     }
