@@ -1002,8 +1002,10 @@ public final class AppLiquidGlass extends Feature {
      * sub-tree, never by the row draw this module hooks, so it kept WhatsApp's grey. Before such
      * a view draws itself inside a row that holds glass colours, the colour is applied in place.
      */
+    // Delivery/read receipts are stateful WhatsApp UI: never pin "status" to the
+    // glass foreground or a blue read tick becomes a white sent/delivered tick.
     static final String[] DRAW_WATCH = {"quoted_text", "description", "date", "call_log_subtitle", "control_btn", "call_type_icon",
-            "view_once_media_type_large", "view_once_media_type", "view_once_control_icon", "status"};
+            "view_once_media_type_large", "view_once_media_type", "view_once_control_icon"};
     private int[] drawWatchIds;
     private int contactStatusId;
 
@@ -1415,8 +1417,6 @@ public final class AppLiquidGlass extends Feature {
                     case "description": if (!voice) return; tintText(view, true, secondary); break;
                     case "date": if (!voice && row.getId() != dateWrapperId) return;
                         tintText(view, true, secondary); break;
-                    case "status": if (row.getId() != dateWrapperId || !(view instanceof ImageView)) return;
-                        tintIcon((ImageView) view, true, content | 0xFF000000); break;
                     case "view_once_media_type_large": case "view_once_media_type":
                         if (rowChild(row, "view_once_media_container_large") == null
                                 && rowChild(row, "view_once_media_container") == null) return;
@@ -1449,11 +1449,14 @@ public final class AppLiquidGlass extends Feature {
             int secondary = content | (REPLY_TEXT_ALPHA << 24);
             View quoted = rowChild(row, "quoted_text");
             tintText(quoted, glass, secondary);
-            // Detached sticker/emoji timestamp: the timestamp drawable itself is a glass host.
+            // Detached sticker/emoji timestamp: only its background and time are
+            // glass-owned. WhatsApp owns the status ImageView's sent/delivered/read
+            // tint (including blue double ticks). Undo an older held glass tint if
+            // present, but never recolour or reassert this stateful receipt.
             if (row.getId() == dateWrapperId) {
                 tintText(rowChild(row, "date"), glass, secondary);
                 View status = rowChild(row, "status");
-                if (status instanceof ImageView) tintIcon((ImageView) status, glass, content | 0xFF000000);
+                if (status instanceof ImageView) tintIcon((ImageView) status, false, 0);
             }
             if (glass && !contrastInDraw && quoted instanceof TextView) {
                 android.content.res.ColorStateList[] held = quoteTexts.get(quoted);
@@ -1518,7 +1521,13 @@ public final class AppLiquidGlass extends Feature {
         private void tintTree(View view, boolean glass, int color, int depth) {
             if (depth > 4 || view == null) return;
             if (view instanceof TextView) tintText(view, glass, color);
-            else if (view instanceof android.widget.ImageView) tintIcon((android.widget.ImageView) view, glass, color);
+            else if (view instanceof android.widget.ImageView) {
+                // A view-once or media row may also expose a read-receipt glyph.
+                // Leave its WhatsApp state tint untouched, just like date_wrapper.
+                android.widget.ImageView icon = (android.widget.ImageView) view;
+                if ("status".equals(resourceName(icon))) tintIcon(icon, false, 0);
+                else tintIcon(icon, glass, color);
+            }
             else if (view instanceof android.view.ViewGroup) {
                 android.view.ViewGroup group = (android.view.ViewGroup) view;
                 for (int i = 0; i < group.getChildCount(); i++) tintTree(group.getChildAt(i), glass, color, depth + 1);

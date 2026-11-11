@@ -1794,6 +1794,17 @@ Validation: debug compile; 670 tests, 0 failures (new `replacedContentViewsGetTh
 Device next: scroll, stop, and wait in a chat with replies and voice notes; the colours should stay white at rest. A rising `contrast_at_draw` confirms the replaced-view path. If grey persists with `contrast_at_draw` rising, the colour is inside the text (spans): check `QUOTE_STATE colour_spans`.
 
 
+## Sticker/media blue read receipts must stay WhatsApp-native — 2026-11-11
+
+Owner supplied `91763.png`: outgoing detached sticker/photo timestamp has white double ticks while the ordinary text bubble above has blue read ticks. The other PR #156 fixes (sticker timestamp backing glass, timestamp text, view-once media) are visually stable; the user also reports the cold-opening native-blue bubble flash is not currently recurring, so the open #158 first-frame prewarm work remains separate.
+
+Cause in merged #156: `Session.syncContrast()` treated `date_wrapper > status` as a passive visual icon and applied `material.contentColor` (white for dark glass). The new `DRAW_WATCH` + `enforceAtDraw(case "status")` repeated that tint immediately before the ImageView painted. WhatsApp therefore lost the state-dependent read blue while sticker/emoji date backgrounds and their time text correctly became glass.
+
+Focused branch `fix/detached-media-read-receipts-20261111` based on current `master`: remove `status` from draw-watch targets and the at-draw tint case; leave the glass timestamp background and `date` text unchanged; call `tintIcon(status, false, 0)` on detached timestamp sync to restore any previously held native `ColorStateList` and release the image-tint setter guard. In the dedicated view-once/media `tintTree`, likewise skip the named `status` image and restore its previously held tint, but keep the actual download/play/control icons tinted as before. Do not hardcode blue or infer receipt state from message contents. WhatsApp continues to decide whether the tick is sent, delivered or read; AntiRevoke/receipt privacy preferences are untouched.
+
+Added `readReceiptsKeepWhatsAppNativeStateOnStickersAndMedia` to `BubbleGlassStabilityTest`, and adjusted the stale date-wrapper test description. The contract tests assert both date time contrast and native receipt ownership across in-draw, subview-draw and view-once paths.
+
+Validation: automatic PR CI unit tests/lint/compile and owner-only one-day signed preview required; runtime confirmation on WhatsApp is pending. Acceptance: send/receive media, stickers and animated emoji; verify sent/delivered indicators follow native WhatsApp values, blue double ticks return after read, and sticker/date glass + view-once visuals remain stable. Also verify no effect on regular bubbles or typing/recording header status.
 ### Conversation first-frame native flash — 2026-11-11
 
 Branch `fix/bubble-first-frame-prewarm-20261111` (opened after the merges of #156 and #157).
