@@ -308,7 +308,14 @@ public class BubbleGlassStabilityTest {
         String app = read(APP);
         int start = app.indexOf("private boolean drawViewOnceBackground(");
         String body = app.substring(start, app.indexOf("private void hookPendingBubbleClasses()", start));
-        assertTrue(body.contains("NativeBubbleGlass.hostFor(canvas)"));
+        int ownerGateStart = app.indexOf("private View viewOnceBackgroundOwner(");
+        String ownerGate = app.substring(ownerGateStart, start);
+        assertTrue("background callback identifies the container drawing this nine-patch",
+                ownerGate.contains("drawable.getCallback() instanceof View")
+                        && ownerGate.contains("owner.getBackground() != drawable && owner.getForeground() != drawable"));
+        assertTrue("verified container has a scoped host while its own RenderNode is recorded",
+                body.contains("GlassMaterialDrawable.enterRowDraw(owner, canvas)")
+                        && body.contains("GlassMaterialDrawable.leaveRowDraw(previous)"));
         assertTrue("the verified host ID is resolved once from native resources",
                 app.contains("getIdentifier(\"view_once_media_container_large\", \"id\", pkg)"));
         assertTrue(body.contains("owner.getId() != viewOnceLargeId && owner.getId() != viewOnceSmallId"));
