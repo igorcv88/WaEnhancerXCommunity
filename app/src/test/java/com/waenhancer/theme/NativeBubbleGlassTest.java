@@ -137,8 +137,17 @@ public class NativeBubbleGlassTest {
         assertTrue(hook.contains("if (session.drawBubble(bubble, canvas, outgoing)) param.setResult(null);"));
         assertTrue(hook.indexOf("nativePass()") < hook.indexOf("param.setResult(null)"));
         String glass = read("src/main/java/com/waenhancer/theme/NativeBubbleGlass.java");
-        assertTrue("no glass without a texture: native paints", glass.contains(
-                "if (texture == null) { waiting.add(host); return lost(host, BubbleGlassTelemetry.Native.NO_TEXTURE); }"));
+        int textureMiss = glass.indexOf("if (texture == null) {");
+        int draw = glass.indexOf("Rect bounds = bubble.getBounds();", textureMiss);
+        assertTrue("missing texture must not produce an empty or incorrectly sampled bubble",
+                textureMiss > 0 && draw > textureMiss);
+        String fallback = glass.substring(textureMiss, draw);
+        assertTrue("the host is queued for a re-record when the texture arrives",
+                fallback.contains("waiting.add(host);"));
+        assertTrue("the original native drawable paints while no source is available",
+                fallback.contains("return lost(host, BubbleGlassTelemetry.Native.NO_TEXTURE);"));
+        assertTrue("the diagnostic runs only once before the first presented glass pixel",
+                fallback.contains("!presented && !firstTextureMissReported"));
         assertTrue(glass.contains("if (!drawn) return false;"));
         assertFalse("never touches row backgrounds", glass.contains("setBackground"));
     }

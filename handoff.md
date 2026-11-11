@@ -1792,3 +1792,16 @@ Cost: one Xposed callback plus an id compare per TextView/ImageView recording ap
 Validation: debug compile; 670 tests, 0 failures (new `replacedContentViewsGetTheGlassColourBeforeTheyDraw`); `tools/test_bubble_lifecycle.py` passes. Not validated on device.
 
 Device next: scroll, stop, and wait in a chat with replies and voice notes; the colours should stay white at rest. A rising `contrast_at_draw` confirms the replaced-view path. If grey persists with `contrast_at_draw` rising, the colour is inside the text (spans): check `QUOTE_STATE colour_spans`.
+
+
+### Conversation first-frame native flash — 2026-11-11
+
+Branch `fix/bubble-first-frame-prewarm-20261111` (opened after the merges of #156 and #157).
+
+Evidence: the owner's 4.78-second screen recording shows multiple chats entering with native blue/grey bubbles during the transition, then their glass appearing when the conversation wallpaper is ready. The earlier inspector captured `no_texture=430` in BUBBLE_GLASS_FREQUENCY and a sequence of SOURCE_INVALIDATED/SOURCE_READY. This proves a drawable-to-glass readiness gap, but does not isolate which merged PR increased its visibility. In the source, `NativeBubbleGlass.draw()` explicitly takes the native fallback while `ConversationBackdropSource.texture()==null`. A correctly blurred texture cannot be synthesized from a wallpaper that has not yet been observed.
+
+Mitigation: queue the existing verified wallpaper disk preload at the beginning of `AppLiquidGlass.doHook()`, instead of after hook installation. For WhatsApp's actual `Conversation` activity only, observe the decor/session and call `syncSharedBubbles()` on `STARTED`, before `RESUMED`, so its first global-layout callback can begin the isolated wallpaper render earlier. The normal `RESUMED` path remains and revalidates preferences and materials. Existing strict `contentKey` matching and native fallback remain unchanged; a previous chat's unverified wallpaper must never be painted.
+
+Safety: no wallpaper/image content logged, no rendering on the UI thread, no arbitrary previous-chat texture substitution, no extra per-frame invalidation, and no lifecycle changes for HomeActivity. The source still paints natively if no verified texture has been prepared in time; eliminating that scenario requires further device evidence about first-frame layout timings and cache-key eligibility. Added source-regression tests for lifecycle order and verified preview matching.
+
+Validation: automated PR CI (unit tests, lint and debug compilation, then owner-only signed preview) is required; not yet physically tested on the Samsung device. Device acceptance: enter different chats and return repeatedly, including a chat with a different wallpaper, observing any native blue/grey frame and BUBBLE_EARLY_PREWARM / SOURCE_READY timings. If flashes persist, collect a single bounded Element Inspector capture taken during opening; distinguish `no_renderer` vs `no_texture` vs `unsupported` rather than broadening the fallback unsafely.

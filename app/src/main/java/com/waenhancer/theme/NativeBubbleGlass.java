@@ -109,7 +109,7 @@ public final class NativeBubbleGlass {
     private final Matrix current = new Matrix(), entryInverse = new Matrix(), rootGlobal = new Matrix(),
             rootInverse = new Matrix(), hostGlobal = new Matrix();
     private final RectF hostRect = new RectF();
-    private boolean broken, released, presented;
+    private boolean broken, released, presented, firstTextureMissReported;
     // Same native row draw: a smaller factory drawable inside the bubble is a quote, not a bubble.
     private Object lastEntry;
     private Drawable lastDrawable;
@@ -169,7 +169,15 @@ public final class NativeBubbleGlass {
         if (frame == null || frame.canvas != canvas) { unhosted(bubble, canvas); return false; }
         View host = frame.view;
         Bitmap texture = source.texture();
-        if (texture == null) { waiting.add(host); return lost(host, BubbleGlassTelemetry.Native.NO_TEXTURE); }
+        if (texture == null) {
+            if (!presented && !firstTextureMissReported) {
+                firstTextureMissReported = true;
+                ConversationBackdropSource.probe("BUBBLE_FIRST_FRAME_NATIVE",
+                        "reason=no_texture revision=" + source.revision());
+            }
+            waiting.add(host);
+            return lost(host, BubbleGlassTelemetry.Native.NO_TEXTURE);
+        }
         Rect bounds = bubble.getBounds();
         int w = bounds.width(), h = bounds.height();
         if (w < 2 || h < 2) return lost(host, BubbleGlassTelemetry.Native.TOO_SMALL);
