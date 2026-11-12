@@ -467,6 +467,12 @@ public class BubbleGlassStabilityTest {
                         && inspector.contains("role.contains(\"recording\")"));
         assertTrue("no content or image is read by the new sampler",
                 !inspector.contains("view.getText()") && !inspector.contains("view.getContentDescription()"));
+        assertTrue("bottommost anonymous candidates must win remaining payload capacity",
+                inspector.contains("presenceOther.length() - (32 - bottomNodes.length())")
+                        && inspector.contains("int i = firstOther; i < presenceOther.length(); i++"));
+        assertTrue("samples must flag dropped older candidates",
+                inspector.contains("boolean presenceOverflow = false;")
+                        && inspector.contains("!stack.isEmpty() || presenceOverflow"));
         String app = read(APP);
         assertTrue("native draw candidates can be reported without recolouring",
                 app.contains("probeInChatPresenceBubble(bubble)"));
