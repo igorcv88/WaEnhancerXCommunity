@@ -583,6 +583,33 @@ public final class AppLiquidGlass extends Feature {
         }
     }
 
+    /** The NinePatch hook is app-wide; avoid getResourceEntryName() on every native draw. */
+    private final java.util.Map<Integer, Boolean> presenceRoleIds = new java.util.HashMap<>();
+    private final java.util.Map<Class<?>, Boolean> presenceRoleClasses = new java.util.HashMap<>();
+
+    private boolean namedPresenceOwner(View owner) {
+        int id = owner.getId();
+        boolean byClass = id == View.NO_ID || id == 0;
+        if (byClass) {
+            Boolean cached = presenceRoleClasses.get(owner.getClass());
+            if (cached != null) return cached;
+            boolean match = presenceRole(owner.getClass().getSimpleName());
+            presenceRoleClasses.put(owner.getClass(), match);
+            return match;
+        }
+        Boolean cached = presenceRoleIds.get(id);
+        if (cached != null) return cached;
+        boolean match = presenceRole(resourceName(owner));
+        presenceRoleIds.put(id, match);
+        return match;
+    }
+
+    private static boolean presenceRole(String value) {
+        String role = value.toLowerCase(java.util.Locale.ROOT);
+        return role.contains("typing") || role.contains("recording")
+                || role.contains("composing") || role.contains("presence");
+    }
+
     /**
      * The other participant's transient typing/voice-recording bubble is not a message row.
      * It lives in the conversation body, not in the contact header or our own recorder.
@@ -595,9 +622,7 @@ public final class AppLiquidGlass extends Feature {
         View owner = (View) drawable.getCallback();
         // This hook sees every framework nine-patch in WhatsApp: reject non-activity IDs
         // before geometry walks, and never turn an icon's ImageView drawable into glass.
-        String role = resourceName(owner).toLowerCase(java.util.Locale.ROOT);
-        if (!(role.contains("typing") || role.contains("recording")
-                || role.contains("composing") || role.contains("presence"))) return false;
+        if (!namedPresenceOwner(owner)) return false;
         if ((owner.getBackground() != drawable && owner.getForeground() != drawable)
                 || !presenceChatHost(owner)) return false;
         Session session = sessionFor(owner.getRootView());
