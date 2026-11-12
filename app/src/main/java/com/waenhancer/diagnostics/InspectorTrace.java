@@ -94,6 +94,7 @@ public final class InspectorTrace {
             // original inspector only selected the top 43% and player-named views.
             JSONArray presenceNamed = new JSONArray();
             JSONArray presenceOther = new JSONArray();
+            boolean presenceOverflow = false;
             ArrayDeque<Node> stack = new ArrayDeque<>();
             stack.push(new Node(decor, 0));
             int visited = 0;
@@ -146,7 +147,10 @@ public final class InspectorTrace {
                         else {
                             // Keep the lowest/latest anonymous candidates: the indicator can
                             // sit immediately above the composer after older messages.
-                            if (presenceOther.length() == 24) presenceOther.remove(0);
+                            if (presenceOther.length() == 24) {
+                                presenceOther.remove(0);
+                                presenceOverflow = true;
+                            }
                             presenceOther.put(node);
                         }
                     }
@@ -173,11 +177,15 @@ public final class InspectorTrace {
                 JSONObject bottomEvent = base("activity", activity);
                 bottomEvent.put("stage", shortValue("presence-" + stage, 32));
                 bottomEvent.put("visited", visited);
-                bottomEvent.put("truncated", !stack.isEmpty());
+                bottomEvent.put("truncated", !stack.isEmpty() || presenceOverflow
+                        || presenceNamed.length() + presenceOther.length() > 32);
                 JSONArray bottomNodes = new JSONArray();
                 for (int i = 0; i < presenceNamed.length(); i++)
                     bottomNodes.put(presenceNamed.get(i));
-                for (int i = 0; i < presenceOther.length() && bottomNodes.length() < 32; i++)
+                // Preserve the latest (bottommost) anonymous elements if named candidates
+                // consumed slots. Earlier messages must not evict the transient indicator.
+                int firstOther = Math.max(0, presenceOther.length() - (32 - bottomNodes.length()));
+                for (int i = firstOther; i < presenceOther.length(); i++)
                     bottomNodes.put(presenceOther.get(i));
                 bottomEvent.put("nodes", bottomNodes);
                 enqueue(bottomEvent);
