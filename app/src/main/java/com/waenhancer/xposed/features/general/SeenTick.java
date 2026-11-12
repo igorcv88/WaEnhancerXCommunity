@@ -29,6 +29,7 @@ import com.waenhancer.xposed.core.db.MessageStore;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.features.customization.HideSeenView;
 import com.waenhancer.xposed.features.privacy.ReceiptRelease;
+import com.waenhancer.xposed.features.others.ReceiptSignalProbe;
 import com.waenhancer.xposed.features.listeners.MenuStatusListener;
 import com.waenhancer.xposed.utils.DesignUtils;
 import com.waenhancer.xposed.utils.ReflectionUtils;
@@ -430,6 +431,30 @@ public class SeenTick extends Feature {
         XposedBridge.hookMethod(messageJobMethod, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                // Research-only: select the next outgoing direct message while explicitly armed.
+                // This runs independently of Blue-on-Reply and never changes the job/result.
+                if (ReceiptSignalProbe.wantsTarget(prefs)) {
+                    try {
+                        Object sendJob = findSendJob(param, messageSendClass);
+                        if (sendJob != null) {
+                            String id = (String) XposedHelpers.getObjectField(sendJob, "id");
+                            String jid = (String) XposedHelpers.getObjectField(sendJob, "jid");
+                            if (id != null && jid != null) {
+                                FMessageWpp.UserJid peer = new FMessageWpp.UserJid(WppCore.createUserJid(jid));
+                                if (!peer.isNull() && !peer.isGroup() && !peer.isStatus()) {
+                                    FMessageWpp outgoing = findOutgoing(peer, id);
+                                    long rowId = outgoing == null ? -1 : outgoing.getRowId();
+                                    String primary = peer.getPhoneRawString() != null
+                                            ? peer.getPhoneRawString() : jid;
+                                    ReceiptSignalProbe.selectOutgoing(prefs, id, primary,
+                                            peer.getUserRawString(), rowId);
+                                }
+                            }
+                        }
+                    } catch (Throwable ignored) {
+                        // No additional failure mode in WhatsApp's message-send path.
+                    }
+                }
                 if (!prefs.getBoolean("blueonreply", false)) return;
                 try {
                     releaseOnSend(param, messageSendClass);

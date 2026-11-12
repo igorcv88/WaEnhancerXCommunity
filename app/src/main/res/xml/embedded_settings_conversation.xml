@@ -21,6 +21,12 @@
             app:summary="@string/toast_on_viewed_message_sum"
             app:title="@string/toast_on_viewed_message" />
 
+        <rikka.material.preference.MaterialSwitchPreference
+            app:defaultValue="false"
+            app:key="receipt_signal_probe"
+            app:summary="@string/receipt_signal_probe_summary"
+            app:title="@string/receipt_signal_probe_title" />
+
         <ListPreference
             app:entries="@array/antirevoke_entries"
             app:entryValues="@array/antirevoke_values"

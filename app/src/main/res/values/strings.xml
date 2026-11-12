@@ -370,6 +370,8 @@
     <string name="toast_on_viewed_status_sum">Shows a toast if someone views your status</string>
     <string name="toast_on_viewed_message">Show toast on viewed your message</string>
     <string name="toast_on_viewed_message_sum">Shows a toast if someone views your message</string>
+    <string name="receipt_signal_probe_title">Investigate receipt signals (temporary)</string>
+    <string name="receipt_signal_probe_summary">Research only: watch receipt metadata for up to 12 sent messages in one direct chat and log outbound reaction attempts, for 10 minutes. No content or identifiers are logged. Reaction-view events are not yet covered. Read WaEXReceiptProbe logs. Restart WhatsApp after enabling and turn off after testing. Ticks are unchanged.</string>
     <string name="textonahora_sum">Show text next to any timestamp in the WhatsApp app</string>
     <string name="delete_for_me">Delete(for me)</string>
     <string name="send_audio_as_voice_audio_note">Send audio as voice/audio Note</string>
