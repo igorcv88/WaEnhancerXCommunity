@@ -89,6 +89,10 @@ public final class InspectorTrace {
             int height = decor.getResources().getDisplayMetrics().heightPixels;
             JSONArray playerNodes = new JSONArray();
             JSONArray ordinaryNodes = new JSONArray();
+            // The transient in-chat typing/recording bubble is near the bottom, while the
+            // original inspector only selected the top 43% and player-named views.
+            JSONArray presenceNamed = new JSONArray();
+            JSONArray presenceOther = new JSONArray();
             ArrayDeque<Node> stack = new ArrayDeque<>();
             stack.push(new Node(decor, 0));
             int visited = 0;
@@ -103,8 +107,20 @@ public final class InspectorTrace {
                 String role = id.toLowerCase(java.util.Locale.ROOT);
                 boolean player = role.contains("player") || role.contains("voice")
                         || role.contains("audio") || role.contains("playback");
-                if (view.getWidth() > 0 && view.getHeight() > 0
-                        && ((top <= height * 0.43f && bottom >= 0) || player)) {
+                int width = view.getWidth(), viewHeight = view.getHeight();
+                boolean namedPresence = role.contains("typing") || role.contains("recording")
+                        || role.contains("composing") || role.contains("presence")
+                        || role.contains("indicator") || role.contains("bubble")
+                        || role.contains("microphone");
+                boolean smallBottom = top >= height * 0.42f && top <= height * 0.99f
+                        && width > 0 && width <= decor.getWidth() * 0.55f
+                        && viewHeight > 0 && viewHeight <= height * 0.17f;
+                boolean nativeBubble = view.getBackground() instanceof android.graphics.drawable.NinePatchDrawable
+                        || view.getForeground() instanceof android.graphics.drawable.NinePatchDrawable;
+                boolean presence = smallBottom && (namedPresence || nativeBubble
+                        || top >= height * 0.70f);
+                boolean ordinary = (top <= height * 0.43f && bottom >= 0) || player;
+                if (width > 0 && viewHeight > 0 && (ordinary || presence)) {
                     JSONObject node = new JSONObject();
                     node.put("depth", item.depth);
                     node.put("class", shortValue(view.getClass().getName(), 160));
@@ -117,8 +133,22 @@ public final class InspectorTrace {
                     node.put("bg", view.getBackground() == null ? "none"
                             : shortValue(view.getBackground().getClass().getName(), 140));
                     // Player candidates get priority even if a long chat list fills the quota.
-                    if (player && playerNodes.length() < 24) playerNodes.put(node);
-                    else if (ordinaryNodes.length() < MAX_VIEW_RECORDS) ordinaryNodes.put(node);
+                    if (ordinary) {
+                        if (player && playerNodes.length() < 24) playerNodes.put(node);
+                        else if (ordinaryNodes.length() < MAX_VIEW_RECORDS) ordinaryNodes.put(node);
+                    }
+                    if (presence) {
+                        node.put("fg", view.getForeground() == null ? "none"
+                                : shortValue(view.getForeground().getClass().getName(), 140));
+                        if ((namedPresence || nativeBubble) && presenceNamed.length() < 18)
+                            presenceNamed.put(node);
+                        else {
+                            // Keep the lowest/latest anonymous candidates: the indicator can
+                            // sit immediately above the composer after older messages.
+                            if (presenceOther.length() == 24) presenceOther.remove(0);
+                            presenceOther.put(node);
+                        }
+                    }
                 }
                 if (view instanceof ViewGroup && item.depth < 22) {
                     ViewGroup group = (ViewGroup) view;
@@ -136,6 +166,21 @@ public final class InspectorTrace {
             event.put("truncated", !stack.isEmpty() || ordinaryNodes.length() >= MAX_VIEW_RECORDS);
             event.put("nodes", nodes);
             enqueue(event);
+            if (presenceNamed.length() + presenceOther.length() > 0
+                    && activity.getClass().getName().contains("Conversation")) {
+                // A separate bounded payload preserves the old top/player snapshots exactly.
+                JSONObject bottomEvent = base("activity", activity);
+                bottomEvent.put("stage", shortValue("presence-" + stage, 32));
+                bottomEvent.put("visited", visited);
+                bottomEvent.put("truncated", !stack.isEmpty());
+                JSONArray bottomNodes = new JSONArray();
+                for (int i = 0; i < presenceNamed.length(); i++)
+                    bottomNodes.put(presenceNamed.get(i));
+                for (int i = 0; i < presenceOther.length() && bottomNodes.length() < 32; i++)
+                    bottomNodes.put(presenceOther.get(i));
+                bottomEvent.put("nodes", bottomNodes);
+                enqueue(bottomEvent);
+            }
         } catch (Exception | LinkageError ignored) { /* Never break WhatsApp. */ }
     }
 
