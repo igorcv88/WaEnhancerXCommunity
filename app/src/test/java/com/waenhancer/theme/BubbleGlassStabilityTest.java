@@ -429,6 +429,49 @@ public class BubbleGlassStabilityTest {
                         && pane.contains("status.setCompoundDrawableTintList(screen.headerStatusCompounds.get(status));"));
     }
 
+    @Test public void inChatTypingRecordingBubbleHasOnlyAProvenScopedNativeRoute() throws IOException {
+        String app = read(APP);
+        int start = app.indexOf("private boolean drawInChatPresenceBubble(Drawable drawable, Canvas canvas)");
+        int end = app.indexOf("private static void probeInChatPresenceBubble(", start);
+        String route = app.substring(start, end);
+        assertTrue("the native nine-patch is required", route.contains("drawable instanceof android.graphics.drawable.NinePatchDrawable"));
+        assertTrue("the drawable must be owned by its view", route.contains("drawable.getCallback() instanceof View"));
+        assertTrue("the candidate is the actual background or foreground",
+                route.contains("owner.getBackground() != drawable && owner.getForeground() != drawable"));
+        assertTrue("only known activity names qualify",
+                route.contains("role.contains(\"typing\")") && route.contains("role.contains(\"recording\")")
+                        && route.contains("role.contains(\"composing\")") && route.contains("role.contains(\"presence\")"));
+        assertTrue("native fallback remains when a host is unverified", route.contains("return false;"));
+        assertTrue("scope switch applies to incoming indicators", route.contains("sharedFactoryWanted(false)"));
+        assertTrue("the original drawable is replaced only after a successful glass draw",
+                app.contains("|| drawInChatPresenceBubble(bubble, canvas)) {")
+                        && app.contains("if (drawn) com.waenhancer.diagnostics.InspectorTrace.glassEventOnce("));
+        int hostStart = app.indexOf("private static boolean presenceChatHost(View view)");
+        String host = app.substring(hostStart, app.indexOf("private void hookPendingBubbleClasses()", hostStart));
+        assertTrue("exclude own recorder and composer", host.contains("\"voice_note_stub\"")
+                && host.contains("\"text_entry_layout\"") && host.contains("\"footer\""));
+        assertTrue("exclude floating header", host.contains("\"search_fragment_and_toolbar_holder\""));
+        assertTrue("candidate must belong to conversation body", host.contains("\"conversation_layout\""));
+        assertTrue("no unrelated large UI is accepted", host.contains("280f * density")
+                && host.contains("115f * density"));
+    }
+
+    @Test public void inspectorIncludesBottomOfChatAndAnonymousNativeIndicatorCandidates() throws IOException {
+        String inspector = read("src/main/java/com/waenhancer/diagnostics/InspectorTrace.java");
+        assertTrue("old upper-screen sample remains", inspector.contains("ordinaryNodes"));
+        assertTrue("additional bottom sample is emitted", inspector.contains("\"presence-\" + stage"));
+        assertTrue("unnamed backgrounds can still be spotted",
+                inspector.contains("view.getBackground() instanceof android.graphics.drawable.NinePatchDrawable"));
+        assertTrue("both recording and typing names qualify",
+                inspector.contains("role.contains(\"typing\")")
+                        && inspector.contains("role.contains(\"recording\")"));
+        assertTrue("no content or image is read by the new sampler",
+                !inspector.contains("view.getText()") && !inspector.contains("view.getContentDescription()"));
+        String app = read(APP);
+        assertTrue("native draw candidates can be reported without recolouring",
+                app.contains("probeInChatPresenceBubble(bubble)"));
+    }
+
     @Test public void anyChildOfAVerifiedMessageListIsARow() throws IOException {
         // Device 2026-11-03: view-once and call rows (other IDs) drew registered incoming
         // bubbles on 1440x222 row canvases with frame=none.
