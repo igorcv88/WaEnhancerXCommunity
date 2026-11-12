@@ -438,9 +438,14 @@ public class BubbleGlassStabilityTest {
         assertTrue("the drawable must be owned by its view", route.contains("drawable.getCallback() instanceof View"));
         assertTrue("the candidate is the actual background or foreground",
                 route.contains("owner.getBackground() != drawable && owner.getForeground() != drawable"));
-        assertTrue("only known activity names qualify",
-                route.contains("role.contains(\"typing\")") && route.contains("role.contains(\"recording\")")
-                        && route.contains("role.contains(\"composing\")") && route.contains("role.contains(\"presence\")"));
+        assertTrue("only known activity names qualify through a cached fast gate",
+                route.contains("namedPresenceOwner(owner)")
+                        && app.contains("role.contains(\"typing\")")
+                        && app.contains("role.contains(\"recording\")")
+                        && app.contains("role.contains(\"composing\")")
+                        && app.contains("role.contains(\"presence\")"));
+        assertTrue("the app-wide native NinePatch hook must cache resource and class identity",
+                app.contains("presenceRoleIds.get(id)") && app.contains("presenceRoleClasses.get(owner.getClass())"));
         assertTrue("native fallback remains when a host is unverified", route.contains("return false;"));
         assertTrue("scope switch applies to incoming indicators", route.contains("sharedFactoryWanted(false)"));
         assertTrue("the original drawable is replaced only after a successful glass draw",
