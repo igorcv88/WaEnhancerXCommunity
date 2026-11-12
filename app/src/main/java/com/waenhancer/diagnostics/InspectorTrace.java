@@ -34,7 +34,8 @@ public final class InspectorTrace {
     public static final int MAX_STORED_CHARS = 90_000;
     public static final int MAX_BATCH_CHARS = 28_000;
 
-    private static final int MAX_VIEW_VISITS = 350;
+    // Sample only when explicitly armed; 350 cut off long conversations before the transient footer.
+    private static final int MAX_VIEW_VISITS = 650;
     private static final int MAX_VIEW_RECORDS = 68;
     private static final Object LOCK = new Object();
     private static final ArrayDeque<String> QUEUE = new ArrayDeque<>();
