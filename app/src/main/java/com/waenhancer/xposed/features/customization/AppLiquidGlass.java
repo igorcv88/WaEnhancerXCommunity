@@ -593,11 +593,13 @@ public final class AppLiquidGlass extends Feature {
         if (!(drawable instanceof android.graphics.drawable.NinePatchDrawable)
                 || !(drawable.getCallback() instanceof View)) return false;
         View owner = (View) drawable.getCallback();
-        if (!presenceChatHost(owner)
-                || (owner.getBackground() != drawable && owner.getForeground() != drawable)) return false;
+        // This hook sees every framework nine-patch in WhatsApp: reject non-activity IDs
+        // before geometry walks, and never turn an icon's ImageView drawable into glass.
         String role = resourceName(owner).toLowerCase(java.util.Locale.ROOT);
         if (!(role.contains("typing") || role.contains("recording")
                 || role.contains("composing") || role.contains("presence"))) return false;
+        if ((owner.getBackground() != drawable && owner.getForeground() != drawable)
+                || !presenceChatHost(owner)) return false;
         Session session = sessionFor(owner.getRootView());
         if (session == null) return false;
         session.trackSpecialBubbleHost(owner);
