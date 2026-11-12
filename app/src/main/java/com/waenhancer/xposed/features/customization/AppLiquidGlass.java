@@ -583,6 +583,87 @@ public final class AppLiquidGlass extends Feature {
         }
     }
 
+    /**
+     * The other participant's transient typing/voice-recording bubble is not a message row.
+     * It lives in the conversation body, not in the contact header or our own recorder.
+     * Accept only a named, view-owned native backdrop; unknown Canvas-only indicators
+     * remain native until the Element Inspector establishes their exact draw owner.
+     */
+    private boolean drawInChatPresenceBubble(Drawable drawable, Canvas canvas) {
+        if (!(drawable instanceof android.graphics.drawable.NinePatchDrawable)
+                || !(drawable.getCallback() instanceof View)) return false;
+        View owner = (View) drawable.getCallback();
+        if (!presenceChatHost(owner)
+                || (owner.getBackground() != drawable && owner.getForeground() != drawable)) return false;
+        String role = resourceName(owner).toLowerCase(java.util.Locale.ROOT);
+        if (!(role.contains("typing") || role.contains("recording")
+                || role.contains("composing") || role.contains("presence"))) return false;
+        Session session = sessionFor(owner.getRootView());
+        if (session == null) return false;
+        session.trackSpecialBubbleHost(owner);
+        if (!sharedFactoryWanted(false)) return false; // The other person's indicator is incoming.
+        GlassMaterialDrawable.DrawHost previous = GlassMaterialDrawable.enterRowDraw(owner, canvas);
+        try {
+            boolean drawn = session.drawBubble(drawable, canvas, false);
+            if (drawn) com.waenhancer.diagnostics.InspectorTrace.glassEventOnce(
+                    "BUBBLE_PRESENCE_GLASS", "view=" + resourceName(owner)
+                            + " drawable=" + drawable.getClass().getSimpleName());
+            return drawn;
+        } finally {
+            GlassMaterialDrawable.leaveRowDraw(previous);
+        }
+    }
+
+    /**
+     * Anonymous transient indicators can be custom-drawn and therefore absent from the view
+     * hierarchy. Probe only small view-owned nine-patches in the chat body, during an explicitly
+     * armed Inspector session. Never touch the original drawable, text, audio or receipt state.
+     */
+    private static void probeInChatPresenceBubble(Drawable drawable) {
+        if (!com.waenhancer.diagnostics.InspectorTrace.active()
+                || !(drawable instanceof android.graphics.drawable.NinePatchDrawable)
+                || !(drawable.getCallback() instanceof View)) return;
+        View owner = (View) drawable.getCallback();
+        if (!presenceChatHost(owner)) return;
+        String role = resourceName(owner);
+        StringBuilder chain = new StringBuilder();
+        int depth = 0;
+        for (android.view.ViewParent p = owner.getParent(); p instanceof View && depth < 5; p = p.getParent()) {
+            if (depth++ > 0) chain.append('<');
+            chain.append(resourceName((View) p));
+        }
+        com.waenhancer.diagnostics.InspectorTrace.glassEventOnce("BUBBLE_PRESENCE_DRAW",
+                "view=" + role + " class=" + owner.getClass().getSimpleName()
+                        + " bounds=" + owner.getWidth() + "x" + owner.getHeight()
+                        + " drawableBounds=" + drawable.getBounds().width() + "x"
+                        + drawable.getBounds().height() + " ownerBg=" + (owner.getBackground() == drawable)
+                        + " ownerFg=" + (owner.getForeground() == drawable)
+                        + " path=" + chain);
+    }
+
+    /** A measured bubble in the message region, excluding all local composer/recorder chrome. */
+    private static boolean presenceChatHost(View view) {
+        if (view == null || !view.isShown() || view.getWidth() <= 0 || view.getHeight() <= 0) return false;
+        float density = view.getResources().getDisplayMetrics().density;
+        if (view.getWidth() > 280f * density || view.getHeight() > 115f * density) return false;
+        View root = view.getRootView();
+        if (root == null || root.getWidth() <= 0) return false;
+        int[] location = new int[2];
+        view.getLocationOnScreen(location);
+        if (location[0] > root.getWidth() / 2) return false;
+        boolean chat = false;
+        for (View current = view; current != null;
+                current = current.getParent() instanceof View ? (View) current.getParent() : null) {
+            String name = resourceName(current);
+            if ("conversation_layout".equals(name)) chat = true;
+            if ("footer".equals(name) || "voice_note_stub".equals(name)
+                    || "voice_note_draft_layout_v2".equals(name)
+                    || "text_entry_layout".equals(name)
+                    || "search_fragment_and_toolbar_holder".equals(name)) return false;
+        }
+        return chat;
+    }
+
     private void hookPendingBubbleClasses() {
         if (!LiquidGlassSettings.isEnabled(prefs, Surface.BUBBLES)) return;
         ArrayList<Class<?>> types;
@@ -645,7 +726,8 @@ public final class AppLiquidGlass extends Feature {
             Canvas canvas = (Canvas) param.args[0];
             if (GlassPane.isCaptureCanvas(canvas)) return;
             try {
-                if (drawDetachedDate(bubble, canvas) || drawViewOnceBackground(bubble, canvas)) {
+                if (drawDetachedDate(bubble, canvas) || drawViewOnceBackground(bubble, canvas)
+                        || drawInChatPresenceBubble(bubble, canvas)) {
                     param.setResult(null);
                     return;
                 }
@@ -654,7 +736,10 @@ public final class AppLiquidGlass extends Feature {
             }
         }
         Integer direction=bubbleSides.get(bubble);
-        if (direction==null) direction=adoptBubbleCopy(bubble, param.args.length > 0 ? param.args[0] : null);
+        if (direction==null) {
+            probeInChatPresenceBubble(bubble);
+            direction=adoptBubbleCopy(bubble, param.args.length > 0 ? param.args[0] : null);
+        }
         Boolean outgoing=direction==null ? null : direction==3;
         // Anything not recognized as a registered native bubble on a canvas is left untouched.
         if (outgoing==null || !(param.args[0] instanceof Canvas)) { com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.NOT_REGISTERED); return; }
