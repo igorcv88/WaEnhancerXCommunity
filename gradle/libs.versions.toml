@@ -48,6 +48,6 @@ androidx-savedstate-ktx = { group = "androidx.savedstate", name = "savedstate-kt
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
-materialthemebuilder = { id = "dev.rikka.tools.materialthemebuilder", version = "1.5.1" }
+materialthemebuilder = { id = "dev.rikka.tools.materialthemebuilder", version = "1.6.0" }
 androidLibrary = { id = "com.android.library", version.ref = "agp" }
 kotlinAndroid = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
