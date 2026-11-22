@@ -801,7 +801,21 @@ public class SeenTick extends Feature {
                 var rowsId = new Long[]{fMessage.getRowId()};
                 var messageId = fMessage.getKey().messageID;
                 constructor = classParticipantInfo.getDeclaredConstructors()[0];
-                var participantInfo = constructor.newInstance(userJid.userJid, participant, rowsId, new String[]{messageId});
+                var parameterTypes = constructor.getParameterTypes();
+                var arguments = new Object[parameterTypes.length];
+                Object[] receiptFields = {userJid.userJid, participant, rowsId, new String[]{messageId}};
+                if (arguments.length < receiptFields.length) {
+                    throw new NoSuchMethodException("Played receipt constructor has fewer than four parameters");
+                }
+                System.arraycopy(receiptFields, 0, arguments, 0, receiptFields.length);
+                for (int i = receiptFields.length; i < arguments.length; i++) {
+                    if (parameterTypes[i] == boolean.class) {
+                        arguments[i] = false;
+                    } else if (parameterTypes[i].isPrimitive()) {
+                        throw new NoSuchMethodException("Unsupported played receipt constructor parameter");
+                    }
+                }
+                var participantInfo = constructor.newInstance(arguments);
                 var sendJob = XposedHelpers.newInstance(sendPlayerClass, participantInfo, false);
                 WaJobManagerMethod.invoke(mWaJobManager, sendJob);
             } catch (Throwable e) {

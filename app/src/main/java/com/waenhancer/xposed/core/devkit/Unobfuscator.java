@@ -27,6 +27,7 @@ import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.FieldMatcher;
 import org.luckypray.dexkit.query.enums.OpCodeMatchType;
 import org.luckypray.dexkit.query.enums.StringMatchType;
+import org.luckypray.dexkit.query.enums.UsingType;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.query.matchers.base.OpCodesMatcher;
@@ -2047,9 +2048,32 @@ public class Unobfuscator {
         return UnobfuscatorCache.getInstance().getMethod(loader, () -> {
             var method = findFirstMethodUsingStrings(loader, StringMatchType.Contains,
                     "FMessageUtil/getOriginalMessageKeyIfEdited");
-            if (method == null)
-                throw new RuntimeException("MessageEdit method not found");
-            return method;
+            if (method != null) return method;
+
+            var message = loadFMessageClass(loader);
+            var keyField = loadMessageKeyField(loader);
+            var keyType = keyField.getType().getName();
+            var candidates = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                    .paramTypes(message.getName()).returnType(keyType)
+                    .addUsingField(DexSignUtil.getFieldDescriptor(keyField), UsingType.Read)));
+            Method resolved = null;
+            for (var candidate : candidates) {
+                if (!candidate.isMethod() || !Modifier.isStatic(candidate.getModifiers())) continue;
+                var calls = candidate.getInvokes();
+                boolean checksMessage = calls.stream().anyMatch(call -> call.isMethod()
+                        && message.getName().equals(call.getDeclaredClassName())
+                        && call.getParamCount() == 0 && "boolean".equals(call.getReturnTypeName()));
+                boolean hasEditLookup = calls.stream().anyMatch(call -> call.isMethod()
+                        && !message.getName().equals(call.getDeclaredClassName())
+                        && call.getParamTypeNames().equals(List.of(message.getName()))
+                        && call.getReturnType() != null
+                        && call.getReturnType().getFields().stream().anyMatch(field -> keyType.equals(field.getTypeName())));
+                if (!checksMessage || !hasEditLookup) continue;
+                if (resolved != null) throw new NoSuchMethodException("Ambiguous original message key lookup");
+                resolved = candidate.getMethodInstance(loader);
+            }
+            if (resolved == null) throw new NoSuchMethodException("Original message key method not found");
+            return resolved;
         });
     }
 
