@@ -194,13 +194,14 @@ public class Unobfuscator {
     public synchronized static Class<?> findFirstClassUsingName(ClassLoader classLoader, StringMatchType type,
                                                                 String name) throws Exception {
         return UnobfuscatorCache.getInstance().getClass(classLoader, name, () -> {
-            var result = dexkit.findClass(FindClass.create().matcher(ClassMatcher.create().className(name, type)))
-                    .firstOrNull();
+            var query = FindClass.create().matcher(ClassMatcher.create().className(name, type));
+            query.setFindFirst(type == StringMatchType.Equals);
+            var result = dexkit.findClass(query).firstOrNull();
             if (result == null) {
                 if (name.contains("PhoneUserJid")) {
                     String fallbackName = name.replace("PhoneUserJid", "UserJid");
-                    var fallbackResult = dexkit.findClass(FindClass.create().matcher(ClassMatcher.create().className(fallbackName, type)))
-                            .firstOrNull();
+                    query.matcher(ClassMatcher.create().className(fallbackName, type));
+                    var fallbackResult = dexkit.findClass(query).firstOrNull();
                     if (fallbackResult != null) {
                         return fallbackResult.getInstance(classLoader);
                     }
