@@ -290,19 +290,53 @@ public class ContactBlockedVerify extends Feature {
 
     private void checkContactPhotoProfile(FMessageWpp.UserJid userJid) {
         try {
-            var sendGetProfilePhoto = state.sendGetProfilePhoto;
-            if (sendGetProfilePhoto == null) {
-                return;
+            var requestClass = state.sendGetProfilePhoto;
+            var protocol = state.profilePhotoProtocol;
+            if (requestClass == null || protocol == null) return;
+
+            var constructor = requestClass.getConstructors()[0];
+            var parameterTypes = constructor.getParameterTypes();
+            int protocolIndex = findRequestParameter(parameterTypes, protocol, 2, -1);
+            if (protocolIndex < 0) {
+                throw new NoSuchMethodException("Profile photo request protocol parameter");
             }
-            var params = ReflectionUtils.initArray(sendGetProfilePhoto.getConstructors()[0].getParameterTypes());
-            params[2] = state.profilePhotoProtocol;
-            params[3] = userJid.userJid;
-            var runnable = (Runnable) sendGetProfilePhoto.getConstructors()[0].newInstance(params);
+
+            Object jid = userJid.userJid;
+            int jidIndex = findRequestParameter(parameterTypes, jid, 3, protocolIndex);
+            if (jidIndex < 0) {
+                jid = userJid.phoneJid;
+                jidIndex = findRequestParameter(parameterTypes, jid, 3, protocolIndex);
+            }
+            if (jidIndex < 0) {
+                throw new NoSuchMethodException("Profile photo request JID parameter");
+            }
+
+            var params = ReflectionUtils.initArray(parameterTypes);
+            params[protocolIndex] = protocol;
+            params[jidIndex] = jid;
+            var runnable = (Runnable) constructor.newInstance(params);
             this.state.pendingUserJid.set(userJid.getUserRawString());
             CompletableFuture.runAsync(runnable);
         } catch (Exception e) {
             logDebug(e);
         }
+    }
+
+    private static int findRequestParameter(
+            Class<?>[] types, Object value, int previousIndex, int excludedIndex) {
+        if (previousIndex < types.length && previousIndex != excludedIndex
+                && types[previousIndex] != Object.class && types[previousIndex].isInstance(value)) {
+            return previousIndex;
+        }
+        int compatibleIndex = -1;
+        for (int index = 0; index < types.length; index++) {
+            if (index == excludedIndex || types[index] == Object.class || !types[index].isInstance(value)) {
+                continue;
+            }
+            if (compatibleIndex >= 0) return -1;
+            compatibleIndex = index;
+        }
+        return compatibleIndex;
     }
 
     @NonNull
