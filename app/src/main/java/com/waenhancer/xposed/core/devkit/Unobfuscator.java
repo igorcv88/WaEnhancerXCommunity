@@ -194,7 +194,7 @@ public class Unobfuscator {
                                                                 String name) throws Exception {
         return UnobfuscatorCache.getInstance().getClass(classLoader, name, () -> {
             var query = FindClass.create().matcher(ClassMatcher.create().className(name, type));
-            query.setFindFirst(type == StringMatchType.Equals);
+            DexKitClassQuery.enableFirstMatch(query, type == StringMatchType.Equals);
             var result = dexkit.findClass(query).firstOrNull();
             if (result == null) {
                 if (name.contains("PhoneUserJid")) {
