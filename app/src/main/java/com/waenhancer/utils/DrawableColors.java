@@ -170,18 +170,24 @@ public class DrawableColors {
         HashMap<Integer, Integer> contagemCores = new HashMap<>();
         int corMaisFrequente = 0;
         int contagemMaxima = 0;
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        // Keep column-major tie-breaking and bound the temporary pixel buffer.
+        int columnsPerBatch = Math.max(1, Math.min(width, 16384 / height));
+        int[] pixels = new int[columnsPerBatch * height];
 
-        for (int x = 0; x < bitmap.getWidth(); x++) {
-            for (int y = 0; y < bitmap.getHeight(); y++) {
-                int cor = bitmap.getPixel(x, y);
-                // Atualiza a contagem da cor no mapa
-                int contagemAtual = contagemCores.getOrDefault(cor, 0) + 1;
-                contagemCores.put(cor, contagemAtual);
-
-                // Verifica se essa cor se tornou a mais frequente até agora
-                if (contagemAtual > contagemMaxima) {
-                    corMaisFrequente = cor;
-                    contagemMaxima = contagemAtual;
+        for (int startX = 0; startX < width; startX += columnsPerBatch) {
+            int columns = Math.min(columnsPerBatch, width - startX);
+            bitmap.getPixels(pixels, 0, columns, startX, 0, columns, height);
+            for (int x = 0; x < columns; x++) {
+                for (int y = 0; y < height; y++) {
+                    int cor = pixels[y * columns + x];
+                    int contagemAtual = contagemCores.getOrDefault(cor, 0) + 1;
+                    contagemCores.put(cor, contagemAtual);
+                    if (contagemAtual > contagemMaxima) {
+                        corMaisFrequente = cor;
+                        contagemMaxima = contagemAtual;
+                    }
                 }
             }
         }
