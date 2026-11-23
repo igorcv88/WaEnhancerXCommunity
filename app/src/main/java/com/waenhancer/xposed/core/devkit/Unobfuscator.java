@@ -3847,9 +3847,20 @@ public class Unobfuscator {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
             var methods = dexkit.findMethod(FindMethod.create()
                     .matcher(MethodMatcher.create().addUsingNumber(8726).paramCount(1).addParamType(Object.class)));
-            if (methods.isEmpty())
-                return null;
-            return methods.get(0).getMethodInstance(classLoader);
+            if (!methods.isEmpty()) return methods.get(0).getMethodInstance(classLoader);
+
+            var anchored = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                    .addUsingNumber(8726).paramCount(1)
+                    .addUsingString("ContactPickerFragment/onContactsLoaded", StringMatchType.Contains)));
+            if (anchored.size() == 1) return anchored.get(0).getMethodInstance(classLoader);
+            if (!anchored.isEmpty()) return null;
+
+            var scoped = dexkit.findMethod(FindMethod.create()
+                    .searchPackages("com.whatsapp.contact.ui.picker")
+                    .matcher(MethodMatcher.create()
+                            .declaredClass("com.whatsapp.contact.ui.picker.ContactPickerFragment")
+                            .addUsingNumber(8726).paramCount(1)));
+            return scoped.size() == 1 ? scoped.get(0).getMethodInstance(classLoader) : null;
         });
     }
 
