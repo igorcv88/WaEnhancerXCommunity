@@ -806,10 +806,9 @@ public final class AppLiquidGlass extends Feature {
             return;
         }
         try {
-            boolean drawn = session.drawBubble(bubble, canvas, outgoing);
-            if (drawn) param.setResult(null);
             if (bubbleTouchTrace != null)
-                bubbleTouchTrace.visual(host, bubble, drawn ? "factory glass" : "factory native");
+                bubbleTouchTrace.visual(host, bubble, "factory attempt");
+            if (session.drawBubble(bubble, canvas, outgoing)) param.setResult(null);
         } catch (Throwable error) {
             com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.EXCEPTION);
             report("shared-bubble-draw-error", "bubble left native: " + error);
