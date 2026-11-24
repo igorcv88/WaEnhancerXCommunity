@@ -67,6 +67,7 @@ public final class AppLiquidGlass extends Feature {
     private final WeakHashMap<View, Session> contrastOwners = new WeakHashMap<>();
     /** Set while this module writes those colours, so its own setter calls are not answered. */
     private boolean applyingContrast;
+    private BubbleTouchTrace bubbleTouchTrace;
     private final Set<String> reported = new HashSet<>();
     /** Direction metadata survives factory creation until the native row installs the drawable. */
     private final Map<GlassMaterialDrawable, Boolean> bubbleDirections =
@@ -110,9 +111,13 @@ public final class AppLiquidGlass extends Feature {
                 Session session = sessionFor(decor);
                 if (session != null) session.suspend();
                 if (foreground.get() == session) foreground.clear();
+                if (bubbleTouchTrace != null && bubbleTouchTrace.owns(activity))
+                    bubbleTouchTrace.close();
             } else if (state == WppCore.ActivityChangeState.ChangeType.DESTROYED) {
                 Session session = sessionFor(decor);
                 if (session != null) session.close();
+                if (bubbleTouchTrace != null && bubbleTouchTrace.owns(activity))
+                    bubbleTouchTrace.close();
             } else if (state == WppCore.ActivityChangeState.ChangeType.STARTED
                     && "Conversation".equals(activity.getClass().getSimpleName())) {
                 // STARTED precedes RESUMED and the first frame. Attach the wallpaper
@@ -121,6 +126,11 @@ public final class AppLiquidGlass extends Feature {
                 // Do not substitute a previous chat's unverified wallpaper.
                 reloadPrefs();
                 refreshBubbleScope();
+                if (BubbleTouchTrace.enabled() && bubbleTouchTrace == null) {
+                    bubbleTouchTrace = new BubbleTouchTrace(activity, decor,
+                            () -> bubbleScopeCache.name(), () -> bubbleTouchTrace = null);
+                    bubbleTouchTrace.start();
+                }
                 refreshBubblePalette();
                 hookPendingBubbleClasses();
                 publishOptics();
@@ -575,6 +585,8 @@ public final class AppLiquidGlass extends Feature {
         GlassMaterialDrawable.DrawHost previous = GlassMaterialDrawable.enterRowDraw(owner, canvas);
         try {
             boolean drawn = session.drawBubble(drawable, canvas, outgoing);
+            if (bubbleTouchTrace != null)
+                bubbleTouchTrace.visual(owner, drawable, drawn ? "special glass" : "special native");
             if (drawn) com.waenhancer.diagnostics.InspectorTrace.glassEventOnce(
                     "view-once-glass", "host=" + resourceName(owner) + " outgoing=" + outgoing);
             return drawn;
@@ -794,7 +806,10 @@ public final class AppLiquidGlass extends Feature {
             return;
         }
         try {
-            if (session.drawBubble(bubble, canvas, outgoing)) param.setResult(null);
+            boolean drawn = session.drawBubble(bubble, canvas, outgoing);
+            if (drawn) param.setResult(null);
+            if (bubbleTouchTrace != null)
+                bubbleTouchTrace.visual(host, bubble, drawn ? "factory glass" : "factory native");
         } catch (Throwable error) {
             com.waenhancer.theme.BubbleGlassTelemetry.stayedNative(com.waenhancer.theme.BubbleGlassTelemetry.Native.EXCEPTION);
             report("shared-bubble-draw-error", "bubble left native: " + error);
@@ -1627,7 +1642,14 @@ public final class AppLiquidGlass extends Feature {
                 // WhatsApp changed this fill while downloading; restore its latest native value.
                 clearedFills.put(fill, flat.getColor());
             }
-            if (flat.getColor() != 0) flat.setColor(0);
+            if (flat.getColor() != 0) {
+                BubbleTouchTrace trace = bubbleTouchTrace;
+                View owner = trace != null && fill.getCallback() instanceof View
+                        ? (View) fill.getCallback() : null;
+                if (owner != null) trace.visual(owner, fill, "fill before");
+                flat.setColor(0);
+                if (owner != null) trace.visual(owner, fill, "fill after");
+            }
         }
 
         private void tintTree(View view, boolean glass, int color, int depth) {
