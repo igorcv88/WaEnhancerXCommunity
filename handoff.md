@@ -1853,3 +1853,35 @@ Validation required: Android CI, signed artifact and device check. No merge. Kee
 - On a test device with synthetic messages, record module and WhatsApp version/build before collecting. Run `adb shell setprop log.tag.WaEXBubbleTouch DEBUG` before entering the test conversation. Start `adb logcat -v threadtime -s WaEXBubbleTouch:D '*:S'`. Each Conversation start arms one window for up to 60 seconds and 600 lines. Leaving the conversation ends it. Compare a fresh window per case, including an ordinary row, a fresh special row and an already unavailable synthetic row. Use tap, long press, swipe-to-reply and scroll/rebind in separate passes if needed. Capture native baseline and Text Bubbles with the same synthetic setup. Use Inspector NAVIGATE only in a separate comparison; use `WaEXGlassDiag` only in a separate probe comparison. Do not use historical messages. Set `adb shell setprop log.tag.WaEXBubbleTouch INFO` when finished.
 - Interpret the trace by comparing selected row identities, dispatch/interception results, cancellation, listener identity and bind boundaries. Scope is the native Conversation ListView with `android.R.id.list`; a renamed or different list, unobserved override, hook cap or very large subtree can limit coverage. MOVE payloads are omitted. Framework/override callbacks can nest. Geometry selects a row for observation and does not determine the actual native hit target or media availability.
 - This branch is diagnostic only. No root cause or interaction fix is verified. T01–T10 require test-account comparison, including the negative media case and visual parity. T11–T12 include host structure checks and still require runtime trace review. T13 is delegated to PR CI because the local Gradle wrapper cannot download its distribution.
+
+## 2026-11-25 — Differential gesture probe in PR #175
+
+Device result on `111c1eec`: glass off worked. Glass on with `WaEXBubbleTouch=INFO` failed. Glass on with `WaEXBubbleTouch=DEBUG` worked. Each condition used the same APK and a force-stop. Inspector had restored interaction independently. `WaEXGlassDiag=DEBUG` alone had not. The submitted 466-line capture contains no `WaEXBubbleTouch` lines. The old DEBUG property controlled both diagnostic activation and event logging. Missing lines leave the actual hook target, installation status and callback execution unverified.
+
+In that build, the Conversation lifecycle resolved and installed a hook on the concrete or inherited activity dispatch before row/adapter inspection. The first matching ACTION_DOWN could then resolve and install row and adapter hooks, reflect on listeners, format metadata and write it to logcat. A change at either installation boundary may affect ART dispatch or compiled callers through LSPosed. Reflection, handler timing, rebinding and Inspector's overlay/lifecycle are separate explanations. Neither a passing empty hook nor an Inspector comparison proves ART deoptimization: a hook also changes the native entry path and timing. We do not explicitly deoptimize any method, force a rebind, change a view or intercept a gesture.
+
+The replacement driver reads `debug.waex.bubbletouch` once per WhatsApp process. Empty property means dormant. Explicit modes emit a separate WARN marker `WaEXBubbleMode` with the effective mode, glass scope, phase and activity hook installation status. Active callback modes emit a bounded summary on leaving Conversation or after 60 seconds. The `empty` controls use an unoverridden Xposed callback and emit only the activation marker. Detail events go to `WaEXBubbleTouch` at INFO in `log` and `full`. Legacy log-tag settings do not arm this driver. Use a clean process for each trial, because removing the hook may not restore ART compilation state.
+
+| Compare | Isolation |
+| --- | --- |
+| `off` → `resolve` → `empty` | No touch method resolution → reflective resolution → register the same Activity dispatch hook with empty callbacks |
+| `empty` → `late-empty` | Install at Conversation STARTED vs 500 ms after STARTED, with the same resolved target |
+| `empty` → `callbacks` → `list` → `row` | Empty callbacks → count activity callbacks → find the list → hit-test visible row |
+| `row` → `hierarchy` → `reflect` → `format` → `log` | Walk selected subtree → read listener fields → build payloads without log I/O → emit the same payloads |
+| `hierarchy` → `row-resolve` → `row-hooks` → `row-watch` | Resolve list/row/child gesture methods → install empty hooks → execute read-only gesture observers |
+| `row` → `adapter-resolve` → `adapter-empty` → `adapter-watch` | Adapter lookup and getView resolution → empty hook → count native rebinds for the selected row |
+| `full` | Combined observation plus detailed native/visual events, intended for correlation |
+
+Use Termux with root on the test device. Leave Text Bubbles on and the Inspector off, keep the other settings fixed and use synthetic messages. Prefer long press as a repeatable interaction. Use a fresh equivalent test message in each pass if testing native opening. Wait for a fresh `phase=ready` marker before interpreting a trial and keep taps at the same interval after opening the conversation. For `late-empty`, test after the readiness marker. Repeat off/resolve/empty in both orders before moving to the other branches. For adapter modes, select the test row, then scroll it out and back to exercise recycling. Zero selected row binds means that comparison did not exercise a matching rebind.
+
+```sh
+wa_test() {
+    su -c "setprop log.tag.WaEXGlassDiag INFO; setprop log.tag.WaEXBubbleTouch INFO; setprop log.tag.WaEXBubbleMode WARN; setprop debug.waex.bubbletouch $1; am force-stop com.whatsapp"
+    su -c 'getprop debug.waex.bubbletouch'
+    su -c 'logcat -b main -v threadtime -T 1 -s WaEXBubbleMode:W WaEXBubbleTouch:I "*:S"' |
+        tee "$HOME/wa-bubble-$1.log"
+}
+wa_test off
+```
+
+Open WhatsApp and enter the test conversation after starting the capture. Leave the conversation to collect a summary, then stop capture with Ctrl+C. Run `wa_test resolve`, `wa_test empty` and the remaining comparisons separately. End with `su -c 'setprop debug.waex.bubbletouch ""; am force-stop com.whatsapp'`. For WhatsApp Business, use `com.whatsapp.w4b` in both commands. A missing marker invalidates the trial for causal comparison. No device actions were performed from the development session.

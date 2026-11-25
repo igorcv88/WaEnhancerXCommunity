@@ -126,8 +126,9 @@ public final class AppLiquidGlass extends Feature {
                 // Do not substitute a previous chat's unverified wallpaper.
                 reloadPrefs();
                 refreshBubbleScope();
-                if (BubbleTouchTrace.enabled() && bubbleTouchTrace == null) {
-                    bubbleTouchTrace = new BubbleTouchTrace(activity, decor,
+                BubbleTouchMode mode = BubbleTouchTrace.configuredMode();
+                if (mode != BubbleTouchMode.UNSET && bubbleTouchTrace == null) {
+                    bubbleTouchTrace = new BubbleTouchTrace(mode, activity, decor,
                             () -> bubbleScopeCache.name(), () -> bubbleTouchTrace = null);
                     bubbleTouchTrace.start();
                 }
@@ -585,7 +586,7 @@ public final class AppLiquidGlass extends Feature {
         GlassMaterialDrawable.DrawHost previous = GlassMaterialDrawable.enterRowDraw(owner, canvas);
         try {
             boolean drawn = session.drawBubble(drawable, canvas, outgoing);
-            if (bubbleTouchTrace != null)
+            if (bubbleTouchTrace != null && bubbleTouchTrace.visuallyTraces())
                 bubbleTouchTrace.visual(owner, drawable, drawn ? "special glass" : "special native");
             if (drawn) com.waenhancer.diagnostics.InspectorTrace.glassEventOnce(
                     "view-once-glass", "host=" + resourceName(owner) + " outgoing=" + outgoing);
@@ -806,7 +807,7 @@ public final class AppLiquidGlass extends Feature {
             return;
         }
         try {
-            if (bubbleTouchTrace != null)
+            if (bubbleTouchTrace != null && bubbleTouchTrace.visuallyTraces())
                 bubbleTouchTrace.visual(host, bubble, "factory attempt");
             if (session.drawBubble(bubble, canvas, outgoing)) param.setResult(null);
         } catch (Throwable error) {
@@ -1643,7 +1644,7 @@ public final class AppLiquidGlass extends Feature {
             }
             if (flat.getColor() != 0) {
                 BubbleTouchTrace trace = bubbleTouchTrace;
-                View owner = trace != null && fill.getCallback() instanceof View
+                View owner = trace != null && trace.visuallyTraces() && fill.getCallback() instanceof View
                         ? (View) fill.getCallback() : null;
                 if (owner != null) trace.visual(owner, fill, "fill before");
                 flat.setColor(0);
