@@ -78,7 +78,7 @@ public class MediaLibraryConcurrencyTest {
         assertEquals(expectedBlobs, LibraryFixture.count(fixture.connection(), "blobs"));
         assertEquals(0, new File(fixture.libraryDir(), "staging").list().length);
         MediaLibrary.ReconcileReport report = check.reconcile(true);
-        assertEquals(0, report.orphanBlobsRemoved + report.markedCorrupt + report.markedMissing + report.unreferencedBlobsRemoved);
+        assertEquals(0, report.orphanBlobsQuarantined + report.markedCorrupt + report.markedMissing + report.unreferencedBlobsQuarantined);
         assertEquals(expectedBlobs, report.verified);
     }
 
@@ -103,7 +103,7 @@ public class MediaLibraryConcurrencyTest {
         assertEquals(count / 2 + count / 2 + count / 2, shas.size());
         MediaLibrary.ReconcileReport report = check.reconcile(true);
         assertEquals(shas.size(), report.verified);
-        assertEquals(0, report.orphanBlobsRemoved + report.markedCorrupt + report.markedMissing);
+        assertEquals(0, report.orphanBlobsQuarantined + report.markedCorrupt + report.markedMissing);
     }
 
     @Test

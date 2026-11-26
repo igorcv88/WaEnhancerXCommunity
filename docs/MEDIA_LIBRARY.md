@@ -132,6 +132,25 @@ refuses non-trashed items; trash older than 30 days is purged by maintenance.
 No query/insert/update/delete, no paths, no enumeration. The module needs no storage permission:
 it never opens WhatsApp's files itself.
 
+## Acceptance criteria (independent review, 2026-11-26)
+
+| Criterion | Implementation | Evidence |
+| --- | --- | --- |
+| Complete validation of imported photos/videos | `MediaValidator` walks the whole file: JPEG markers to SOS + final EOI; PNG IHDR, every chunk CRC-32, IEND last; GIF trailer; WebP RIFF size; ISO-BMFF (MP4/3GP/MOV/HEIC/AVIF) boxes tiling the file exactly with `ftyp` first, `moov`/`moof` + `mdat` for video, `meta` for still images; WebM EBML header + Segment size. Then a device decode probe (`AndroidDecodeProbe`: bounds decode / video track + duration). Anything incomplete is refused with `INCOMPLETE_MEDIA` and nothing is stored; backups containing such a file are rejected. | AcceptanceCriteria › truncatedOrInconsistent…, validatorAccepts…, deviceDecodeProbe…, backupContainingAnIncompleteFile… |
+| Periodic SHA-256 verification | `LibraryIntegrity.verifyBatch`: least recently verified first, 256 MiB per run, at every module start and every 6 h while it runs; updates state and time per file. "Verify files" re-hashes everything on demand. | AcceptanceCriteria › periodicVerificationRotates… (bounded passes cover all files, same-size damage found) |
+| Explicit detection of ambiguous associations | Identity = account + chat (incl. learned aliases) + message key + direction. A lookup or import that matches more than one visible item is **never** resolved by a guess: lookups return nothing, imports fail with `AMBIGUOUS`, the report lists the group. Identical-content groups can be resolved (extra rows to trash, file kept); different content waits for the user's choice. | AcceptanceCriteria › sameMessageStoredUnderPhoneAndLid…, ambiguityWithDifferentContent… |
+| Report of files without records and records without files | `LibraryIntegrity.inspect` (read-only): files without record, quarantined files, records without file, damaged files, unused records, ambiguous groups, unknown origins, staging leftovers. Maintenance **quarantines** files without a record instead of deleting them; quarantine is deleted only on an explicit, confirmed user action; keeping the same bytes again re-adopts them. | AcceptanceCriteria › reportListsFilesWithoutRecords… |
+| JID/LID change, WhatsApp update, backup restore | Schema 4 `chat_aliases` (phone JID ↔ LID per account, both directions), learned from every request that carries both forms and seeded from recorded pairs; WhatsApp's `jid_map` supplies the pair in the database sweep. | AcceptanceCriteria › whatsAppUpdateThatMovesChats…, schemaUpgradeSeedsAliases…, jointBackupRestores…; InitialImport reset case |
+| Joint backup of files and catalog | The encrypted `.waexlib` holds every file and the whole catalog (items, blobs, accounts, aliases, storage limit, view-once flags, origin certainty, trash state). Restored catalogs are compared field by field with the source (`LibraryIntegrity.canonicalDump`). The raw SQLite file is not copied: a logical catalog stays restorable across schema versions. | AcceptanceCriteria › jointBackupRestoresFilesAndTheWholeCatalogIdentically |
+| First-run import ("optimisation on first start") | `InitialImport`: for each account, the first run imports **every** view-once photo/video (received and own) whose file WhatsApp still has, oldest first, in pages of 100, read-only from `msgstore.db`; resumable (watermark advances only over settled messages; a transient failure stops and retries next run); afterwards only newer messages, every 10 min while WhatsApp runs; resets when WhatsApp's database was recreated. Progress per account is stored in the library (`sweep_state`). | AcceptanceCriteria › firstRunImportsEveryAvailableViewOnce… |
+
+Message ↔ media association, in order of reliability: WhatsApp's protocol message id (`key_id`,
+stable across updates and reinstalls) + direction + chat; the chat is matched through all known
+aliases; the account and WhatsApp flavour scope everything. WhatsApp's internal row ids are used
+only as the import watermark, never as identity. What still needs the phone: whether
+`jid_map`/`message_media.file_path` exist and point to view-once files on 2.26.38.74 (the sweep
+falls back to a query without `jid_map`).
+
 ## Interface
 
 Automatic view-once keep (switch on) has three triggers, all copying while WhatsApp still has the
@@ -341,6 +360,13 @@ Nothing below has been observed on a phone. Each item names what proves it.
 15. Download View Once saves into `DCIM/WhatsApp View Once`; module "Save to gallery" saves view-once to
     `DCIM/WhatsApp View Once` and normal media to `DCIM/WhatsApp`; both appear as albums in the phone
     gallery.
+16. First start with the library on: LSPosed log `MediaLibrary view-once import: initial=true completed=true
+    scanned=N imported=M …` and the toast "Media library: M view-once items kept"; a second start
+    shows `initial=false`; a new view-once is kept within 10 minutes without opening it.
+17. Verify files: the report counts match reality; a file copied into `files/media_library/blobs`
+    by hand is reported and quarantined, never deleted without confirmation.
+18. Switch a chat between phone number and LID addressing (or update WhatsApp): kept media stays
+    attached to the same messages; no duplicate rows appear.
 13. Scroll fast through a chat mixing kept media and text: no copy ever appears on a text row or on
     the wrong media row (row tokens), and deleting/restoring an item in the gallery is reflected
     when returning to the chat.

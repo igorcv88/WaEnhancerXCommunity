@@ -875,4 +875,10 @@ You can still try it, but please wait for a stable version — it will be launch
     <string name="media_library_tab_view_once">View once</string>
     <string name="media_library_save_to_gallery">Save to gallery</string>
     <string name="media_library_saved_to_gallery">Saved to %1$s</string>
+    <string name="media_library_initial_import_done">Media library: %1$d view-once items kept</string>
+    <string name="media_library_report">Items: %1$d\nFiles verified (SHA-256): %2$d\nRecords without a file: %3$d\nDamaged files: %4$d\nFiles without a record (kept in quarantine): %5$d\nDuplicates with identical content: %6$d\nConflicting duplicates (choose manually): %7$d\nOrigin still unconfirmed: %8$d</string>
+    <string name="media_library_resolve_duplicates">Resolve identical duplicates</string>
+    <string name="media_library_resolved">Duplicates moved to the trash; the files are kept</string>
+    <string name="media_library_delete_quarantine">Delete quarantine</string>
+    <string name="media_library_delete_quarantine_confirm">Delete the files in quarantine? They have no record in the library (left by an interrupted operation). This cannot be undone.</string>
 </resources>

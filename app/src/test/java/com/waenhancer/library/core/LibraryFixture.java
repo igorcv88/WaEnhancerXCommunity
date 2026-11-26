@@ -92,6 +92,8 @@ final class LibraryFixture implements AutoCloseable {
         out.write(length & 0xFF);
         out.write(comment, 0, comment.length);
         out.write(JPEG_1X1, 2, JPEG_1X1.length - 2);
+        out.write(0xFF);
+        out.write(0xD9); // EOI: a complete JPEG
         return out.toByteArray();
     }
 
@@ -138,27 +140,47 @@ final class LibraryFixture implements AutoCloseable {
         out.write(value & 0xFF);
     }
 
+    /** A minimal movie box (moov > mvhd) so the container is structurally complete. */
+    static final byte[] MOOV = moov();
+
+    private static byte[] moov() {
+        byte[] box = new byte[8 + 8 + 100];
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.wrap(box);
+        b.putInt(box.length).put("moov".getBytes(StandardCharsets.US_ASCII));
+        b.putInt(108).put("mvhd".getBytes(StandardCharsets.US_ASCII));
+        return box;
+    }
+
     /** An ISO base-media (MP4) container: ftyp box + mdat box of {@code payload} bytes. */
     static byte[] mp4(int seed, int payload) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] ftyp = { 0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm', 0, 0, 2, 0, 'i', 's', 'o', 'm', 'm', 'p', '4', '1' };
-        out.write(ftyp, 0, ftyp.length);
-        int size = payload + 8;
-        out.write((size >>> 24) & 0xFF);
-        out.write((size >>> 16) & 0xFF);
-        out.write((size >>> 8) & 0xFF);
-        out.write(size & 0xFF);
-        out.write("mdat".getBytes(StandardCharsets.US_ASCII), 0, 4);
+        byte[] head = mp4Header(payload);
+        out.write(head, 0, head.length);
         byte[] data = new byte[payload];
         new Random(seed).nextBytes(data);
         out.write(data, 0, data.length);
         return out.toByteArray();
     }
 
+    /** ftyp + moov + an mdat header whose size covers {@code payload} following bytes. */
+    static byte[] mp4Header(long payload) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] ftyp = { 0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm', 0, 0, 2, 0, 'i', 's', 'o', 'm', 'm', 'p', '4', '1' };
+        out.write(ftyp, 0, ftyp.length);
+        out.write(MOOV, 0, MOOV.length);
+        long size = payload + 8;
+        out.write((int) (size >>> 24) & 0xFF);
+        out.write((int) (size >>> 16) & 0xFF);
+        out.write((int) (size >>> 8) & 0xFF);
+        out.write((int) size & 0xFF);
+        out.write("mdat".getBytes(StandardCharsets.US_ASCII), 0, 4);
+        return out.toByteArray();
+    }
+
     /** A large MP4-shaped stream generated on the fly (never held in memory). */
     static MediaLibrary.StreamSource largeMp4(long seed, long payload) {
         return () -> new java.io.InputStream() {
-            private final byte[] head = mp4(0, 0);
+            private final byte[] head = mp4Header(payload);
             private final Random random = new Random(seed);
             private long position;
             private final long total = head.length + payload;

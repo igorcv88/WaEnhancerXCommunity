@@ -19,9 +19,9 @@ import java.util.Map;
  * {@link LibraryException.Code#SCHEMA_TOO_NEW} so that a newer build can still read it.</p>
  */
 public final class LibrarySchema {
-    public static final int CURRENT_VERSION = 3;
+    public static final int CURRENT_VERSION = 4;
 
-    static final String[] TABLES = { "accounts", "blobs", "items", "meta" };
+    static final String[] TABLES = { "accounts", "blobs", "items", "meta", "chat_aliases" };
 
     /** One forward migration step from {@code version - 1} to {@code version}. */
     public interface Step {
@@ -96,6 +96,31 @@ public final class LibrarySchema {
                 sql.exec("ALTER TABLE items ADD COLUMN view_once_known INTEGER NOT NULL DEFAULT 1");
                 sql.exec("UPDATE items SET view_once_known = 0 WHERE view_once = 0 "
                         + "AND basis NOT IN ('auto_view_once', 'user_explicit')");
+            }
+        });
+        steps.add(new Step() {
+            @Override
+            public int version() {
+                return 4;
+            }
+
+            /**
+             * Learned chat aliases (phone JID ↔ LID) per account, stored in both directions, so a
+             * message keeps one identity when WhatsApp moves a chat from one addressing form to
+             * the other. Seeded from every pair already recorded on items.
+             */
+            @Override
+            public void apply(Sql sql) {
+                sql.exec("CREATE TABLE IF NOT EXISTS chat_aliases ("
+                        + "account_id INTEGER NOT NULL REFERENCES accounts(id), "
+                        + "jid TEXT NOT NULL, alias TEXT NOT NULL, learned_at INTEGER NOT NULL, "
+                        + "PRIMARY KEY(account_id, jid, alias))");
+                sql.exec("INSERT OR IGNORE INTO chat_aliases (account_id, jid, alias, learned_at) "
+                        + "SELECT account_id, chat_jid, chat_alt_jid, imported_at FROM items "
+                        + "WHERE chat_alt_jid IS NOT NULL AND chat_alt_jid != chat_jid");
+                sql.exec("INSERT OR IGNORE INTO chat_aliases (account_id, jid, alias, learned_at) "
+                        + "SELECT account_id, chat_alt_jid, chat_jid, imported_at FROM items "
+                        + "WHERE chat_alt_jid IS NOT NULL AND chat_alt_jid != chat_jid");
             }
         });
         return steps;

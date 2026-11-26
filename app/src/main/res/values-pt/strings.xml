@@ -590,4 +590,10 @@ You can still try it, but please wait for a stable version — it will be launch
     <string name="media_library_tab_view_once">Visualização única</string>
     <string name="media_library_save_to_gallery">Salvar na galeria</string>
     <string name="media_library_saved_to_gallery">Salvo em %1$s</string>
+    <string name="media_library_initial_import_done">Biblioteca de mídia: %1$d visualizações únicas guardadas</string>
+    <string name="media_library_report">Itens: %1$d\nArquivos verificados (SHA-256): %2$d\nRegistros sem arquivo: %3$d\nArquivos danificados: %4$d\nArquivos sem registro (mantidos em quarentena): %5$d\nDuplicatas com conteúdo idêntico: %6$d\nDuplicatas em conflito (escolher manualmente): %7$d\nOrigem ainda não confirmada: %8$d</string>
+    <string name="media_library_resolve_duplicates">Resolver duplicatas idênticas</string>
+    <string name="media_library_resolved">Duplicatas movidas para a lixeira; os arquivos foram mantidos</string>
+    <string name="media_library_delete_quarantine">Apagar quarentena</string>
+    <string name="media_library_delete_quarantine_confirm">Apagar os arquivos em quarentena? Eles não têm registro na biblioteca (sobras de uma operação interrompida). Esta ação não pode ser desfeita.</string>
 </resources>

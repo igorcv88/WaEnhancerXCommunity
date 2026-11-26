@@ -48,6 +48,37 @@ public final class MediaLibrary {
     private final BlobStore blobs;
     private final LibraryLock lock;
     private final LongSupplier clock;
+    private volatile DecodeProbe decodeProbe;
+
+    /**
+     * Device-side decode check (images: bounds decode; videos: duration and a video track).
+     * Returns {@code null} when the file decodes, otherwise a reason. Optional: the structural
+     * {@link MediaValidator} always runs.
+     */
+    public interface DecodeProbe {
+        String check(File file, String mimeType);
+    }
+
+    public void setDecodeProbe(DecodeProbe probe) {
+        this.decodeProbe = probe;
+    }
+
+    /** Structural validation plus the optional decode probe; throws INCOMPLETE_MEDIA. */
+    void requireComplete(File file, String mime) throws IOException {
+        String invalid = MediaValidator.validate(file, mime);
+        DecodeProbe probe = decodeProbe;
+        if (invalid == null && probe != null) {
+            try {
+                invalid = probe.check(file, mime);
+            } catch (RuntimeException failure) {
+                invalid = "decode_failed";
+            }
+        }
+        if (invalid != null) {
+            throw new LibraryException(LibraryException.Code.INCOMPLETE_MEDIA,
+                    "The media is incomplete or cannot be decoded (" + invalid + ")");
+        }
+    }
 
     public MediaLibrary(Sql sql, BlobStore blobs, LibraryLock lock, LongSupplier clock) throws LibraryException {
         this.sql = sql;
@@ -109,8 +140,16 @@ public final class MediaLibrary {
         request.validate();
         try (LibraryLock.Held ignored = lock.acquire(LOCK_TIMEOUT_MS)) {
             long accountId = ensureAccount(request.packageName, request.ownJid);
-            LibraryItem existing = findByIdentity(accountId, request.chatJid, request.chatAltJid,
+            learnAlias(accountId, request.chatJid, request.chatAltJid);
+            List<LibraryItem> matches = findAllByIdentity(accountId, request.chatJid, request.chatAltJid,
                     request.messageKey, request.fromMe);
+            // Visible items decide; a single trashed match is restored by the import.
+            List<LibraryItem> candidates = visible(matches).isEmpty() ? matches : visible(matches);
+            if (candidates.size() > 1) {
+                throw new LibraryException(LibraryException.Code.AMBIGUOUS,
+                        "This message matches " + candidates.size() + " stored items; resolve them first");
+            }
+            LibraryItem existing = candidates.isEmpty() ? null : candidates.get(0);
             if (existing != null && blobs.verify(existing.sha256, existing.sizeBytes)) {
                 markBlobOk(existing.sha256);
                 if (existing.isTrashed()) {
@@ -139,6 +178,8 @@ public final class MediaLibrary {
         if (kind == null) {
             throw new LibraryException(LibraryException.Code.UNSUPPORTED_MEDIA, "Only photos and videos can be kept");
         }
+        // A truncated download or a half-written file must never become a "kept" copy.
+        requireComplete(staged.file, mime);
         // Quota is evaluated after deduplication: identical, verified bytes cost nothing.
         boolean alreadyStored = blobs.verify(staged.sha256, staged.size);
         if (!alreadyStored && usedBytes() + staged.size > quotaBytes()) {
@@ -195,8 +236,17 @@ public final class MediaLibrary {
                               String messageKey, boolean fromMe) {
         Long accountId = findAccount(packageName, ownJid);
         if (accountId == null) return null;
-        LibraryItem item = findByIdentity(accountId, chatJid, chatAltJid, messageKey, fromMe);
-        return item == null || item.isTrashed() ? null : item;
+        List<LibraryItem> matches = visible(findAllByIdentity(accountId, chatJid, chatAltJid, messageKey, fromMe));
+        // An ambiguous association is never presented: no guess about which copy belongs here.
+        return matches.size() == 1 ? matches.get(0) : null;
+    }
+
+    /** Whether a message matches more than one stored item (see {@link #findAmbiguities}). */
+    public boolean isAmbiguous(String packageName, String ownJid, String chatJid, String chatAltJid,
+                               String messageKey, boolean fromMe) {
+        Long accountId = findAccount(packageName, ownJid);
+        return accountId != null
+                && visible(findAllByIdentity(accountId, chatJid, chatAltJid, messageKey, fromMe)).size() > 1;
     }
 
     /** Items of one conversation, newest message first. Both JID forms of the contact match. */
@@ -206,7 +256,7 @@ public final class MediaLibrary {
         List<LibraryItem> result = new ArrayList<>();
         if (accountId == null) return result;
         LinkedHashSet<String> jids = new LinkedHashSet<>();
-        for (String jid : chatJids) if (jid != null && !jid.isEmpty()) jids.add(jid);
+        for (String jid : chatJids) if (jid != null && !jid.isEmpty()) jids.addAll(chatClosure(accountId, jid, null));
         if (jids.isEmpty()) return result;
         StringBuilder placeholders = new StringBuilder();
         List<Object> args = new ArrayList<>();
@@ -282,6 +332,10 @@ public final class MediaLibrary {
         }
     }
 
+    public boolean hasExplicitQuota() {
+        return !sql.query("SELECT 1 FROM meta WHERE key = ?", META_QUOTA).isEmpty();
+    }
+
     public static long clampQuota(long bytes) {
         return Math.max(MIN_QUOTA_BYTES, Math.min(MAX_QUOTA_BYTES, bytes));
     }
@@ -296,12 +350,58 @@ public final class MediaLibrary {
         try (LibraryLock.Held ignored = lock.acquire(LOCK_TIMEOUT_MS)) {
             Long accountId = findAccount(packageName, ownJid);
             if (accountId == null) return false;
-            LibraryItem item = findByIdentity(accountId, chatJid, chatAltJid, messageKey, fromMe);
-            if (item == null || item.viewOnceKnown) return false;
+            List<LibraryItem> matches = visible(findAllByIdentity(accountId, chatJid, chatAltJid, messageKey, fromMe));
+            if (matches.size() != 1) return false;
+            LibraryItem item = matches.get(0);
+            if (item.viewOnceKnown) return false;
             boolean changed = sql.update("UPDATE items SET view_once = ?, view_once_known = 1 WHERE id = ? "
                     + "AND view_once_known = 0", viewOnce ? 1 : 0, item.id) > 0;
             if (changed) bumpGeneration();
             return changed;
+        }
+    }
+
+    // ---------------------------------------------------------------- first-run import progress
+
+    /** Per-account progress of the first-run and incremental view-once import (see InitialImport). */
+    public static final class SweepState {
+        public final long watermark;
+        public final boolean initialDone;
+        public final long imported;
+
+        public SweepState(long watermark, boolean initialDone, long imported) {
+            this.watermark = watermark;
+            this.initialDone = initialDone;
+            this.imported = imported;
+        }
+    }
+
+    private static String sweepKey(String packageName, String ownJid) {
+        return "sweep\n" + packageName + "\n" + ownJid;
+    }
+
+    public SweepState sweepState(String packageName, String ownJid) {
+        List<Map<String, Object>> rows = sql.query("SELECT value FROM meta WHERE key = ?", sweepKey(packageName, ownJid));
+        if (rows.isEmpty()) return new SweepState(0, false, 0);
+        String[] parts = Sql.Rows.getString(rows.get(0), "value").split(",");
+        try {
+            return new SweepState(Long.parseLong(parts[0]), "1".equals(parts[1]), Long.parseLong(parts[2]));
+        } catch (RuntimeException invalid) {
+            return new SweepState(0, false, 0);
+        }
+    }
+
+    /** Stores progress; the watermark may be reset (WhatsApp database recreated) or advanced. */
+    public void saveSweepState(String packageName, String ownJid, SweepState state) throws IOException {
+        String value = Math.max(0, state.watermark) + "," + (state.initialDone ? "1" : "0") + "," + Math.max(0, state.imported);
+        try (LibraryLock.Held ignored = lock.acquire(LOCK_TIMEOUT_MS)) {
+            String key = sweepKey(packageName, ownJid);
+            sql.inTransaction(() -> {
+                if (sql.update("UPDATE meta SET value = ? WHERE key = ?", value, key) == 0) {
+                    sql.insert("INSERT INTO meta (key, value) VALUES (?, ?)", key, value);
+                }
+                return null;
+            });
         }
     }
 
@@ -380,8 +480,10 @@ public final class MediaLibrary {
 
     public static final class ReconcileReport {
         public int stagingRemoved;
-        public int orphanBlobsRemoved;
-        public int unreferencedBlobsRemoved;
+        /** Files without a catalog record, moved to quarantine (never deleted by maintenance). */
+        public int orphanBlobsQuarantined;
+        /** Catalog blob records no item uses; the record is dropped and the file quarantined. */
+        public int unreferencedBlobsQuarantined;
         public int markedMissing;
         public int markedCorrupt;
         public int recovered;
@@ -405,8 +507,8 @@ public final class MediaLibrary {
                 known.add(sha);
                 if (!isBlobReferenced(sha)) {
                     sql.update("DELETE FROM blobs WHERE sha256 = ?", sha);
-                    deleteBlobQuietly(sha);
-                    report.unreferencedBlobsRemoved++;
+                    blobs.quarantine(sha);
+                    report.unreferencedBlobsQuarantined++;
                     continue;
                 }
                 String actual;
@@ -425,8 +527,8 @@ public final class MediaLibrary {
             }
             for (String sha : blobs.listBlobs()) {
                 if (!known.contains(sha)) {
-                    deleteBlobQuietly(sha);
-                    report.orphanBlobsRemoved++;
+                    blobs.quarantine(sha);
+                    report.orphanBlobsQuarantined++;
                 }
             }
         }
@@ -453,21 +555,70 @@ public final class MediaLibrary {
     }
 
     LibraryItem findByIdentity(long accountId, String chatJid, String chatAltJid, String messageKey, boolean fromMe) {
-        // The same chat may be addressed by its phone JID or its LID depending on the WhatsApp
-        // build and code path; either form identifies the same message for this account.
-        List<Object> args = new ArrayList<>();
-        args.add(accountId);
-        args.add(messageKey);
-        args.add(fromMe ? 1 : 0);
-        String alt = chatAltJid == null ? chatJid : chatAltJid;
-        args.add(chatJid);
-        args.add(alt);
-        args.add(chatJid);
-        args.add(alt);
-        List<Map<String, Object>> rows = sql.query("SELECT " + ITEM_COLUMNS + ITEM_FROM
-                + "WHERE i.account_id = ? AND i.message_key = ? AND i.from_me = ? "
-                + "AND (i.chat_jid IN (?, ?) OR i.chat_alt_jid IN (?, ?)) ORDER BY i.id LIMIT 1", args.toArray());
-        return rows.isEmpty() ? null : new LibraryItem(rows.get(0));
+        List<LibraryItem> all = findAllByIdentity(accountId, chatJid, chatAltJid, messageKey, fromMe);
+        return all.isEmpty() ? null : all.get(0);
+    }
+
+    /**
+     * Every item of the account for this message key and direction whose chat is the given chat
+     * or any alias of it (phone JID ↔ LID, learned). More than one result is an ambiguity.
+     */
+    List<LibraryItem> findAllByIdentity(long accountId, String chatJid, String chatAltJid, String messageKey,
+                                        boolean fromMe) {
+        java.util.Set<String> chats = chatClosure(accountId, chatJid, chatAltJid);
+        List<LibraryItem> result = new ArrayList<>();
+        if (chats.isEmpty() || messageKey == null) return result;
+        for (Map<String, Object> row : sql.query("SELECT " + ITEM_COLUMNS + ITEM_FROM
+                + "WHERE i.account_id = ? AND i.message_key = ? AND i.from_me = ? ORDER BY i.id",
+                accountId, messageKey, fromMe ? 1 : 0)) {
+            LibraryItem item = new LibraryItem(row);
+            if (chats.contains(item.chatJid) || (item.chatAltJid != null && chats.contains(item.chatAltJid))) {
+                result.add(item);
+            }
+        }
+        return result;
+    }
+
+    static List<LibraryItem> visible(List<LibraryItem> items) {
+        List<LibraryItem> result = new ArrayList<>();
+        for (LibraryItem item : items) if (!item.isTrashed()) result.add(item);
+        return result;
+    }
+
+    /** The chat and every alias reachable from it (bounded). */
+    java.util.Set<String> chatClosure(long accountId, String chatJid, String chatAltJid) {
+        java.util.LinkedHashSet<String> chats = new java.util.LinkedHashSet<>();
+        if (chatJid != null && !chatJid.isEmpty()) chats.add(chatJid);
+        if (chatAltJid != null && !chatAltJid.isEmpty()) chats.add(chatAltJid);
+        java.util.ArrayDeque<String> pending = new java.util.ArrayDeque<>(chats);
+        while (!pending.isEmpty() && chats.size() < 16) {
+            String jid = pending.poll();
+            for (Map<String, Object> row : sql.query("SELECT alias FROM chat_aliases WHERE account_id = ? AND jid = ?",
+                    accountId, jid)) {
+                String alias = Sql.Rows.getString(row, "alias");
+                if (chats.add(alias)) pending.add(alias);
+            }
+        }
+        return chats;
+    }
+
+    /** Records that two JIDs address the same chat for this account (both directions). */
+    void learnAlias(long accountId, String jid, String alias) {
+        if (jid == null || alias == null || jid.isEmpty() || alias.isEmpty() || jid.equals(alias)) return;
+        long now = clock.getAsLong();
+        long added = sql.insert("INSERT OR IGNORE INTO chat_aliases (account_id, jid, alias, learned_at) VALUES (?,?,?,?)",
+                accountId, jid, alias, now);
+        sql.insert("INSERT OR IGNORE INTO chat_aliases (account_id, jid, alias, learned_at) VALUES (?,?,?,?)",
+                accountId, alias, jid, now);
+        if (added > 0) bumpGeneration(); // lookups may now resolve differently
+    }
+
+    /** Public, account-scoped form used when WhatsApp reports a phone JID ↔ LID pair. */
+    public void learnChatAlias(String packageName, String ownJid, String jid, String alias) throws IOException {
+        try (LibraryLock.Held ignored = lock.acquire(LOCK_TIMEOUT_MS)) {
+            Long accountId = findAccount(packageName, ownJid);
+            if (accountId != null) learnAlias(accountId, jid, alias);
+        }
     }
 
     void upsertBlob(String sha256, long size, String mime, long now) {

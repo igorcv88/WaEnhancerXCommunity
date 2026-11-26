@@ -41,6 +41,7 @@ public final class MediaLibraryRuntime {
                 }
                 instance = new MediaLibrary(AndroidSql.open(database), new BlobStore(root),
                         new LibraryLock(root), System::currentTimeMillis);
+                instance.setDecodeProbe(new AndroidDecodeProbe());
             }
             startMaintenance(instance);
             return instance;
@@ -54,9 +55,10 @@ public final class MediaLibraryRuntime {
             try {
                 MediaLibrary.ReconcileReport report = library.reconcile(false);
                 int purged = library.purgeExpiredTrash();
-                if (report.stagingRemoved + report.orphanBlobsRemoved + report.markedMissing
+                verifyRotation(library);
+                if (report.stagingRemoved + report.orphanBlobsQuarantined + report.markedMissing
                         + report.markedCorrupt + purged > 0) {
-                    Log.i(TAG, "maintenance staging=" + report.stagingRemoved + " orphans=" + report.orphanBlobsRemoved
+                    Log.i(TAG, "maintenance staging=" + report.stagingRemoved + " orphans=" + report.orphanBlobsQuarantined
                             + " missing=" + report.markedMissing + " corrupt=" + report.markedCorrupt + " purged=" + purged);
                 }
             } catch (IOException | RuntimeException failure) {
@@ -65,5 +67,26 @@ public final class MediaLibraryRuntime {
         }, "waex-library-maintenance");
         thread.setDaemon(true);
         thread.start();
+    }
+
+    /** Re-hashes up to 256 MiB per run, oldest verification first (full coverage in rotation). */
+    private static final long VERIFY_BUDGET = 256L * 1024L * 1024L;
+    private static final long VERIFY_INTERVAL_MS = 6L * 60L * 60L * 1000L;
+
+    private static void verifyRotation(MediaLibrary library) {
+        try {
+            com.waenhancer.library.core.LibraryIntegrity.VerifyReport report =
+                    com.waenhancer.library.core.LibraryIntegrity.verifyBatch(library, VERIFY_BUDGET);
+            if (report.damaged + report.missing > 0) {
+                Log.w(TAG, "verify checked=" + report.checked + " damaged=" + report.damaged + " missing=" + report.missing);
+            }
+        } catch (IOException | RuntimeException failure) {
+            Log.w(TAG, "verify failed: " + failure.getClass().getSimpleName());
+        }
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            Thread next = new Thread(() -> verifyRotation(library), "waex-library-verify");
+            next.setDaemon(true);
+            next.start();
+        }, VERIFY_INTERVAL_MS);
     }
 }

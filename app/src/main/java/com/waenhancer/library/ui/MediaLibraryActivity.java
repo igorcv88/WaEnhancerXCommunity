@@ -282,20 +282,53 @@ public final class MediaLibraryActivity extends BaseActivity {
         }
     }
 
+    /**
+     * Full check: re-hashes every file, repairs states, quarantines files without a record
+     * (never deletes them), then shows the integrity report with the only safe corrections:
+     * resolving duplicates with identical content, and deleting quarantined files on request.
+     */
     private void verify() {
         Toast.makeText(this, R.string.media_library_verifying, Toast.LENGTH_SHORT).show();
         worker.execute(() -> {
-            String message;
+            com.waenhancer.library.core.LibraryIntegrity.Report report;
+            MediaLibrary.ReconcileReport reconcile;
             try {
-                MediaLibrary.ReconcileReport report = library.reconcile(true);
-                message = getString(R.string.media_library_verify_result, report.verified,
-                        report.markedMissing, report.markedCorrupt, report.orphanBlobsRemoved + report.stagingRemoved);
+                reconcile = library.reconcile(true);
+                report = com.waenhancer.library.core.LibraryIntegrity.inspect(library, true);
             } catch (Exception failure) {
-                message = getString(R.string.media_library_action_failed);
+                main.post(() -> Toast.makeText(this, R.string.media_library_action_failed, Toast.LENGTH_LONG).show());
+                return;
             }
-            String text = message;
+            int identical = 0;
+            int conflicts = 0;
+            for (com.waenhancer.library.core.LibraryIntegrity.AmbiguousGroup group : report.ambiguous) {
+                if (group.identicalContent()) identical++;
+                else conflicts++;
+            }
+            String text = getString(R.string.media_library_report, report.items, reconcile.verified,
+                    report.recordsWithoutFile.size(), report.damaged.size(), report.quarantined.size(),
+                    identical, conflicts, report.unknownOrigin);
+            int duplicates = identical;
+            int quarantined = report.quarantined.size();
             main.post(() -> {
-                new AlertDialog.Builder(this).setMessage(text).setPositiveButton(android.R.string.ok, null).show();
+                if (isFinishing()) return;
+                AlertDialog.Builder dialog = new AlertDialog.Builder(this).setTitle(R.string.media_library_verify)
+                        .setMessage(text).setPositiveButton(android.R.string.ok, null);
+                if (duplicates > 0) {
+                    dialog.setNeutralButton(R.string.media_library_resolve_duplicates, (d, w) -> mutate(() ->
+                            com.waenhancer.library.core.LibraryIntegrity.resolveIdentical(library) > 0,
+                            R.string.media_library_resolved));
+                }
+                if (quarantined > 0) {
+                    dialog.setNegativeButton(R.string.media_library_delete_quarantine, (d, w) ->
+                            new AlertDialog.Builder(this).setMessage(R.string.media_library_delete_quarantine_confirm)
+                                    .setNegativeButton(android.R.string.cancel, null)
+                                    .setPositiveButton(R.string.media_library_delete_permanently, (d2, w2) -> mutate(() -> {
+                                        for (String sha : library.blobs().listQuarantine()) library.blobs().deleteQuarantined(sha);
+                                        return true;
+                                    }, R.string.media_library_deleted)).show());
+                }
+                dialog.show();
                 reload();
             });
         });

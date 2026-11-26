@@ -120,7 +120,7 @@ public class MediaLibraryRecoveryTest {
         MediaLibrary afterRestart = fixture.open();
         MediaLibrary.ReconcileReport report = afterRestart.reconcile(false);
         assertEquals(1, report.stagingRemoved);
-        assertEquals(1, report.orphanBlobsRemoved);
+        assertEquals(1, report.orphanBlobsQuarantined);
         assertEquals(1, report.verified);
         assertEquals(1, afterRestart.blobs().listBlobs().size());
         assertTrue(afterRestart.blobs().verify(kept.sha256, kept.sizeBytes));
@@ -170,7 +170,7 @@ public class MediaLibraryRecoveryTest {
         // A row left referencing nothing (e.g. by a future bug or manual edit) must not leak bytes.
         sql.update("DELETE FROM items WHERE id = ?", item.id);
         MediaLibrary.ReconcileReport report = library.reconcile(false);
-        assertEquals(1, report.unreferencedBlobsRemoved);
+        assertEquals(1, report.unreferencedBlobsQuarantined);
         assertEquals(0, library.blobs().listBlobs().size());
         assertEquals(0, LibraryFixture.count(sql, "blobs"));
     }

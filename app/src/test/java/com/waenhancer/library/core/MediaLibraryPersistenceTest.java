@@ -76,7 +76,7 @@ public class MediaLibraryPersistenceTest {
         MediaLibrary library = fixture.open();
         MediaLibrary.ReconcileReport report = library.reconcile(true);
         assertEquals("maintenance must find nothing to repair", 0,
-                report.markedMissing + report.markedCorrupt + report.orphanBlobsRemoved + report.unreferencedBlobsRemoved);
+                report.markedMissing + report.markedCorrupt + report.orphanBlobsQuarantined + report.unreferencedBlobsQuarantined);
         library.purgeExpiredTrash();
         return library;
     }

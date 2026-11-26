@@ -32,6 +32,11 @@ Not proven (requires the device):
 - that presentation in the chat (overlay, tap redirect, restore into WhatsApp) works and leaves
   scrolling, recycling, gestures and Liquid Glass unchanged.
 
+Association (message ↔ kept file), proven by tests: identity survives restarts, a phone JID → LID
+move once the pair is known, schema upgrades and backup restore; ambiguous matches are detected
+and never presented; WhatsApp row ids are not part of identity. Not proven: that WhatsApp
+2.26.38.74 exposes the pair (`jid_map`) and view-once file paths as the sweep expects.
+
 ## 2. WhatsApp's lifecycle — unknown, hypotheses only
 
 Observed by the owner on Galaxy S25 Ultra / Android 17 / WhatsApp 2.26.38.74 (not reproduced here):

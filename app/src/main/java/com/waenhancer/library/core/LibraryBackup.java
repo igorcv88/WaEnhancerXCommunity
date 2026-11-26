@@ -100,7 +100,9 @@ public final class LibraryBackup {
             header.put("items", items.size());
             header.put("blobs", blobOwners.size());
             writeRecord(out, 'H', header);
-            writeRecord(out, 'C', catalog(items));
+            JSONObject catalog = catalog(items);
+            catalog.put("extras", catalogExtras());
+            writeRecord(out, 'C', catalog);
             byte[] buffer = new byte[64 * 1024];
             for (LibraryItem owner : blobOwners.values()) {
                 JSONObject meta = new JSONObject();
@@ -166,6 +168,25 @@ public final class LibraryBackup {
         return catalog;
     }
 
+    /** The rest of the catalog: learned chat aliases and the storage limit. */
+    private JSONObject catalogExtras() throws JSONException {
+        JSONArray aliases = new JSONArray();
+        for (java.util.Map<String, Object> row : library.sql().query("SELECT a.package_name, a.own_jid, c.jid, c.alias "
+                + "FROM chat_aliases c JOIN accounts a ON a.id = c.account_id")) {
+            JSONObject alias = new JSONObject();
+            alias.put("package", Sql.Rows.getString(row, "package_name"));
+            alias.put("ownJid", Sql.Rows.getString(row, "own_jid"));
+            alias.put("jid", Sql.Rows.getString(row, "jid"));
+            alias.put("alias", Sql.Rows.getString(row, "alias"));
+            aliases.put(alias);
+        }
+        JSONObject extras = new JSONObject();
+        extras.put("aliases", aliases);
+        extras.put("quotaBytes", library.quotaBytes());
+        extras.put("schemaVersion", LibrarySchema.CURRENT_VERSION);
+        return extras;
+    }
+
     private static void writeRecord(DataOutputStream out, char type, JSONObject json) throws IOException {
         byte[] bytes = json.toString().getBytes(StandardCharsets.UTF_8);
         out.writeByte(type);
@@ -183,12 +204,15 @@ public final class LibraryBackup {
         Map<String, BlobStore.Staged> staged = new HashMap<>();
         try {
             List<JSONObject> items;
+            JSONObject extras = null;
             try (StreamingAead.DecryptingInputStream decrypted =
                          (StreamingAead.DecryptingInputStream) StreamingAead.decrypt(source, password, maxIterations);
                  DataInputStream in = new DataInputStream(decrypted)) {
                 JSONObject header = readRecord(in, 'H');
                 if (header.optInt("format", -1) != FORMAT_VERSION) throw invalid("Unsupported backup format");
-                items = validateCatalog(readRecord(in, 'C'));
+                JSONObject catalogRecord = readRecord(in, 'C');
+                items = validateCatalog(catalogRecord);
+                extras = catalogRecord.optJSONObject("extras");
                 Map<String, Long> expected = new HashMap<>();
                 Map<String, String> kinds = new HashMap<>();
                 for (JSONObject item : items) {
@@ -210,6 +234,11 @@ public final class LibraryBackup {
                     if (!kinds.get(sha).equals(MediaSniffer.kindOf(blob.sniffedMime))) {
                         throw invalid("Media type in backup does not match its content");
                     }
+                    try {
+                        library.requireComplete(blob.file, blob.sniffedMime);
+                    } catch (LibraryException incomplete) {
+                        throw invalid("Backup contains an incomplete media file", incomplete);
+                    }
                 }
                 JSONObject end = readRecord(in, 'E');
                 if (end.optInt("blobs", -1) != declaredBlobs) throw invalid("Backup end marker is inconsistent");
@@ -217,13 +246,14 @@ public final class LibraryBackup {
             } catch (JSONException failure) {
                 throw invalid("Backup catalog is malformed", failure);
             }
-            return commit(items, staged);
+            return commit(items, extras, staged);
         } finally {
             for (BlobStore.Staged blob : staged.values()) blob.discard();
         }
     }
 
-    private RestoreReport commit(List<JSONObject> items, Map<String, BlobStore.Staged> staged) throws IOException {
+    private RestoreReport commit(List<JSONObject> items, JSONObject extras, Map<String, BlobStore.Staged> staged)
+            throws IOException {
         RestoreReport report = new RestoreReport();
         try (LibraryLock.Held ignored = library.lock().acquire(LOCK_TIMEOUT_MS)) {
             long newBytes = 0;
@@ -276,6 +306,18 @@ public final class LibraryBackup {
                             throw new IllegalStateException(failure);
                         }
                     }
+                    JSONArray aliases = extras == null ? null : extras.optJSONArray("aliases");
+                    if (aliases != null) {
+                        for (int i = 0; i < aliases.length() && i < 200_000; i++) {
+                            JSONObject alias = aliases.optJSONObject(i);
+                            if (alias == null) continue;
+                            String pkg = alias.optString("package");
+                            String own = alias.optString("ownJid");
+                            if (pkg.isEmpty() || own.isEmpty() || pkg.length() > 128 || own.length() > 256) continue;
+                            library.learnAlias(library.ensureAccount(pkg, own), alias.optString("jid", null),
+                                    alias.optString("alias", null));
+                        }
+                    }
                     return null;
                 });
             } catch (RuntimeException failure) {
@@ -285,6 +327,10 @@ public final class LibraryBackup {
             // Blobs that only duplicated items the user already had are not kept twice.
             for (String sha : created) library.collectBlob(sha);
             if (report.itemsRestored > 0) library.bumpGeneration();
+            // The backup's storage limit applies only where the user never chose one here.
+            if (extras != null && extras.has("quotaBytes") && !library.hasExplicitQuota()) {
+                library.setQuotaBytes(extras.optLong("quotaBytes", MediaLibrary.DEFAULT_QUOTA_BYTES));
+            }
         }
         return report;
     }

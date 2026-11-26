@@ -41,6 +41,7 @@ public final class BlobStore {
     private final File root;
     private final File blobs;
     private final File staging;
+    private final File quarantine;
     private final SpaceProbe space;
     private final long freeSpaceReserve;
 
@@ -58,6 +59,7 @@ public final class BlobStore {
         this.root = root.getCanonicalFile();
         this.blobs = new File(this.root, "blobs");
         this.staging = new File(this.root, "staging");
+        this.quarantine = new File(this.root, "quarantine");
         this.space = space;
         this.freeSpaceReserve = Math.max(0, freeSpaceReserve);
         mkdirs(this.blobs);
@@ -167,6 +169,9 @@ public final class BlobStore {
             }
             mkdirs(target.getParentFile());
             move(staged.file, target);
+            File stale = new File(quarantine, staged.sha256);
+            if (stale.isFile()) //noinspection ResultOfMethodCallIgnored
+                stale.delete();
             return CommitOutcome.CREATED;
         } finally {
             staged.discard();
@@ -224,6 +229,62 @@ public final class BlobStore {
             }
         }
         return result;
+    }
+
+    // ---------------------------------------------------------------- quarantine
+
+    /**
+     * Moves a blob whose catalog record is missing out of the content store instead of deleting
+     * it: complete files are never destroyed by maintenance. Quarantined files are reported, can
+     * be re-adopted automatically when the same bytes are kept again, and are deleted only on an
+     * explicit user action.
+     */
+    public void quarantine(String sha256) throws IOException {
+        File source = path(sha256);
+        if (!source.isFile()) return;
+        mkdirs(quarantine);
+        File target = new File(quarantine, sha256);
+        ensureChild(quarantine, target);
+        if (target.exists()) {
+            if (!source.delete()) throw new IOException("Could not quarantine library media");
+            return;
+        }
+        Files.move(source.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE);
+    }
+
+    public List<String> listQuarantine() {
+        List<String> result = new ArrayList<>();
+        File[] files = quarantine.listFiles();
+        if (files == null) return result;
+        for (File file : files) if (file.isFile() && SHA256.matcher(file.getName()).matches()) result.add(file.getName());
+        return result;
+    }
+
+    public File quarantined(String sha256) throws IOException {
+        path(sha256); // validates the id
+        File file = new File(quarantine, sha256);
+        ensureChild(quarantine, file);
+        return file;
+    }
+
+    /** Moves a verified quarantined file back into the content store; false if absent or damaged. */
+    public boolean adoptFromQuarantine(String sha256, long expectedSize) throws IOException {
+        File file = quarantined(sha256);
+        if (!file.isFile() || file.length() != expectedSize || !sha256.equals(hash(file))) return false;
+        File target = path(sha256);
+        if (target.isFile()) {
+            //noinspection ResultOfMethodCallIgnored
+            file.delete();
+            return true;
+        }
+        mkdirs(target.getParentFile());
+        Files.move(file.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE);
+        return true;
+    }
+
+    public boolean deleteQuarantined(String sha256) throws IOException {
+        File file = quarantined(sha256);
+        return file.isFile() && file.delete();
     }
 
     /** Removes staging files left behind by an interrupted import or restore. */

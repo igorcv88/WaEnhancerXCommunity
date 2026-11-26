@@ -35,7 +35,9 @@ import androidx.annotation.NonNull;
 import com.waenhancer.BuildConfig;
 import com.waenhancer.R;
 import com.waenhancer.library.core.ImportPolicy;
+import com.waenhancer.library.core.InitialImport;
 import com.waenhancer.library.core.InlineBinder;
+import com.waenhancer.library.core.MediaLibrary;
 import com.waenhancer.library.core.InlinePresentation;
 import com.waenhancer.library.core.WhatsAppRestore;
 import com.waenhancer.xposed.core.Feature;
@@ -167,7 +169,7 @@ public class MediaLibraryHook extends Feature {
             }
             // Received view-once media must be copied before WhatsApp expires it, including
             // chats the user does not open: one bounded pass over WhatsApp's own database.
-            MAIN.postDelayed(() -> WORKER.execute(MediaLibraryHook::sweepReceivedViewOnce), 20_000L);
+            MAIN.postDelayed(() -> WORKER.execute(MediaLibraryHook::runViewOnceImport), 20_000L);
         }
     }
 
@@ -224,66 +226,173 @@ public class MediaLibraryHook extends Feature {
                 });
     }
 
+    private static final long SWEEP_INTERVAL_MS = 10L * 60L * 1000L;
+    private static final int SWEEP_PAGE = 100;
+
     /**
-     * Reads (never writes) WhatsApp's database for the newest received view-once photos/videos
-     * that still have a local file and keeps them. Schema-specific; any failure only skips the
-     * sweep. Logs counts, never content or identifiers.
+     * First-run and incremental import of every view-once photo/video WhatsApp still has
+     * ({@link InitialImport}): the first run for an account imports all of them, oldest first and
+     * resumable; later runs only take newer messages. Reads WhatsApp's database, never writes it.
      */
-    private static void sweepReceivedViewOnce() {
-        if (!keepViewOnce) return;
-        String own = ownJid();
-        Context context = Utils.getApplication();
-        if (own == null || context == null) return;
-        android.database.sqlite.SQLiteDatabase db;
+    private static void runViewOnceImport() {
         try {
-            db = com.waenhancer.xposed.core.db.MessageStore.getInstance().getDatabase();
-        } catch (Throwable unavailable) {
-            return;
-        }
-        if (db == null) return;
-        List<String> roots = mediaRoots(context);
-        int found = 0;
-        int kept = 0;
-        try (android.database.Cursor cursor = db.rawQuery("SELECT m.key_id, m.timestamp, m.message_type, mm.file_path, "
-                + "j.raw_string FROM message m JOIN message_media mm ON mm.message_row_id = m._id "
-                + "JOIN chat c ON c._id = m.chat_row_id JOIN jid j ON j._id = c.jid_row_id "
-                + "WHERE m.from_me = 0 AND m.message_type IN (42, 43) AND mm.file_path IS NOT NULL "
-                + "ORDER BY m._id DESC LIMIT " + SWEEP_LIMIT, null)) {
-            while (cursor.moveToNext()) {
-                String keyId = cursor.getString(0);
-                String chat = cursor.getString(4);
-                if (keyId == null || chat == null) continue;
-                String identity = context.getPackageName() + '|' + own + '|' + chat + '|' + keyId + '|' + false;
-                if (AUTO_ATTEMPTED.contains(identity)) continue;
-                File file = null;
-                for (String candidate : com.waenhancer.library.core.WhatsAppMediaPaths.candidates(cursor.getString(3), roots)) {
-                    File probe = new File(candidate);
-                    if (probe.isFile() && probe.length() > 0) {
-                        file = probe;
-                        break;
-                    }
-                }
-                if (file == null) continue;
-                found++;
-                AUTO_ATTEMPTED.add(identity);
-                Bundle extras = new Bundle();
-                extras.putString("own_jid", own);
-                extras.putString("chat_jid", chat);
-                extras.putString("message_key", keyId);
-                extras.putBoolean("from_me", false);
-                extras.putBoolean("view_once", true);
-                extras.putBoolean("user_initiated", false);
-                extras.putLong("message_timestamp", cursor.getLong(1));
-                String status = importFile(file, extras);
-                if ("CREATED".equals(status) || "DEDUPLICATED".equals(status) || "REPAIRED".equals(status)) kept++;
-                if ("ERROR".equals(status)) AUTO_ATTEMPTED.remove(identity);
+            if (!keepViewOnce) return;
+            String own = ownJid();
+            Context context = Utils.getApplication();
+            if (own == null || context == null) return;
+            android.database.sqlite.SQLiteDatabase db = com.waenhancer.xposed.core.db.MessageStore.getInstance().getDatabase();
+            if (db == null) return;
+            List<String> roots = mediaRoots(context);
+            InitialImport.Report report = InitialImport.run(new WhatsAppViewOnceCandidates(db, roots),
+                    candidate -> importCandidate(own, candidate), sweepProgress(context, own), SWEEP_PAGE, () -> false);
+            XposedBridge.log("[WAEX] MediaLibrary view-once import: initial=" + report.initialRun + " completed="
+                    + report.completed + " scanned=" + report.scanned + " imported=" + report.imported + " present="
+                    + report.alreadyPresent + " without_file=" + report.withoutFile + " refused=" + report.refused
+                    + " ambiguous=" + report.ambiguous + " failed=" + report.failed + " reset=" + report.watermarkReset);
+            if (report.imported > 0) ConversationItemListener.notifyDataSetChanged();
+            if (report.initialRun && report.completed && report.imported > 0) {
+                Utils.showToast(String.format(java.util.Locale.ROOT, text(R.string.media_library_initial_import_done,
+                        "Media library: %1$d view-once items kept"), report.imported), Toast.LENGTH_LONG);
             }
         } catch (Throwable failure) {
-            XposedBridge.log("[WAEX] MediaLibrary view-once sweep skipped: " + failure.getClass().getSimpleName());
-            return;
+            XposedBridge.log("[WAEX] MediaLibrary view-once import skipped: " + failure.getClass().getSimpleName());
+        } finally {
+            MAIN.postDelayed(() -> WORKER.execute(MediaLibraryHook::runViewOnceImport), SWEEP_INTERVAL_MS);
         }
-        XposedBridge.log("[WAEX] MediaLibrary view-once sweep: with_file=" + found + " newly_kept=" + kept);
-        if (kept > 0) ConversationItemListener.notifyDataSetChanged();
+    }
+
+    private static InitialImport.Settled importCandidate(String own, InitialImport.Candidate candidate) throws java.io.IOException {
+        Bundle extras = new Bundle();
+        extras.putString("own_jid", own);
+        extras.putString("chat_jid", candidate.chatJid);
+        if (candidate.chatAltJid != null) extras.putString("chat_alt_jid", candidate.chatAltJid);
+        extras.putString("message_key", candidate.messageKey);
+        extras.putBoolean("from_me", candidate.fromMe);
+        extras.putBoolean("view_once", true);
+        extras.putBoolean("user_initiated", false);
+        extras.putLong("message_timestamp", candidate.timestamp);
+        Bundle result = importCall(candidate.file, extras);
+        String status = result == null ? "ERROR" : result.getString("status", "ERROR");
+        String error = result == null ? "IO" : result.getString("error", "IO");
+        switch (status) {
+            case "CREATED":
+            case "DEDUPLICATED":
+            case "REPAIRED":
+            case "RESTORED_FROM_TRASH":
+                return InitialImport.Settled.IMPORTED;
+            case "ALREADY_PRESENT":
+                return InitialImport.Settled.ALREADY_PRESENT;
+            default:
+                switch (error) {
+                    case "AMBIGUOUS": return InitialImport.Settled.AMBIGUOUS;
+                    case "NOT_AUTHORIZED":
+                    case "INCOMPLETE_MEDIA":
+                    case "UNSUPPORTED_MEDIA":
+                    case "TOO_LARGE":
+                    case "INVALID_REQUEST": return InitialImport.Settled.REFUSED;
+                    default: throw new java.io.IOException("retry later: " + error); // busy, full, unreachable
+                }
+        }
+    }
+
+    private static InitialImport.Progress sweepProgress(Context context, String own) {
+        return new InitialImport.Progress() {
+            @Override
+            public MediaLibrary.SweepState load() throws java.io.IOException {
+                return sweepCall(context, own, null);
+            }
+
+            @Override
+            public void save(MediaLibrary.SweepState state) throws java.io.IOException {
+                sweepCall(context, own, state);
+            }
+        };
+    }
+
+    private static MediaLibrary.SweepState sweepCall(Context context, String own, MediaLibrary.SweepState save)
+            throws java.io.IOException {
+        Bundle extras = new Bundle();
+        extras.putString("own_jid", own);
+        if (save != null) {
+            extras.putLong("watermark", save.watermark);
+            extras.putBoolean("initial_done", save.initialDone);
+            extras.putLong("imported", save.imported);
+        }
+        Bundle result;
+        try {
+            result = context.getContentResolver().call(PROVIDER, save == null ? "sweep_state" : "sweep_save", null, extras);
+        } catch (Throwable failure) {
+            result = null;
+        }
+        if (result == null) throw new java.io.IOException("library unreachable");
+        return new MediaLibrary.SweepState(result.getLong("watermark"), result.getBoolean("initial_done"),
+                result.getLong("imported"));
+    }
+
+    /** View-once rows of WhatsApp's database (read-only), with the phone JID of a LID chat when known. */
+    private static final class WhatsAppViewOnceCandidates implements InitialImport.Candidates {
+        private static final String WITH_MAP = "SELECT m._id, m.key_id, m.timestamp, m.from_me, mm.file_path, "
+                + "j.raw_string AS chat, pj.raw_string AS alt FROM message m "
+                + "LEFT JOIN message_media mm ON mm.message_row_id = m._id "
+                + "JOIN chat c ON c._id = m.chat_row_id JOIN jid j ON j._id = c.jid_row_id "
+                + "LEFT JOIN jid_map jm ON jm.lid_row_id = j._id LEFT JOIN jid pj ON pj._id = jm.jid_row_id "
+                + "WHERE m.message_type IN (42, 43) AND m._id > ? ORDER BY m._id LIMIT ?";
+        private static final String PLAIN = "SELECT m._id, m.key_id, m.timestamp, m.from_me, mm.file_path, "
+                + "j.raw_string AS chat, NULL AS alt FROM message m "
+                + "LEFT JOIN message_media mm ON mm.message_row_id = m._id "
+                + "JOIN chat c ON c._id = m.chat_row_id JOIN jid j ON j._id = c.jid_row_id "
+                + "WHERE m.message_type IN (42, 43) AND m._id > ? ORDER BY m._id LIMIT ?";
+        private final android.database.sqlite.SQLiteDatabase db;
+        private final List<String> roots;
+        private boolean mapUnavailable;
+
+        WhatsAppViewOnceCandidates(android.database.sqlite.SQLiteDatabase db, List<String> roots) {
+            this.db = db;
+            this.roots = roots;
+        }
+
+        @Override
+        public List<InitialImport.Candidate> page(long afterRowId, int limit) {
+            String[] args = { String.valueOf(afterRowId), String.valueOf(limit) };
+            android.database.Cursor cursor;
+            if (!mapUnavailable) {
+                try {
+                    cursor = db.rawQuery(WITH_MAP, args);
+                } catch (RuntimeException noJidMap) {
+                    mapUnavailable = true; // older schema: no jid_map table
+                    cursor = db.rawQuery(PLAIN, args);
+                }
+            } else {
+                cursor = db.rawQuery(PLAIN, args);
+            }
+            List<InitialImport.Candidate> page = new ArrayList<>();
+            try (android.database.Cursor rows = cursor) {
+                while (rows.moveToNext()) {
+                    String key = rows.getString(1);
+                    String chat = rows.getString(5);
+                    if (key == null || chat == null) continue;
+                    File file = null;
+                    for (String path : com.waenhancer.library.core.WhatsAppMediaPaths.candidates(rows.getString(4), roots)) {
+                        File probe = new File(path);
+                        if (probe.isFile() && probe.length() > 0) {
+                            file = probe;
+                            break;
+                        }
+                    }
+                    String alt = rows.getString(6);
+                    page.add(new InitialImport.Candidate(rows.getLong(0), chat,
+                            alt != null && !alt.equals(chat) ? alt : null, key, rows.getInt(3) != 0, rows.getLong(2), file));
+                }
+            }
+            return page;
+        }
+
+        @Override
+        public long maxRowId() {
+            try (android.database.Cursor cursor = db.rawQuery("SELECT MAX(_id) FROM message", null)) {
+                return cursor.moveToFirst() ? cursor.getLong(0) : 0;
+            }
+        }
     }
 
     /** WhatsApp's own media roots (its scoped external media dir and its private data). */

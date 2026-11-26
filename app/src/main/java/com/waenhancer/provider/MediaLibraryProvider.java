@@ -45,6 +45,8 @@ public final class MediaLibraryProvider extends ContentProvider {
     public static final String METHOD_STATE = "state";
     public static final String METHOD_LIST_CHAT = "list_chat";
     public static final String METHOD_CONFIRM_ORIGIN = "confirm_origin";
+    public static final String METHOD_SWEEP_STATE = "sweep_state";
+    public static final String METHOD_SWEEP_SAVE = "sweep_save";
     public static final int MAX_LIST = 2000;
     public static final int MAX_LOOKUP = 64;
 
@@ -86,6 +88,9 @@ public final class MediaLibraryProvider extends ContentProvider {
                     return listChat(context, caller, extras);
                 case METHOD_CONFIRM_ORIGIN:
                     return confirmOrigin(context, caller, extras);
+                case METHOD_SWEEP_STATE:
+                case METHOD_SWEEP_SAVE:
+                    return sweep(context, caller, extras, METHOD_SWEEP_SAVE.equals(method));
                 default:
                     return null;
             }
@@ -163,9 +168,12 @@ public final class MediaLibraryProvider extends ContentProvider {
         String[] uuids = new String[keys.length];
         String[] kinds = new String[keys.length];
         String[] hashes = new String[keys.length];
+        boolean[] ambiguous = new boolean[keys.length];
         String state;
         try {
             MediaLibrary library = MediaLibraryRuntime.get(context);
+            // Every request that carries both forms of a chat teaches the phone JID <-> LID pair.
+            if (alt != null && !alt.isEmpty()) library.learnChatAlias(caller, ownJid, chat, alt);
             state = stateToken(context, library);
             for (int i = 0; i < keys.length; i++) {
                 LibraryItem item = library.lookup(caller, ownJid, chat, alt, keys[i], fromMe[i]);
@@ -173,6 +181,7 @@ public final class MediaLibraryProvider extends ContentProvider {
                 uuids[i] = usable ? item.uuid : "";
                 kinds[i] = usable ? item.mediaKind : "";
                 hashes[i] = usable ? item.sha256 : "";
+                ambiguous[i] = item == null && library.isAmbiguous(caller, ownJid, chat, alt, keys[i], fromMe[i]);
             }
         } catch (IOException | RuntimeException failure) {
             return null;
@@ -181,6 +190,7 @@ public final class MediaLibraryProvider extends ContentProvider {
         result.putStringArray("uuids", uuids);
         result.putStringArray("kinds", kinds);
         result.putStringArray("sha256", hashes);
+        result.putBooleanArray("ambiguous", ambiguous);
         result.putString("state", state);
         return result;
     }
@@ -229,6 +239,27 @@ public final class MediaLibraryProvider extends ContentProvider {
                     extras.getString("chat_alt_jid"), key, extras.getBoolean("from_me"), extras.getBoolean("view_once"));
             Bundle result = new Bundle();
             result.putBoolean("changed", changed);
+            return result;
+        } catch (IOException | RuntimeException failure) {
+            return null;
+        }
+    }
+
+    /** Per-account first-run/incremental import progress (read or save). */
+    private static Bundle sweep(Context context, String caller, Bundle extras, boolean save) {
+        String ownJid = extras.getString("own_jid");
+        if (ownJid == null || ownJid.isEmpty()) return null;
+        try {
+            MediaLibrary library = MediaLibraryRuntime.get(context);
+            if (save) {
+                library.saveSweepState(caller, ownJid, new MediaLibrary.SweepState(extras.getLong("watermark"),
+                        extras.getBoolean("initial_done"), extras.getLong("imported")));
+            }
+            MediaLibrary.SweepState state = library.sweepState(caller, ownJid);
+            Bundle result = new Bundle();
+            result.putLong("watermark", state.watermark);
+            result.putBoolean("initial_done", state.initialDone);
+            result.putLong("imported", state.imported);
             return result;
         } catch (IOException | RuntimeException failure) {
             return null;

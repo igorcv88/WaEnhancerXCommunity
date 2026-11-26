@@ -10,6 +10,10 @@ public final class LibraryException extends IOException {
         NOT_AUTHORIZED,
         /** The bytes are not a supported photo or video. */
         UNSUPPORTED_MEDIA,
+        /** The file is truncated, inconsistent or cannot be decoded; nothing was stored. */
+        INCOMPLETE_MEDIA,
+        /** The message matches more than one stored item; nothing is chosen silently. */
+        AMBIGUOUS,
         /** The library quota would be exceeded after deduplication. */
         QUOTA_EXCEEDED,
         /** The device does not have enough free space beyond the safety reserve. */
