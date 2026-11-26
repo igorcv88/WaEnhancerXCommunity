@@ -26,6 +26,8 @@ public final class ImportRequest {
     public final boolean viewOnce;
     public final boolean statusBroadcast;
     public final boolean userInitiated;
+    /** Set by the module from its own preference, never from caller data. */
+    public final boolean keepReceivedViewOnce;
     public final long messageTimestamp;
     public final String caption;
 
@@ -40,12 +42,13 @@ public final class ImportRequest {
         viewOnce = builder.viewOnce;
         statusBroadcast = builder.statusBroadcast;
         userInitiated = builder.userInitiated;
+        keepReceivedViewOnce = builder.keepReceivedViewOnce;
         messageTimestamp = Math.max(0, builder.messageTimestamp);
         caption = emptyToNull(builder.caption);
     }
 
     public ImportPolicy.Facts facts() {
-        return new ImportPolicy.Facts(fromMe, viewOnce, statusBroadcast, userInitiated);
+        return new ImportPolicy.Facts(fromMe, viewOnce, statusBroadcast, userInitiated, keepReceivedViewOnce);
     }
 
     /** Rejects incomplete or oversized metadata before any bytes are read. */
@@ -86,6 +89,7 @@ public final class ImportRequest {
         private boolean viewOnce;
         private boolean statusBroadcast;
         private boolean userInitiated;
+        private boolean keepReceivedViewOnce;
         private long messageTimestamp;
         private String caption;
 
@@ -99,6 +103,7 @@ public final class ImportRequest {
         public Builder viewOnce(boolean value) { viewOnce = value; return this; }
         public Builder statusBroadcast(boolean value) { statusBroadcast = value; return this; }
         public Builder userInitiated(boolean value) { userInitiated = value; return this; }
+        public Builder keepReceivedViewOnce(boolean value) { keepReceivedViewOnce = value; return this; }
         public Builder messageTimestamp(long value) { messageTimestamp = value; return this; }
         public Builder caption(String value) { caption = value; return this; }
 

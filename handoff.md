@@ -19,6 +19,14 @@ Validation in this container (Android SDK 36 installed in-session; Maven Central
 
 Device validation pending (see the 9-item list in `docs/MEDIA_LIBRARY.md`): hook installation on 2.26.38.74, menu presence/absence per message type, FD through `ContentResolver.call`, gallery scoping, inline overlay + recycling + long-press, Liquid Glass Text Bubbles unchanged, video playback, multi-GB backup and interrupted import recovery, `getMyUserJid` resolution.
 
+Follow-up 2026-11-26 (owner screenshot of "Photo expired" on a received view-once; owner chose "Automatic keep" and "Restore into WhatsApp"):
+- Diagnosis: the expiry is WhatsApp's (documented ~14 days for unopened view-once; Unlimited View Once leaves it unopened). The 512 MiB limit is only `DeletedMediaVault`'s and never deletes; no module code ages out media.
+- `MediaLibraryPersistenceTest` (6): 1 day–2 years with restarts/deep reconcile, ~600 MiB library, full quota/device never evicting, trash-only expiry, backup restored years later.
+- `ImportPolicy`: new basis `auto_view_once` behind module-read switch `media_library_keep_view_once` (schema + both settings screens). Status posts still refused; normal media still needs a tap.
+- `MediaLibraryHook`: auto-keep on row bind, view-once viewer, and a read-only msgstore sweep (newest 300, 20 s after start); expired view-once rows show the copy and a tap opens it (saved/restored click listener); normal media restored into WhatsApp's recorded path (`WhatsAppMediaPaths`).
+- `ViewOnceKeepAndRestoreTest` (5). Full suite 99 suites / 761 tests, 0 failures.
+- Device checks 10–11 added in `docs/MEDIA_LIBRARY.md`; the sweep SQL and view-once file paths are unverified on 2.26.38.74.
+
 Next steps: install the CI-signed preview, enable Media library, run the device checklist; if the FD is stripped by `call`, switch import to a provider `openFile("w")` pipe; add pt-BR strings if wanted.
 
 ## Detached media timestamps, view-once download and conversation status — 2026-11-11

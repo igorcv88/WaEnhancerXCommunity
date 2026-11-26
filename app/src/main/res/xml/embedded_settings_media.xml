@@ -33,6 +33,12 @@
             app:title="@string/media_library" />
 
         <rikka.material.preference.MaterialSwitchPreference
+            app:dependency="media_library"
+            app:key="media_library_keep_view_once"
+            app:summary="@string/media_library_keep_view_once_sum"
+            app:title="@string/media_library_keep_view_once" />
+
+        <rikka.material.preference.MaterialSwitchPreference
             app:key="download_video_note"
             app:summary="@string/download_video_note_sum"
             app:title="@string/download_video_note" />

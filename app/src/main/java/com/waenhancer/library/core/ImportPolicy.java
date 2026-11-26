@@ -3,10 +3,13 @@ package com.waenhancer.library.core;
 /**
  * Decides whether a message's media may be kept in the private library, and on which basis.
  *
- * <p>The library is for the user's own media and for copies the user explicitly chooses to keep.
- * It is deliberately not a way around ephemeral delivery: media that a contact sent as view-once,
- * and other people's status posts, keep WhatsApp's native behaviour and are refused here. Nothing
- * is ever imported without a user action; this policy is evaluated for each explicit request.</p>
+ * <p>The library is for the user's own media and for copies the user chooses to keep. Received
+ * view-once media is kept only when the owner turned on the separate "Keep received view-once"
+ * switch (owner decision 2026-11-26: WhatsApp expires unopened view-once media, which the
+ * Unlimited View Once feature leaves unopened); then it is kept automatically, because the media
+ * must be copied before WhatsApp drops it. That switch is read by the module itself, never taken
+ * from the caller. Other people's status posts are always refused. Any other received media is
+ * kept only after an explicit user action.</p>
  */
 public final class ImportPolicy {
 
@@ -14,6 +17,8 @@ public final class ImportPolicy {
     public static final String BASIS_OWN_MEDIA = "own_media";
     /** A conventional (non-ephemeral) received media the user explicitly chose to keep. */
     public static final String BASIS_USER_EXPLICIT = "user_explicit";
+    /** Received view-once kept automatically because the owner enabled that switch. */
+    public static final String BASIS_AUTO_VIEW_ONCE = "auto_view_once";
     /** Restored from a library backup created by this user. */
     public static final String BASIS_BACKUP_RESTORE = "backup_restore";
 
@@ -25,31 +30,42 @@ public final class ImportPolicy {
         public final boolean viewOnce;
         public final boolean statusBroadcast;
         public final boolean userInitiated;
+        /** The module-side "Keep received view-once" switch; never supplied by the caller. */
+        public final boolean keepReceivedViewOnce;
 
         public Facts(boolean fromMe, boolean viewOnce, boolean statusBroadcast, boolean userInitiated) {
+            this(fromMe, viewOnce, statusBroadcast, userInitiated, false);
+        }
+
+        public Facts(boolean fromMe, boolean viewOnce, boolean statusBroadcast, boolean userInitiated,
+                     boolean keepReceivedViewOnce) {
             this.fromMe = fromMe;
             this.viewOnce = viewOnce;
             this.statusBroadcast = statusBroadcast;
             this.userInitiated = userInitiated;
+            this.keepReceivedViewOnce = keepReceivedViewOnce;
         }
     }
 
     /** Returns the authorization basis, or throws {@link LibraryException.Code#NOT_AUTHORIZED}. */
     public static String authorize(Facts facts) throws LibraryException {
-        if (facts == null || !facts.userInitiated) {
-            throw new LibraryException(LibraryException.Code.NOT_AUTHORIZED,
-                    "Media is only kept after an explicit user action");
+        if (facts == null) {
+            throw new LibraryException(LibraryException.Code.NOT_AUTHORIZED, "No request facts");
         }
-        if (facts.fromMe) return BASIS_OWN_MEDIA;
-        if (facts.viewOnce) {
-            throw new LibraryException(LibraryException.Code.NOT_AUTHORIZED,
-                    "Received view-once media keeps WhatsApp's native expiry");
-        }
-        if (facts.statusBroadcast) {
+        if (facts.statusBroadcast && !facts.fromMe) {
             throw new LibraryException(LibraryException.Code.NOT_AUTHORIZED,
                     "Other people's status posts keep WhatsApp's native expiry");
         }
-        return BASIS_USER_EXPLICIT;
+        if (facts.viewOnce && !facts.fromMe) {
+            if (facts.keepReceivedViewOnce) return BASIS_AUTO_VIEW_ONCE;
+            throw new LibraryException(LibraryException.Code.NOT_AUTHORIZED,
+                    "Keeping received view-once media is switched off");
+        }
+        if (!facts.userInitiated) {
+            throw new LibraryException(LibraryException.Code.NOT_AUTHORIZED,
+                    "Media is only kept after an explicit user action");
+        }
+        return facts.fromMe ? BASIS_OWN_MEDIA : BASIS_USER_EXPLICIT;
     }
 
     /** WhatsApp media-type codes for view-once photo, video and voice (see FMessageWpp). */

@@ -102,6 +102,8 @@ public final class MediaLibraryProvider extends ContentProvider {
                     .viewOnce(extras.getBoolean("view_once"))
                     .statusBroadcast(extras.getBoolean("status_broadcast"))
                     .userInitiated(extras.getBoolean("user_initiated"))
+                    // The module's own switch decides; a caller-supplied flag would be meaningless.
+                    .keepReceivedViewOnce(keepReceivedViewOnce(context))
                     .messageTimestamp(extras.getLong("message_timestamp"))
                     .caption(extras.getString("caption"))
                     .build();
@@ -122,6 +124,15 @@ public final class MediaLibraryProvider extends ContentProvider {
                 } catch (IOException ignored) {
                 }
             }
+        }
+    }
+
+    static boolean keepReceivedViewOnce(Context context) {
+        try {
+            android.content.SharedPreferences prefs = com.waenhancer.config.PreferenceStores.publicStore(context);
+            return prefs.getBoolean("media_library", false) && prefs.getBoolean("media_library_keep_view_once", false);
+        } catch (RuntimeException unreadable) {
+            return false;
         }
     }
 

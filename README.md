@@ -57,7 +57,10 @@ The optional **Media library** keeps private copies of photos and videos you cho
 - When WhatsApp has lost a file that you kept, the chat shows your copy with a **Library copy** label.
 - **WaEnhancer → Media → Open media library** shows everything, lets you set the storage limit, verify the files, empty the trash and make an **encrypted backup** (you choose the password and where the file goes).
 
-What it does not do: it does not keep **received view-once** media or other people's **status** posts, it does not change your messages in WhatsApp, and it never uploads anything or adds your copies to the phone's public gallery. Copies are deleted only when you delete them (the trash empties itself after 30 days) or uninstall WaEnhancer — make an encrypted backup first if you want to keep them.
+- **Keep received view-once** (separate switch, off by default): every view-once photo or video you receive is copied automatically while WhatsApp still has it, so after WhatsApp expires it (it does this to unopened view-once media after about 14 days) the chat shows your copy and opens it instead of “Photo expired”. View-once media that already expired before you turned this on cannot be recovered.
+- If WhatsApp loses the file of a normal photo or video you kept, WaEnhancer puts your copy back where WhatsApp expects it, so it opens normally and appears again in the contact's media list.
+
+What it does not do: it does not keep other people's **status** posts, it does not keep normal media without your tap, it does not change your messages in WhatsApp, and it never uploads anything or adds your copies to the phone's public gallery. Copies are deleted only when you delete them (the trash empties itself after 30 days) or uninstall WaEnhancer — make an encrypted backup first if you want to keep them.
 
 Technical details: [docs/MEDIA_LIBRARY.md](docs/MEDIA_LIBRARY.md). This feature still needs testing on real devices.
 

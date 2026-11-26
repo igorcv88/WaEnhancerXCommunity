@@ -38,6 +38,12 @@
             app:summary="@string/media_library_sum"
             app:title="@string/media_library" />
 
+        <rikka.material.preference.MaterialSwitchPreference
+            app:dependency="media_library"
+            app:key="media_library_keep_view_once"
+            app:summary="@string/media_library_keep_view_once_sum"
+            app:title="@string/media_library_keep_view_once" />
+
         <Preference
             app:iconSpaceReserved="false"
             app:key="media_library_open"

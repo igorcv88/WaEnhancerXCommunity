@@ -311,7 +311,7 @@ public final class LibraryBackup {
             request.validate();
             String basis = item.optString("basis");
             if (!ImportPolicy.BASIS_OWN_MEDIA.equals(basis) && !ImportPolicy.BASIS_USER_EXPLICIT.equals(basis)
-                    && !ImportPolicy.BASIS_BACKUP_RESTORE.equals(basis)) {
+                    && !ImportPolicy.BASIS_BACKUP_RESTORE.equals(basis) && !ImportPolicy.BASIS_AUTO_VIEW_ONCE.equals(basis)) {
                 throw invalid("Unknown authorization basis in backup");
             }
             if (!item.has("fromMe") || !item.has("messageTimestamp") || !item.has("importedAt")

@@ -818,12 +818,15 @@ You can still try it, but please wait for a stable version — it will be launch
     <string name="disable_swipe_up_in_group_sum">Disables the swipe up gesture in group chats</string>
     <!-- Persistent local media library -->
     <string name="media_library">Media library</string>
-    <string name="media_library_sum">Adds “Keep in library” to the media viewer and a “Media library” entry to each conversation. Kept photos and videos are stored privately in the module and stay available when WhatsApp no longer has the file. Received view-once media and other people\'s status posts are never kept.</string>
+    <string name="media_library_sum">Adds “Keep in library” to the media viewer and a “Media library” entry to each conversation. Kept photos and videos are stored privately in the module and stay available when WhatsApp no longer has the file. Received view-once media is kept only with the switch below; other people\'s status posts are never kept.</string>
+    <string name="media_library_keep_view_once">Keep received view-once</string>
+    <string name="media_library_keep_view_once_sum">Automatically copies every received view-once photo and video into the media library while WhatsApp still has it, so it opens instead of showing “Photo expired”. Media that expired before this was turned on cannot be recovered.</string>
     <string name="media_library_open">Open media library</string>
     <string name="media_library_open_sum">Browse, verify, back up or delete the photos and videos you kept</string>
     <string name="media_library_title">Media library</string>
     <string name="media_library_chat_title">Media library · %1$s</string>
     <string name="media_library_empty">Nothing kept yet. Open a photo or video in WhatsApp and choose “Keep in library”.</string>
+    <string name="media_library_restored_to_whatsapp">Restored from the media library</string>
     <string name="media_library_count">%1$d items</string>
     <string name="media_library_trash_count">%1$d items in trash</string>
     <string name="media_library_usage">%1$s of %2$s used</string>
@@ -861,7 +864,7 @@ You can still try it, but please wait for a stable version — it will be launch
     <string name="media_library_kept">Kept in the media library</string>
     <string name="media_library_already_kept">Already in the media library</string>
     <string name="media_library_repaired">Kept copy repaired</string>
-    <string name="media_library_not_allowed">Received view-once media and status posts keep WhatsApp\'s own expiry</string>
+    <string name="media_library_not_allowed">This media cannot be kept (status posts, or received view-once while “Keep received view-once” is off)</string>
     <string name="media_library_no_file">WhatsApp has no local file for this media yet. Download it first.</string>
     <string name="media_library_no_account">Your WhatsApp account could not be identified; nothing was kept</string>
     <string name="media_library_failed">Could not keep this media</string>
