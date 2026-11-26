@@ -2,6 +2,116 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
+## CONTINUATION BRIEF — media library, PR #176 (read this first) — 2026-11-26
+
+A previous session became too long; this section is the complete handoff for the next one.
+Detailed history follows in the next section and in `docs/MEDIA_LIBRARY.md` (architecture,
+acceptance criteria, test matrix, 18 device checks) and `docs/MEDIA_LIFECYCLE_EVIDENCE.md`
+(proven persistence vs unknown WhatsApp lifecycle). `docs/` is git-ignored: always
+`git add -f docs/MEDIA_LIBRARY.md docs/MEDIA_LIFECYCLE_EVIDENCE.md`.
+
+### State
+- Branch `ccr-83a099f4-9o9kki`, PR #176 (open, owner marked it ready for review; do NOT merge).
+  Head `36b6593`, CI green, signed preview artifact `WaEnhancerCommunity-PR176-36b6593c`
+  (Actions run 45889148424, expires 2026-11-27 20:18 UTC). Working tree clean.
+- Local validation of the head: `:app:testWhatsappDebugUnitTest` 103 suites / 806 tests, 0
+  failures; lint ran; 5 `tools/test_*.py` CI checks pass. No device validation by the agent.
+- Build env in a fresh container: Android SDK not preinstalled; install cmdline-tools from
+  dl.google.com into /root/android-sdk (platforms;android-36, build-tools 35/36), write
+  `local.properties` (`sdk.dir=...`, git-ignored). Maven Central returns 429: pass a local
+  init script with `-I` that rewrites repo.maven.apache.org to
+  `https://maven-central.storage-download.googleapis.com/maven2/` (do not commit it; a global
+  ~/.gradle/init.d script was refused by the permission classifier).
+
+### Owner decisions (binding, newest wins)
+- Goal: definitive copies that look and behave **exactly like normal received media**. Ignore
+  every line of the original brief about preserving ephemeral/view-once behaviour.
+- "Keep received view-once" (`media_library_keep_view_once`) **on by default**; automatic keep.
+- "Restore into WhatsApp" (`media_library_restore_to_whatsapp`) **on by default**, switchable.
+- Manual saves: view-once → `DCIM/WhatsApp View Once`; normal media → `DCIM/WhatsApp`.
+- View-once must be separated from normal media: own "View once" chip/tab in WhatsApp's
+  per-contact media screen (MediaGalleryActivity).
+- First-start import of all available view-once (done: `InitialImport`), then incremental.
+- PR: owner asked for draft, later marked it ready themselves; keep as is, never merge.
+- pt-BR translations for every new string (`res/values-pt` is Brazilian).
+- Owner preference: clinical, direct, no cheerleading. AGENTS.md: English in code/commits/PRs,
+  update this handoff each task, report blocked checks honestly.
+
+### OPEN — owner report on the 36b6593 build (screenshot of "All media")
+1. **"View once" chip is unstyled** (plain grey text, no outline, no icon, wrong weight/alpha)
+   next to WhatsApp's outlined WDS chips (Photos/Videos/Docs/Links/Stickers).
+   Cause (`xposed/features/media/ViewOnceGalleryTab.addChip`): native chips are `X.G00`
+   (Material/WDS Chip; ChipDrawable draws outline, icon and text itself), so copying
+   `getBackground()`/text attributes of the TextView does not reproduce them; we also set
+   alpha 0.85. Planned fix (no dependency on obfuscated Chip methods, no ChipGroup selection
+   side effects): style our own TextView explicitly — `GradientDrawable` pill (radius =
+   height/2, 1–1.5dp stroke in the native text colour at ~35–40% alpha, transparent fill;
+   selected: translucent fill), bold typeface from the template, full-alpha
+   `template.getCurrentTextColor()`, template `getTextSize()`, start icon = WhatsApp drawable
+   `ic_viewonce` (`Utils.getID("ic_viewonce","drawable")`) tinted to the text colour, 20dp,
+   drawable padding 8dp, horizontal padding ~16dp, same height/margins as the template, no
+   alpha. Keep it out of WDSChipGroup selection logic (consume touch ourselves).
+   Alternative considered and rejected: instantiating `X.G00` via its Context constructor
+   gives the native look but icon/checked APIs are obfuscated and `setChecked` would fire the
+   group's selection callback.
+2. **View-once bubbles still show WhatsApp's "1 Photo" pill, not the image.**
+   Cause (`MediaLibraryHook.bindRow`): when WhatsApp still has the view-once file
+   (`nativeAvailable`), the code only auto-keeps and returns, so nothing is presented; the
+   overlay path only runs when the native file is gone, and then draws the copy inside the
+   small pill (`view_once_media_container*`, ~432x162 px) with a "Library copy" badge.
+   Planned fix:
+   - For view-once rows (received and own) present the kept copy whenever it exists,
+     regardless of native availability: after `autoKeep(message)` continue to
+     `BINDER.resolve` instead of returning (`autoKeep` already calls `forget(key)`). Normal
+     media keeps the current rule (native first; restore/overlay only when the file is gone).
+   - Make the view-once body look like a normal media bubble: for host kind
+     `VIEW_ONCE_BODY`, save and change the host's LayoutParams to a media size (width ≈ 260dp
+     capped by the parent, height = width × bitmapH/bitmapW clamped to ~140–340dp), set the
+     host's children INVISIBLE (save previous visibility), draw the bitmap via ViewOverlay
+     with rounded corners (~8dp clip) and **no badge**; keep overlay bounds in sync with an
+     OnLayoutChangeListener. Restore LayoutParams, child visibility and remove the listener in
+     `clearOverlay` (every rebind; tokens already guarantee no late decoration).
+   - Tap on a view-once row with a copy opens the copy (never WhatsApp's view-once viewer,
+     which would consume/expire it): `redirectClick` already saves/restores the listener; apply
+     it for view-once rows even when the native file exists.
+   - Check `AppLiquidGlass` interaction: it clears the `view_once_media_container_large`
+     ColorDrawable fill and tints its texts on glass rows; our resize/overlay must not fight it
+     (verify on device with Text Bubbles Liquid Glass on).
+   - Thumbnails come from `thumbnail()` sampled to ~720 px; for a large bubble consider 1080.
+   - Tests: extend `InlinePresentation` with a pure size computation (aspect, clamps) and a
+     decision `presentViewOnce(nativeAvailable, hasCopy, viewOnce)` with JVM tests; device
+     checks to add: bubble shows the image while the file still exists and after expiry, tap
+     opens the copy, scrolling/recycling never leaves a resized pill on another row.
+3. Still unverified on device (see docs checks 10–18): sweep SQL / `jid_map` /
+   `message_media.file_path` on WhatsApp 2.26.38.74, FD through `ContentResolver.call`,
+   restore recognised by WhatsApp's gallery, View-once chip injection, Liquid Glass unchanged.
+
+### Code map (all under app/src/main/java/com/waenhancer/)
+- `library/core/` (pure Java, JVM-tested with real SQLite via sqlite-jdbc): `MediaLibrary`
+  (import/lookup/identity/trash/reconcile/sweep state/generation), `LibrarySchema` (v4:
+  view_once, view_once_known, chat_aliases), `BlobStore` (content-addressed + quarantine),
+  `LibraryLock`, `MediaValidator`, `MediaSniffer`, `ImportPolicy`, `ImportRequest`,
+  `LibraryIntegrity` (inspect, ambiguity, verifyBatch, canonicalDump), `InitialImport`,
+  `InlineBinder`, `InlinePresentation`, `AccessPolicy`, `WhatsAppRestore` (+journal),
+  `WhatsAppMediaPaths`, `PendingPublish`, `GalleryAlbums`, `ChatJids`, `StreamingAead`,
+  `LibraryBackup`.
+- `library/android/`: `AndroidSql`, `MediaLibraryRuntime` (maintenance, 6h verify),
+  `AndroidDecodeProbe`, `GallerySaver`, `GalleryAccess` (tokens).
+- `provider/MediaLibraryProvider.java` (ops: import, lookup, gallery_token, state, list_chat,
+  confirm_origin, sweep_state, sweep_save; openFile needs `?account=`).
+- `library/ui/` gallery/management/viewer; `xposed/features/media/MediaLibraryHook.java`
+  (menus, row binding, auto-keep, InitialImport sweep, restore), `ViewOnceGalleryTab.java`,
+  `DownloadViewOnce.java` (saves to DCIM/WhatsApp View Once).
+- Tests: `app/src/test/java/com/waenhancer/library/core/` (13 suites, ~106 tests; includes
+  child-process tests for cross-process concurrency, offline reads and a 48 MiB-heap backup).
+
+### Next steps
+1. Implement OPEN items 1 and 2 as planned, with JVM tests for the pure parts.
+2. Run the full suite + lint + tools/test_*.py; commit; push; PR description update; wait for
+   CI and report the signed artifact name/expiry.
+3. Ask the owner for an LSPosed log + inspector trace of a view-once row
+   (`conversation_row_*` containing `view_once_media_container*`) if the layout differs.
+
 ## Persistent local media library — 2026-11-26 (branch `ccr-83a099f4-9o9kki`, draft [PR #176](https://github.com/igorcv88/WaEnhancerXCommunity/pull/176))
 
 Owner request: a persistent private library for own media and explicitly authorised copies, with deterministic chat association, inline presentation, viewer and per-contact gallery, independent of WhatsApp's cache; received ephemeral behaviour preserved; no automatic capture or expiry neutralisation. Baseline facts supplied by the owner (not re-measured here): master `acc231d`, installed `0.0.50+pr175.111c1eec`, WhatsApp 2.26.38.74 (263807433), Galaxy S25 Ultra / Android 17; Unlimited View Once has no independent storage, old messages show native "Photo expired", Download View Once exports only on tap; no fixed expiry period proven.
