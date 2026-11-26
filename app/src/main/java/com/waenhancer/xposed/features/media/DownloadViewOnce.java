@@ -33,7 +33,7 @@ public class DownloadViewOnce extends Feature {
     }
 
     private static void downloadFile(FMessageWpp.UserJid userJid, File file) throws Exception {
-        // Android 10+: a dedicated public album "Pictures/View Once", separate from WhatsApp's
+        // Android 10+: a dedicated public album "DCIM/WhatsApp View Once", separate from WhatsApp's
         // own DCIM/WhatsApp saves (owner decision 2026-11-26). Older Android, Lite Mode or a
         // MediaStore failure keep the previous download-folder behaviour.
         if (com.waenhancer.library.android.GallerySaver.supported() && !Utils.xprefs.getBoolean("lite_mode", false)) {

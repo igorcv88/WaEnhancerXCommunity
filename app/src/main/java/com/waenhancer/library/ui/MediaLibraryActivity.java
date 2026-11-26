@@ -200,7 +200,7 @@ public final class MediaLibraryActivity extends BaseActivity {
                 .show();
     }
 
-    /** Explicit export: view-once → Pictures/View Once, normal media → DCIM/WhatsApp. */
+    /** Explicit export: view-once → DCIM/WhatsApp View Once, normal media → DCIM/WhatsApp. */
     private void saveToGallery(LibraryItem item) {
         String album = com.waenhancer.library.core.GalleryAlbums.relativePathFor(item.viewOnce);
         worker.execute(() -> {

@@ -89,7 +89,7 @@ public class MediaLibraryHook extends Feature {
 
     /** Owner switch "Keep received view-once" (also enforced again by the module). */
     private static volatile boolean keepViewOnce;
-    /** Separate owner switch "Restore into WhatsApp" (off by default). */
+    /** Separate owner switch "Restore into WhatsApp" (on by default; owner decision 2026-11-26). */
     private static volatile boolean restoreToWhatsApp;
     /** Messages already sent for automatic keeping in this process. */
     private static final java.util.Set<String> AUTO_ATTEMPTED =
@@ -122,7 +122,7 @@ public class MediaLibraryHook extends Feature {
     public void doHook() throws Throwable {
         if (!prefs.getBoolean("media_library", false)) return;
         keepViewOnce = prefs.getBoolean("media_library_keep_view_once", true);
-        restoreToWhatsApp = prefs.getBoolean("media_library_restore_to_whatsapp", false);
+        restoreToWhatsApp = prefs.getBoolean("media_library_restore_to_whatsapp", true);
         // Each part fails closed on its own; one unresolved hook never disables the others.
         try {
             hookMediaViewerMenu();
@@ -590,7 +590,7 @@ public class MediaLibraryHook extends Feature {
     }
 
     /**
-     * Optional "Restore into WhatsApp" (separate switch, off by default): writes a kept normal
+     * Optional "Restore into WhatsApp" (separate switch, on by default): writes a kept normal
      * copy back to the path WhatsApp records for the message. Rules in {@link WhatsAppRestore}.
      */
     private static boolean restoreIntoWhatsApp(Context context, FMessageWpp message, File recorded,
@@ -608,7 +608,7 @@ public class MediaLibraryHook extends Feature {
             }
             Uri uri = itemUri(ref, answer.uuid);
             // userCleared: WhatsApp gives no reliable signal for a deliberate "delete media" on
-            // this build; that is why the feature is opt-in and off by default.
+            // this build; the owner chose on by default and can turn it off.
             WhatsAppRestore.Outcome outcome = WhatsAppRestore.restore(true, message.isViewOnce(), false, target, roots,
                     () -> context.getContentResolver().openInputStream(uri));
             if (outcome == WhatsAppRestore.Outcome.RESTORED) {

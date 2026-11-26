@@ -12,7 +12,7 @@ import java.io.OutputStream;
 
 /**
  * Explicit "save to gallery": inserts one photo/video into MediaStore under a relative album
- * path ({@code Pictures/View Once} or {@code DCIM/WhatsApp}, see
+ * path ({@code DCIM/WhatsApp View Once} or {@code DCIM/WhatsApp}, see
  * {@link com.waenhancer.library.core.GalleryAlbums}). The entry stays pending (invisible to other
  * apps) until every byte is written, and is deleted if the copy fails. Needs no storage
  * permission on Android 10+, where it is used; callers fall back on older versions.

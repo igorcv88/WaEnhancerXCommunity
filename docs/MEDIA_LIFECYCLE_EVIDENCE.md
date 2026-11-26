@@ -50,8 +50,8 @@ Unknown:
 | Whether WhatsApp deletes the local view-once file, the decryption key, or only marks the message | Unknown |
 | Where WhatsApp 2.26.38.74 stores received view-once files and whether `message_media.file_path` points to them | Unknown (the module's database sweep assumes it does) |
 | Whether normal (non view-once) media files are removed by WhatsApp over time on this device | Unknown; storage-management deletion by the user is the known case |
-| Whether writing a kept file back to WhatsApp's recorded path makes WhatsApp, its media gallery and its backup treat it as downloaded | Unknown until the device check; the feature is opt-in and off by default for that reason |
-| Where WhatsApp's native manual save puts view-once media | Owner observation: Download View Once (module) saved to `Download/WaEnhancer/WhatsApp/View Once`; WhatsApp's own save of normal media goes to `DCIM/WhatsApp`. Now changed to `Pictures/View Once` for view-once. |
+| Whether writing a kept file back to WhatsApp's recorded path makes WhatsApp, its media gallery and its backup treat it as downloaded | Unknown until the device check; the feature is on by default by owner decision and can be turned off |
+| Where WhatsApp's native manual save puts view-once media | Owner observation: Download View Once (module) saved to `Download/WaEnhancer/WhatsApp/View Once`; WhatsApp's own save of normal media goes to `DCIM/WhatsApp`. Now changed to `DCIM/WhatsApp View Once` for view-once. |
 
 Evidence that would settle these (device, no message content needed): for one new view-once,
 record `message.message_type`, `message_media.file_path`, file existence and size, and the

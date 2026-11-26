@@ -9,7 +9,7 @@ import java.util.List;
 /**
  * Writes a kept normal photo/video back to the path WhatsApp still records for its message.
  *
- * <p>Separate, opt-in feature ("Restore into WhatsApp", off by default) because it writes into
+ * <p>Separate switch ("Restore into WhatsApp", on by default by owner decision, can be turned off) because it writes into
  * WhatsApp's own storage, which media scanners, WhatsApp's storage manager, cloud sync and the
  * user's own deletions also touch. Rules, each covered by tests:</p>
  * <ul>

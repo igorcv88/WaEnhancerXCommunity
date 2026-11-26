@@ -4,11 +4,11 @@ package com.waenhancer.library.core;
  * Where an explicit "Save to gallery" puts a kept item (MediaStore relative path).
  *
  * <p>Mirrors the owner's current layout: WhatsApp's own "Save" puts normal photos and videos in
- * {@code DCIM/WhatsApp}; view-once copies get their own album, {@code Pictures/View Once}, so they
+ * {@code DCIM/WhatsApp}; view-once copies get their own album, {@code DCIM/WhatsApp View Once}, so they
  * never mix with normal media. Nothing is ever published without that explicit action.</p>
  */
 public final class GalleryAlbums {
-    public static final String VIEW_ONCE = "Pictures/View Once";
+    public static final String VIEW_ONCE = "DCIM/WhatsApp View Once";
     public static final String NORMAL = "DCIM/WhatsApp";
 
     private GalleryAlbums() { }

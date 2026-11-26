@@ -43,6 +43,8 @@ Second review + owner feedback 2026-11-26 (owner: view-once separate from normal
 - `GallerySaver` + `GalleryAlbums`: module "Save to gallery" (view-once → Pictures/View Once, normal → DCIM/WhatsApp); Download View Once → Pictures/View Once on Android 10+ with old folder fallback.
 - Full: 101 suites / 784 tests, 0 failures; lint ran; device checks 14–15 added.
 
+Owner correction 2026-11-26: "Restore into WhatsApp" is **on by default** (XML + hook default true; can be turned off); manual view-once save album is `DCIM/WhatsApp View Once` (was Pictures/View Once). Normal media stays `DCIM/WhatsApp`.
+
 Next steps: install the CI-signed preview, enable Media library, run the device checklist; if the FD is stripped by `call`, switch import to a provider `openFile("w")` pipe; add pt-BR strings if wanted.
 
 ## Detached media timestamps, view-once download and conversation status — 2026-11-11

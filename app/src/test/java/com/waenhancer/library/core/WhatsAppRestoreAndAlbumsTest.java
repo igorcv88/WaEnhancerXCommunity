@@ -57,7 +57,7 @@ public class WhatsAppRestoreAndAlbumsTest {
         File target = target("IMG-1.jpg");
         assertEquals(WhatsAppRestore.Outcome.DISABLED,
                 WhatsAppRestore.restore(false, false, false, target, roots, bytes(photo)));
-        assertFalse("off by default means nothing is written", target.exists());
+        assertFalse("switched off means nothing is written", target.exists());
 
         assertEquals(WhatsAppRestore.Outcome.RESTORED,
                 WhatsAppRestore.restore(true, false, false, target, roots, bytes(photo)));

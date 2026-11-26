@@ -143,13 +143,12 @@ drawn over the view-once bubble body (`view_once_media_container*`) and a tap op
 the "Photo expired" dialog (the original click listener is saved and restored on rebind; if it
 cannot be read, only the overlay's ▶ target is added).
 
-Restore into WhatsApp (normal media) — **separate switch `media_library_restore_to_whatsapp`, off by
-default, experimental**: when WhatsApp's file for a message is gone and the library holds a copy,
+Restore into WhatsApp (normal media) — **separate switch `media_library_restore_to_whatsapp`, on by
+default (owner decision), can be turned off**: when WhatsApp's file for a message is gone and the library holds a copy,
 `WhatsAppRestore` writes it (temp file + rename) to the exact path WhatsApp still records, only
 inside WhatsApp's own media roots, never over an existing file, never for view-once, never when a
 deliberate user deletion is known (no reliable signal exists on 2.26.38.74, so the hook cannot
-tell yet — the main reason it is opt-in). `msgstore.db` is not modified. Risks accepted only by
-turning it on: Android's media scanner indexes `Android/media`, so the file may reappear in other
+tell yet; the owner chose on by default). `msgstore.db` is not modified. Risks accepted by leaving it on: Android's media scanner indexes `Android/media`, so the file may reappear in other
 gallery apps; WhatsApp's storage manager may count or delete it again; a deletion the user made in
 WhatsApp or a file manager can be undone; cloud/WhatsApp backups may include it. Whether WhatsApp
 itself then treats the message as downloaded, and lists it in "Media, links and docs", is
@@ -164,9 +163,9 @@ untouched, so view-once copies never mix into WhatsApp's own Photos/Videos. The 
 a chat JID in the activity's intent, else from the open conversation; otherwise no chip.
 
 Saving to the phone gallery (explicit only): module library → long-press → "Save to gallery"
-writes to `Pictures/View Once` for view-once copies and `DCIM/WhatsApp` for normal media
+writes to `DCIM/WhatsApp View Once` for view-once copies and `DCIM/WhatsApp` for normal media
 (`GalleryAlbums`, MediaStore, pending until complete). WhatsApp's Download View Once button now
-also saves to `Pictures/View Once` on Android 10+ (previous download folder as fallback).
+also saves to `DCIM/WhatsApp View Once` on Android 10+ (previous download folder as fallback).
 Catalog schema 2 adds `items.view_once` (migrated from schema 1 by basis) to keep the two apart.
 
 - **Media viewer → ⋮ → Keep in library** (the menu that already hosts Download View Once).
@@ -323,8 +322,8 @@ Nothing below has been observed on a phone. Each item names what proves it.
 14. WhatsApp → contact → Media: a "View once" chip appears only for contacts with kept view-once
     items; it lists only view-once copies; Photos/Videos are unchanged; tapping a native chip hides
     the grid; tapping an item opens it.
-15. Download View Once saves into `Pictures/View Once`; module "Save to gallery" saves view-once to
-    `Pictures/View Once` and normal media to `DCIM/WhatsApp`; both appear as albums in the phone
+15. Download View Once saves into `DCIM/WhatsApp View Once`; module "Save to gallery" saves view-once to
+    `DCIM/WhatsApp View Once` and normal media to `DCIM/WhatsApp`; both appear as albums in the phone
     gallery.
 13. Scroll fast through a chat mixing kept media and text: no copy ever appears on a text row or on
     the wrong media row (row tokens), and deleting/restoring an item in the gallery is reflected
