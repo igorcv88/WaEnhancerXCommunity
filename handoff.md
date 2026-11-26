@@ -2,7 +2,7 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
-## Persistent local media library — 2026-11-26 (branch `ccr-83a099f4-9o9kki`, PR: see below)
+## Persistent local media library — 2026-11-26 (branch `ccr-83a099f4-9o9kki`, draft [PR #176](https://github.com/igorcv88/WaEnhancerXCommunity/pull/176))
 
 Owner request: a persistent private library for own media and explicitly authorised copies, with deterministic chat association, inline presentation, viewer and per-contact gallery, independent of WhatsApp's cache; received ephemeral behaviour preserved; no automatic capture or expiry neutralisation. Baseline facts supplied by the owner (not re-measured here): master `acc231d`, installed `0.0.50+pr175.111c1eec`, WhatsApp 2.26.38.74 (263807433), Galaxy S25 Ultra / Android 17; Unlimited View Once has no independent storage, old messages show native "Photo expired", Download View Once exports only on tap; no fixed expiry period proven.
 
