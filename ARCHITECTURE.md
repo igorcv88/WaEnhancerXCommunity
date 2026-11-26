@@ -154,6 +154,10 @@ There are two backup classes:
 
 Migration and restore code must preserve the source until the destination has been validated.
 
+## Persistent media library (2026-11-26)
+
+A separate catalog (`databases/media_library.db`) and content-addressed blob store (`files/media_library/`) keep photos and videos the user explicitly chooses to keep (own media and conventional received media; never received view-once or others' status posts, never automatically). It shares no table, directory, quota or backup format with `Deleted for Me`. Pure-Java core (`library/core`) runs the same SQL on device (`AndroidSql`) and in JVM tests (sqlite-jdbc). Invariants: bytes are durable (stage → sync → atomic rename) before any row refers to them; an existing blob is re-hashed before reuse; quota is charged after deduplication; every mutation holds a thread + file lock; reconciliation never deletes a catalog row, only staging files and row-less blobs; migrations are per-step transactional and refuse newer schemas; backups stream through chunked AES-GCM and restore in two phases. `MediaLibraryProvider` is the only IPC door: UID-checked per call, flavour derived from the UID, bytes received as a WhatsApp-opened read-only descriptor, read-only `openFile` scoped to the importing flavour, single-use gallery tokens for the exported `ChatMediaGallery` alias. The WhatsApp-side presentation is a `ViewOverlay` on the native thumbnail; message types and `msgstore.db` are never modified. Details, test matrix and pending device checks: [docs/MEDIA_LIBRARY.md](docs/MEDIA_LIBRARY.md).
+
 ## Updates and releases
 
 The app reads release metadata from `igorcv88/WaEnhancerXCommunity`. Stable and Beta are explicit channels identified by the release tag/version convention.

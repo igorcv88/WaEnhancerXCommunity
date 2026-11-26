@@ -54,6 +54,14 @@ public class MediaFragment extends BasePreferenceFragment {
             });
         }
 
+        var mediaLibrary = findPreference("media_library_open");
+        if (mediaLibrary != null) {
+            mediaLibrary.setOnPreferenceClickListener(preference -> {
+                startActivity(new Intent(requireContext(), com.waenhancer.library.ui.MediaLibraryActivity.class));
+                return true;
+            });
+        }
+
         updateCallRecordingPreferenceState();
 
         var videoCallScreenRec = findPreference("video_call_screen_rec");

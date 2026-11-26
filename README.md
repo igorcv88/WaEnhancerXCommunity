@@ -47,6 +47,20 @@ Remaining engineering work and intentionally deferred ideas are tracked in [ROAD
 
 The app exposes many individual toggles inside each category. This README intentionally describes the major capabilities rather than duplicating the changelog.
 
+## Media library
+
+The optional **Media library** keeps private copies of photos and videos you choose, inside the module's own storage, so they stay available even when WhatsApp no longer has the file.
+
+- Turn it on in **WaEnhancer → Media → Media library**, then force-stop and reopen WhatsApp.
+- Open a photo or video in WhatsApp, tap **⋮ → Keep in library**. Nothing is ever kept automatically.
+- In a conversation, **⋮ → Media library** shows the copies kept from that chat. Tap to view, swipe for the next one, long-press to move an item to the trash.
+- When WhatsApp has lost a file that you kept, the chat shows your copy with a **Library copy** label.
+- **WaEnhancer → Media → Open media library** shows everything, lets you set the storage limit, verify the files, empty the trash and make an **encrypted backup** (you choose the password and where the file goes).
+
+What it does not do: it does not keep **received view-once** media or other people's **status** posts, it does not change your messages in WhatsApp, and it never uploads anything or adds your copies to the phone's public gallery. Copies are deleted only when you delete them (the trash empties itself after 30 days) or uninstall WaEnhancer — make an encrypted backup first if you want to keep them.
+
+Technical details: [docs/MEDIA_LIBRARY.md](docs/MEDIA_LIBRARY.md). This feature still needs testing on real devices.
+
 ## Requirements
 
 - **Android 9 (API 28) or newer**

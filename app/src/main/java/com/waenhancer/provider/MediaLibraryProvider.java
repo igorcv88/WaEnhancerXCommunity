@@ -1,0 +1,229 @@
+package com.waenhancer.provider;
+
+import android.content.ContentProvider;
+import android.content.ContentValues;
+import android.content.Context;
+import android.database.Cursor;
+import android.net.Uri;
+import android.os.Binder;
+import android.os.Bundle;
+import android.os.ParcelFileDescriptor;
+import android.os.Process;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
+import com.waenhancer.BuildConfig;
+import com.waenhancer.library.android.GalleryAccess;
+import com.waenhancer.library.android.MediaLibraryRuntime;
+import com.waenhancer.library.core.ImportRequest;
+import com.waenhancer.library.core.LibraryException;
+import com.waenhancer.library.core.LibraryItem;
+import com.waenhancer.library.core.MediaLibrary;
+import com.waenhancer.security.CallerAuthority;
+
+import java.io.FileNotFoundException;
+import java.io.IOException;
+
+/**
+ * The media library's only cross-process door. Exported so WhatsApp can reach it; every
+ * operation re-checks the calling UID, and the WhatsApp flavour used to scope data is derived
+ * from that UID, never from request extras, so WhatsApp and WhatsApp Business can neither read
+ * nor write each other's items.
+ *
+ * <p>Operations: {@code import} (bytes arrive as a read-only file descriptor that WhatsApp opened
+ * itself, so the module never needs storage permissions or path trust), {@code lookup} (which
+ * of up to 64 visible messages have a kept copy), {@code gallery_token} (a single-use capability
+ * for the gallery activity) and read-only {@code openFile} for one item. There is no list,
+ * delete or generic query operation.</p>
+ */
+public final class MediaLibraryProvider extends ContentProvider {
+    public static final String AUTHORITY = BuildConfig.APPLICATION_ID + ".medialibrary";
+    public static final String METHOD_IMPORT = "import";
+    public static final String METHOD_LOOKUP = "lookup";
+    public static final String METHOD_GALLERY_TOKEN = "gallery_token";
+    public static final int MAX_LOOKUP = 64;
+
+    @Override
+    public boolean onCreate() {
+        return true;
+    }
+
+    /** The trusted WhatsApp package of the caller, {@code null} for anyone else. */
+    @Nullable
+    private static String whatsAppCaller(Context context) {
+        if (context == null || !CallerAuthority.isTrustedCaller(context)) return null;
+        for (String name : CallerAuthority.packagesFor(context, Binder.getCallingUid())) {
+            if (CallerAuthority.PACKAGE_WHATSAPP.equals(name) || CallerAuthority.PACKAGE_WHATSAPP_BUSINESS.equals(name)) {
+                return name;
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    @Override
+    public Bundle call(@NonNull String method, @Nullable String arg, @Nullable Bundle extras) {
+        Context context = getContext();
+        String caller = whatsAppCaller(context);
+        if (caller == null || extras == null) return null;
+        long identity = Binder.clearCallingIdentity();
+        try {
+            switch (method) {
+                case METHOD_IMPORT:
+                    return importMedia(context, caller, extras);
+                case METHOD_LOOKUP:
+                    return lookup(context, caller, extras);
+                case METHOD_GALLERY_TOKEN:
+                    return galleryToken(caller, extras);
+                default:
+                    return null;
+            }
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
+    }
+
+    private static Bundle importMedia(Context context, String caller, Bundle extras) {
+        Bundle result = new Bundle();
+        ParcelFileDescriptor media = extras.getParcelable("media");
+        try {
+            if (media == null) {
+                return error(result, LibraryException.Code.INVALID_REQUEST);
+            }
+            ImportRequest request = ImportRequest.builder()
+                    .packageName(caller)
+                    .ownJid(extras.getString("own_jid"))
+                    .chatJid(extras.getString("chat_jid"))
+                    .chatAltJid(extras.getString("chat_alt_jid"))
+                    .messageKey(extras.getString("message_key"))
+                    .fromMe(extras.getBoolean("from_me"))
+                    .senderJid(extras.getString("sender_jid"))
+                    .viewOnce(extras.getBoolean("view_once"))
+                    .statusBroadcast(extras.getBoolean("status_broadcast"))
+                    .userInitiated(extras.getBoolean("user_initiated"))
+                    .messageTimestamp(extras.getLong("message_timestamp"))
+                    .caption(extras.getString("caption"))
+                    .build();
+            ParcelFileDescriptor descriptor = media;
+            MediaLibrary.ImportResult imported = MediaLibraryRuntime.get(context).importMedia(request,
+                    () -> new ParcelFileDescriptor.AutoCloseInputStream(descriptor));
+            result.putString("status", imported.status.name());
+            result.putString("uuid", imported.item.uuid);
+            return result;
+        } catch (LibraryException refused) {
+            return error(result, refused.code);
+        } catch (IOException | RuntimeException failure) {
+            return error(result, LibraryException.Code.IO);
+        } finally {
+            if (media != null) {
+                try {
+                    media.close();
+                } catch (IOException ignored) {
+                }
+            }
+        }
+    }
+
+    private static Bundle error(Bundle result, LibraryException.Code code) {
+        result.putString("status", "ERROR");
+        result.putString("error", code.name());
+        return result;
+    }
+
+    private static Bundle lookup(Context context, String caller, Bundle extras) {
+        String[] keys = extras.getStringArray("message_keys");
+        boolean[] fromMe = extras.getBooleanArray("from_me");
+        if (keys == null || fromMe == null || keys.length != fromMe.length || keys.length > MAX_LOOKUP) return null;
+        String ownJid = extras.getString("own_jid");
+        String chat = extras.getString("chat_jid");
+        String alt = extras.getString("chat_alt_jid");
+        String[] uuids = new String[keys.length];
+        String[] kinds = new String[keys.length];
+        try {
+            MediaLibrary library = MediaLibraryRuntime.get(context);
+            for (int i = 0; i < keys.length; i++) {
+                LibraryItem item = library.lookup(caller, ownJid, chat, alt, keys[i], fromMe[i]);
+                uuids[i] = item != null && item.isAvailable() ? item.uuid : "";
+                kinds[i] = item != null ? item.mediaKind : "";
+            }
+        } catch (IOException | RuntimeException failure) {
+            return null;
+        }
+        Bundle result = new Bundle();
+        result.putStringArray("uuids", uuids);
+        result.putStringArray("kinds", kinds);
+        return result;
+    }
+
+    private static Bundle galleryToken(String caller, Bundle extras) {
+        String ownJid = extras.getString("own_jid");
+        String chat = extras.getString("chat_jid");
+        if (ownJid == null || ownJid.isEmpty() || chat == null || chat.isEmpty()) return null;
+        String title = extras.getString("title");
+        if (title != null && title.length() > 128) title = title.substring(0, 128);
+        Bundle result = new Bundle();
+        result.putString("token", GalleryAccess.issue(new GalleryAccess.Grant(caller, ownJid, chat,
+                extras.getString("chat_alt_jid"), title, extras.getString("open_uuid"), System.currentTimeMillis())));
+        return result;
+    }
+
+    @Nullable
+    @Override
+    public ParcelFileDescriptor openFile(@NonNull Uri uri, @NonNull String mode) throws FileNotFoundException {
+        Context context = getContext();
+        boolean self = Binder.getCallingUid() == Process.myUid();
+        String caller = self ? null : whatsAppCaller(context);
+        if (!"r".equals(mode) || (!self && caller == null)) throw new FileNotFoundException();
+        java.util.List<String> segments = uri.getPathSegments();
+        if (segments.size() != 2 || !"item".equals(segments.get(0))) throw new FileNotFoundException();
+        long identity = Binder.clearCallingIdentity();
+        try {
+            MediaLibrary library = MediaLibraryRuntime.get(context);
+            LibraryItem item = library.get(segments.get(1));
+            // Account isolation: a WhatsApp flavour reads only the items it imported.
+            if (item == null || !item.isAvailable() || (!self && !caller.equals(item.packageName))) {
+                throw new FileNotFoundException();
+            }
+            return ParcelFileDescriptor.open(library.fileOf(item), ParcelFileDescriptor.MODE_READ_ONLY);
+        } catch (IOException failure) {
+            throw new FileNotFoundException();
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
+    }
+
+    public static Uri itemUri(String uuid) {
+        return Uri.parse("content://" + AUTHORITY + "/item/" + uuid);
+    }
+
+    @Nullable
+    @Override
+    public String getType(@NonNull Uri uri) {
+        return null;
+    }
+
+    @Nullable
+    @Override
+    public Cursor query(@NonNull Uri uri, @Nullable String[] projection, @Nullable String selection,
+                        @Nullable String[] selectionArgs, @Nullable String sortOrder) {
+        return null;
+    }
+
+    @Nullable
+    @Override
+    public Uri insert(@NonNull Uri uri, @Nullable ContentValues values) {
+        return null;
+    }
+
+    @Override
+    public int delete(@NonNull Uri uri, @Nullable String selection, @Nullable String[] selectionArgs) {
+        return 0;
+    }
+
+    @Override
+    public int update(@NonNull Uri uri, @Nullable ContentValues values, @Nullable String selection,
+                      @Nullable String[] selectionArgs) {
+        return 0;
+    }
+}
