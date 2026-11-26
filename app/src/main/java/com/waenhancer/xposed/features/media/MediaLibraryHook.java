@@ -85,6 +85,7 @@ public class MediaLibraryHook extends Feature {
     private static final String GALLERY_ALIAS = "com.waenhancer.library.ui.ChatMediaGallery";
     private static final String TAG_OVERLAY = "waex_library_overlay";
     private static final String TAG_CHIP = "waex_library_chip";
+    private static final String TAG_BUBBLE = "waex_library_bubble";
     private static final long NEGATIVE_TTL_MS = 60_000L;
     private static final String TAG_CLICK = "waex_library_click";
     private static final int SWEEP_LIMIT = 300;
@@ -626,23 +627,25 @@ public class MediaLibraryHook extends Feature {
                 nativeFile = null;
             }
             boolean nativeAvailable = nativeFile != null && nativeFile.isFile() && nativeFile.length() > 0;
-            if (nativeAvailable) {
-                // Copy a received view-once now, while WhatsApp still has it.
-                if (receivedViewOnce) autoKeep(message);
-                return;
-            }
+            boolean viewOnce = message.isViewOnce();
+            // Copy a received view-once now, while WhatsApp still has it (autoKeep forgets the
+            // row's cached answer, so the lookup below sees the new copy).
+            if (nativeAvailable && receivedViewOnce) autoKeep(message);
+            // Normal media: native first. View-once: the kept copy is shown whenever it exists.
+            if (!InlinePresentation.lookUpKeptCopy(viewOnce, nativeAvailable)) return;
             InlineBinder.Answer answer = BINDER.resolve(task, source(context), System.currentTimeMillis());
-            if (answer == null || !BINDER.isCurrent(task)) return;
+            if (!InlinePresentation.presentKeptCopy(viewOnce, nativeAvailable, answer != null)
+                    || !BINDER.isCurrent(task)) return;
             // Normal media: put the kept bytes back where WhatsApp expects them, so its own
             // bubble, viewer and "Media, links and docs" work again; msgstore.db is untouched.
-            if (!message.isViewOnce() && restoreIntoWhatsApp(context, message, nativeFile, task.ref, answer)) {
+            if (!viewOnce && restoreIntoWhatsApp(context, message, nativeFile, task.ref, answer)) {
                 ConversationItemListener.notifyDataSetChanged();
                 return;
             }
             Bitmap bitmap = thumbnail(context, task.ref, answer);
             if (bitmap == null) return;
             MAIN.post(() -> {
-                if (BINDER.isCurrent(task)) attachOverlay(row, bitmap, answer.uuid);
+                if (BINDER.isCurrent(task)) attachOverlay(row, bitmap, answer.uuid, viewOnce);
             });
         });
     }
@@ -819,12 +822,19 @@ public class MediaLibraryHook extends Feature {
         return sample;
     }
 
-    private static void attachOverlay(ViewGroup row, Bitmap bitmap, String uuid) {
-        InlinePresentation.Host host = InlinePresentation.selectHost(new ViewNode(row), Utils.dipToPixels(72));
+    private static void attachOverlay(ViewGroup row, Bitmap bitmap, String uuid, boolean viewOnce) {
+        InlinePresentation.Host host = InlinePresentation.selectHost(new ViewNode(row), Utils.dipToPixels(72), viewOnce);
         View thumb = host == null ? null : ((ViewNode) host.node).view;
+        if (thumb == null) return;
+        if (host.kind == InlinePresentation.HostKind.VIEW_ONCE_BODY) {
+            // The view-once "1 Photo" pill becomes a media bubble showing the copy; a tap opens
+            // the copy, never WhatsApp's view-once viewer (which would consume the message).
+            if (presentAsMediaBubble(row, thumb, bitmap)) redirectClick(row, thumb, uuid);
+            return;
+        }
         // A tap opens the kept copy, as a tap opens a normal photo; restored on rebind.
-        if (thumb != null) redirectClick(row, thumb, uuid);
-        if (thumb == null || thumb.getWidth() == 0) return;
+        redirectClick(row, thumb, uuid);
+        if (thumb.getWidth() == 0) return;
         Drawable overlay = new CopyDrawable(row.getResources(), bitmap,
                 text(R.string.media_library_badge, "Library copy"));
         overlay.setBounds(0, 0, thumb.getWidth(), thumb.getHeight());
@@ -855,9 +865,82 @@ public class MediaLibraryHook extends Feature {
     }
 
     /**
-     * On a row whose media WhatsApp no longer has, a tap opens the kept copy (for an expired
-     * view-once, instead of WhatsApp's "Photo expired" dialog). The original listener is saved and put back when the row is
-     * rebound; if it cannot be read, nothing is replaced (the overlay's ▶ target still works).
+     * Turns a view-once body into a media-sized bubble: the body gets a media size
+     * ({@link InlinePresentation#mediaBubbleSize}), its children are hidden and the copy is
+     * drawn over it with rounded corners and no badge. Everything changed is recorded in
+     * {@link BubbleState} and undone by {@link #clearOverlay} on the next bind.
+     */
+    private static boolean presentAsMediaBubble(ViewGroup row, View body, Bitmap bitmap) {
+        ViewGroup.LayoutParams params = body.getLayoutParams();
+        if (params == null) return false;
+        int rowWidth = row.getWidth() > 0 ? row.getWidth() : row.getResources().getDisplayMetrics().widthPixels;
+        int[] size = InlinePresentation.mediaBubbleSize(bitmap.getWidth(), bitmap.getHeight(), rowWidth * 3 / 4,
+                row.getResources().getDisplayMetrics().density);
+        if (size == null) return false;
+        BubbleState state = new BubbleState(body, params.width, params.height, size[0], size[1],
+                new RoundedCopyDrawable(bitmap, Utils.dipToPixels(8)));
+        if (body instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) body;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = group.getChildAt(i);
+                if (child.getVisibility() != View.VISIBLE) continue;
+                child.setVisibility(View.INVISIBLE);
+                state.hidden.add(child);
+            }
+        }
+        params.width = size[0];
+        params.height = size[1];
+        body.setLayoutParams(params);
+        state.listener = (v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                state.overlay.setBounds(0, 0, right - left, bottom - top);
+        body.addOnLayoutChangeListener(state.listener);
+        state.overlay.setBounds(0, 0, Math.max(body.getWidth(), 0), Math.max(body.getHeight(), 0));
+        body.getOverlay().add(state.overlay);
+        XposedHelpers.setAdditionalInstanceField(row, TAG_BUBBLE, state);
+        return true;
+    }
+
+    /** What {@link #presentAsMediaBubble} changed on a view-once body. */
+    private static final class BubbleState {
+        final View body;
+        final int width, height, appliedWidth, appliedHeight;
+        final Drawable overlay;
+        final List<View> hidden = new ArrayList<>();
+        View.OnLayoutChangeListener listener;
+
+        BubbleState(View body, int width, int height, int appliedWidth, int appliedHeight, Drawable overlay) {
+            this.body = body;
+            this.width = width;
+            this.height = height;
+            this.appliedWidth = appliedWidth;
+            this.appliedHeight = appliedHeight;
+            this.overlay = overlay;
+        }
+
+        /**
+         * Undo, but only what is still as this module left it: when WhatsApp's own bind has
+         * already set a child's visibility or the body's size, its value wins.
+         */
+        void restore() {
+            body.removeOnLayoutChangeListener(listener);
+            body.getOverlay().remove(overlay);
+            for (View child : hidden) {
+                if (child.getVisibility() == View.INVISIBLE) child.setVisibility(View.VISIBLE);
+            }
+            ViewGroup.LayoutParams params = body.getLayoutParams();
+            if (params != null && params.width == appliedWidth && params.height == appliedHeight) {
+                params.width = width;
+                params.height = height;
+                body.setLayoutParams(params);
+            }
+        }
+    }
+
+    /**
+     * On a row that shows a kept copy, a tap opens the copy: for normal media whose file is gone,
+     * and for every view-once row with a copy (instead of WhatsApp's view-once viewer, which would
+     * consume the message, or its "Photo expired" dialog). The original listener is saved and put
+     * back when the row is rebound; if it cannot be read, nothing is replaced.
      */
     private static void redirectClick(ViewGroup row, View host, String uuid) {
         View clickable = host;
@@ -885,6 +968,8 @@ public class MediaLibraryHook extends Feature {
     }
 
     private static void clearOverlay(ViewGroup row) {
+        Object bubble = XposedHelpers.removeAdditionalInstanceField(row, TAG_BUBBLE);
+        if (bubble instanceof BubbleState) ((BubbleState) bubble).restore();
         Object click = XposedHelpers.removeAdditionalInstanceField(row, TAG_CLICK);
         if (click instanceof Object[]) {
             Object[] pair = (Object[]) click;
@@ -987,6 +1072,56 @@ public class MediaLibraryHook extends Feature {
             canvas.drawRoundRect(badge, height / 2, height / 2, pill);
             canvas.drawText(label, badge.left + pad, badge.bottom - pad * 0.9f, text);
             canvas.restore();
+        }
+    }
+
+    /** The copy center-cropped into the bounds with anti-aliased rounded corners, no badge. */
+    private static final class RoundedCopyDrawable extends Drawable {
+        private final Bitmap bitmap;
+        private final float radius;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        private final android.graphics.Matrix matrix = new android.graphics.Matrix();
+        private final RectF rect = new RectF();
+
+        RoundedCopyDrawable(Bitmap bitmap, float radius) {
+            this.bitmap = bitmap;
+            this.radius = radius;
+            paint.setShader(new android.graphics.BitmapShader(bitmap, android.graphics.Shader.TileMode.CLAMP,
+                    android.graphics.Shader.TileMode.CLAMP));
+        }
+
+        @Override
+        protected void onBoundsChange(@NonNull android.graphics.Rect bounds) {
+            if (bounds.isEmpty()) return;
+            float scale = Math.max(bounds.width() / (float) bitmap.getWidth(), bounds.height() / (float) bitmap.getHeight());
+            matrix.setScale(scale, scale);
+            matrix.postTranslate(bounds.left + (bounds.width() - bitmap.getWidth() * scale) / 2f,
+                    bounds.top + (bounds.height() - bitmap.getHeight() * scale) / 2f);
+            paint.getShader().setLocalMatrix(matrix);
+            rect.set(bounds);
+        }
+
+        @Override
+        public void draw(@NonNull Canvas canvas) {
+            if (getBounds().isEmpty()) return;
+            canvas.drawRoundRect(rect, radius, radius, paint);
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+            paint.setAlpha(alpha);
+            invalidateSelf();
+        }
+
+        @Override
+        public void setColorFilter(android.graphics.ColorFilter filter) {
+            paint.setColorFilter(filter);
+            invalidateSelf();
+        }
+
+        @Override
+        public int getOpacity() {
+            return android.graphics.PixelFormat.TRANSLUCENT;
         }
     }
 

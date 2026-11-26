@@ -157,10 +157,16 @@ Automatic view-once keep (switch on) has three triggers, all copying while Whats
 file: a chat row is bound; the view-once viewer opens; and a read-only sweep of the newest 300
 received view-once rows in WhatsApp's `msgstore.db` (`message` ⋈ `message_media` ⋈ `chat` ⋈ `jid`)
 20 s after WhatsApp starts, which covers chats the user does not open. Received view-once is never
-written back into WhatsApp's storage. On an expired view-once row with a kept copy, the copy is
-drawn over the view-once bubble body (`view_once_media_container*`) and a tap opens it instead of
-the "Photo expired" dialog (the original click listener is saved and restored on rebind; if it
-cannot be read, only the overlay's ▶ target is added).
+written back into WhatsApp's storage. A view-once row (received or own) with a kept copy shows the
+copy **whether or not WhatsApp still has the file** (`InlinePresentation.presentKeptCopy`; normal
+media keeps native-first): the view-once body (`view_once_media_container*`, WhatsApp's "1 Photo"
+pill) is resized to a media bubble (`mediaBubbleSize`: 260dp wide capped at 3/4 of the row,
+height by aspect ratio clamped to 140–340dp), its children are hidden, and the copy is drawn over
+it center-cropped with 8dp anti-aliased rounded corners and no badge. A tap opens the copy, never
+WhatsApp's view-once viewer (which would consume the message) or the "Photo expired" dialog (the
+original click listener is saved and restored on rebind; if it cannot be read, nothing is
+replaced). On every rebind the size, child visibility, overlay and layout listener are undone,
+each only if it is still the value this module set (a value WhatsApp's own bind wrote wins).
 
 Restore into WhatsApp (normal media) — **separate switch `media_library_restore_to_whatsapp`, on by
 default (owner decision), can be turned off**: when WhatsApp's file for a message is gone and the library holds a copy,
@@ -181,7 +187,13 @@ itself then treats the message as downloaded, and lists it in "Media, links and 
 View-once tab in WhatsApp's media screen: `ViewOnceGalleryTab` adds a "View once" chip to
 `com.whatsapp.gallery.ui.MediaGalleryActivity` (`chip_layout`, IDs from the owner's 2026-11-26
 inspector trace) only when the contact has kept view-once items. It shows them in a grid drawn
-inside `media_hub_fragment_container`, separate from WhatsApp's Photos/Videos; tapping a native
+inside `media_hub_fragment_container`, separate from WhatsApp's Photos/Videos. The chip is a plain
+`TextView` styled like the outlined WDS chips (the native `Chip`s draw outline, icon and text in
+their `ChipDrawable`, so copying their background/text attributes did not reproduce them): pill
+`GradientDrawable` with a 1.25dp outline in the native text colour at 38% (15% fill when
+selected), the template's current text colour at full alpha, text size and height, bold, 16dp
+horizontal padding, WhatsApp's `ic_viewonce` tinted at 20dp when present; it stays outside
+`WDSChipGroup`'s checked-state logic and consumes its own tap; tapping a native
 chip hides it; tapping an item opens it in the module viewer. WhatsApp's lists and database are
 untouched, so view-once copies never mix into WhatsApp's own Photos/Videos. The contact comes from
 a chat JID in the activity's intent, else from the open conversation; otherwise no chip.
@@ -204,7 +216,8 @@ any failure.
   swipe between items; videos stream from the provider). Long-press: move to trash / restore /
   delete permanently.
 - **Inline**: when WhatsApp no longer has a message's file and the library holds an intact copy,
-  the copy is drawn with a "Library copy" badge as a `ViewOverlay`. The host does not depend on a
+  the copy is drawn with a "Library copy" badge as a `ViewOverlay` (view-once rows: media bubble
+  without badge, also while WhatsApp still has the file; see above). The host does not depend on a
   native thumbnail (`InlinePresentation.selectHost`): native thumbnail → view-once bubble body →
   known media frame; otherwise the row stays native (the whole bubble is never covered). A tap on
   the host's clickable ancestor opens the copy (original listener saved and restored on rebind);
@@ -367,6 +380,16 @@ Nothing below has been observed on a phone. Each item names what proves it.
     by hand is reported and quarantined, never deleted without confirmation.
 18. Switch a chat between phone number and LID addressing (or update WhatsApp): kept media stays
     attached to the same messages; no duplicate rows appear.
+19. "View once" chip (contact → Media): outline, icon, weight and colour match the native chips in
+    light and dark theme; selecting it shows the grid; a native chip hides it and the native chip's
+    own selection still works.
+20. View-once bubble: a received view-once whose file WhatsApp still has shows the image as a
+    media-sized bubble (no "1 Photo" pill, no badge) once kept; the same after expiry; own sent
+    view-once with a copy likewise; tap opens the copy in the module viewer and the message is not
+    consumed (WhatsApp still lists it as unopened); long-press still selects the row.
+21. Fast scrolling/recycling through view-once and text rows: no row keeps a resized body, hidden
+    "1 Photo" children or a stale image after rebinding; with Text Bubbles Liquid Glass on, the
+    enlarged bubble's glass and the view-once fill clearing behave as before.
 13. Scroll fast through a chat mixing kept media and text: no copy ever appears on a text row or on
     the wrong media row (row tokens), and deleting/restoring an item in the gallery is reflected
     when returning to the chat.

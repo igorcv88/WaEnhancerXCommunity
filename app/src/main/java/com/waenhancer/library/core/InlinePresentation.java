@@ -8,11 +8,11 @@ import java.util.Set;
 /**
  * Decisions for showing a kept copy inline in a conversation row.
  *
- * <p>The presentation is purely local and reversible: WhatsApp's message, its type in
- * {@code msgstore.db}, the row's layout, background and children are never changed. The kept
- * copy is drawn as an overlay on top of WhatsApp's own media thumbnail view and removed as soon
- * as the row is rebound to another message, the native file becomes available again, or the
- * feature is switched off.</p>
+ * <p>The presentation is purely local and reversible: WhatsApp's message and its type in
+ * {@code msgstore.db} are never changed. The kept copy is drawn as an overlay on top of
+ * WhatsApp's own media view and removed as soon as the row is rebound or the feature is switched
+ * off. The one layout change: a view-once body is resized to a media bubble and its children are
+ * hidden while the copy is shown; both are restored on every rebind.</p>
  */
 public final class InlinePresentation {
 
@@ -35,6 +35,43 @@ public final class InlinePresentation {
     public static boolean shouldPresent(boolean featureEnabled, boolean hasAvailableCopy,
                                         boolean nativeFileAvailable, boolean receivedEphemeral) {
         return featureEnabled && hasAvailableCopy && !nativeFileAvailable && !receivedEphemeral;
+    }
+
+    /**
+     * Whether a row's kept copy is looked up and shown. Normal media: only when WhatsApp no longer
+     * has the file (native media wins). View-once (received or own): whenever a copy exists, so the
+     * bubble shows the image like normal received media instead of WhatsApp's "1 Photo" pill,
+     * both while WhatsApp still has the file and after it expired.
+     */
+    public static boolean presentKeptCopy(boolean viewOnce, boolean nativeFileAvailable, boolean hasCopy) {
+        return hasCopy && (viewOnce || !nativeFileAvailable);
+    }
+
+    /** {@link #presentKeptCopy} before the lookup: whether looking for a copy can lead anywhere. */
+    public static boolean lookUpKeptCopy(boolean viewOnce, boolean nativeFileAvailable) {
+        return presentKeptCopy(viewOnce, nativeFileAvailable, true);
+    }
+
+    /** Media bubble geometry in dp, close to WhatsApp's own photo bubble. */
+    public static final int BUBBLE_WIDTH_DP = 260;
+    public static final int BUBBLE_MIN_HEIGHT_DP = 140;
+    public static final int BUBBLE_MAX_HEIGHT_DP = 340;
+
+    /**
+     * Size in px of a view-once body shown as a media bubble: width {@link #BUBBLE_WIDTH_DP}
+     * capped by {@code maxWidthPx}, height following the media's aspect ratio, clamped to
+     * {@link #BUBBLE_MIN_HEIGHT_DP}..{@link #BUBBLE_MAX_HEIGHT_DP} (the drawable center-crops what
+     * the clamp cuts). {@code null} for unusable input, in which case the body stays native.
+     */
+    public static int[] mediaBubbleSize(int mediaWidth, int mediaHeight, int maxWidthPx, float density) {
+        if (mediaWidth <= 0 || mediaHeight <= 0 || maxWidthPx <= 0 || !(density > 0f)) return null;
+        int width = Math.min(Math.round(BUBBLE_WIDTH_DP * density), maxWidthPx);
+        int min = Math.round(BUBBLE_MIN_HEIGHT_DP * density);
+        int max = Math.round(BUBBLE_MAX_HEIGHT_DP * density);
+        long natural = Math.round((double) width * mediaHeight / mediaWidth);
+        int height = (int) Math.max(min, Math.min(max, natural));
+        if (width <= 0 || height <= 0) return null;
+        return new int[] { width, height };
     }
 
     /** A view as seen by the selector; adapted from {@code android.view.View} in the hook. */
@@ -99,6 +136,19 @@ public final class InlinePresentation {
             return new Host(frame, HostKind.MEDIA_FRAME);
         }
         return null;
+    }
+
+    /**
+     * {@link #selectHost(Node, int)} for a row of known type. For a view-once row the view-once
+     * body wins: it is what is turned into a media bubble, and a view-once row has no native
+     * thumbnail to draw on.
+     */
+    public static Host selectHost(Node row, int minSizePx, boolean viewOnce) {
+        if (viewOnce) {
+            Node body = findFirst(row, row, 0, true);
+            if (body != null) return new Host(body, HostKind.VIEW_ONCE_BODY);
+        }
+        return selectHost(row, minSizePx);
     }
 
     private static Node findFirst(Node node, Node row, int depth, boolean viewOnce) {

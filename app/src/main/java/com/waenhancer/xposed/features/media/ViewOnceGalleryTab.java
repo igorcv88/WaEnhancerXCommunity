@@ -4,7 +4,10 @@ import android.app.Activity;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.os.Bundle;
 import android.util.LruCache;
 import android.util.TypedValue;
@@ -22,6 +25,7 @@ import com.waenhancer.R;
 import com.waenhancer.library.core.ChatJids;
 import com.waenhancer.library.core.InlineBinder;
 import com.waenhancer.xposed.core.WppCore;
+import com.waenhancer.xposed.utils.Utils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -148,27 +152,12 @@ final class ViewOnceGalleryTab {
                                 List<Entry> entries) {
         if (activity.isFinishing() || chips.findViewWithTag(TAG_CHIP) != null) return;
         View template = chips.getChildAt(chips.getChildCount() - 1);
-        TextView chip = new TextView(activity);
-        chip.setTag(TAG_CHIP);
-        chip.setText(MediaLibraryHook.text(R.string.media_library_tab_view_once, "View once"));
-        chip.setGravity(Gravity.CENTER);
-        chip.setMinHeight(template.getHeight());
-        if (template instanceof TextView) {
-            TextView native0 = (TextView) template;
-            chip.setTextColor(native0.getTextColors());
-            chip.setTextSize(TypedValue.COMPLEX_UNIT_PX, native0.getTextSize());
-            chip.setTypeface(native0.getTypeface());
-            chip.setPadding(native0.getPaddingLeft(), native0.getPaddingTop(), native0.getPaddingRight(),
-                    native0.getPaddingBottom());
-        }
-        Drawable background = template.getBackground();
-        if (background != null && background.getConstantState() != null) {
-            chip.setBackground(background.getConstantState().newDrawable().mutate());
-        }
+        TextView chip = styledChip(activity, template);
         ViewGroup.LayoutParams params = template.getLayoutParams() instanceof ViewGroup.MarginLayoutParams
                 ? new ViewGroup.MarginLayoutParams((ViewGroup.MarginLayoutParams) template.getLayoutParams())
                 : new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, template.getHeight());
         params.width = ViewGroup.LayoutParams.WRAP_CONTENT;
+        if (template.getHeight() > 0) params.height = template.getHeight();
 
         GridView grid = new GridView(activity);
         grid.setTag(TAG_GRID);
@@ -184,11 +173,12 @@ final class ViewOnceGalleryTab {
         content.addView(grid, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
 
+        // A plain view, not a Chip: WDSChipGroup's checked-state logic never sees it, and its
+        // own tap is consumed here.
         chip.setOnClickListener(v -> {
             boolean show = grid.getVisibility() != View.VISIBLE;
             grid.setVisibility(show ? View.VISIBLE : View.GONE);
             chip.setSelected(show);
-            chip.setAlpha(show ? 1f : 0.85f);
         });
         // Any native chip hides our grid; the native chip still handles its own tap.
         for (int i = 0; i < chips.getChildCount(); i++) {
@@ -196,13 +186,77 @@ final class ViewOnceGalleryTab {
                 if (event.getActionMasked() == MotionEvent.ACTION_UP) {
                     grid.setVisibility(View.GONE);
                     chip.setSelected(false);
-                    chip.setAlpha(0.85f);
                 }
                 return false;
             });
         }
-        chip.setAlpha(0.85f);
         chips.addView(chip, params);
+    }
+
+    /**
+     * A chip drawn like WhatsApp's outlined WDS chips. The native chips are Material {@code Chip}s
+     * whose {@code ChipDrawable} draws outline, icon and text itself, so copying the template's
+     * background or text attributes does not reproduce them; only public, stable values are read
+     * from the template (current text colour, text size, typeface, height). Outline: 1.25dp in the
+     * text colour at 38%; selected: the same colour at 15% as fill. Start icon: WhatsApp's own
+     * {@code ic_viewonce}, tinted, 20dp, when the build has it.
+     */
+    private static TextView styledChip(Activity activity, View template) {
+        float density = activity.getResources().getDisplayMetrics().density;
+        TextView chip = new TextView(activity);
+        chip.setTag(TAG_CHIP);
+        chip.setText(MediaLibraryHook.text(R.string.media_library_tab_view_once, "View once"));
+        chip.setGravity(Gravity.CENTER);
+        chip.setSingleLine(true);
+        chip.setIncludeFontPadding(false);
+        int color = Color.GRAY;
+        if (template instanceof TextView) {
+            TextView native0 = (TextView) template;
+            color = native0.getCurrentTextColor() | 0xFF000000; // full alpha
+            chip.setTextSize(TypedValue.COMPLEX_UNIT_PX, native0.getTextSize());
+            chip.setTypeface(Typeface.create(native0.getTypeface(), Typeface.BOLD));
+        } else {
+            chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            chip.setTypeface(Typeface.DEFAULT_BOLD);
+        }
+        chip.setTextColor(color);
+        int height = template.getHeight() > 0 ? template.getHeight() : Math.round(32 * density);
+        chip.setMinHeight(height);
+        chip.setMinimumHeight(height);
+        int horizontal = Math.round(16 * density);
+        chip.setPadding(horizontal, 0, horizontal, 0);
+
+        StateListDrawable background = new StateListDrawable();
+        background.addState(new int[] { android.R.attr.state_selected }, pill(color, height, density, true));
+        background.addState(new int[0], pill(color, height, density, false));
+        chip.setBackground(background);
+
+        int icon = Utils.getID("ic_viewonce", "drawable");
+        if (icon > 0) {
+            try {
+                Drawable drawable = activity.getDrawable(icon);
+                if (drawable != null) {
+                    drawable = drawable.mutate();
+                    drawable.setTint(color);
+                    int size = Math.round(20 * density);
+                    drawable.setBounds(0, 0, size, size);
+                    chip.setCompoundDrawablesRelative(drawable, null, null, null);
+                    chip.setCompoundDrawablePadding(Math.round(8 * density));
+                }
+            } catch (Throwable ignored) {
+                // No icon on this build; the text chip still works.
+            }
+        }
+        return chip;
+    }
+
+    private static GradientDrawable pill(int color, int height, float density, boolean selected) {
+        GradientDrawable pill = new GradientDrawable();
+        pill.setShape(GradientDrawable.RECTANGLE);
+        pill.setCornerRadius(height / 2f);
+        pill.setColor(selected ? (color & 0x00FFFFFF) | 0x26000000 : Color.TRANSPARENT);
+        pill.setStroke(Math.max(1, Math.round(1.25f * density)), (color & 0x00FFFFFF) | 0x61000000);
+        return pill;
     }
 
     private static int resolveBackground(View content) {

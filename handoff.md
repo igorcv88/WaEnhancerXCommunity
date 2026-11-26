@@ -11,11 +11,17 @@ acceptance criteria, test matrix, 18 device checks) and `docs/MEDIA_LIFECYCLE_EV
 `git add -f docs/MEDIA_LIBRARY.md docs/MEDIA_LIFECYCLE_EVIDENCE.md`.
 
 ### State
-- Branch `ccr-83a099f4-9o9kki`, PR #176 (open, owner marked it ready for review; do NOT merge).
-  Head `36b6593`, CI green, signed preview artifact `WaEnhancerCommunity-PR176-36b6593c`
-  (Actions run 45889148424, expires 2026-11-27 20:18 UTC). Working tree clean.
-- Local validation of the head: `:app:testWhatsappDebugUnitTest` 103 suites / 806 tests, 0
-  failures; lint ran; 5 `tools/test_*.py` CI checks pass. No device validation by the agent.
+- Branch `ccr-83a099f4-9o9kki`, PR #176 (open, ready for review; do NOT merge). Head: the commit
+  "Style the View once chip natively; show view-once copies as media bubbles" on top of `4f3a2d2`
+  (OPEN items 1 and 2 implemented; signed preview artifact name/expiry: see the PR's latest CI run).
+  Previous signed preview `WaEnhancerCommunity-PR176-36b6593c` (run 45889148424) is superseded.
+- Local validation of the new head: `:app:testWhatsappDebugUnitTest` 103 suites / 809 tests, 0
+  failures (+3 tests in `InlinePresentationTest`); `:app:lintWhatsappDebug` ran, no new issue in
+  the changed files (remaining ones there are pre-existing: Recycle/DiscouragedApi/
+  ClickableViewAccessibility); `:app:compileWhatsappDebugJavaWithJavac` passes; the 5 CI
+  `tools/test_*.py` checks pass. `tools/test_glass_rim_contrast.py` fails identically on the
+  unmodified head (shader substring moved; not run by CI) — pre-existing, untouched. No device
+  validation by the agent.
 - Build env in a fresh container: Android SDK not preinstalled; install cmdline-tools from
   dl.google.com into /root/android-sdk (platforms;android-36, build-tools 35/36), write
   `local.properties` (`sdk.dir=...`, git-ignored). Maven Central returns 429: pass a local
@@ -37,7 +43,25 @@ acceptance criteria, test matrix, 18 device checks) and `docs/MEDIA_LIFECYCLE_EV
 - Owner preference: clinical, direct, no cheerleading. AGENTS.md: English in code/commits/PRs,
   update this handoff each task, report blocked checks honestly.
 
-### OPEN — owner report on the 36b6593 build (screenshot of "All media")
+### DONE (2026-11-26, after 4f3a2d2) — items 1 and 2 below, as planned
+- Item 1 (`ViewOnceGalleryTab.styledChip`/`pill`): plain `TextView`, `StateListDrawable` of two
+  `GradientDrawable` pills (radius height/2, 1.25dp stroke = text colour @ 0x61, selected fill @
+  0x26), template `getCurrentTextColor()` forced to full alpha, template text size + bold, template
+  height, 16dp horizontal padding, `ic_viewonce` tinted 20dp + 8dp padding when `Utils.getID` finds
+  it; all alpha 0.85 code removed; not a Chip, so WDSChipGroup selection is untouched.
+- Item 2 (`MediaLibraryHook.bindRow/attachOverlay/presentAsMediaBubble/BubbleState`,
+  `InlinePresentation.presentKeptCopy/lookUpKeptCopy/mediaBubbleSize/selectHost(row,min,viewOnce)`):
+  view-once rows look up and present the copy regardless of native availability (after `autoKeep`);
+  body resized (260dp capped at 3/4 row width; height by aspect, clamped 140–340dp), visible
+  children set INVISIBLE, `RoundedCopyDrawable` (BitmapShader, 8dp AA corners, no badge) in the
+  body's ViewOverlay with an OnLayoutChangeListener; `redirectClick` applied to the body. Restore on
+  every bind is compare-and-restore (only values still equal to what the module set), so a value
+  written by WhatsApp's own bind wins. Not done: 1080 px thumbnails (720 sample already gives a
+  short side >= 720 px; kept to stay within the 12 MiB LruCache). Device checks 19–21 added.
+- Deviation to confirm on device: bold was used per plan; if WDS chips are medium (500), switch to
+  `Typeface.create(tf, 500, false)`.
+
+### OPEN — owner report on the 36b6593 build (screenshot of "All media") — implemented, see DONE
 1. **"View once" chip is unstyled** (plain grey text, no outline, no icon, wrong weight/alpha)
    next to WhatsApp's outlined WDS chips (Photos/Videos/Docs/Links/Stickers).
    Cause (`xposed/features/media/ViewOnceGalleryTab.addChip`): native chips are `X.G00`
@@ -106,11 +130,10 @@ acceptance criteria, test matrix, 18 device checks) and `docs/MEDIA_LIFECYCLE_EV
   child-process tests for cross-process concurrency, offline reads and a 48 MiB-heap backup).
 
 ### Next steps
-1. Implement OPEN items 1 and 2 as planned, with JVM tests for the pure parts.
-2. Run the full suite + lint + tools/test_*.py; commit; push; PR description update; wait for
-   CI and report the signed artifact name/expiry.
-3. Ask the owner for an LSPosed log + inspector trace of a view-once row
-   (`conversation_row_*` containing `view_once_media_container*`) if the layout differs.
+1. Owner: install the new signed preview, check device items 19–21 (+ the still-open 10–18).
+2. If the view-once row layout differs (body not found, bubble not enlarged, glass artefacts), ask
+   for an LSPosed log + inspector trace of a view-once row (`conversation_row_*` containing
+   `view_once_media_container*`).
 
 ## Persistent local media library — 2026-11-26 (branch `ccr-83a099f4-9o9kki`, draft [PR #176](https://github.com/igorcv88/WaEnhancerXCommunity/pull/176))
 
