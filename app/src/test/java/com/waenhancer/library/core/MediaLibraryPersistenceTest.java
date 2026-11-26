@@ -203,4 +203,26 @@ public class MediaLibraryPersistenceTest {
             assertOpenable(afterRestart, "V", video);
         }
     }
+
+    @Test
+    public void copyOpensInAFreshOfflineProcessAfterTheOriginalBecameUnavailable() throws Exception {
+        MediaLibrary library = fixture.open();
+        java.util.List<String> args = new java.util.ArrayList<>();
+        args.add(fixture.root.getPath());
+        String[] keys = { "P1", "V1", "VO1" };
+        byte[][] bytes = { jpeg(50), mp4(51, 300_000), jpeg(52) };
+        for (int i = 0; i < keys.length; i++) {
+            File original = new File(fixture.root, "wa-" + keys[i]);
+            Files.write(original.toPath(), bytes[i]);
+            ImportRequest req = LibraryFixture.request("c@s.whatsapp.net", keys[i])
+                    .viewOnce(keys[i].startsWith("VO")).keepReceivedViewOnce(true).build();
+            LibraryItem item = library.importMedia(req, () -> new FileInputStream(original)).item;
+            assertTrue("original made unavailable", original.delete());
+            args.add(keys[i] + "=" + item.sha256);
+        }
+        Process child = ChildProcess.start(ChildProcess.OfflineReader.class, java.util.Collections.emptyList(),
+                args.toArray(new String[0]));
+        String output = ChildProcess.finish(child, 120);
+        assertTrue(output, output.contains("offline ok 3"));
+    }
 }

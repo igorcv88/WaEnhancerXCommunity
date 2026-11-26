@@ -36,6 +36,7 @@ public final class MediaLibrary {
 
     private static final long LOCK_TIMEOUT_MS = 30_000L;
     private static final String META_QUOTA = "quota_bytes";
+    private static final String META_GENERATION = "generation";
 
     private static final String ITEM_COLUMNS = "i.id, i.uuid, i.account_id, a.package_name, a.own_jid, i.chat_jid, "
             + "i.chat_alt_jid, i.message_key, i.from_me, i.sender_jid, i.media_kind, i.mime_type, i.sha256, "
@@ -114,6 +115,7 @@ public final class MediaLibrary {
                 markBlobOk(existing.sha256);
                 if (existing.isTrashed()) {
                     sql.update("UPDATE items SET trashed_at = 0 WHERE id = ?", existing.id);
+                    bumpGeneration();
                     return new ImportResult(ImportStatus.RESTORED_FROM_TRASH, get(existing.uuid));
                 }
                 return new ImportResult(ImportStatus.ALREADY_PRESENT, get(existing.uuid));
@@ -170,6 +172,7 @@ public final class MediaLibrary {
             }
             throw new LibraryException(LibraryException.Code.IO, "Could not record the media item", failure);
         }
+        bumpGeneration();
         if (existing != null) {
             status = ImportStatus.REPAIRED;
             if (!existing.sha256.equals(staged.sha256)) collectBlob(existing.sha256);
@@ -270,19 +273,48 @@ public final class MediaLibrary {
         return Math.max(MIN_QUOTA_BYTES, Math.min(MAX_QUOTA_BYTES, bytes));
     }
 
+    // ---------------------------------------------------------------- change tracking
+
+    /**
+     * A counter that changes whenever anything a viewer could have cached changes: an item
+     * added, repaired, trashed, restored or purged, or a file found missing/damaged/recovered.
+     * Persisted, so it keeps increasing across process restarts. Clients cache lookups and
+     * thumbnails per generation and drop them as soon as it differs.
+     */
+    public long generation() {
+        List<Map<String, Object>> rows = sql.query("SELECT value FROM meta WHERE key = ?", META_GENERATION);
+        if (rows.isEmpty()) return 0L;
+        try {
+            return Long.parseLong(Sql.Rows.getString(rows.get(0), "value"));
+        } catch (NumberFormatException invalid) {
+            return 0L;
+        }
+    }
+
+    void bumpGeneration() {
+        long next = generation() + 1;
+        if (sql.update("UPDATE meta SET value = ? WHERE key = ?", String.valueOf(next), META_GENERATION) == 0) {
+            sql.insert("INSERT INTO meta (key, value) VALUES (?, ?)", META_GENERATION, String.valueOf(next));
+        }
+    }
+
     // ---------------------------------------------------------------- controlled deletion
 
     /** Moves an item to the trash; its bytes stay until it is purged. */
     public boolean trash(String uuid) throws IOException {
         try (LibraryLock.Held ignored = lock.acquire(LOCK_TIMEOUT_MS)) {
-            return sql.update("UPDATE items SET trashed_at = ? WHERE uuid = ? AND trashed_at = 0",
+            boolean changed = sql.update("UPDATE items SET trashed_at = ? WHERE uuid = ? AND trashed_at = 0",
                     Math.max(1, clock.getAsLong()), uuid) > 0;
+            if (changed) bumpGeneration();
+            return changed;
         }
     }
 
     public boolean restoreFromTrash(String uuid) throws IOException {
         try (LibraryLock.Held ignored = lock.acquire(LOCK_TIMEOUT_MS)) {
-            return sql.update("UPDATE items SET trashed_at = 0 WHERE uuid = ? AND trashed_at > 0", uuid) > 0;
+            boolean changed = sql.update("UPDATE items SET trashed_at = 0 WHERE uuid = ? AND trashed_at > 0", uuid) > 0;
+            if (changed) bumpGeneration();
+            return changed;
         }
     }
 
@@ -297,6 +329,7 @@ public final class MediaLibrary {
             if (item == null || !item.isTrashed()) return false;
             sql.update("DELETE FROM items WHERE id = ?", item.id);
             collectBlob(item.sha256);
+            bumpGeneration();
             return true;
         }
     }
@@ -352,6 +385,7 @@ public final class MediaLibrary {
                 if ("ok".equals(actual)) report.verified++;
                 if (!actual.equals(state)) {
                     sql.update("UPDATE blobs SET state = ?, verified_at = ? WHERE sha256 = ?", actual, clock.getAsLong(), sha);
+                    bumpGeneration();
                     if ("missing".equals(actual)) report.markedMissing++;
                     else if ("corrupt".equals(actual)) report.markedCorrupt++;
                     else report.recovered++;

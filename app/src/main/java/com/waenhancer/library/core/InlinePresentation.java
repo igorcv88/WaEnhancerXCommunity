@@ -66,6 +66,58 @@ public final class InlinePresentation {
         return best[0];
     }
 
+    /** Media frames WhatsApp uses around a photo/video, usable when no thumbnail view exists. */
+    static final List<String> KNOWN_MEDIA_FRAME_IDS = Arrays.asList(
+            "media_container", "image_container", "video_container", "conversation_row_media_container");
+
+    public enum HostKind { THUMBNAIL, VIEW_ONCE_BODY, MEDIA_FRAME }
+
+    public static final class Host {
+        public final Node node;
+        public final HostKind kind;
+
+        Host(Node node, HostKind kind) {
+            this.node = node;
+            this.kind = kind;
+        }
+    }
+
+    /**
+     * Where to draw a kept copy. The presentation does not depend on WhatsApp still having a
+     * thumbnail: an expired or never-downloaded message often has none. Order: the native
+     * thumbnail; the view-once bubble body ({@code view_once_media_container*}); a known media
+     * frame. {@code null} (row stays native) when none is identifiable; the whole bubble or row is
+     * never used, so text, time and receipts are never covered.
+     */
+    public static Host selectHost(Node row, int minSizePx) {
+        Node thumbnail = selectThumbnail(row, minSizePx);
+        if (thumbnail != null) return new Host(thumbnail, HostKind.THUMBNAIL);
+        Node body = findFirst(row, row, 0, true);
+        if (body != null) return new Host(body, HostKind.VIEW_ONCE_BODY);
+        Node frame = findFirst(row, row, 0, false);
+        if (frame != null && frame.width() >= minSizePx && frame.height() >= minSizePx) {
+            return new Host(frame, HostKind.MEDIA_FRAME);
+        }
+        return null;
+    }
+
+    private static Node findFirst(Node node, Node row, int depth, boolean viewOnce) {
+        if (node == null || depth > 24 || !node.isVisible()) return null;
+        String id = node.idName();
+        if (id != null && EXCLUDED_IDS.contains(id)) return null;
+        if (node != row && id != null && node.width() > 0 && node.height() > 0
+                && (viewOnce ? id.startsWith("view_once_media_container") : KNOWN_MEDIA_FRAME_IDS.contains(id))) {
+            return node;
+        }
+        List<? extends Node> children = node.children();
+        if (children == null) return null;
+        for (Node child : children) {
+            Node found = findFirst(child, row, depth + 1, viewOnce);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
     private static void visit(Node node, Node row, int min, Node[] best, int[] bestRank, int depth) {
         if (depth > 24 || !node.isVisible()) return;
         String id = node.idName();

@@ -35,6 +35,7 @@ import androidx.annotation.NonNull;
 import com.waenhancer.BuildConfig;
 import com.waenhancer.R;
 import com.waenhancer.library.core.ImportPolicy;
+import com.waenhancer.library.core.InlineBinder;
 import com.waenhancer.library.core.InlinePresentation;
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.FeatureLoader;
@@ -100,24 +101,15 @@ public class MediaLibraryHook extends Feature {
         return thread;
     });
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
-    /** message identity → uuid ("" = none, with time of the negative answer). */
-    private static final LruCache<String, Lookup> LOOKUPS = new LruCache<>(512);
+    /** Row tokens + account-scoped, state-keyed lookup cache (see {@link InlineBinder}). */
+    private static final InlineBinder<ViewGroup> BINDER = new InlineBinder<>();
+    /** Keyed by package + account + item + content hash ({@link InlineBinder#thumbnailKey}). */
     private static final LruCache<String, Bitmap> THUMBNAILS = new LruCache<String, Bitmap>(12 * 1024 * 1024) {
         @Override
         protected int sizeOf(String key, Bitmap value) {
             return value.getByteCount();
         }
     };
-
-    private static final class Lookup {
-        final String uuid;
-        final long at;
-
-        Lookup(String uuid, long at) {
-            this.uuid = uuid;
-            this.at = at;
-        }
-    }
 
     public MediaLibraryHook(@NonNull ClassLoader loader, @NonNull SharedPreferences preferences) {
         super(loader, preferences);
@@ -126,7 +118,7 @@ public class MediaLibraryHook extends Feature {
     @Override
     public void doHook() throws Throwable {
         if (!prefs.getBoolean("media_library", false)) return;
-        keepViewOnce = prefs.getBoolean("media_library_keep_view_once", false);
+        keepViewOnce = prefs.getBoolean("media_library_keep_view_once", true);
         // Each part fails closed on its own; one unresolved hook never disables the others.
         try {
             hookMediaViewerMenu();
@@ -184,7 +176,7 @@ public class MediaLibraryHook extends Feature {
         if (key.participant != null) extras.putString("sender_jid", raw(key.participant));
         String status = importFile(file, extras);
         if ("CREATED".equals(status) || "DEDUPLICATED".equals(status) || "REPAIRED".equals(status)) {
-            LOOKUPS.remove(lookupKey(key));
+            forget(key);
         } else if ("ERROR".equals(status)) {
             AUTO_ATTEMPTED.remove(lookupKey(key));
         }
@@ -238,7 +230,7 @@ public class MediaLibraryHook extends Feature {
                 String keyId = cursor.getString(0);
                 String chat = cursor.getString(4);
                 if (keyId == null || chat == null) continue;
-                String identity = chat + '|' + keyId + '|' + false;
+                String identity = context.getPackageName() + '|' + own + '|' + chat + '|' + keyId + '|' + false;
                 if (AUTO_ATTEMPTED.contains(identity)) continue;
                 File file = null;
                 for (String candidate : com.waenhancer.library.core.WhatsAppMediaPaths.candidates(cursor.getString(3), roots)) {
@@ -369,7 +361,7 @@ public class MediaLibraryHook extends Feature {
         Bundle result = importCall(file, extras);
         String status = result == null ? "ERROR" : result.getString("status", "ERROR");
         String error = result == null ? "IO" : result.getString("error", "");
-        LOOKUPS.remove(lookupKey(key));
+        forget(key);
         switch (status) {
             case "CREATED":
             case "DEDUPLICATED":
@@ -476,18 +468,15 @@ public class MediaLibraryHook extends Feature {
 
     private void bindRow(FMessageWpp message, ViewGroup row) {
         clearOverlay(row);
-        if (!message.isMediaFile()) return;
+        // Every bind issues a new token, even for a message without media, so work started for
+        // the row's previous message can never decorate it.
+        InlineBinder.Task<ViewGroup> task = BINDER.bind(row, refFor(message));
+        if (task == null) return;
         FMessageWpp.Key key = message.getKey();
-        if (key == null || key.messageID == null) return;
-        if (!key.isFromMe && key.remoteJid != null && key.remoteJid.isStatus()) return;
         boolean receivedViewOnce = isReceivedViewOnce(message, key);
-        // Without the owner's switch a received view-once keeps WhatsApp's behaviour entirely.
-        if (receivedViewOnce && !keepViewOnce) return;
-        String identity = lookupKey(key);
-        Object token = message.getObject();
-        XposedHelpers.setAdditionalInstanceField(row, TAG_OVERLAY + "_msg", token);
         Context context = row.getContext();
         WORKER.execute(() -> {
+            if (!BINDER.isCurrent(task)) return;
             File nativeFile;
             try {
                 nativeFile = message.getMediaFile();
@@ -500,32 +489,98 @@ public class MediaLibraryHook extends Feature {
                 if (receivedViewOnce) autoKeep(message);
                 return;
             }
-            String uuid = lookup(context, key, identity);
-            if (!InlinePresentation.shouldPresent(true, uuid != null, false, false)) return;
+            InlineBinder.Answer answer = BINDER.resolve(task, source(context), System.currentTimeMillis());
+            if (answer == null || !BINDER.isCurrent(task)) return;
             // Normal media: put the kept bytes back where WhatsApp expects them, so its own
             // bubble, viewer and "Media, links and docs" work again; msgstore.db is untouched.
-            if (!message.isViewOnce() && restoreIntoWhatsApp(context, message, nativeFile, uuid, identity)) {
+            if (!message.isViewOnce() && restoreIntoWhatsApp(context, message, nativeFile, task.ref, answer)) {
                 ConversationItemListener.notifyDataSetChanged();
                 return;
             }
-            Bitmap bitmap = thumbnail(context, uuid);
+            Bitmap bitmap = thumbnail(context, task.ref, answer);
             if (bitmap == null) return;
-            boolean viewOnce = message.isViewOnce();
             MAIN.post(() -> {
-                // The row may have been recycled for another message meanwhile.
-                if (XposedHelpers.getAdditionalInstanceField(row, TAG_OVERLAY + "_msg") != token) return;
-                attachOverlay(row, bitmap, uuid, viewOnce);
+                if (BINDER.isCurrent(task)) attachOverlay(row, bitmap, answer.uuid);
             });
         });
+    }
+
+    /** The scoped identity of an eligible media message, or {@code null} (row stays native). */
+    private static InlineBinder.Ref refFor(FMessageWpp message) {
+        try {
+            if (message == null || !message.isMediaFile()) return null;
+            FMessageWpp.Key key = message.getKey();
+            if (key == null || key.messageID == null) return null;
+            if (!key.isFromMe && key.remoteJid != null && key.remoteJid.isStatus()) return null;
+            if (isReceivedViewOnce(message, key) && !keepViewOnce) return null;
+            return refOf(key);
+        } catch (Throwable failure) {
+            return null;
+        }
+    }
+
+    private static InlineBinder.Ref refOf(FMessageWpp.Key key) {
+        String own = ownJid();
+        Context context = Utils.getApplication();
+        if (own == null || context == null || key == null) return null;
+        String primary = raw(key.remoteJid);
+        if (primary == null) return null;
+        String alt = key.remoteJid.getPhoneRawString();
+        return new InlineBinder.Ref(context.getPackageName(), own, primary,
+                alt != null && !alt.equals(primary) ? alt : null, key.messageID, key.isFromMe);
+    }
+
+    private static void forget(FMessageWpp.Key key) {
+        InlineBinder.Ref ref = refOf(key);
+        if (ref != null) BINDER.forget(ref);
+    }
+
+    /** The provider as an {@link InlineBinder.Source}; every call states the active account. */
+    private static InlineBinder.Source source(Context context) {
+        return new InlineBinder.Source() {
+            @Override
+            public String stateToken() {
+                try {
+                    Bundle result = context.getContentResolver().call(PROVIDER, "state", null, new Bundle());
+                    return result == null ? null : result.getString("state");
+                } catch (Throwable failure) {
+                    return null;
+                }
+            }
+
+            @Override
+            public InlineBinder.Answer lookup(InlineBinder.Ref ref) {
+                Bundle extras = new Bundle();
+                extras.putString("own_jid", ref.ownJid);
+                extras.putString("chat_jid", ref.chatJid);
+                if (ref.chatAltJid != null) extras.putString("chat_alt_jid", ref.chatAltJid);
+                extras.putStringArray("message_keys", new String[] { ref.messageKey });
+                extras.putBooleanArray("from_me", new boolean[] { ref.fromMe });
+                try {
+                    Bundle result = context.getContentResolver().call(PROVIDER, "lookup", null, extras);
+                    String[] uuids = result == null ? null : result.getStringArray("uuids");
+                    String[] hashes = result == null ? null : result.getStringArray("sha256");
+                    if (uuids == null || hashes == null || uuids.length != 1 || hashes.length != 1) return null;
+                    return new InlineBinder.Answer(uuids[0], hashes[0]);
+                } catch (Throwable failure) {
+                    return null;
+                }
+            }
+        };
+    }
+
+    private static Uri itemUri(InlineBinder.Ref ref, String uuid) {
+        return Uri.parse("content://" + AUTHORITY + "/item/" + uuid).buildUpon()
+                .appendQueryParameter("account", ref.ownJid).build();
     }
 
     /**
      * Writes a kept conventional copy to the exact path WhatsApp records for the message, only
      * inside WhatsApp's own media roots, never over an existing file, never for view-once.
      */
-    private static boolean restoreIntoWhatsApp(Context context, FMessageWpp message, File recorded, String uuid,
-                                               String identity) {
-        if (!RESTORE_ATTEMPTED.add(identity)) return false;
+    private static boolean restoreIntoWhatsApp(Context context, FMessageWpp message, File recorded,
+                                               InlineBinder.Ref ref, InlineBinder.Answer answer) {
+        if (!RESTORE_ATTEMPTED.add(ref.scope() + '|' + ref.chatJid + '|' + ref.messageKey + '|' + answer.sha256)) return false;
         try {
             File target = recorded;
             List<String> roots = mediaRoots(context);
@@ -543,7 +598,7 @@ public class MediaLibraryHook extends Feature {
             File parent = target.getParentFile();
             if (parent == null || (!parent.isDirectory() && !parent.mkdirs())) return false;
             File temp = new File(parent, "." + target.getName() + ".waex-restore");
-            Uri uri = Uri.parse("content://" + AUTHORITY + "/item/" + uuid);
+            Uri uri = itemUri(ref, answer.uuid);
             try (java.io.InputStream in = context.getContentResolver().openInputStream(uri);
                  java.io.FileOutputStream out = new java.io.FileOutputStream(temp)) {
                 if (in == null) return false;
@@ -564,37 +619,18 @@ public class MediaLibraryHook extends Feature {
         }
     }
 
+    /** Package + active account + message; used for the per-process attempt sets. */
     private static String lookupKey(FMessageWpp.Key key) {
-        return raw(key.remoteJid) + '|' + key.messageID + '|' + key.isFromMe;
+        Context context = Utils.getApplication();
+        return (context == null ? "" : context.getPackageName()) + '|' + ownJid() + '|' + raw(key.remoteJid)
+                + '|' + key.messageID + '|' + key.isFromMe;
     }
 
-    private static String lookup(Context context, FMessageWpp.Key key, String identity) {
-        Lookup cached = LOOKUPS.get(identity);
-        long now = System.currentTimeMillis();
-        if (cached != null && (!cached.uuid.isEmpty() || now - cached.at < NEGATIVE_TTL_MS)) {
-            return cached.uuid.isEmpty() ? null : cached.uuid;
-        }
-        String own = ownJid();
-        if (own == null) return null;
-        Bundle extras = identity(key, own);
-        extras.putStringArray("message_keys", new String[] { key.messageID });
-        extras.putBooleanArray("from_me", new boolean[] { key.isFromMe });
-        Bundle result;
-        try {
-            result = context.getContentResolver().call(PROVIDER, "lookup", null, extras);
-        } catch (Throwable failure) {
-            return null;
-        }
-        String[] uuids = result == null ? null : result.getStringArray("uuids");
-        String uuid = uuids != null && uuids.length == 1 ? uuids[0] : "";
-        LOOKUPS.put(identity, new Lookup(uuid == null ? "" : uuid, now));
-        return uuid == null || uuid.isEmpty() ? null : uuid;
-    }
-
-    private static Bitmap thumbnail(Context context, String uuid) {
-        Bitmap cached = THUMBNAILS.get(uuid);
+    private static Bitmap thumbnail(Context context, InlineBinder.Ref ref, InlineBinder.Answer answer) {
+        String cacheKey = InlineBinder.thumbnailKey(ref, answer);
+        Bitmap cached = THUMBNAILS.get(cacheKey);
         if (cached != null) return cached;
-        Uri uri = Uri.parse("content://" + AUTHORITY + "/item/" + uuid);
+        Uri uri = itemUri(ref, answer.uuid);
         Bitmap bitmap = null;
         try (ParcelFileDescriptor fd = context.getContentResolver().openFileDescriptor(uri, "r")) {
             if (fd == null) return null;
@@ -620,7 +656,7 @@ public class MediaLibraryHook extends Feature {
         } catch (Throwable failure) {
             return null;
         }
-        if (bitmap != null) THUMBNAILS.put(uuid, bitmap);
+        if (bitmap != null) THUMBNAILS.put(cacheKey, bitmap);
         return bitmap;
     }
 
@@ -630,9 +666,11 @@ public class MediaLibraryHook extends Feature {
         return sample;
     }
 
-    private static void attachOverlay(ViewGroup row, Bitmap bitmap, String uuid, boolean viewOnce) {
-        View thumb = viewOnce ? findViewOnceContainer(row) : findThumbnail(row);
-        if (viewOnce && thumb != null) redirectClick(row, thumb, uuid);
+    private static void attachOverlay(ViewGroup row, Bitmap bitmap, String uuid) {
+        InlinePresentation.Host host = InlinePresentation.selectHost(new ViewNode(row), Utils.dipToPixels(72));
+        View thumb = host == null ? null : ((ViewNode) host.node).view;
+        // A tap opens the kept copy, as a tap opens a normal photo; restored on rebind.
+        if (thumb != null) redirectClick(row, thumb, uuid);
         if (thumb == null || thumb.getWidth() == 0) return;
         Drawable overlay = new CopyDrawable(row.getResources(), bitmap,
                 text(R.string.media_library_badge, "Library copy"));
@@ -663,31 +701,9 @@ public class MediaLibraryHook extends Feature {
         }
     }
 
-    /** WhatsApp's view-once bubble body (no image thumbnail exists for it). */
-    private static View findViewOnceContainer(ViewGroup row) {
-        java.util.ArrayDeque<View> queue = new java.util.ArrayDeque<>();
-        queue.add(row);
-        while (!queue.isEmpty()) {
-            View view = queue.poll();
-            if (view != row && view.getId() != View.NO_ID) {
-                try {
-                    if (view.getResources().getResourceEntryName(view.getId()).startsWith("view_once_media_container")) {
-                        return view;
-                    }
-                } catch (Throwable ignored) {
-                }
-            }
-            if (view instanceof ViewGroup) {
-                ViewGroup group = (ViewGroup) view;
-                for (int i = 0; i < group.getChildCount(); i++) queue.add(group.getChildAt(i));
-            }
-        }
-        return null;
-    }
-
     /**
-     * On an expired view-once row with a kept copy, a tap opens the copy instead of WhatsApp's
-     * "Photo expired" dialog. The original listener is saved and put back when the row is
+     * On a row whose media WhatsApp no longer has, a tap opens the kept copy (for an expired
+     * view-once, instead of WhatsApp's "Photo expired" dialog). The original listener is saved and put back when the row is
      * rebound; if it cannot be read, nothing is replaced (the overlay's ▶ target still works).
      */
     private static void redirectClick(ViewGroup row, View host, String uuid) {
@@ -733,11 +749,6 @@ public class MediaLibraryHook extends Feature {
                 }
             }
         }
-    }
-
-    private static View findThumbnail(ViewGroup row) {
-        InlinePresentation.Node selected = InlinePresentation.selectThumbnail(new ViewNode(row), Utils.dipToPixels(72));
-        return selected == null ? null : ((ViewNode) selected).view;
     }
 
     /** Adapts a live view tree to the pure selector. */

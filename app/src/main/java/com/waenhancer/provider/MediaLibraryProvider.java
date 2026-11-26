@@ -42,6 +42,7 @@ public final class MediaLibraryProvider extends ContentProvider {
     public static final String METHOD_IMPORT = "import";
     public static final String METHOD_LOOKUP = "lookup";
     public static final String METHOD_GALLERY_TOKEN = "gallery_token";
+    public static final String METHOD_STATE = "state";
     public static final int MAX_LOOKUP = 64;
 
     @Override
@@ -76,6 +77,8 @@ public final class MediaLibraryProvider extends ContentProvider {
                     return lookup(context, caller, extras);
                 case METHOD_GALLERY_TOKEN:
                     return galleryToken(caller, extras);
+                case METHOD_STATE:
+                    return state(context);
                 default:
                     return null;
             }
@@ -130,7 +133,7 @@ public final class MediaLibraryProvider extends ContentProvider {
     static boolean keepReceivedViewOnce(Context context) {
         try {
             android.content.SharedPreferences prefs = com.waenhancer.config.PreferenceStores.publicStore(context);
-            return prefs.getBoolean("media_library", false) && prefs.getBoolean("media_library_keep_view_once", false);
+            return prefs.getBoolean("media_library", false) && prefs.getBoolean("media_library_keep_view_once", true);
         } catch (RuntimeException unreadable) {
             return false;
         }
@@ -149,14 +152,20 @@ public final class MediaLibraryProvider extends ContentProvider {
         String ownJid = extras.getString("own_jid");
         String chat = extras.getString("chat_jid");
         String alt = extras.getString("chat_alt_jid");
+        if (ownJid == null || ownJid.isEmpty()) return null; // account is mandatory
         String[] uuids = new String[keys.length];
         String[] kinds = new String[keys.length];
+        String[] hashes = new String[keys.length];
+        String state;
         try {
             MediaLibrary library = MediaLibraryRuntime.get(context);
+            state = stateToken(context, library);
             for (int i = 0; i < keys.length; i++) {
                 LibraryItem item = library.lookup(caller, ownJid, chat, alt, keys[i], fromMe[i]);
-                uuids[i] = item != null && item.isAvailable() ? item.uuid : "";
-                kinds[i] = item != null ? item.mediaKind : "";
+                boolean usable = item != null && item.isAvailable();
+                uuids[i] = usable ? item.uuid : "";
+                kinds[i] = usable ? item.mediaKind : "";
+                hashes[i] = usable ? item.sha256 : "";
             }
         } catch (IOException | RuntimeException failure) {
             return null;
@@ -164,7 +173,24 @@ public final class MediaLibraryProvider extends ContentProvider {
         Bundle result = new Bundle();
         result.putStringArray("uuids", uuids);
         result.putStringArray("kinds", kinds);
+        result.putStringArray("sha256", hashes);
+        result.putString("state", state);
         return result;
+    }
+
+    /** Library generation + the module settings that change what WhatsApp should present. */
+    static String stateToken(Context context, MediaLibrary library) {
+        return library.generation() + ":" + (keepReceivedViewOnce(context) ? "vo1" : "vo0");
+    }
+
+    private static Bundle state(Context context) {
+        try {
+            Bundle result = new Bundle();
+            result.putString("state", stateToken(context, MediaLibraryRuntime.get(context)));
+            return result;
+        } catch (IOException | RuntimeException failure) {
+            return null;
+        }
     }
 
     private static Bundle galleryToken(String caller, Bundle extras) {
@@ -192,8 +218,9 @@ public final class MediaLibraryProvider extends ContentProvider {
         try {
             MediaLibrary library = MediaLibraryRuntime.get(context);
             LibraryItem item = library.get(segments.get(1));
-            // Account isolation: a WhatsApp flavour reads only the items it imported.
-            if (item == null || !item.isAvailable() || (!self && !caller.equals(item.packageName))) {
+            // Isolation by WhatsApp package (from the UID) and by the active account it states.
+            if (item == null || !item.isAvailable()
+                    || !com.waenhancer.library.core.AccessPolicy.mayRead(item, self, caller, uri.getQueryParameter("account"))) {
                 throw new FileNotFoundException();
             }
             return ParcelFileDescriptor.open(library.fileOf(item), ParcelFileDescriptor.MODE_READ_ONLY);
@@ -206,6 +233,11 @@ public final class MediaLibraryProvider extends ContentProvider {
 
     public static Uri itemUri(String uuid) {
         return Uri.parse("content://" + AUTHORITY + "/item/" + uuid);
+    }
+
+    /** URI WhatsApp uses: the active account is part of every access. */
+    public static Uri itemUri(String uuid, String account) {
+        return itemUri(uuid).buildUpon().appendQueryParameter("account", account).build();
     }
 
     @Nullable

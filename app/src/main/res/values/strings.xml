@@ -820,7 +820,7 @@ You can still try it, but please wait for a stable version — it will be launch
     <string name="media_library">Media library</string>
     <string name="media_library_sum">Adds “Keep in library” to the media viewer and a “Media library” entry to each conversation. Kept photos and videos are stored privately in the module and stay available when WhatsApp no longer has the file. Received view-once media is kept only with the switch below; other people\'s status posts are never kept.</string>
     <string name="media_library_keep_view_once">Keep received view-once</string>
-    <string name="media_library_keep_view_once_sum">Automatically copies every received view-once photo and video into the media library while WhatsApp still has it, so it opens instead of showing “Photo expired”. Media that expired before this was turned on cannot be recovered.</string>
+    <string name="media_library_keep_view_once_sum">Automatically copies every received view-once photo and video into the media library while WhatsApp still has the file, so it keeps opening like a normal photo or video after WhatsApp stops providing it (for example “Photo expired”). Media WhatsApp already dropped before this was on cannot be recovered.</string>
     <string name="media_library_open">Open media library</string>
     <string name="media_library_open_sum">Browse, verify, back up or delete the photos and videos you kept</string>
     <string name="media_library_title">Media library</string>

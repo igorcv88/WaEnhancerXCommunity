@@ -20,12 +20,21 @@ Validation in this container (Android SDK 36 installed in-session; Maven Central
 Device validation pending (see the 9-item list in `docs/MEDIA_LIBRARY.md`): hook installation on 2.26.38.74, menu presence/absence per message type, FD through `ContentResolver.call`, gallery scoping, inline overlay + recycling + long-press, Liquid Glass Text Bubbles unchanged, video playback, multi-GB backup and interrupted import recovery, `getMyUserJid` resolution.
 
 Follow-up 2026-11-26 (owner screenshot of "Photo expired" on a received view-once; owner chose "Automatic keep" and "Restore into WhatsApp"):
-- Diagnosis: the expiry is WhatsApp's (documented ~14 days for unopened view-once; Unlimited View Once leaves it unopened). The 512 MiB limit is only `DeletedMediaVault`'s and never deletes; no module code ages out media.
+- Diagnosis (superseded, see below): the cause of WhatsApp's "Photo expired" is **not** established; see `docs/MEDIA_LIFECYCLE_EVIDENCE.md`. Proven only: the 512 MiB limit is `DeletedMediaVault`'s and never deletes; no module code ages out media.
 - `MediaLibraryPersistenceTest` (6): 1 day–2 years with restarts/deep reconcile, ~600 MiB library, full quota/device never evicting, trash-only expiry, backup restored years later.
 - `ImportPolicy`: new basis `auto_view_once` behind module-read switch `media_library_keep_view_once` (schema + both settings screens). Status posts still refused; normal media still needs a tap.
 - `MediaLibraryHook`: auto-keep on row bind, view-once viewer, and a read-only msgstore sweep (newest 300, 20 s after start); expired view-once rows show the copy and a tap opens it (saved/restored click listener); normal media restored into WhatsApp's recorded path (`WhatsAppMediaPaths`).
 - `ViewOnceKeepAndRestoreTest` (5). Full suite 99 suites / 761 tests, 0 failures.
 - Device checks 10–11 added in `docs/MEDIA_LIBRARY.md`; the sweep SQL and view-once file paths are unverified on 2.26.38.74.
+
+Independent review follow-up 2026-11-26 (owner: ignore every brief line about ephemeral behaviour; goal is definitive media behaving like normal received media; keep PR draft, no merge):
+- `docs/MEDIA_LIBRARY.md` was never committed: `.gitignore` ignores `docs/` and earlier commits used `git add -A`. Now force-added, with the new `docs/MEDIA_LIFECYCLE_EVIDENCE.md` (proven persistence vs unknown WhatsApp lifecycle).
+- Account in every key/operation: provider `lookup`/`gallery_token` require `own_jid`; `openFile` requires `?account=` and `AccessPolicy.mayRead` (package from UID + account); hook attempt sets, lookup cache and thumbnail keys include package + account. Limit documented: accounts inside one package share a UID, so the account is asserted, not authenticated.
+- `InlineBinder`: token per row bind including non-media binds (fixes a real bug: the old code returned before re-tagging non-media rows, so a late callback could decorate a recycled text row); answers keyed by state token = persisted `MediaLibrary.generation()` + provider settings; thumbnails keyed by account + item + SHA-256; account/flavour change clears answers.
+- Inline host no longer needs a native thumbnail (`InlinePresentation.selectHost`: thumbnail → view-once body → media frame; never the whole bubble); tap redirect for all hosts with original listener restored on rebind.
+- Native gallery: normal media via restore-into-WhatsApp; view-once cannot appear natively without changing WhatsApp data (analysis in MEDIA_LIBRARY.md). `media_library_keep_view_once` now defaults to on.
+- pt-BR: all 53 new strings in `values-pt` (Brazilian; used for pt-BR), placeholders checked.
+- Tests: `InlineBinderTest` (12, incl. delayed/racing callbacks, invalidation, account/flavour, access policy), host-selection tests, offline fresh-process test. Mutation check (no token for non-media binds; cache ignoring state) failed 6 tests, reverted. Full: **100 suites / 776 tests, 0 failures**; lint ran (new: 53 MissingTranslation for non-pt locales, pre-existing pattern); 5 Python checks pass; debug compile passes.
 
 Next steps: install the CI-signed preview, enable Media library, run the device checklist; if the FD is stripped by `call`, switch import to a provider `openFile("w")` pipe; add pt-BR strings if wanted.
 

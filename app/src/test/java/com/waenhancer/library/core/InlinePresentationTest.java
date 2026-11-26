@@ -73,6 +73,39 @@ public class InlinePresentationTest {
     }
 
     @Test
+    public void presentationDoesNotNeedANativeThumbnail() {
+        // Expired view-once: WhatsApp shows only an icon and "Photo", no thumbnail view.
+        FakeView body = new FakeView("view_once_media_container_large", false, 432, 162,
+                new FakeView("view_once_control_icon", true, 48, 48),
+                new FakeView("view_once_media_type_large", false, 200, 40));
+        FakeView row = new FakeView(null, false, 1440, 220, new FakeView("main_layout", false, 500, 200, body,
+                new FakeView("date", false, 80, 30)));
+        InlinePresentation.Host host = InlinePresentation.selectHost(row, 150);
+        assertSame(body, host.node);
+        assertEquals(InlinePresentation.HostKind.VIEW_ONCE_BODY, host.kind);
+
+        // Normal media whose thumbnail was never decoded: the media frame is used.
+        FakeView frame = new FakeView("media_container", false, 600, 400, new FakeView("control_frame", false, 96, 96));
+        InlinePresentation.Host fallback = InlinePresentation.selectHost(
+                new FakeView(null, false, 1440, 500, new FakeView("main_layout", false, 640, 460, frame)), 150);
+        assertSame(frame, fallback.node);
+        assertEquals(InlinePresentation.HostKind.MEDIA_FRAME, fallback.kind);
+
+        // A real thumbnail still wins.
+        FakeView thumb = new FakeView("image", true, 600, 400);
+        assertEquals(InlinePresentation.HostKind.THUMBNAIL, InlinePresentation.selectHost(
+                new FakeView(null, false, 1440, 500, new FakeView("media_container", false, 600, 400, thumb)), 150).kind);
+    }
+
+    @Test
+    public void hostSelectionNeverCoversTheWholeBubbleOrQuotedMedia() {
+        FakeView row = new FakeView(null, false, 1440, 300, new FakeView("main_layout", false, 900, 280,
+                new FakeView("quoted_thumb", false, 300, 300, new FakeView("view_once_media_container_large", false, 300, 120)),
+                new FakeView("message_text", false, 800, 100)));
+        assertNull(InlinePresentation.selectHost(row, 150));
+    }
+
+    @Test
     public void rowWithoutAMediaViewStaysNative() {
         FakeView row = new FakeView(null, false, 1440, 200,
                 new FakeView("message_text", false, 1000, 100), new FakeView(null, true, 48, 48));

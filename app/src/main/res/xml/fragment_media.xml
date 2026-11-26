@@ -39,6 +39,7 @@
             app:title="@string/media_library" />
 
         <rikka.material.preference.MaterialSwitchPreference
+            android:defaultValue="true"
             app:dependency="media_library"
             app:key="media_library_keep_view_once"
             app:summary="@string/media_library_keep_view_once_sum"

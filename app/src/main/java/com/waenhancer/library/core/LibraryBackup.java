@@ -277,6 +277,7 @@ public final class LibraryBackup {
             }
             // Blobs that only duplicated items the user already had are not kept twice.
             for (String sha : created) library.collectBlob(sha);
+            if (report.itemsRestored > 0) library.bumpGeneration();
         }
         return report;
     }

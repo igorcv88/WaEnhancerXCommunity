@@ -94,4 +94,44 @@ final class ChildProcess {
             }
         }
     }
+
+    /**
+     * Child entry point: a fresh process with every network path disabled opens an existing
+     * library, runs the startup maintenance and verifies the bytes of every listed item.
+     * args: root, then key=sha256 pairs.
+     */
+    public static final class OfflineReader {
+        public static void main(String[] args) throws Exception {
+            java.net.ProxySelector.setDefault(new java.net.ProxySelector() {
+                @Override
+                public java.util.List<java.net.Proxy> select(java.net.URI uri) {
+                    throw new IllegalStateException("network used: " + uri);
+                }
+
+                @Override
+                public void connectFailed(java.net.URI uri, java.net.SocketAddress sa, java.io.IOException ioe) {
+                }
+            });
+            //noinspection deprecation
+            java.net.Socket.setSocketImplFactory(() -> {
+                throw new IllegalStateException("network socket opened");
+            });
+            File root = new File(args[0]);
+            try (JdbcSql sql = new JdbcSql(new File(root, "media_library.db"))) {
+                File dir = new File(root, "media_library");
+                MediaLibrary library = new MediaLibrary(sql, new BlobStore(dir, d -> Long.MAX_VALUE / 4, 0),
+                        new LibraryLock(dir), System::currentTimeMillis);
+                MediaLibrary.ReconcileReport report = library.reconcile(true);
+                if (report.markedMissing + report.markedCorrupt > 0) throw new AssertionError("damage after restart");
+                for (int i = 1; i < args.length; i++) {
+                    String[] pair = args[i].split("=");
+                    LibraryItem item = library.lookup("com.whatsapp", LibraryFixture.ME, "c@s.whatsapp.net", null, pair[0], false);
+                    if (item == null || !item.isAvailable() || !pair[1].equals(BlobStore.hash(library.fileOf(item)))) {
+                        throw new AssertionError("not openable offline: " + pair[0]);
+                    }
+                }
+            }
+            System.out.println("offline ok " + (args.length - 1));
+        }
+    }
 }
