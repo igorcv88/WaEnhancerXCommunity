@@ -19,7 +19,7 @@ import java.util.Map;
  * {@link LibraryException.Code#SCHEMA_TOO_NEW} so that a newer build can still read it.</p>
  */
 public final class LibrarySchema {
-    public static final int CURRENT_VERSION = 2;
+    public static final int CURRENT_VERSION = 3;
 
     static final String[] TABLES = { "accounts", "blobs", "items", "meta" };
 
@@ -75,6 +75,27 @@ public final class LibrarySchema {
                 // Version 1 recorded received view-once only through its authorization basis.
                 sql.exec("UPDATE items SET view_once = 1 WHERE basis = 'auto_view_once'");
                 sql.exec("CREATE INDEX IF NOT EXISTS idx_items_view_once ON items(account_id, view_once)");
+            }
+        });
+        steps.add(new Step() {
+            @Override
+            public int version() {
+                return 3;
+            }
+
+            /**
+             * The basis alone cannot tell whether a row created before version 2 was view-once:
+             * only {@code auto_view_once} (received view-once) and {@code user_explicit} (received,
+             * policy-guaranteed normal media) are certain. The user's own media and backup-restored
+             * rows could be either, so they are marked unknown instead of guessed; WhatsApp
+             * confirms them later ({@link MediaLibrary#confirmOrigin}). Rows created from now on
+             * always record the real flag.
+             */
+            @Override
+            public void apply(Sql sql) {
+                sql.exec("ALTER TABLE items ADD COLUMN view_once_known INTEGER NOT NULL DEFAULT 1");
+                sql.exec("UPDATE items SET view_once_known = 0 WHERE view_once = 0 "
+                        + "AND basis NOT IN ('auto_view_once', 'user_explicit')");
             }
         });
         return steps;

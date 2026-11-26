@@ -36,7 +36,7 @@ public final class MediaLibraryRuntime {
                 File root = new File(app.getFilesDir(), "media_library");
                 File database = app.getDatabasePath("media_library.db");
                 File parent = database.getParentFile();
-                if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+                if (parent != null && !parent.mkdirs() && !parent.isDirectory()) {
                     throw new IOException("Could not create the library database directory");
                 }
                 instance = new MediaLibrary(AndroidSql.open(database), new BlobStore(root),

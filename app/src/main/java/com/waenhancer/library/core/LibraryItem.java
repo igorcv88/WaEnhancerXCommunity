@@ -26,6 +26,8 @@ public final class LibraryItem {
     public final String blobState;
     /** The source message was view-once (received or sent). */
     public final boolean viewOnce;
+    /** False for rows migrated without enough information; see {@link MediaLibrary#confirmOrigin}. */
+    public final boolean viewOnceKnown;
 
     LibraryItem(Map<String, Object> row) {
         id = Sql.Rows.getLong(row, "id");
@@ -49,6 +51,7 @@ public final class LibraryItem {
         trashedAt = Sql.Rows.getLong(row, "trashed_at");
         blobState = Sql.Rows.getString(row, "state");
         viewOnce = Sql.Rows.getLong(row, "view_once") != 0;
+        viewOnceKnown = Sql.Rows.getLong(row, "view_once_known") != 0;
     }
 
     public boolean isTrashed() {

@@ -29,6 +29,7 @@ public class WhatsAppRestoreAndAlbumsTest {
     private LibraryFixture fixture;
     private File waRoot;
     private List<String> roots;
+    private File journal;
 
     @Before
     public void setUp() throws Exception {
@@ -36,6 +37,7 @@ public class WhatsAppRestoreAndAlbumsTest {
         waRoot = new File(fixture.root, "Android/media/com.whatsapp/WhatsApp");
         assertTrue(waRoot.mkdirs());
         roots = Collections.singletonList(waRoot.getCanonicalPath());
+        journal = new File(fixture.root, "wa-private/files/waex/restore-journal");
     }
 
     @After
@@ -56,11 +58,11 @@ public class WhatsAppRestoreAndAlbumsTest {
         byte[] photo = jpeg(1);
         File target = target("IMG-1.jpg");
         assertEquals(WhatsAppRestore.Outcome.DISABLED,
-                WhatsAppRestore.restore(false, false, false, target, roots, bytes(photo)));
+                WhatsAppRestore.restore(false, false, false, target, roots, journal, bytes(photo)));
         assertFalse("switched off means nothing is written", target.exists());
 
         assertEquals(WhatsAppRestore.Outcome.RESTORED,
-                WhatsAppRestore.restore(true, false, false, target, roots, bytes(photo)));
+                WhatsAppRestore.restore(true, false, false, target, roots, journal, bytes(photo)));
         assertArrayEquals(photo, Files.readAllBytes(target.toPath()));
         assertEquals("no temporary file is left", 1, target.getParentFile().list().length);
     }
@@ -71,17 +73,17 @@ public class WhatsAppRestoreAndAlbumsTest {
         assertTrue(existing.getParentFile().mkdirs());
         Files.write(existing.toPath(), new byte[] { 1, 2, 3 });
         assertEquals(WhatsAppRestore.Outcome.ALREADY_PRESENT,
-                WhatsAppRestore.restore(true, false, false, existing, roots, bytes(jpeg(2))));
+                WhatsAppRestore.restore(true, false, false, existing, roots, journal, bytes(jpeg(2))));
         assertArrayEquals(new byte[] { 1, 2, 3 }, Files.readAllBytes(existing.toPath()));
 
         File viewOnce = target("VO.jpg");
         assertEquals(WhatsAppRestore.Outcome.VIEW_ONCE,
-                WhatsAppRestore.restore(true, true, false, viewOnce, roots, bytes(jpeg(3))));
+                WhatsAppRestore.restore(true, true, false, viewOnce, roots, journal, bytes(jpeg(3))));
         assertFalse(viewOnce.exists());
 
         File cleared = target("CLEARED.jpg");
         assertEquals(WhatsAppRestore.Outcome.USER_CLEARED,
-                WhatsAppRestore.restore(true, false, true, cleared, roots, bytes(jpeg(4))));
+                WhatsAppRestore.restore(true, false, true, cleared, roots, journal, bytes(jpeg(4))));
         assertFalse(cleared.exists());
     }
 
@@ -89,10 +91,10 @@ public class WhatsAppRestoreAndAlbumsTest {
     public void refusesPathsOutsideWhatsAppsRootsIncludingTraversal() throws Exception {
         File outside = new File(fixture.root, "DCIM/x.jpg");
         assertEquals(WhatsAppRestore.Outcome.OUTSIDE_ROOTS,
-                WhatsAppRestore.restore(true, false, false, outside, roots, bytes(jpeg(5))));
+                WhatsAppRestore.restore(true, false, false, outside, roots, journal, bytes(jpeg(5))));
         File traversal = new File(waRoot, "../../../../DCIM/y.jpg");
         assertEquals(WhatsAppRestore.Outcome.OUTSIDE_ROOTS,
-                WhatsAppRestore.restore(true, false, false, traversal, roots, bytes(jpeg(5))));
+                WhatsAppRestore.restore(true, false, false, traversal, roots, journal, bytes(jpeg(5))));
         assertFalse(new File(fixture.root, "DCIM").exists());
     }
 
@@ -111,7 +113,7 @@ public class WhatsAppRestoreAndAlbumsTest {
             }
         };
         assertEquals(WhatsAppRestore.Outcome.FAILED,
-                WhatsAppRestore.restore(true, false, false, target, roots, breaking));
+                WhatsAppRestore.restore(true, false, false, target, roots, journal, breaking));
         assertFalse(target.exists());
         assertEquals(0, target.getParentFile().list().length);
     }

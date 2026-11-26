@@ -44,6 +44,7 @@ public final class MediaLibraryProvider extends ContentProvider {
     public static final String METHOD_GALLERY_TOKEN = "gallery_token";
     public static final String METHOD_STATE = "state";
     public static final String METHOD_LIST_CHAT = "list_chat";
+    public static final String METHOD_CONFIRM_ORIGIN = "confirm_origin";
     public static final int MAX_LIST = 2000;
     public static final int MAX_LOOKUP = 64;
 
@@ -83,6 +84,8 @@ public final class MediaLibraryProvider extends ContentProvider {
                     return state(context);
                 case METHOD_LIST_CHAT:
                     return listChat(context, caller, extras);
+                case METHOD_CONFIRM_ORIGIN:
+                    return confirmOrigin(context, caller, extras);
                 default:
                     return null;
             }
@@ -209,6 +212,23 @@ public final class MediaLibraryProvider extends ContentProvider {
             result.putStringArrayList("sha256", hashes);
             result.putStringArrayList("kinds", kinds);
             result.putString("state", stateToken(context, library));
+            return result;
+        } catch (IOException | RuntimeException failure) {
+            return null;
+        }
+    }
+
+    /** WhatsApp reports whether a message is view-once; only rows with an unknown origin change. */
+    private static Bundle confirmOrigin(Context context, String caller, Bundle extras) {
+        String ownJid = extras.getString("own_jid");
+        String chat = extras.getString("chat_jid");
+        String key = extras.getString("message_key");
+        if (ownJid == null || ownJid.isEmpty() || chat == null || key == null) return null;
+        try {
+            boolean changed = MediaLibraryRuntime.get(context).confirmOrigin(caller, ownJid, chat,
+                    extras.getString("chat_alt_jid"), key, extras.getBoolean("from_me"), extras.getBoolean("view_once"));
+            Bundle result = new Bundle();
+            result.putBoolean("changed", changed);
             return result;
         } catch (IOException | RuntimeException failure) {
             return null;

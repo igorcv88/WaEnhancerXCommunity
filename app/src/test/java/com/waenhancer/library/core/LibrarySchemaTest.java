@@ -161,8 +161,8 @@ public class LibrarySchemaTest {
         sql.insert("INSERT INTO items (uuid, account_id, chat_jid, message_key, from_me, media_kind, mime_type, sha256, "
                 + "imported_at, basis) VALUES ('u2', 1, 'c', 'K2', 0, 'image', 'image/jpeg', ?, 0, 'user_explicit')", sha);
 
-        MediaLibrary library = fixture.open(sql); // migrates 1 -> 2
-        assertEquals(2, sql.userVersion());
+        MediaLibrary library = fixture.open(sql); // migrates 1 -> current
+        assertEquals(LibrarySchema.CURRENT_VERSION, sql.userVersion());
         assertEquals(2, LibraryFixture.count(sql, "items"));
         assertTrue(library.get("u1").viewOnce);
         assertFalse(library.get("u2").viewOnce);

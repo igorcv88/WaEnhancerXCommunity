@@ -123,6 +123,20 @@ public class MediaLibraryHook extends Feature {
         if (!prefs.getBoolean("media_library", false)) return;
         keepViewOnce = prefs.getBoolean("media_library_keep_view_once", true);
         restoreToWhatsApp = prefs.getBoolean("media_library_restore_to_whatsapp", true);
+        // Clean temporary/partial files of a restore interrupted by a killed process.
+        WORKER.execute(() -> {
+            try {
+                Context app = Utils.getApplication();
+                if (app == null) return;
+                WhatsAppRestore.Recovery recovery = WhatsAppRestore.recover(restoreJournal(app));
+                if (recovery.journals > 0) {
+                    XposedBridge.log("[WAEX] MediaLibrary restore recovery: journals=" + recovery.journals
+                            + " temps=" + recovery.tempsRemoved + " partial=" + recovery.partialTargetsRemoved
+                            + " kept=" + recovery.completeTargetsKept);
+                }
+            } catch (Throwable ignored) {
+            }
+        });
         // Each part fails closed on its own; one unresolved hook never disables the others.
         try {
             hookMediaViewerMenu();
@@ -492,6 +506,10 @@ public class MediaLibraryHook extends Feature {
         Context context = row.getContext();
         WORKER.execute(() -> {
             if (!BINDER.isCurrent(task)) return;
+            // Own media imported before schema 2 may have an unknown view-once flag; settle it once.
+            if (key.isFromMe && ORIGIN_CONFIRMED.add(task.ref.scope() + '|' + task.ref.chatJid + '|' + task.ref.messageKey)) {
+                confirmOrigin(context, task.ref, message.isViewOnce());
+            }
             File nativeFile;
             try {
                 nativeFile = message.getMediaFile();
@@ -610,6 +628,7 @@ public class MediaLibraryHook extends Feature {
             // userCleared: WhatsApp gives no reliable signal for a deliberate "delete media" on
             // this build; the owner chose on by default and can turn it off.
             WhatsAppRestore.Outcome outcome = WhatsAppRestore.restore(true, message.isViewOnce(), false, target, roots,
+                    restoreJournal(context),
                     () -> context.getContentResolver().openInputStream(uri));
             if (outcome == WhatsAppRestore.Outcome.RESTORED) {
                 toast(R.string.media_library_restored_to_whatsapp, "Restored from the media library");
@@ -620,6 +639,28 @@ public class MediaLibraryHook extends Feature {
             XposedBridge.log("[WAEX] MediaLibrary restore into WhatsApp skipped: " + failure.getClass().getSimpleName());
             return false;
         }
+    }
+
+    private static final java.util.Set<String> ORIGIN_CONFIRMED =
+            java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+
+    private static void confirmOrigin(Context context, InlineBinder.Ref ref, boolean viewOnce) {
+        Bundle extras = new Bundle();
+        extras.putString("own_jid", ref.ownJid);
+        extras.putString("chat_jid", ref.chatJid);
+        if (ref.chatAltJid != null) extras.putString("chat_alt_jid", ref.chatAltJid);
+        extras.putString("message_key", ref.messageKey);
+        extras.putBoolean("from_me", ref.fromMe);
+        extras.putBoolean("view_once", viewOnce);
+        try {
+            context.getContentResolver().call(PROVIDER, "confirm_origin", null, extras);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Journal of in-flight restores, in WhatsApp's private files (not the clearable cache). */
+    private static File restoreJournal(Context context) {
+        return new File(context.getFilesDir(), "waex/restore-journal");
     }
 
     /** Package + active account + message; used for the per-process attempt sets. */

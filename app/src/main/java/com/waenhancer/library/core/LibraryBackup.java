@@ -158,6 +158,7 @@ public final class LibraryBackup {
             if (item.caption != null) value.put("caption", item.caption);
             value.put("trashedAt", item.trashedAt);
             value.put("viewOnce", item.viewOnce);
+            value.put("viewOnceKnown", item.viewOnceKnown);
             array.put(value);
         }
         JSONObject catalog = new JSONObject();
@@ -259,8 +260,8 @@ public final class LibraryBackup {
                             if (library.get(uuid) != null) uuid = UUID.randomUUID().toString();
                             sql.insert("INSERT INTO items (uuid, account_id, chat_jid, chat_alt_jid, message_key, "
                                             + "from_me, sender_jid, media_kind, mime_type, sha256, message_timestamp, "
-                                            + "imported_at, basis, caption, trashed_at, view_once) "
-                                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                            + "imported_at, basis, caption, trashed_at, view_once, view_once_known) "
+                                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                     uuid, accountId, item.getString("chatJid"), alt, item.getString("messageKey"),
                                     item.getBoolean("fromMe") ? 1 : 0, item.optString("senderJid", null),
                                     item.getString("kind"), item.getString("mime"), sha,
@@ -268,7 +269,8 @@ public final class LibraryBackup {
                                     item.getString("basis"), item.optString("caption", null), item.getLong("trashedAt"),
                                     // Backups written before schema 2 have no flag: derive it from the basis.
                                     item.optBoolean("viewOnce",
-                                            ImportPolicy.BASIS_AUTO_VIEW_ONCE.equals(item.getString("basis"))) ? 1 : 0);
+                                            ImportPolicy.BASIS_AUTO_VIEW_ONCE.equals(item.getString("basis"))) ? 1 : 0,
+                                    item.optBoolean("viewOnceKnown", certainOrigin(item)) ? 1 : 0);
                             report.itemsRestored++;
                         } catch (JSONException failure) {
                             throw new IllegalStateException(failure);
@@ -285,6 +287,13 @@ public final class LibraryBackup {
             if (report.itemsRestored > 0) library.bumpGeneration();
         }
         return report;
+    }
+
+    /** Older backups carry no "known" flag: only these bases are certain (see LibrarySchema v3). */
+    private static boolean certainOrigin(JSONObject item) throws JSONException {
+        String basis = item.getString("basis");
+        return ImportPolicy.BASIS_AUTO_VIEW_ONCE.equals(basis) || ImportPolicy.BASIS_USER_EXPLICIT.equals(basis)
+                || item.optBoolean("viewOnce", false);
     }
 
     private static List<JSONObject> validateCatalog(JSONObject catalog) throws JSONException, LibraryException {

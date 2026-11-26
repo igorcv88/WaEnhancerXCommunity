@@ -45,6 +45,8 @@ Second review + owner feedback 2026-11-26 (owner: view-once separate from normal
 
 Owner correction 2026-11-26: "Restore into WhatsApp" is **on by default** (XML + hook default true; can be turned off); manual view-once save album is `DCIM/WhatsApp View Once` (was Pictures/View Once). Normal media stays `DCIM/WhatsApp`.
 
+Third review 2026-11-26 (code findings): restore now publishes with a hard link or exclusive create (never `renameTo`), unique temp names, journal + `WhatsAppRestore.recover` at hook start; `PendingPublish` (publish after close, `update()==1` checked, delete on failure) behind `GallerySaver`; schema 3 `view_once_known` + `confirmOrigin`/provider `confirm_origin` instead of basis-only inference. New `SecondReviewFixesTest` (10); mutations (replacing rename, publish before close) failed 5 tests. The concurrency test exposed a real `mkdirs()` race (fixed). Full: 102 suites / 794 tests, 0 failures, twice.
+
 Next steps: install the CI-signed preview, enable Media library, run the device checklist; if the FD is stripped by `call`, switch import to a provider `openFile("w")` pipe; add pt-BR strings if wanted.
 
 ## Detached media timestamps, view-once download and conversation status — 2026-11-11

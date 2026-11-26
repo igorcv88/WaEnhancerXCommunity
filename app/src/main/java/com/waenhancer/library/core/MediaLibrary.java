@@ -40,7 +40,7 @@ public final class MediaLibrary {
 
     private static final String ITEM_COLUMNS = "i.id, i.uuid, i.account_id, a.package_name, a.own_jid, i.chat_jid, "
             + "i.chat_alt_jid, i.message_key, i.from_me, i.sender_jid, i.media_kind, i.mime_type, i.sha256, "
-            + "b.size_bytes, i.message_timestamp, i.imported_at, i.basis, i.caption, i.trashed_at, b.state, i.view_once";
+            + "b.size_bytes, i.message_timestamp, i.imported_at, i.basis, i.caption, i.trashed_at, b.state, i.view_once, i.view_once_known";
     private static final String ITEM_FROM = " FROM items i JOIN accounts a ON a.id = i.account_id "
             + "JOIN blobs b ON b.sha256 = i.sha256 ";
 
@@ -159,7 +159,7 @@ public final class MediaLibrary {
                 String id = UUID.randomUUID().toString();
                 sql.insert("INSERT INTO items (uuid, account_id, chat_jid, chat_alt_jid, message_key, from_me, "
                                 + "sender_jid, media_kind, mime_type, sha256, message_timestamp, imported_at, basis, caption, "
-                                + "view_once) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                + "view_once, view_once_known) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)",
                         id, accountId, request.chatJid, request.chatAltJid, request.messageKey,
                         request.fromMe ? 1 : 0, request.senderJid, kind, mime, staged.sha256,
                         request.messageTimestamp, now, basis, request.caption, request.viewOnce ? 1 : 0);
@@ -284,6 +284,25 @@ public final class MediaLibrary {
 
     public static long clampQuota(long bytes) {
         return Math.max(MIN_QUOTA_BYTES, Math.min(MAX_QUOTA_BYTES, bytes));
+    }
+
+    /**
+     * Settles the origin of a row migrated with an unknown view-once flag, using what WhatsApp
+     * reports for the same message. Rows whose flag is already known are never changed.
+     * Returns whether a row changed.
+     */
+    public boolean confirmOrigin(String packageName, String ownJid, String chatJid, String chatAltJid,
+                                 String messageKey, boolean fromMe, boolean viewOnce) throws IOException {
+        try (LibraryLock.Held ignored = lock.acquire(LOCK_TIMEOUT_MS)) {
+            Long accountId = findAccount(packageName, ownJid);
+            if (accountId == null) return false;
+            LibraryItem item = findByIdentity(accountId, chatJid, chatAltJid, messageKey, fromMe);
+            if (item == null || item.viewOnceKnown) return false;
+            boolean changed = sql.update("UPDATE items SET view_once = ?, view_once_known = 1 WHERE id = ? "
+                    + "AND view_once_known = 0", viewOnce ? 1 : 0, item.id) > 0;
+            if (changed) bumpGeneration();
+            return changed;
+        }
     }
 
     // ---------------------------------------------------------------- change tracking

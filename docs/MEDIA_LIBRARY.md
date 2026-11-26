@@ -145,7 +145,12 @@ cannot be read, only the overlay's ▶ target is added).
 
 Restore into WhatsApp (normal media) — **separate switch `media_library_restore_to_whatsapp`, on by
 default (owner decision), can be turned off**: when WhatsApp's file for a message is gone and the library holds a copy,
-`WhatsAppRestore` writes it (temp file + rename) to the exact path WhatsApp still records, only
+`WhatsAppRestore` writes it to the exact path WhatsApp still records (unique temporary name, then
+a hard link — atomic and never replacing — or, where the file system has no hard links, an
+exclusive `O_CREAT|O_EXCL` create of the target plus a local copy; `File.renameTo`, which replaces
+silently on Linux, is not used; a journal in WhatsApp's `files/waex/restore-journal` lets the next
+start remove a temporary file or a partial target left by a killed process, keeping a complete
+one), only
 inside WhatsApp's own media roots, never over an existing file, never for view-once, never when a
 deliberate user deletion is known (no reliable signal exists on 2.26.38.74, so the hook cannot
 tell yet; the owner chose on by default). `msgstore.db` is not modified. Risks accepted by leaving it on: Android's media scanner indexes `Android/media`, so the file may reappear in other
@@ -166,7 +171,13 @@ Saving to the phone gallery (explicit only): module library → long-press → "
 writes to `DCIM/WhatsApp View Once` for view-once copies and `DCIM/WhatsApp` for normal media
 (`GalleryAlbums`, MediaStore, pending until complete). WhatsApp's Download View Once button now
 also saves to `DCIM/WhatsApp View Once` on Android 10+ (previous download folder as fallback).
-Catalog schema 2 adds `items.view_once` (migrated from schema 1 by basis) to keep the two apart.
+Catalog schema 2 adds `items.view_once`; schema 3 adds `items.view_once_known`. Rows from schema 1
+are certain only for `auto_view_once` (received view-once) and `user_explicit` (received normal
+media); the user's own media and backup rows are marked unknown instead of guessed and are settled
+by WhatsApp (`confirm_origin`, sent when an own media row is shown); unknown rows count as normal
+until then. Gallery exports go through `PendingPublish`: pending entry → write → close → publish,
+and a publish that does not update exactly one entry is a failure; the pending entry is deleted on
+any failure.
 
 - **Media viewer → ⋮ → Keep in library** (the menu that already hosts Download View Once).
 - **Conversation → ⋮ → Media library**: opens this conversation's private gallery (module
@@ -285,6 +296,11 @@ expected test fail (2 failures), confirming the tests discriminate.
 | Copy opens in a fresh process with network disabled after the original became unavailable | Persistence › copyOpensInAFreshOfflineProcess… | pass |
 | Restore into WhatsApp: off ⇒ nothing written; exact bytes at recorded path; never overwrite; never view-once; respects known user deletion; refuses outside roots/traversal; interrupted copy leaves no file | WhatsAppRestoreAndAlbums › restoresExactBytes…, neverOverwrites…, refusesPaths…, interruptedCopy… | pass |
 | View-once vs normal separation for tab and save album; flag survives backup | WhatsAppRestoreAndAlbums › viewOnceAndNormalMediaStaySeparate…, viewOnceFlagSurvivesBackupAndRestore | pass |
+| Restore never replaces a file WhatsApp creates between check and publish (hard-link and no-hard-link paths); exclusive-create fallback restores exact bytes | SecondReviewFixes › fileCreatedByWhatsApp…(×2), withoutHardLinks… | pass |
+| Concurrent restores: unique temporaries, one winner per name, no mixed file, no leftovers | SecondReviewFixes › concurrentRestores… | pass (also exposed and fixed a concurrent `mkdirs()` bug) |
+| Killed-process recovery: temps and partial targets removed, complete and foreign files kept, damaged journal authorises nothing | SecondReviewFixes › recoveryAfterAKilledProcess…, journalPointsAtTheRealTemp… | pass |
+| Gallery export publishes only after close; failed write/close/publish (update ≠ 1) reported and cleaned | SecondReviewFixes › exportPublishesOnlyAfter…, exportFailsAndCleansUp… | pass |
+| Schema 3: uncertain origins unknown, settled once by WhatsApp, never overwriting known flags, account-scoped | SecondReviewFixes › migrationMarksUncertain…, newImportsAlwaysRecord… | pass |
 | Schema 1 → 2 migration keeps rows and marks view-once | Schema › version1CatalogMigratesToVersion2… | pass |
 | Media-screen contact JID recognition | WhatsAppRestoreAndAlbums › mediaScreenContactIsRecognised… | pass |
 | Android SQLite adapter, provider, activities, hook | compiled (`compileWhatsappDebugJavaWithJavac`), lint run | **static only** |
