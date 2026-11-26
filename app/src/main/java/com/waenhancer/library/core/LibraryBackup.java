@@ -157,6 +157,7 @@ public final class LibraryBackup {
             value.put("basis", item.basis);
             if (item.caption != null) value.put("caption", item.caption);
             value.put("trashedAt", item.trashedAt);
+            value.put("viewOnce", item.viewOnce);
             array.put(value);
         }
         JSONObject catalog = new JSONObject();
@@ -258,12 +259,16 @@ public final class LibraryBackup {
                             if (library.get(uuid) != null) uuid = UUID.randomUUID().toString();
                             sql.insert("INSERT INTO items (uuid, account_id, chat_jid, chat_alt_jid, message_key, "
                                             + "from_me, sender_jid, media_kind, mime_type, sha256, message_timestamp, "
-                                            + "imported_at, basis, caption, trashed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                            + "imported_at, basis, caption, trashed_at, view_once) "
+                                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                     uuid, accountId, item.getString("chatJid"), alt, item.getString("messageKey"),
                                     item.getBoolean("fromMe") ? 1 : 0, item.optString("senderJid", null),
                                     item.getString("kind"), item.getString("mime"), sha,
                                     item.getLong("messageTimestamp"), item.getLong("importedAt"),
-                                    item.getString("basis"), item.optString("caption", null), item.getLong("trashedAt"));
+                                    item.getString("basis"), item.optString("caption", null), item.getLong("trashedAt"),
+                                    // Backups written before schema 2 have no flag: derive it from the basis.
+                                    item.optBoolean("viewOnce",
+                                            ImportPolicy.BASIS_AUTO_VIEW_ONCE.equals(item.getString("basis"))) ? 1 : 0);
                             report.itemsRestored++;
                         } catch (JSONException failure) {
                             throw new IllegalStateException(failure);

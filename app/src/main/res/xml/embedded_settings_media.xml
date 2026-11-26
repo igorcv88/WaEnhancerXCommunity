@@ -40,6 +40,13 @@
             app:title="@string/media_library_keep_view_once" />
 
         <rikka.material.preference.MaterialSwitchPreference
+            android:defaultValue="false"
+            app:dependency="media_library"
+            app:key="media_library_restore_to_whatsapp"
+            app:summary="@string/media_library_restore_to_whatsapp_sum"
+            app:title="@string/media_library_restore_to_whatsapp" />
+
+        <rikka.material.preference.MaterialSwitchPreference
             app:key="download_video_note"
             app:summary="@string/download_video_note_sum"
             app:title="@string/download_video_note" />

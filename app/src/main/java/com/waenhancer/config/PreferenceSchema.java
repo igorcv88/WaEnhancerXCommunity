@@ -256,6 +256,7 @@ public final class PreferenceSchema {
         add(entries, "lockedchats_enhancer", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "media_library", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "media_library_keep_view_once", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
+        add(entries, "media_library_restore_to_whatsapp", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "media_preview", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "menuwicon", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);
         add(entries, "message_device_source", Type.BOOLEAN, Sensitivity.PUBLIC_SETTING, Store.PUBLIC);

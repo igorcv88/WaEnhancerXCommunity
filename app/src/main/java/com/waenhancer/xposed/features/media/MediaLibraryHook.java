@@ -37,6 +37,7 @@ import com.waenhancer.R;
 import com.waenhancer.library.core.ImportPolicy;
 import com.waenhancer.library.core.InlineBinder;
 import com.waenhancer.library.core.InlinePresentation;
+import com.waenhancer.library.core.WhatsAppRestore;
 import com.waenhancer.xposed.core.Feature;
 import com.waenhancer.xposed.core.FeatureLoader;
 import com.waenhancer.xposed.core.WppCore;
@@ -78,7 +79,7 @@ public class MediaLibraryHook extends Feature {
     private static final int MENU_ID_KEEP = 0x7EAD0010;
     private static final int MENU_ID_GALLERY = 0x7EAD0011;
     private static final String AUTHORITY = BuildConfig.APPLICATION_ID + ".medialibrary";
-    private static final Uri PROVIDER = Uri.parse("content://" + AUTHORITY);
+    static final Uri PROVIDER = Uri.parse("content://" + AUTHORITY);
     private static final String GALLERY_ALIAS = "com.waenhancer.library.ui.ChatMediaGallery";
     private static final String TAG_OVERLAY = "waex_library_overlay";
     private static final String TAG_CHIP = "waex_library_chip";
@@ -88,6 +89,8 @@ public class MediaLibraryHook extends Feature {
 
     /** Owner switch "Keep received view-once" (also enforced again by the module). */
     private static volatile boolean keepViewOnce;
+    /** Separate owner switch "Restore into WhatsApp" (off by default). */
+    private static volatile boolean restoreToWhatsApp;
     /** Messages already sent for automatic keeping in this process. */
     private static final java.util.Set<String> AUTO_ATTEMPTED =
             java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
@@ -95,12 +98,12 @@ public class MediaLibraryHook extends Feature {
     private static final java.util.Set<String> RESTORE_ATTEMPTED =
             java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
 
-    private static final ExecutorService WORKER = Executors.newSingleThreadExecutor(r -> {
+    static final ExecutorService WORKER = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "waex-media-library");
         thread.setDaemon(true);
         return thread;
     });
-    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    static final Handler MAIN = new Handler(Looper.getMainLooper());
     /** Row tokens + account-scoped, state-keyed lookup cache (see {@link InlineBinder}). */
     private static final InlineBinder<ViewGroup> BINDER = new InlineBinder<>();
     /** Keyed by package + account + item + content hash ({@link InlineBinder#thumbnailKey}). */
@@ -119,6 +122,7 @@ public class MediaLibraryHook extends Feature {
     public void doHook() throws Throwable {
         if (!prefs.getBoolean("media_library", false)) return;
         keepViewOnce = prefs.getBoolean("media_library_keep_view_once", true);
+        restoreToWhatsApp = prefs.getBoolean("media_library_restore_to_whatsapp", false);
         // Each part fails closed on its own; one unresolved hook never disables the others.
         try {
             hookMediaViewerMenu();
@@ -136,6 +140,11 @@ public class MediaLibraryHook extends Feature {
                 bindRow(fMessage, row);
             }
         });
+        try {
+            ViewOnceGalleryTab.install();
+        } catch (Throwable failure) {
+            XposedBridge.log("[WAEX] MediaLibrary view-once tab unavailable: " + failure);
+        }
         if (keepViewOnce) {
             try {
                 hookViewOnceViewer();
@@ -425,6 +434,18 @@ public class MediaLibraryHook extends Feature {
     }
 
     private static void openGallery(Activity activity, FMessageWpp.UserJid chat, String openUuid) {
+        String primary = chat.getUserRawString() != null ? chat.getUserRawString() : chat.getPhoneRawString();
+        String alt = chat.getPhoneRawString();
+        String title = null;
+        try {
+            title = WppCore.getContactName(chat);
+        } catch (Throwable ignored) {
+        }
+        openGallery(activity, primary, alt != null && !alt.equals(primary) ? alt : null, title, openUuid);
+    }
+
+    /** Opens the module gallery (or one item) for a chat given by raw JIDs. */
+    static void openGallery(Activity activity, String chatJid, String chatAltJid, String title, String openUuid) {
         String own = ownJid();
         if (own == null) {
             toast(R.string.media_library_no_account, "Account could not be identified");
@@ -432,16 +453,10 @@ public class MediaLibraryHook extends Feature {
         }
         Bundle extras = new Bundle();
         extras.putString("own_jid", own);
-        String primary = chat.getUserRawString() != null ? chat.getUserRawString() : chat.getPhoneRawString();
-        extras.putString("chat_jid", primary);
-        String alt = chat.getPhoneRawString();
-        if (alt != null && !alt.equals(primary)) extras.putString("chat_alt_jid", alt);
+        extras.putString("chat_jid", chatJid);
+        if (chatAltJid != null) extras.putString("chat_alt_jid", chatAltJid);
         if (openUuid != null) extras.putString("open_uuid", openUuid);
-        try {
-            String title = WppCore.getContactName(chat);
-            if (title != null) extras.putString("title", title);
-        } catch (Throwable ignored) {
-        }
+        if (title != null) extras.putString("title", title);
         Bundle result;
         try {
             result = activity.getContentResolver().call(PROVIDER, "gallery_token", null, extras);
@@ -575,11 +590,12 @@ public class MediaLibraryHook extends Feature {
     }
 
     /**
-     * Writes a kept conventional copy to the exact path WhatsApp records for the message, only
-     * inside WhatsApp's own media roots, never over an existing file, never for view-once.
+     * Optional "Restore into WhatsApp" (separate switch, off by default): writes a kept normal
+     * copy back to the path WhatsApp records for the message. Rules in {@link WhatsAppRestore}.
      */
     private static boolean restoreIntoWhatsApp(Context context, FMessageWpp message, File recorded,
                                                InlineBinder.Ref ref, InlineBinder.Answer answer) {
+        if (!restoreToWhatsApp) return false;
         if (!RESTORE_ATTEMPTED.add(ref.scope() + '|' + ref.chatJid + '|' + ref.messageKey + '|' + answer.sha256)) return false;
         try {
             File target = recorded;
@@ -590,29 +606,16 @@ public class MediaLibraryHook extends Feature {
                 if (candidates.isEmpty()) return false;
                 target = new File(candidates.get(0));
             }
-            String canonical = target.getCanonicalPath();
-            if (!com.waenhancer.library.core.WhatsAppMediaPaths.isSafeRestoreTarget(canonical, roots,
-                    target.exists(), message.isViewOnce())) {
-                return false;
-            }
-            File parent = target.getParentFile();
-            if (parent == null || (!parent.isDirectory() && !parent.mkdirs())) return false;
-            File temp = new File(parent, "." + target.getName() + ".waex-restore");
             Uri uri = itemUri(ref, answer.uuid);
-            try (java.io.InputStream in = context.getContentResolver().openInputStream(uri);
-                 java.io.FileOutputStream out = new java.io.FileOutputStream(temp)) {
-                if (in == null) return false;
-                byte[] buffer = new byte[64 * 1024];
-                for (int read; (read = in.read(buffer)) != -1; ) out.write(buffer, 0, read);
-                out.getFD().sync();
+            // userCleared: WhatsApp gives no reliable signal for a deliberate "delete media" on
+            // this build; that is why the feature is opt-in and off by default.
+            WhatsAppRestore.Outcome outcome = WhatsAppRestore.restore(true, message.isViewOnce(), false, target, roots,
+                    () -> context.getContentResolver().openInputStream(uri));
+            if (outcome == WhatsAppRestore.Outcome.RESTORED) {
+                toast(R.string.media_library_restored_to_whatsapp, "Restored from the media library");
+                return true;
             }
-            if (target.exists() || !temp.renameTo(target)) {
-                //noinspection ResultOfMethodCallIgnored
-                temp.delete();
-                return false;
-            }
-            toast(R.string.media_library_restored_to_whatsapp, "Restored from the media library");
-            return true;
+            return false;
         } catch (Throwable failure) {
             XposedBridge.log("[WAEX] MediaLibrary restore into WhatsApp skipped: " + failure.getClass().getSimpleName());
             return false;
@@ -626,7 +629,7 @@ public class MediaLibraryHook extends Feature {
                 + '|' + key.messageID + '|' + key.isFromMe;
     }
 
-    private static Bitmap thumbnail(Context context, InlineBinder.Ref ref, InlineBinder.Answer answer) {
+    static Bitmap thumbnail(Context context, InlineBinder.Ref ref, InlineBinder.Answer answer) {
         String cacheKey = InlineBinder.thumbnailKey(ref, answer);
         Bitmap cached = THUMBNAILS.get(cacheKey);
         if (cached != null) return cached;
@@ -858,7 +861,7 @@ public class MediaLibraryHook extends Feature {
     }
 
     /** The phone JID of this WhatsApp installation's account; {@code null} fails closed. */
-    private static String ownJid() {
+    static String ownJid() {
         try {
             FMessageWpp.UserJid me = WppCore.getMyUserJid();
             if (me == null) return null;
@@ -869,7 +872,7 @@ public class MediaLibraryHook extends Feature {
         }
     }
 
-    private static String text(int id, String fallback) {
+    static String text(int id, String fallback) {
         return FeatureLoader.getModuleString(Utils.getApplication(), id, fallback);
     }
 

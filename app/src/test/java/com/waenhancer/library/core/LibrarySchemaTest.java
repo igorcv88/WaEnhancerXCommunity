@@ -87,18 +87,18 @@ public class LibrarySchemaTest {
         library.importMedia(request("c@s.whatsapp.net", "K1").build(), source(jpeg(1)));
 
         List<LibrarySchema.Step> steps = new ArrayList<>(LibrarySchema.defaultSteps());
-        steps.add(step(2, s -> {
+        steps.add(step(LibrarySchema.CURRENT_VERSION + 1, s -> {
             s.exec("ALTER TABLE items ADD COLUMN rating INTEGER");
             s.exec("CREATE TABLE half_done (x INTEGER)");
             throw new IllegalStateException("power cut in the middle of the step");
         }));
         try {
-            new LibrarySchema(steps, 2).migrate(sql);
+            new LibrarySchema(steps, LibrarySchema.CURRENT_VERSION + 1).migrate(sql);
             fail("the failing step must surface");
         } catch (LibraryException expected) {
             assertEquals(LibraryException.Code.IO, expected.code);
         }
-        assertEquals(1, sql.userVersion());
+        assertEquals(LibrarySchema.CURRENT_VERSION, sql.userVersion());
         assertTrue(sql.query("SELECT 1 FROM sqlite_master WHERE name='half_done'").isEmpty());
         assertTrue(sql.query("SELECT 1 FROM pragma_table_info('items') WHERE name='rating'").isEmpty());
         assertEquals(1, LibraryFixture.count(sql, "items"));
@@ -110,14 +110,14 @@ public class LibrarySchemaTest {
         MediaLibrary library = fixture.open(sql);
         library.importMedia(request("c@s.whatsapp.net", "K1").build(), source(jpeg(1)));
         List<LibrarySchema.Step> steps = new ArrayList<>(LibrarySchema.defaultSteps());
-        steps.add(step(2, s -> s.exec("DELETE FROM items")));
+        steps.add(step(LibrarySchema.CURRENT_VERSION + 1, s -> s.exec("DELETE FROM items")));
         try {
-            new LibrarySchema(steps, 2).migrate(sql);
+            new LibrarySchema(steps, LibrarySchema.CURRENT_VERSION + 1).migrate(sql);
             fail("a destructive step must be refused");
         } catch (LibraryException expected) {
             assertEquals(LibraryException.Code.IO, expected.code);
         }
-        assertEquals(1, sql.userVersion());
+        assertEquals(LibrarySchema.CURRENT_VERSION, sql.userVersion());
         assertEquals(1, LibraryFixture.count(sql, "items"));
     }
 
@@ -127,9 +127,9 @@ public class LibrarySchemaTest {
         MediaLibrary library = fixture.open(sql);
         library.importMedia(request("c@s.whatsapp.net", "K1").build(), source(jpeg(1)));
         List<LibrarySchema.Step> steps = new ArrayList<>(LibrarySchema.defaultSteps());
-        steps.add(step(2, s -> s.exec("ALTER TABLE items ADD COLUMN favourite INTEGER NOT NULL DEFAULT 0")));
-        new LibrarySchema(steps, 2).migrate(sql);
-        assertEquals(2, sql.userVersion());
+        steps.add(step(LibrarySchema.CURRENT_VERSION + 1, s -> s.exec("ALTER TABLE items ADD COLUMN favourite INTEGER NOT NULL DEFAULT 0")));
+        new LibrarySchema(steps, LibrarySchema.CURRENT_VERSION + 1).migrate(sql);
+        assertEquals(LibrarySchema.CURRENT_VERSION + 1, sql.userVersion());
         assertEquals(1, LibraryFixture.count(sql, "items"));
         assertFalse(sql.query("SELECT 1 FROM pragma_table_info('items') WHERE name='favourite'").isEmpty());
     }
@@ -146,5 +146,25 @@ public class LibrarySchemaTest {
                 body.accept(sql);
             }
         };
+    }
+
+    @Test
+    public void version1CatalogMigratesToVersion2KeepingEveryRowAndMarkingViewOnce() throws Exception {
+        JdbcSql sql = fixture.connection();
+        new LibrarySchema(LibrarySchema.defaultSteps().subList(0, 1), 1).migrate(sql);
+        assertEquals(1, sql.userVersion());
+        String sha = "a".repeat(64);
+        sql.insert("INSERT INTO accounts (package_name, own_jid, created_at) VALUES ('com.whatsapp', 'me', 0)");
+        sql.insert("INSERT INTO blobs (sha256, size_bytes, mime_type, created_at, verified_at) VALUES (?, 10, 'image/jpeg', 0, 0)", sha);
+        sql.insert("INSERT INTO items (uuid, account_id, chat_jid, message_key, from_me, media_kind, mime_type, sha256, "
+                + "imported_at, basis) VALUES ('u1', 1, 'c', 'K1', 0, 'image', 'image/jpeg', ?, 0, 'auto_view_once')", sha);
+        sql.insert("INSERT INTO items (uuid, account_id, chat_jid, message_key, from_me, media_kind, mime_type, sha256, "
+                + "imported_at, basis) VALUES ('u2', 1, 'c', 'K2', 0, 'image', 'image/jpeg', ?, 0, 'user_explicit')", sha);
+
+        MediaLibrary library = fixture.open(sql); // migrates 1 -> 2
+        assertEquals(2, sql.userVersion());
+        assertEquals(2, LibraryFixture.count(sql, "items"));
+        assertTrue(library.get("u1").viewOnce);
+        assertFalse(library.get("u2").viewOnce);
     }
 }

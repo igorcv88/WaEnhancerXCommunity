@@ -40,7 +40,7 @@ public final class MediaLibrary {
 
     private static final String ITEM_COLUMNS = "i.id, i.uuid, i.account_id, a.package_name, a.own_jid, i.chat_jid, "
             + "i.chat_alt_jid, i.message_key, i.from_me, i.sender_jid, i.media_kind, i.mime_type, i.sha256, "
-            + "b.size_bytes, i.message_timestamp, i.imported_at, i.basis, i.caption, i.trashed_at, b.state";
+            + "b.size_bytes, i.message_timestamp, i.imported_at, i.basis, i.caption, i.trashed_at, b.state, i.view_once";
     private static final String ITEM_FROM = " FROM items i JOIN accounts a ON a.id = i.account_id "
             + "JOIN blobs b ON b.sha256 = i.sha256 ";
 
@@ -158,11 +158,11 @@ public final class MediaLibrary {
                 }
                 String id = UUID.randomUUID().toString();
                 sql.insert("INSERT INTO items (uuid, account_id, chat_jid, chat_alt_jid, message_key, from_me, "
-                                + "sender_jid, media_kind, mime_type, sha256, message_timestamp, imported_at, basis, caption) "
-                                + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                + "sender_jid, media_kind, mime_type, sha256, message_timestamp, imported_at, basis, caption, "
+                                + "view_once) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         id, accountId, request.chatJid, request.chatAltJid, request.messageKey,
                         request.fromMe ? 1 : 0, request.senderJid, kind, mime, staged.sha256,
-                        request.messageTimestamp, now, basis, request.caption);
+                        request.messageTimestamp, now, basis, request.caption, request.viewOnce ? 1 : 0);
                 return id;
             });
         } catch (RuntimeException failure) {
@@ -222,6 +222,19 @@ public final class MediaLibrary {
                 + (trashed ? "i.trashed_at > 0" : "i.trashed_at = 0")
                 + " ORDER BY i.message_timestamp DESC, i.id DESC";
         for (Map<String, Object> row : sql.query(sqlText, args.toArray())) result.add(new LibraryItem(row));
+        return result;
+    }
+
+    /**
+     * Items of one conversation filtered by origin: only view-once copies, or only normal media.
+     * Feeds the separate "View once" tab and keeps the two kinds from mixing.
+     */
+    public List<LibraryItem> listChatByOrigin(String packageName, String ownJid, Collection<String> chatJids,
+                                              boolean viewOnce) {
+        List<LibraryItem> result = new ArrayList<>();
+        for (LibraryItem item : listChat(packageName, ownJid, chatJids, false)) {
+            if (item.viewOnce == viewOnce) result.add(item);
+        }
         return result;
     }
 

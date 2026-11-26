@@ -58,7 +58,9 @@ The optional **Media library** keeps private copies of photos and videos you cho
 - **WaEnhancer → Media → Open media library** shows everything, lets you set the storage limit, verify the files, empty the trash and make an **encrypted backup** (you choose the password and where the file goes).
 
 - **Keep received view-once**: every view-once photo or video you receive is copied automatically while WhatsApp still has it, so when WhatsApp stops providing it (for example “Photo expired”) the chat shows your copy and opens it like a normal photo or video. This switch is on by default once the Media library is on. View-once media that already expired before you turned this on cannot be recovered.
-- If WhatsApp loses the file of a normal photo or video you kept, WaEnhancer puts your copy back where WhatsApp expects it, so it opens normally and appears again in the contact's media list.
+- **Restore into WhatsApp** (experimental, off by default): if WhatsApp loses the file of a normal photo or video you kept, WaEnhancer can put your copy back where WhatsApp expects it. It writes into WhatsApp's storage and could undo a deletion you made there, so turn it on only if you want that; whether WhatsApp's own media list then shows it still has to be confirmed on a phone.
+- In a contact's **Media** screen, a **View once** chip lists that contact's kept view-once photos and videos separately from normal media.
+- **Save to gallery** (long-press in the library): view-once copies go to the **Pictures/View Once** album, normal media to **DCIM/WhatsApp**. The Download View Once button also saves to **Pictures/View Once**.
 
 What it does not do: it does not keep other people's **status** posts, it does not keep normal media without your tap, it does not change your messages in WhatsApp, and it never uploads anything or adds your copies to the phone's public gallery. Copies are deleted only when you delete them (the trash empties itself after 30 days) or uninstall WaEnhancer — make an encrypted backup first if you want to keep them.
 

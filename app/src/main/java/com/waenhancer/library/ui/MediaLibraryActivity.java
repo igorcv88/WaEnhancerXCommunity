@@ -177,6 +177,10 @@ public final class MediaLibraryActivity extends BaseActivity {
     private void itemActions(LibraryItem item) {
         List<String> labels = new ArrayList<>();
         List<Runnable> actions = new ArrayList<>();
+        if (!item.isTrashed() && item.isAvailable() && com.waenhancer.library.android.GallerySaver.supported()) {
+            labels.add(getString(R.string.media_library_save_to_gallery));
+            actions.add(() -> saveToGallery(item));
+        }
         if (!item.isTrashed()) {
             labels.add(getString(R.string.media_library_move_to_trash));
             actions.add(() -> mutate(() -> library.trash(item.uuid), R.string.media_library_moved_to_trash));
@@ -194,6 +198,25 @@ public final class MediaLibraryActivity extends BaseActivity {
         new AlertDialog.Builder(this)
                 .setItems(labels.toArray(new String[0]), (d, which) -> actions.get(which).run())
                 .show();
+    }
+
+    /** Explicit export: view-once → Pictures/View Once, normal media → DCIM/WhatsApp. */
+    private void saveToGallery(LibraryItem item) {
+        String album = com.waenhancer.library.core.GalleryAlbums.relativePathFor(item.viewOnce);
+        worker.execute(() -> {
+            boolean ok;
+            try (InputStream in = new java.io.FileInputStream(library.fileOf(item))) {
+                com.waenhancer.library.android.GallerySaver.save(getContentResolver(), in, item.mimeType,
+                        com.waenhancer.library.core.GalleryAlbums.displayName(item.sha256,
+                                LibraryViewerActivity.normalizeMillis(item.messageTimestamp), item.mimeType), album);
+                ok = true;
+            } catch (Exception failure) {
+                ok = false;
+            }
+            boolean saved = ok;
+            main.post(() -> Toast.makeText(this, saved ? getString(R.string.media_library_saved_to_gallery, album)
+                    : getString(R.string.media_library_action_failed), Toast.LENGTH_LONG).show());
+        });
     }
 
     private interface Mutation {

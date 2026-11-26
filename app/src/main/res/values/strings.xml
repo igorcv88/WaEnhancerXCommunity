@@ -870,4 +870,9 @@ You can still try it, but please wait for a stable version — it will be launch
     <string name="media_library_failed">Could not keep this media</string>
     <string name="media_library_full">The media library storage limit is reached</string>
     <string name="media_library_badge">Library copy</string>
+    <string name="media_library_restore_to_whatsapp">Restore into WhatsApp</string>
+    <string name="media_library_restore_to_whatsapp_sum">Experimental, off by default. When WhatsApp no longer has the file of a normal photo or video you kept, writes your copy back to the place WhatsApp expects it. This writes into WhatsApp\'s own storage and may undo a deletion you made there; view-once is never written back.</string>
+    <string name="media_library_tab_view_once">View once</string>
+    <string name="media_library_save_to_gallery">Save to gallery</string>
+    <string name="media_library_saved_to_gallery">Saved to %1$s</string>
 </resources>

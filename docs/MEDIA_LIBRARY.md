@@ -23,7 +23,7 @@ whether the original is still downloadable.
 | Conventional received photos/videos | `user_explicit` |
 | Items restored from the user's library backup | original basis kept |
 
-| Received view-once (42/43), **only with the owner switch "Keep received view-once"** (`media_library_keep_view_once`, off by default), kept automatically | `auto_view_once` |
+| Received view-once (42/43), **only with the owner switch "Keep received view-once"** (`media_library_keep_view_once`, **on by default** once `media_library` is on), kept automatically | `auto_view_once` |
 
 Owner decisions 2026-11-26: the goal is a definitive copy that behaves like normal received
 media; the original brief's rules about preserving ephemeral behaviour no longer apply. The
@@ -143,11 +143,31 @@ drawn over the view-once bubble body (`view_once_media_container*`) and a tap op
 the "Photo expired" dialog (the original click listener is saved and restored on rebind; if it
 cannot be read, only the overlay's ▶ target is added).
 
-Restore into WhatsApp (normal media): when WhatsApp's file for a message is gone and the library
-holds a copy, the copy is written (temp file + rename) to the exact path WhatsApp still records
-for that message, only inside WhatsApp's own media roots, never over an existing file
-(`WhatsAppMediaPaths.isSafeRestoreTarget`). WhatsApp's own bubble, viewer and "Media, links and
-docs" then use it; `msgstore.db` is not modified. If no recorded path is known, the overlay is used.
+Restore into WhatsApp (normal media) — **separate switch `media_library_restore_to_whatsapp`, off by
+default, experimental**: when WhatsApp's file for a message is gone and the library holds a copy,
+`WhatsAppRestore` writes it (temp file + rename) to the exact path WhatsApp still records, only
+inside WhatsApp's own media roots, never over an existing file, never for view-once, never when a
+deliberate user deletion is known (no reliable signal exists on 2.26.38.74, so the hook cannot
+tell yet — the main reason it is opt-in). `msgstore.db` is not modified. Risks accepted only by
+turning it on: Android's media scanner indexes `Android/media`, so the file may reappear in other
+gallery apps; WhatsApp's storage manager may count or delete it again; a deletion the user made in
+WhatsApp or a file manager can be undone; cloud/WhatsApp backups may include it. Whether WhatsApp
+itself then treats the message as downloaded, and lists it in "Media, links and docs", is
+**unproven** (device check 11). When off or refused, the overlay is used.
+
+View-once tab in WhatsApp's media screen: `ViewOnceGalleryTab` adds a "View once" chip to
+`com.whatsapp.gallery.ui.MediaGalleryActivity` (`chip_layout`, IDs from the owner's 2026-11-26
+inspector trace) only when the contact has kept view-once items. It shows them in a grid drawn
+inside `media_hub_fragment_container`, separate from WhatsApp's Photos/Videos; tapping a native
+chip hides it; tapping an item opens it in the module viewer. WhatsApp's lists and database are
+untouched, so view-once copies never mix into WhatsApp's own Photos/Videos. The contact comes from
+a chat JID in the activity's intent, else from the open conversation; otherwise no chip.
+
+Saving to the phone gallery (explicit only): module library → long-press → "Save to gallery"
+writes to `Pictures/View Once` for view-once copies and `DCIM/WhatsApp` for normal media
+(`GalleryAlbums`, MediaStore, pending until complete). WhatsApp's Download View Once button now
+also saves to `Pictures/View Once` on Android 10+ (previous download folder as fallback).
+Catalog schema 2 adds `items.view_once` (migrated from schema 1 by basis) to keep the two apart.
 
 - **Media viewer → ⋮ → Keep in library** (the menu that already hosts Download View Once).
 - **Conversation → ⋮ → Media library**: opens this conversation's private gallery (module
@@ -264,6 +284,10 @@ expected test fail (2 failures), confirming the tests discriminate.
 | Provider read access needs same package and account | InlineBinder › providerAccessRequiresTheSamePackageAndAccount | pass |
 | Inline host without a native thumbnail (view-once body, media frame); never whole bubble/quotes | InlinePresentation › presentationDoesNotNeedANativeThumbnail, hostSelectionNever… | pass |
 | Copy opens in a fresh process with network disabled after the original became unavailable | Persistence › copyOpensInAFreshOfflineProcess… | pass |
+| Restore into WhatsApp: off ⇒ nothing written; exact bytes at recorded path; never overwrite; never view-once; respects known user deletion; refuses outside roots/traversal; interrupted copy leaves no file | WhatsAppRestoreAndAlbums › restoresExactBytes…, neverOverwrites…, refusesPaths…, interruptedCopy… | pass |
+| View-once vs normal separation for tab and save album; flag survives backup | WhatsAppRestoreAndAlbums › viewOnceAndNormalMediaStaySeparate…, viewOnceFlagSurvivesBackupAndRestore | pass |
+| Schema 1 → 2 migration keeps rows and marks view-once | Schema › version1CatalogMigratesToVersion2… | pass |
+| Media-screen contact JID recognition | WhatsAppRestoreAndAlbums › mediaScreenContactIsRecognised… | pass |
 | Android SQLite adapter, provider, activities, hook | compiled (`compileWhatsappDebugJavaWithJavac`), lint run | **static only** |
 | Liquid Glass compatibility | code audit only | **device pending** |
 
@@ -296,6 +320,12 @@ Nothing below has been observed on a phone. Each item names what proves it.
     the contact's "Media, links and docs".
 12. Two accounts in one WhatsApp, and WhatsApp + WhatsApp Business: after switching, no copy,
     thumbnail or gallery item of the other account is shown or opened.
+14. WhatsApp → contact → Media: a "View once" chip appears only for contacts with kept view-once
+    items; it lists only view-once copies; Photos/Videos are unchanged; tapping a native chip hides
+    the grid; tapping an item opens it.
+15. Download View Once saves into `Pictures/View Once`; module "Save to gallery" saves view-once to
+    `Pictures/View Once` and normal media to `DCIM/WhatsApp`; both appear as albums in the phone
+    gallery.
 13. Scroll fast through a chat mixing kept media and text: no copy ever appears on a text row or on
     the wrong media row (row tokens), and deleting/restoring an item in the gallery is reflected
     when returning to the chat.

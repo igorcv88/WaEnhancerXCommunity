@@ -36,6 +36,13 @@ Independent review follow-up 2026-11-26 (owner: ignore every brief line about ep
 - pt-BR: all 53 new strings in `values-pt` (Brazilian; used for pt-BR), placeholders checked.
 - Tests: `InlineBinderTest` (12, incl. delayed/racing callbacks, invalidation, account/flavour, access policy), host-selection tests, offline fresh-process test. Mutation check (no token for non-media binds; cache ignoring state) failed 6 tests, reverted. Full: **100 suites / 776 tests, 0 failures**; lint ran (new: 53 MissingTranslation for non-pt locales, pre-existing pattern); 5 Python checks pass; debug compile passes.
 
+Second review + owner feedback 2026-11-26 (owner: view-once separate from normal media; own "View once" tab in WhatsApp's media screen; manual saves to Pictures/View Once vs DCIM/WhatsApp; inspector trace of MediaGalleryActivity supplied):
+- Restore into WhatsApp is now a separate switch `media_library_restore_to_whatsapp`, **off by default**, logic in `WhatsAppRestore` with file-level tests (off ⇒ nothing, exact bytes, never overwrite, never view-once, user-cleared refusal, roots/traversal, interrupted copy). Risks documented; native recognition unproven.
+- Doc inconsistency fixed (keep-view-once is on by default).
+- Schema 2: `items.view_once` (migration from 1 tested); provider `list_chat` by origin; `ViewOnceGalleryTab` adds a "View once" chip to MediaGalleryActivity (chip_layout / media_hub_fragment_container).
+- `GallerySaver` + `GalleryAlbums`: module "Save to gallery" (view-once → Pictures/View Once, normal → DCIM/WhatsApp); Download View Once → Pictures/View Once on Android 10+ with old folder fallback.
+- Full: 101 suites / 784 tests, 0 failures; lint ran; device checks 14–15 added.
+
 Next steps: install the CI-signed preview, enable Media library, run the device checklist; if the FD is stripped by `call`, switch import to a provider `openFile("w")` pipe; add pt-BR strings if wanted.
 
 ## Detached media timestamps, view-once download and conversation status — 2026-11-11

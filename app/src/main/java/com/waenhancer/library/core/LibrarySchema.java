@@ -19,7 +19,7 @@ import java.util.Map;
  * {@link LibraryException.Code#SCHEMA_TOO_NEW} so that a newer build can still read it.</p>
  */
 public final class LibrarySchema {
-    public static final int CURRENT_VERSION = 1;
+    public static final int CURRENT_VERSION = 2;
 
     static final String[] TABLES = { "accounts", "blobs", "items", "meta" };
 
@@ -60,6 +60,21 @@ public final class LibrarySchema {
             @Override
             public void apply(Sql sql) {
                 createVersion1(sql);
+            }
+        });
+        steps.add(new Step() {
+            @Override
+            public int version() {
+                return 2;
+            }
+
+            /** Separates view-once copies from normal media (own gallery tab, save album). */
+            @Override
+            public void apply(Sql sql) {
+                sql.exec("ALTER TABLE items ADD COLUMN view_once INTEGER NOT NULL DEFAULT 0");
+                // Version 1 recorded received view-once only through its authorization basis.
+                sql.exec("UPDATE items SET view_once = 1 WHERE basis = 'auto_view_once'");
+                sql.exec("CREATE INDEX IF NOT EXISTS idx_items_view_once ON items(account_id, view_once)");
             }
         });
         return steps;
