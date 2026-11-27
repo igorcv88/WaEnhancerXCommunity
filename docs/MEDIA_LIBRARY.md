@@ -391,6 +391,13 @@ Nothing below has been observed on a phone. Each item names what proves it.
     consumed (WhatsApp still lists it as unopened); long-press still selects the row; **Back from
     the viewer returns to the conversation** (the gallery activity that launches the viewer for a
     direct-open request finishes itself; owner found it returning to the library on df361a3).
+22. Send a message (text, sticker, reply) while a presented view-once bubble is on screen: the
+    list ends at the newest message (no jump back up, no "↓" button), and the bubble never
+    flashes back to the "Photo" pill. Cause found on df361a3 (owner video): each rebind restored
+    the pill, WhatsApp scrolled to the bottom with that height, and the async re-presentation then
+    grew the row by ~1000 px. Fix: a message presented before is presented again synchronously in
+    the bind (decoded copy from the heap-sized thumbnail cache; the lookup still confirms or
+    withdraws it), and a first presentation on a list sitting at its bottom scrolls by the growth.
 21. Fast scrolling/recycling through view-once and text rows: no row keeps a resized body, hidden
     "1 Photo" children or a stale image after rebinding; with Text Bubbles Liquid Glass on, the
     enlarged bubble's glass and the view-once fill clearing behave as before.

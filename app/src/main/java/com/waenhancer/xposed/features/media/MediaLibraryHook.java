@@ -25,6 +25,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AbsListView;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -86,6 +87,7 @@ public class MediaLibraryHook extends Feature {
     private static final String TAG_OVERLAY = "waex_library_overlay";
     private static final String TAG_CHIP = "waex_library_chip";
     private static final String TAG_BUBBLE = "waex_library_bubble";
+    private static final String TAG_SHOWN = "waex_library_shown";
     private static final long NEGATIVE_TTL_MS = 60_000L;
     private static final String TAG_CLICK = "waex_library_click";
     private static final int SWEEP_LIMIT = 300;
@@ -110,7 +112,9 @@ public class MediaLibraryHook extends Feature {
     /** Row tokens + account-scoped, state-keyed lookup cache (see {@link InlineBinder}). */
     private static final InlineBinder<ViewGroup> BINDER = new InlineBinder<>();
     /** Keyed by package + account + item + content hash ({@link InlineBinder#thumbnailKey}). */
-    private static final LruCache<String, Bitmap> THUMBNAILS = new LruCache<String, Bitmap>(12 * 1024 * 1024) {
+    /** Decoded copies; an eighth of the heap (at least 12 MiB), so rows can be presented again synchronously. */
+    private static final LruCache<String, Bitmap> THUMBNAILS = new LruCache<String, Bitmap>(
+            (int) Math.max(12L * 1024 * 1024, Math.min(Integer.MAX_VALUE, Runtime.getRuntime().maxMemory() / 8))) {
         @Override
         protected int sizeOf(String key, Bitmap value) {
             return value.getByteCount();
@@ -611,6 +615,13 @@ public class MediaLibraryHook extends Feature {
         // the row's previous message can never decorate it.
         InlineBinder.Task<ViewGroup> task = BINDER.bind(row, refFor(message));
         if (task == null) return;
+        // A message shown before is presented again within this bind, before WhatsApp measures
+        // the row: the row keeps its media size instead of shrinking to the native pill and
+        // growing again after the lookup, which moved the list (scroll-to-bottom after sending
+        // used the small height). The lookup below still confirms or withdraws it.
+        Shown shown = SHOWN.get(task.ref.cacheKey());
+        Bitmap cached = shown == null ? null : THUMBNAILS.get(shown.thumbnailKey);
+        if (cached != null) attachOverlay(row, cached, shown.uuid, shown.viewOnce, task.ref, shown.thumbnailKey, false);
         FMessageWpp.Key key = message.getKey();
         boolean receivedViewOnce = isReceivedViewOnce(message, key);
         Context context = row.getContext();
@@ -632,21 +643,63 @@ public class MediaLibraryHook extends Feature {
             // row's cached answer, so the lookup below sees the new copy).
             if (nativeAvailable && receivedViewOnce) autoKeep(message);
             // Normal media: native first. View-once: the kept copy is shown whenever it exists.
-            if (!InlinePresentation.lookUpKeptCopy(viewOnce, nativeAvailable)) return;
+            if (!InlinePresentation.lookUpKeptCopy(viewOnce, nativeAvailable)) {
+                withdraw(task, row);
+                return;
+            }
             InlineBinder.Answer answer = BINDER.resolve(task, source(context), System.currentTimeMillis());
             if (!InlinePresentation.presentKeptCopy(viewOnce, nativeAvailable, answer != null)
-                    || !BINDER.isCurrent(task)) return;
+                    || !BINDER.isCurrent(task)) {
+                withdraw(task, row);
+                return;
+            }
             // Normal media: put the kept bytes back where WhatsApp expects them, so its own
             // bubble, viewer and "Media, links and docs" work again; msgstore.db is untouched.
             if (!viewOnce && restoreIntoWhatsApp(context, message, nativeFile, task.ref, answer)) {
+                withdraw(task, row);
                 ConversationItemListener.notifyDataSetChanged();
                 return;
             }
             Bitmap bitmap = thumbnail(context, task.ref, answer);
-            if (bitmap == null) return;
+            if (bitmap == null) {
+                withdraw(task, row);
+                return;
+            }
             MAIN.post(() -> {
-                if (BINDER.isCurrent(task)) attachOverlay(row, bitmap, answer.uuid, viewOnce);
+                if (!BINDER.isCurrent(task)) return;
+                // Already presented synchronously with the same item: leave the row untouched.
+                if (answer.uuid.equals(XposedHelpers.getAdditionalInstanceField(row, TAG_SHOWN))) return;
+                clearOverlay(row);
+                attachOverlay(row, bitmap, answer.uuid, viewOnce, task.ref,
+                        InlineBinder.thumbnailKey(task.ref, answer), true);
             });
+        });
+    }
+
+    /** What a message last showed, to present it again synchronously on the next bind. */
+    private static final class Shown {
+        /** Key into {@link #THUMBNAILS}; the bitmap is not held here, so memory stays bounded. */
+        final String thumbnailKey;
+        final String uuid;
+        final boolean viewOnce;
+
+        Shown(String thumbnailKey, String uuid, boolean viewOnce) {
+            this.thumbnailKey = thumbnailKey;
+            this.uuid = uuid;
+            this.viewOnce = viewOnce;
+        }
+    }
+
+    /** Main thread only; keys are {@link InlineBinder.Ref#cacheKey()} (package + account + message). */
+    private static final LruCache<String, Shown> SHOWN = new LruCache<>(256);
+
+    /** The lookup no longer supports what the row shows (deleted, restored natively, …): undo it. */
+    private static void withdraw(InlineBinder.Task<ViewGroup> task, ViewGroup row) {
+        MAIN.post(() -> {
+            SHOWN.remove(task.ref.cacheKey());
+            if (BINDER.isCurrent(task) && XposedHelpers.getAdditionalInstanceField(row, TAG_SHOWN) != null) {
+                clearOverlay(row);
+            }
         });
     }
 
@@ -812,7 +865,21 @@ public class MediaLibraryHook extends Feature {
         } catch (Throwable failure) {
             return null;
         }
-        if (bitmap != null) THUMBNAILS.put(cacheKey, bitmap);
+        if (bitmap != null) {
+            // Never more pixels than this image's media bubble shows (center-cropped cover).
+            float density = context.getResources().getDisplayMetrics().density;
+            int[] box = InlinePresentation.mediaBubbleSize(bitmap.getWidth(), bitmap.getHeight(),
+                    Math.round(InlinePresentation.BUBBLE_WIDTH_DP * density), density);
+            float scale = box == null ? 1f
+                    : InlinePresentation.coverScale(bitmap.getWidth(), bitmap.getHeight(), box[0], box[1]);
+            if (scale < 1f) {
+                Bitmap scaled = Bitmap.createScaledBitmap(bitmap, Math.max(1, Math.round(bitmap.getWidth() * scale)),
+                        Math.max(1, Math.round(bitmap.getHeight() * scale)), true);
+                if (scaled != bitmap) bitmap.recycle();
+                bitmap = scaled;
+            }
+            THUMBNAILS.put(cacheKey, bitmap);
+        }
         return bitmap;
     }
 
@@ -822,19 +889,29 @@ public class MediaLibraryHook extends Feature {
         return sample;
     }
 
-    private static void attachOverlay(ViewGroup row, Bitmap bitmap, String uuid, boolean viewOnce) {
+    /**
+     * @param afterLayout {@code true} when the row was already laid out with its native size
+     *                    (the asynchronous first presentation), so a size change must keep a list
+     *                    that sat at its bottom at the bottom
+     */
+    private static void attachOverlay(ViewGroup row, Bitmap bitmap, String uuid, boolean viewOnce,
+                                      InlineBinder.Ref ref, String thumbnailKey, boolean afterLayout) {
         InlinePresentation.Host host = InlinePresentation.selectHost(new ViewNode(row), Utils.dipToPixels(72), viewOnce);
         View thumb = host == null ? null : ((ViewNode) host.node).view;
         if (thumb == null) return;
         if (host.kind == InlinePresentation.HostKind.VIEW_ONCE_BODY) {
             // The view-once "1 Photo" pill becomes a media bubble showing the copy; a tap opens
             // the copy, never WhatsApp's view-once viewer (which would consume the message).
-            if (presentAsMediaBubble(row, thumb, bitmap)) redirectClick(row, thumb, uuid);
+            if (presentAsMediaBubble(row, thumb, bitmap, afterLayout)) {
+                redirectClick(row, thumb, uuid);
+                shown(row, ref, thumbnailKey, uuid, viewOnce);
+            }
             return;
         }
+        if (thumb.getWidth() == 0) return;
         // A tap opens the kept copy, as a tap opens a normal photo; restored on rebind.
         redirectClick(row, thumb, uuid);
-        if (thumb.getWidth() == 0) return;
+        shown(row, ref, thumbnailKey, uuid, viewOnce);
         Drawable overlay = new CopyDrawable(row.getResources(), bitmap,
                 text(R.string.media_library_badge, "Library copy"));
         overlay.setBounds(0, 0, thumb.getWidth(), thumb.getHeight());
@@ -864,13 +941,18 @@ public class MediaLibraryHook extends Feature {
         }
     }
 
+    private static void shown(ViewGroup row, InlineBinder.Ref ref, String thumbnailKey, String uuid, boolean viewOnce) {
+        XposedHelpers.setAdditionalInstanceField(row, TAG_SHOWN, uuid);
+        if (ref != null) SHOWN.put(ref.cacheKey(), new Shown(thumbnailKey, uuid, viewOnce));
+    }
+
     /**
      * Turns a view-once body into a media-sized bubble: the body gets a media size
      * ({@link InlinePresentation#mediaBubbleSize}), its children are hidden and the copy is
      * drawn over it with rounded corners and no badge. Everything changed is recorded in
      * {@link BubbleState} and undone by {@link #clearOverlay} on the next bind.
      */
-    private static boolean presentAsMediaBubble(ViewGroup row, View body, Bitmap bitmap) {
+    private static boolean presentAsMediaBubble(ViewGroup row, View body, Bitmap bitmap, boolean afterLayout) {
         ViewGroup.LayoutParams params = body.getLayoutParams();
         if (params == null) return false;
         int rowWidth = row.getWidth() > 0 ? row.getWidth() : row.getResources().getDisplayMetrics().widthPixels;
@@ -888,6 +970,20 @@ public class MediaLibraryHook extends Feature {
                 state.hidden.add(child);
             }
         }
+        // The row grows after WhatsApp already laid out (and possibly scrolled to the bottom of)
+        // the list with the pill's height; a list that sat at its bottom stays there.
+        AbsListView list = afterLayout ? listOf(row) : null;
+        int oldHeight = body.getHeight();
+        if (list != null && oldHeight > 0 && size[1] > oldHeight && !list.canScrollVertically(1)) {
+            int growth = size[1] - oldHeight;
+            list.getViewTreeObserver().addOnGlobalLayoutListener(new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+                @Override
+                public void onGlobalLayout() {
+                    list.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                    if (list.canScrollVertically(1)) list.scrollListBy(growth);
+                }
+            });
+        }
         params.width = size[0];
         params.height = size[1];
         body.setLayoutParams(params);
@@ -898,6 +994,13 @@ public class MediaLibraryHook extends Feature {
         body.getOverlay().add(state.overlay);
         XposedHelpers.setAdditionalInstanceField(row, TAG_BUBBLE, state);
         return true;
+    }
+
+    private static AbsListView listOf(View row) {
+        for (android.view.ViewParent parent = row.getParent(); parent instanceof View; parent = parent.getParent()) {
+            if (parent instanceof AbsListView) return (AbsListView) parent;
+        }
+        return null;
     }
 
     /** What {@link #presentAsMediaBubble} changed on a view-once body. */
@@ -968,6 +1071,7 @@ public class MediaLibraryHook extends Feature {
     }
 
     private static void clearOverlay(ViewGroup row) {
+        XposedHelpers.removeAdditionalInstanceField(row, TAG_SHOWN);
         Object bubble = XposedHelpers.removeAdditionalInstanceField(row, TAG_BUBBLE);
         if (bubble instanceof BubbleState) ((BubbleState) bubble).restore();
         Object click = XposedHelpers.removeAdditionalInstanceField(row, TAG_CLICK);

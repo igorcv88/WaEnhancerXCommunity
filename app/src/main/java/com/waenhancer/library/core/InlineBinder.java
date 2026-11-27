@@ -49,7 +49,7 @@ public final class InlineBinder<R> {
             return packageName + '\n' + ownJid;
         }
 
-        String cacheKey() {
+        public String cacheKey() {
             return scope() + '\n' + chatJid + '\n' + messageKey + '\n' + fromMe;
         }
     }

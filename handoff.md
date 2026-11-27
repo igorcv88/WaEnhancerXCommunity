@@ -52,6 +52,13 @@ acceptance criteria, test matrix, 18 device checks) and `docs/MEDIA_LIFECYCLE_EV
 - Fixed: chip look is read from rendered native chips (`ChipLook`, `ChipLookTest` 3 tests): inset
   pill (native chips are 48dp touch targets around a smaller pill), sampled fill/outline/content
   colours, checked look from the checked chip, 18dp icon. Device check pending.
+- Owner video (2026-11-27): after sending, the list scrolled using the pill's height and the
+  enlarged bubble then pushed the newest messages off-screen. Fixed in `MediaLibraryHook`:
+  synchronous re-presentation in the bind from `SHOWN` (message → thumbnail key, uuid; bitmaps
+  stay in `THUMBNAILS`, now 1/8 heap, decoded copies scaled to their bubble via
+  `InlinePresentation.coverScale`); async results that no longer hold are withdrawn; first
+  presentation on a list at its bottom scrolls by the growth (`scrollListBy` after layout).
+  `selectHost` finds a view-once body before layout. Device check 22.
 
 ### DONE (2026-11-26, after 4f3a2d2) — items 1 and 2 below, as planned
 - Item 1 (`ViewOnceGalleryTab.styledChip`/`pill`): plain `TextView`, `StateListDrawable` of two

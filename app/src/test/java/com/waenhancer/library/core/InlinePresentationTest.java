@@ -81,6 +81,26 @@ public class InlinePresentationTest {
     }
 
     @Test
+    public void thumbnailsAreScaledToJustCoverTheLargestBubble() {
+        assertEquals("landscape bubble 910x683: height decides by a hair", 683f / 3000f,
+                InlinePresentation.coverScale(4000, 3000, 910, 683), 1e-6);
+        assertEquals("portrait: the width must still cover the bubble", 910f / 1080f, InlinePresentation.coverScale(1080, 2400, 910, 1190), 1e-6);
+        assertEquals("never upscaled", 1f, InlinePresentation.coverScale(400, 300, 910, 1190), 0f);
+        assertEquals(1f, InlinePresentation.coverScale(0, 300, 910, 1190), 0f);
+    }
+
+    @Test
+    public void aViewOnceBodyIsFoundBeforeItIsLaidOut() {
+        // Re-presentation during the bind runs before WhatsApp measures a fresh row.
+        FakeView body = new FakeView("view_once_media_container", false, 0, 0);
+        FakeView row = new FakeView(null, false, 0, 0, new FakeView("main_layout", false, 0, 0, body));
+        assertSame(body, InlinePresentation.selectHost(row, 150, true).node);
+        FakeView hidden = new FakeView("view_once_media_container", false, 0, 0);
+        hidden.visible = false;
+        assertNull(InlinePresentation.selectHost(new FakeView(null, false, 0, 0, hidden), 150, true));
+    }
+
+    @Test
     public void viewOnceRowsPreferTheBodyOverAnyImageView() {
         FakeView icon = new FakeView("view_once_control_icon", true, 200, 200);
         FakeView body = new FakeView("view_once_media_container_large", false, 432, 162, icon);

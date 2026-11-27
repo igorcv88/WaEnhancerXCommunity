@@ -74,6 +74,16 @@ public final class InlinePresentation {
         return new int[] { width, height };
     }
 
+    /**
+     * Scale (at most 1) that keeps a {@code width}×{@code height} image just covering a
+     * {@code boxWidth}×{@code boxHeight} box, the largest media bubble: decoding more pixels only
+     * costs memory. 1 for unusable input.
+     */
+    public static float coverScale(int width, int height, int boxWidth, int boxHeight) {
+        if (width <= 0 || height <= 0 || boxWidth <= 0 || boxHeight <= 0) return 1f;
+        return Math.min(1f, Math.max(boxWidth / (float) width, boxHeight / (float) height));
+    }
+
     /** A view as seen by the selector; adapted from {@code android.view.View} in the hook. */
     public interface Node {
         String idName();
@@ -155,7 +165,9 @@ public final class InlinePresentation {
         if (node == null || depth > 24 || !node.isVisible()) return null;
         String id = node.idName();
         if (id != null && EXCLUDED_IDS.contains(id)) return null;
-        if (node != row && id != null && node.width() > 0 && node.height() > 0
+        // A view-once body is resized by the presentation, so it may not be laid out yet (it is
+        // presented again during the bind, before WhatsApp measures the row).
+        if (node != row && id != null && (viewOnce || (node.width() > 0 && node.height() > 0))
                 && (viewOnce ? id.startsWith("view_once_media_container") : KNOWN_MEDIA_FRAME_IDS.contains(id))) {
             return node;
         }
