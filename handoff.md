@@ -43,6 +43,12 @@ acceptance criteria, test matrix, 18 device checks) and `docs/MEDIA_LIFECYCLE_EV
 - Owner preference: clinical, direct, no cheerleading. AGENTS.md: English in code/commits/PRs,
   update this handoff each task, report blocked checks honestly.
 
+### Upstream ports merged into master (2026-11-27, owner request)
+- After an integrated review, #173 (containing #165–#171) and #172 (patch-identical, empty diff)
+  were merged: master `672d2f6`. Record: `docs/UPSTREAM_PORTS_2026-11-22.md` (SHAs, adaptations,
+  findings, open device checks). master was then merged into this branch; no conflicts, no
+  shared files. #175 (diagnostic) and #176 stay open, not merged.
+
 ### Owner device report on df361a3 (2026-11-27) and follow-up
 - Owner: view-once copies now replace the bubble in the conversation, stable under fast scrolling;
   the "View once" chip is styled but still oversized and the wrong colour; bug: tapping the bubble
