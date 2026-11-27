@@ -11,6 +11,10 @@ acceptance criteria, test matrix, 18 device checks) and `docs/MEDIA_LIFECYCLE_EV
 `git add -f docs/MEDIA_LIBRARY.md docs/MEDIA_LIFECYCLE_EVIDENCE.md`.
 
 ### State
+- **2026-11-27, owner request "merge everything into master":** #176 merged (master
+  `b402232`); #175 (gesture diagnostic, inert unless `debug.waex.bubbletouch` is set) merged
+  after merging master into it (no conflicts; 105 suites / 817 tests, 0 failures; 5 CI Python
+  checks pass). No open PRs remain. The lines below describe the state before the merge.
 - Branch `ccr-83a099f4-9o9kki`, PR #176 (open, ready for review; do NOT merge). Head: the commit
   "Style the View once chip natively; show view-once copies as media bubbles" on top of `4f3a2d2`
   (OPEN items 1 and 2 implemented; signed preview artifact name/expiry: see the PR's latest CI run).
