@@ -7,7 +7,9 @@ import com.waenhancer.xposed.core.devkit.ViewHolderCompat;
 
 import org.luckypray.dexkit.query.enums.StringMatchType;
 
+import java.lang.reflect.Member;
 import java.util.ArrayList;
+import org.json.JSONObject;
 import java.util.Collections;
 import java.util.List;
 
@@ -64,52 +66,52 @@ public final class HostCompatibility {
 
             List<String> required = new ArrayList<>();
             List<String> optional = new ArrayList<>();
+            List<JSONObject> contracts = new ArrayList<>();
 
             // FMessageWpp + WppCore minimum contract. These are all read-only resolver calls;
             // no hook is installed by the probe itself.
-            require(required, "jid.Jid", () -> Unobfuscator.findFirstClassUsingName(
+            resolve(required, contracts, true, "jid.Jid", () -> Unobfuscator.findFirstClassUsingName(
                     loader, StringMatchType.EndsWith, "jid.Jid"));
-            require(required, "jid.UserJid", () -> Unobfuscator.findFirstClassUsingName(
+            resolve(required, contracts, true, "jid.UserJid", () -> Unobfuscator.findFirstClassUsingName(
                     loader, StringMatchType.EndsWith, "jid.UserJid"));
-            require(required, "jid.PhoneUserJid", () -> Unobfuscator.findFirstClassUsingName(
+            resolve(required, contracts, true, "jid.PhoneUserJid", () -> Unobfuscator.findFirstClassUsingName(
                     loader, StringMatchType.EndsWith, "jid.PhoneUserJid"));
-            require(required, "jid.DeviceJid", () -> Unobfuscator.findFirstClassUsingName(
+            resolve(required, contracts, true, "jid.DeviceJid", () -> Unobfuscator.findFirstClassUsingName(
                     loader, StringMatchType.EndsWith, "jid.DeviceJid"));
-            require(required, "FMessage", () -> Unobfuscator.loadFMessageClass(loader));
-            require(required, "MessageKey", () -> Unobfuscator.loadMessageKeyField(loader));
-            require(required, "DialogView", () -> Unobfuscator.loadDialogViewClass(loader));
-            require(required, "StartPrefsConfig", () -> Unobfuscator.loadStartPrefsConfig(loader));
-            require(required, "CachedMessageStore", () -> Unobfuscator.loadCachedMessageStoreKey(loader));
-            require(required, "ConvertLidToJid", () -> Unobfuscator.loadConvertLidToJid(loader));
-            require(required, "ConvertJidToLid", () -> Unobfuscator.loadConvertJidToLid(loader));
-            require(required, "MeManager", () -> Unobfuscator.loadMeManagerClass(loader));
+            resolve(required, contracts, true, "FMessage", () -> Unobfuscator.loadFMessageClass(loader));
+            resolve(required, contracts, true, "MessageKey", () -> Unobfuscator.loadMessageKeyField(loader));
+            resolve(required, contracts, true, "DialogView", () -> Unobfuscator.loadDialogViewClass(loader));
+            resolve(required, contracts, true, "StartPrefsConfig", () -> Unobfuscator.loadStartPrefsConfig(loader));
+            resolve(required, contracts, true, "CachedMessageStore", () -> Unobfuscator.loadCachedMessageStoreKey(loader));
+            resolve(required, contracts, true, "ConvertLidToJid", () -> Unobfuscator.loadConvertLidToJid(loader));
+            resolve(required, contracts, true, "ConvertJidToLid", () -> Unobfuscator.loadConvertJidToLid(loader));
+            resolve(required, contracts, true, "MeManager", () -> Unobfuscator.loadMeManagerClass(loader));
 
             // These are important but feature-scoped. A miss must not disable unrelated hooks;
             // FeatureLoader will report the concrete feature that fails to install.
-            optional(optional, "ConversationViewHolder", () -> ViewHolderCompat.loadViewHolder(loader));
-            optional(optional, "ConversationViewHolderField", () -> ViewHolderCompat.loadContainerField(loader));
+            resolve(optional, contracts, false, "ConversationViewHolder", () -> ViewHolderCompat.loadViewHolder(loader));
+            resolve(optional, contracts, false, "ConversationViewHolderField", () -> ViewHolderCompat.loadContainerField(loader));
             // Message text extraction is feature-scoped. Prefer the legacy resolver on hosts where
             // it still works, then use the structural compatibility resolver when anchor ordering
             // changes without changing the underlying FMessage contract.
-            optional(optional, "NewMessage", () -> HostResolverCompat.loadNewMessageMethod(loader));
-            optional(optional, "NewMessageWithMedia", () ->
+            resolve(optional, contracts, false, "NewMessage", () -> HostResolverCompat.loadNewMessageMethod(loader));
+            resolve(optional, contracts, false, "NewMessageWithMedia", () ->
                     Unobfuscator.loadNewMessageWithMediaMethod(loader));
-            optional(optional, "MediaType", () -> Unobfuscator.loadMediaTypeField(loader));
-            optional(optional, "OriginalMessageKey", () ->
+            resolve(optional, contracts, false, "MediaType", () -> Unobfuscator.loadMediaTypeField(loader));
+            resolve(optional, contracts, false, "OriginalMessageKey", () ->
                     Unobfuscator.loadOriginalMessageKey(loader));
-            optional(optional, "AbstractMediaMessage", () ->
+            resolve(optional, contracts, false, "AbstractMediaMessage", () ->
                     Unobfuscator.loadAbstractMediaMessageClass(loader));
-            optional(optional, "BroadcastTag", () -> Unobfuscator.loadBroadcastTagField(loader));
-            optional(optional, "EditMessageField", () ->
+            resolve(optional, contracts, false, "BroadcastTag", () -> Unobfuscator.loadBroadcastTagField(loader));
+            resolve(optional, contracts, false, "EditMessageField", () ->
                     Unobfuscator.loadSetEditMessageField(loader));
-            optional(optional, "FStatus", () -> Unobfuscator.loadFStatusClass(loader));
-            optional(optional, "FStatusKey", () -> Unobfuscator.loadFStatusKeyClass(loader));
-            optional(optional, "StatusByKey", () -> Unobfuscator.loadGetStatusByKey(loader));
+            resolve(optional, contracts, false, "FStatus", () -> Unobfuscator.loadFStatusClass(loader));
+            resolve(optional, contracts, false, "FStatusKey", () -> Unobfuscator.loadFStatusKeyClass(loader));
+            resolve(optional, contracts, false, "StatusByKey", () -> Unobfuscator.loadGetStatusByKey(loader));
 
             ProbeResult result = new ProbeResult(required, optional);
             cachedResult = result;
-            RuntimeDiagnostics.probe(result.coreCompatible(),
-                    result.requiredFailures, result.optionalFailures);
+            RuntimeDiagnostics.probe(result.coreCompatible(), contracts);
             XposedBridge.log("[WAEX] Host compatibility probe: " + result.summary());
             return result;
         }
@@ -122,28 +124,25 @@ public final class HostCompatibility {
         }
     }
 
-    private static void require(List<String> failures, String name, Resolver resolver) {
-        resolve(failures, name, resolver);
-    }
-
-    private static void optional(List<String> failures, String name, Resolver resolver) {
-        resolve(failures, name, resolver);
-    }
-
-    private static void resolve(List<String> failures, String name, Resolver resolver) {
+    private static void resolve(List<String> failures, List<JSONObject> contracts,
+            boolean required, String name, Resolver resolver) {
+        String failure = null;
+        Object result = null;
         try {
-            Object value = resolver.resolve();
-            if (value == null) failures.add(name + "=null");
-        } catch (Throwable t) {
-            String message = t.getMessage();
-            if (message == null || message.trim().isEmpty()) {
-                failures.add(name + "=" + t.getClass().getSimpleName());
-            } else {
-                message = message.replace('\n', ' ').replace('\r', ' ').trim();
-                if (message.length() > 180) message = message.substring(0, 180) + "…";
-                failures.add(name + "=" + t.getClass().getSimpleName() + ": " + message);
-            }
+            result = resolver.resolve();
+            if (result == null) failure = "null";
+        } catch (Throwable error) {
+            failure = error.getClass().getSimpleName();
         }
+        if (failure != null) failures.add(name + "=" + failure);
+        try {
+            JSONObject contract = new JSONObject().put("contract", name).put("required", required)
+                    .put("returned", failure == null);
+            if (failure != null) contract.put("reason", failure);
+            if (result instanceof Member) contract.put("member", result.toString());
+            if (result instanceof Class) contract.put("declaringClass", ((Class<?>) result).getName());
+            contracts.add(contract);
+        } catch (org.json.JSONException ignored) { }
     }
 
     private interface Resolver {

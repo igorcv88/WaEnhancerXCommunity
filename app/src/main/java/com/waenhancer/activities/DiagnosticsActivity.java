@@ -28,6 +28,9 @@ import com.waenhancer.config.PreferenceStores;
 public class DiagnosticsActivity extends BaseActivity {
     public static final String EXTRA_INSPECTOR_ONLY = "com.waenhancer.inspect_results";
 
+    private final java.util.Map<String, CheckBox> confirmations = new java.util.LinkedHashMap<>();
+    private final java.util.List<MaterialButton> exercises = new java.util.ArrayList<>();
+    private boolean updatingConfirmations;
     private TextView reportView;
     private boolean inspectorOnly;
     private final Handler refreshHandler = new Handler(Looper.getMainLooper());
@@ -90,12 +93,19 @@ public class DiagnosticsActivity extends BaseActivity {
         checklist.addView(checklistTitle);
         for (java.util.Map.Entry<String, FeatureCatalog.Entry> item : FeatureCatalog.entries().entrySet()) {
             if (!item.getValue().manual || !item.getValue().required) continue;
+            MaterialButton exercise = button(getString(R.string.diagnostics_arm_exercise, item.getKey()));
+            exercise.setOnClickListener(v -> {
+                ValidationSession.armExercise(this, PreferenceStores.privateStore(this), item.getKey());
+                refresh();
+            });
+            exercises.add(exercise);
+            checklist.addView(exercise);
             CheckBox check = new CheckBox(this);
             check.setText(item.getValue().surface + " · " + item.getKey());
-            check.setChecked(ValidationSession.manual(
-                    PreferenceStores.privateStore(this), item.getKey()));
+            confirmations.put(item.getKey(), check);
             check.setOnCheckedChangeListener((button, checked) -> {
-                ValidationSession.setManual(PreferenceStores.privateStore(this), item.getKey(), checked);
+                if (updatingConfirmations) return;
+                ValidationSession.setManual(this, PreferenceStores.privateStore(this), item.getKey(), checked);
                 refresh();
             });
             checklist.addView(check);
@@ -163,9 +173,21 @@ public class DiagnosticsActivity extends BaseActivity {
 
     private void refresh() {
         if (reportView == null) return;
-        String captures = InspectorTrace.report(this);
-        reportView.setText(inspectorOnly ? captures : ValidationSession.buildReport(
-                this, PreferenceStores.privateStore(this)) + captures);
+        var prefs = PreferenceStores.privateStore(this);
+        if (inspectorOnly) {
+            reportView.setText(InspectorTrace.report(this));
+            return;
+        }
+        reportView.setText(ValidationSession.buildReport(this, prefs));
+        boolean canExercise = ValidationSession.canExercise(this, prefs);
+        for (MaterialButton exercise : exercises) exercise.setEnabled(canExercise);
+        updatingConfirmations = true;
+        for (var entry : confirmations.entrySet()) {
+            boolean canConfirm = ValidationSession.canConfirm(this, prefs, entry.getKey());
+            entry.getValue().setEnabled(canConfirm);
+            entry.getValue().setChecked(canConfirm && ValidationSession.manual(prefs, entry.getKey()));
+        }
+        updatingConfirmations = false;
     }
 
     private void session() {
@@ -180,8 +202,9 @@ public class DiagnosticsActivity extends BaseActivity {
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle("Select validation target")
                 .setItems(labels, (dialog, which) -> {
-                    ValidationSession.start(this, prefs, packages[which]);
-                    recreate();
+                    if (ValidationSession.start(this, prefs, packages[which])) {
+                        recreate();
+                    }
                 }).show();
     }
 

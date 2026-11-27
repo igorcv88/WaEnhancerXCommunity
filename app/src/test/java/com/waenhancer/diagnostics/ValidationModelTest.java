@@ -1,97 +1,80 @@
 package com.waenhancer.diagnostics;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import org.junit.Test;
 
 import java.util.List;
 
-import org.junit.Test;
+import static com.waenhancer.diagnostics.ValidationModel.*;
+import static org.junit.Assert.*;
 
 public class ValidationModelTest {
-    @Test public void installedIsNotWorkingUntilCallbackTriggers() {
-        ValidationModel.FeatureEvidence feature = new ValidationModel.FeatureEvidence();
-        feature.loaded = true; feature.resolverPassed = true; feature.installed = true;
-        assertEquals(ValidationModel.FeatureState.NOT_EXERCISED, feature.state());
-        feature.opportunity = true;
-        assertEquals(ValidationModel.FeatureState.INSTALLED, feature.state());
-        feature.triggered = true;
-        assertEquals(ValidationModel.FeatureState.TRIGGERED, feature.state());
+    @Test
+    public void missingOrLegacySnapshotIsUnknown() {
+        assertEquals(Compatibility.UNKNOWN, aggregate(false, true, false, List.of()));
+        assertEquals(Compatibility.UNKNOWN, aggregate(false, false, false, List.of()));
     }
 
-    @Test public void lazyFeatureIsNotFailedBeforeOpportunity() {
-        ValidationModel.FeatureEvidence feature = new ValidationModel.FeatureEvidence();
-        assertEquals(ValidationModel.FeatureState.NOT_EXERCISED, feature.state());
+    @Test
+    public void coreAndOptionalResultsAreIndependent() {
+        assertEquals(Compatibility.INCOMPATIBLE, aggregate(true, false, false, List.of()));
+        assertEquals(Compatibility.DEGRADED, aggregate(true, true, true, List.of()));
+        assertEquals(Compatibility.RUNTIME_COMPATIBLE, aggregate(true, true, false, List.of()));
     }
 
-    @Test public void loadedWithoutExplicitResolverOutcomeIsNotAResolverFailure() {
-        ValidationModel.FeatureEvidence feature = new ValidationModel.FeatureEvidence();
-        feature.loaded = true;
-        assertEquals(ValidationModel.FeatureState.NOT_EXERCISED, feature.state());
+    @Test
+    public void smokeCannotPromoteOverviewAndEmptyCannotPass() {
+        assertFalse(smokeConfirmed(List.of()));
+        var e = observedRequiredCase();
+        assertTrue(smokeConfirmed(List.of(e)));
+        assertEquals(Compatibility.RUNTIME_COMPATIBLE, aggregate(true, true, false, List.of(e)));
     }
 
-    @Test public void explicitResolverFailureIsReported() {
-        ValidationModel.FeatureEvidence feature = new ValidationModel.FeatureEvidence();
-        feature.loaded = true;
-        feature.resolverFailed = true;
-        assertEquals(ValidationModel.FeatureState.RESOLVER_FAILED, feature.state());
+    @Test
+    public void disabledUninstrumentedOrUnexercisedRequiredCasesCannotPass() {
+        var e = observedRequiredCase();
+        e.enabled = false;
+        assertEquals(Status.DISABLED, e.state());
+        assertFalse(smokeConfirmed(List.of(e)));
+        e.enabled = true;
+        e.instrumented = false;
+        assertEquals(Status.NOT_INSTRUMENTED, e.state());
+        assertFalse(smokeConfirmed(List.of(e)));
+        e.instrumented = true;
+        e.triggered = false;
+        assertEquals(Status.NOT_EXERCISED, e.state());
+        assertFalse(smokeConfirmed(List.of(e)));
     }
 
-    @Test public void coreFailureAlwaysMeansIncompatible() {
-        assertEquals(ValidationModel.Compatibility.INCOMPATIBLE,
-                ValidationModel.aggregate(false, false, true, true, List.of()));
+    @Test
+    public void oldTriggerCannotHideLaterErrors() {
+        var e = observedRequiredCase();
+        e.error = true;
+        assertEquals(Status.INSTALL_FAILED, e.state());
+        assertFalse(smokeConfirmed(List.of(e)));
+        e.resolverFailed = true;
+        assertEquals(Status.RESOLVER_FAILED, e.state());
+        assertEquals(Compatibility.DEGRADED, aggregate(true, true, false, List.of(e)));
     }
 
-    @Test public void runtimeProbeNeverAutomaticallyValidates() {
-        assertEquals(ValidationModel.Compatibility.RUNTIME_COMPATIBLE,
-                ValidationModel.aggregate(true, false, false, false, List.of()));
+    @Test
+    public void processRestartNewSessionAndConfigurationChangeInvalidateEvidence() {
+        assertTrue(sameRun("session", "process", "cfg", "session", "process", "cfg"));
+        assertFalse(sameRun("session", "process", "cfg", "previous", "process", "cfg"));
+        assertFalse(sameRun("session", "process", "cfg", "session", "previous", "cfg"));
+        assertFalse(sameRun("session", "process", "cfg", "session", "process", "previous"));
+        assertFalse(sameRun("", "", "", "", "", ""));
+        assertFalse(occurredDuringSession(999, 1_000, 1_010));
+        assertFalse(occurredDuringSession(1_011, 1_000, 1_010));
+        assertTrue(occurredDuringSession(1_005, 1_000, 1_010));
     }
 
-    @Test public void optionalFailureIsDegraded() {
-        assertEquals(ValidationModel.Compatibility.DEGRADED,
-                ValidationModel.aggregate(true, true, false, true, List.of()));
-    }
-
-    @Test public void requiredEvidenceAndManualConfirmationCanValidateSession() {
-        ValidationModel.FeatureEvidence feature = new ValidationModel.FeatureEvidence();
-        feature.required = true; feature.manualRequired = true; feature.manualConfirmed = true;
-        feature.loaded = true; feature.resolverPassed = true; feature.installed = true;
-        feature.triggered = true;
-        assertEquals(ValidationModel.Compatibility.VALIDATED,
-                ValidationModel.aggregate(true, false, false, true, List.of(feature)));
-    }
-
-    @Test public void triggeredRequiredFeatureDoesNotNeedSeparateOpportunityMarker() {
-        ValidationModel.FeatureEvidence feature = new ValidationModel.FeatureEvidence();
-        feature.required = true;
-        feature.loaded = true; feature.resolverPassed = true; feature.installed = true;
-        feature.triggered = true; feature.opportunity = false;
-        assertEquals(ValidationModel.Compatibility.VALIDATED,
-                ValidationModel.aggregate(true, false, false, true, List.of(feature)));
-    }
-
-    @Test public void triggeredCallbackProvesRuntimePathWithoutInstallBookkeeping() {
-        ValidationModel.FeatureEvidence feature = new ValidationModel.FeatureEvidence();
-        feature.required = true;
-        feature.manualRequired = true;
-        feature.manualConfirmed = true;
-        feature.triggered = true;
-        assertEquals(ValidationModel.FeatureState.TRIGGERED, feature.state());
-        assertEquals(ValidationModel.Compatibility.VALIDATED,
-                ValidationModel.aggregate(true, false, false, true, List.of(feature)));
-    }
-
-    @Test public void disabledFeatureDoesNotBlockValidation() {
-        ValidationModel.FeatureEvidence feature = new ValidationModel.FeatureEvidence();
-        feature.required = true; feature.enabled = false;
-        assertEquals(ValidationModel.Compatibility.VALIDATED,
-                ValidationModel.aggregate(true, false, false, true, List.of(feature)));
-    }
-
-    @Test public void preSessionEventsCannotCountAsSessionEvidence() {
-        assertFalse(ValidationModel.occurredDuringSession(999L, 1_000L));
-        assertFalse(ValidationModel.occurredDuringSession(0L, 1_000L));
-        assertTrue(ValidationModel.occurredDuringSession(1_000L, 1_000L));
-        assertTrue(ValidationModel.occurredDuringSession(1_001L, 1_000L));
+    private static FeatureEvidence observedRequiredCase() {
+        var e = new FeatureEvidence();
+        e.required = true;
+        e.instrumented = true;
+        e.loaded = true;
+        e.triggered = true;
+        e.manualConfirmed = true;
+        return e;
     }
 }

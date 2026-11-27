@@ -15,6 +15,8 @@ import com.waenhancer.config.NspPreferenceMigration;
 import com.waenhancer.config.PreferenceSchema;
 import com.waenhancer.config.PreferenceStores;
 import com.waenhancer.diagnostics.InspectorTrace;
+import com.waenhancer.diagnostics.RuntimeDiagnostics;
+import com.waenhancer.diagnostics.ValidationSession;
 import com.waenhancer.security.CallerAuthority;
 import com.waenhancer.security.BridgePreferencePolicy;
 import com.waenhancer.xposed.bridge.service.HookBinder;
@@ -81,9 +83,17 @@ public class HookProvider extends ContentProvider {
         // Binder UID is this process, so any check made later would trivially pass.
         if (!CallerAuthority.isTrustedCaller(context)) return null;
 
+        String validationCaller = RuntimeDiagnostics.METHOD_BEGIN.equals(method)
+                || RuntimeDiagnostics.METHOD_WRITE.equals(method) ? getCallingPackage() : null;
         long token = android.os.Binder.clearCallingIdentity();
         try {
             SharedPreferences publicStore = PreferenceStores.publicStore(context);
+
+            if (validationCaller != null && extras != null) {
+                if (RuntimeDiagnostics.METHOD_BEGIN.equals(method))
+                    return ValidationSession.bindProcess(context, validationCaller, extras);
+                return ValidationSession.storeSnapshot(context, validationCaller, stringExtra(extras, "report"));
+            }
 
             if (METHOD_BINDER.equals(method)) {
                 Bundle result = new Bundle();

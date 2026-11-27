@@ -170,13 +170,9 @@ public class FeatureRegistry {
                 Feature feature = constructor.newInstance(loader, pref);
                 feature.doHook();
 
-                RuntimeDiagnostics.feature(FeatureLoader.mApp, key, "resolverPassed", null);
-                RuntimeDiagnostics.feature(FeatureLoader.mApp, key, "installed", null);
-                RuntimeDiagnostics.flush(FeatureLoader.mApp);
-
                 loadedFeatures.add(key);
             } catch (Throwable e) {
-                RuntimeDiagnostics.feature(FeatureLoader.mApp, key, "error", e);
+                RuntimeDiagnostics.feature(key, "error");
                 XposedBridge.log("[FeatureRegistry] Failed to lazy load " + reg.featureName + ": " + e.getMessage());
             }
         }

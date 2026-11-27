@@ -20,6 +20,7 @@ import androidx.core.content.ContextCompat;
 
 import com.waenhancer.App;
 import com.waenhancer.BuildConfig;
+import com.waenhancer.diagnostics.RuntimeDiagnostics;
 import com.waenhancer.UpdateChecker;
 import com.waenhancer.xposed.core.components.AlertDialogWpp;
 import com.waenhancer.utils.ApkMirrorFeedHelper;
@@ -320,9 +321,11 @@ public class FeatureLoader {
                                         String target = s.endsWith(".xx") ? s.replace(".xx", ".") : s + ".";
                                         return (packageInfo.versionName + ".").startsWith(target);
                                     });
-                            if (Feature.DEBUG) {
-                                ;
-                            }
+                            // This consumer build is a preview target with its own static audit.
+                            // It follows the ordinary resolver path and feature failure handling.
+                            isSupported |= PACKAGE_WPP.equals(packageInfo.packageName)
+                                    && "2.26.46.82".equals(packageInfo.versionName)
+                                    && packageInfo.getLongVersionCode() == 264608200L;
                             if (!isSupported) {
                                 disableExpirationVersion(mApp.getClassLoader());
                                 if (pref.getBoolean("bypass_version_check", false)) {
@@ -1062,6 +1065,7 @@ public class FeatureLoader {
                         }
                     }
                 } catch (Throwable e) {
+                    RuntimeDiagnostics.feature(classe.getSimpleName(), "error");
                     XposedBridge.log(e);
                     var error = new ErrorItem();
                     error.setPluginName(classe.getSimpleName());

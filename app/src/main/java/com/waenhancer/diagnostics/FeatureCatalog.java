@@ -1,5 +1,7 @@
 package com.waenhancer.diagnostics;
 
+import android.content.SharedPreferences;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -60,21 +62,21 @@ public final class FeatureCatalog {
         return RUNTIME_PROBES.size();
     }
 
-    /** Exact action that can produce callback evidence for an instrumented feature. */
-    public static String exerciseHint(String feature) {
+    static boolean enabled(SharedPreferences prefs, String feature) {
+        var settings = prefs.getAll();
         switch (feature) {
             case "HideSeen":
-                return "with Hide Blue Ticks active, open an unread chat and let WhatsApp attempt a read receipt";
+                // The manual smoke case exercises opening a direct chat, not the other paths.
+                return Boolean.TRUE.equals(settings.get("hideread"))
+                        || Boolean.TRUE.equals(settings.get("ghostmode_actual"));
             case "AntiRevoke":
-                return "while Anti-Revoke is active, process a real Delete for Everyone event";
-            case "ViewOnce":
-                return "with View Once bypass active, open an incoming view-once photo/video";
-            case "DownloadViewOnce":
-                return "with Download View Once active, open a view-once screen/options menu";
+                Object mode = settings.get("antirevoke");
+                return mode instanceof String && ((String) mode).matches("[1-9][0-9]?");
             case "FreezeLastSeen":
-                return "with Freeze Last Seen active, foreground/background WhatsApp until it attempts a presence/last-seen update";
+                return Boolean.TRUE.equals(settings.get("freezelastseen"))
+                        || Boolean.TRUE.equals(settings.get("ghostmode_actual"));
             default:
-                return "";
+                return true;
         }
     }
 

@@ -1,11 +1,10 @@
 package com.waenhancer.xposed.core;
 
-import android.util.Log;
+import com.waenhancer.diagnostics.RuntimeDiagnostics;
 
 import androidx.annotation.NonNull;
 
 import android.content.SharedPreferences;
-import de.robv.android.xposed.XposedBridge;
 
 public abstract class Feature {
 
@@ -25,28 +24,19 @@ public abstract class Feature {
         this.classLoader = classLoader;
         this.prefs = preferences;
 
-        // The old diagnostics code had an initialize() method and a definitive HostCompatibility
-        // probe, but neither was ever invoked. Feature construction happens after FeatureLoader has
-        // initialized DexKit, so the first Feature is a safe one-shot point to bind the snapshot to
-        // the real host/module build and execute the authoritative semantic resolver probe.
-        boolean diagnosticsInitialized = com.waenhancer.diagnostics.RuntimeDiagnostics.initializeOnce(
-                FeatureLoader.mApp);
-        if (diagnosticsInitialized) {
+        if (RuntimeDiagnostics.initializeOnce(FeatureLoader.mApp, preferences)) {
             try {
                 HostCompatibility.probe(classLoader);
-            } catch (Throwable t) {
-                com.waenhancer.diagnostics.RuntimeDiagnostics.probeFailure(FeatureLoader.mApp, t);
+            } catch (Throwable ignored) {
+                RuntimeDiagnostics.probeFailure();
             }
         }
-
-        com.waenhancer.diagnostics.RuntimeDiagnostics.feature(
-                FeatureLoader.mApp, getClass().getSimpleName(), "loaded", null);
+        RuntimeDiagnostics.feature(getClass().getSimpleName(), "loaded");
     }
 
     /** Call from a hook callback, never from installation, so Installed is not confused with Working. */
     protected final void diagnosticTriggered() {
-        com.waenhancer.diagnostics.RuntimeDiagnostics.feature(
-                FeatureLoader.mApp, getClass().getSimpleName(), "triggered", null);
+        RuntimeDiagnostics.feature(getClass().getSimpleName(), "triggered");
     }
 
     public abstract void doHook() throws Throwable;

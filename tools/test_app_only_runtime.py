@@ -85,6 +85,15 @@ STUBS.update(SECURITY_STUBS)
 # The real inspector recorder is tested separately; this IPC harness compiles only the bridge
 # against minimal Android stubs and verifies its authorization/dispatch behavior.
 STUBS['com/waenhancer/diagnostics/InspectorTrace.java'] = '''package com.waenhancer.diagnostics; public final class InspectorTrace {public static final String METHOD_APPEND="append_inspector_trace";public static boolean appendPrivate(android.content.SharedPreferences store,String target,String batch){return false;}}'''
+STUBS['com/waenhancer/diagnostics/RuntimeDiagnostics.java'] = '''package com.waenhancer.diagnostics; public final class RuntimeDiagnostics {
+    public static final String METHOD_BEGIN="validation_begin", METHOD_WRITE="validation_write";
+}'''
+STUBS['com/waenhancer/diagnostics/ValidationSession.java'] = '''package com.waenhancer.diagnostics; public final class ValidationSession {
+    public static android.os.Bundle bindProcess(android.content.Context c,String caller,android.os.Bundle extras){return null;}
+    public static android.os.Bundle storeSnapshot(android.content.Context c,String caller,String report){return null;}
+}'''
+STUBS['android/content/ContentProvider.java'] = STUBS['android/content/ContentProvider.java'].replace(
+    'public Context getContext()', 'public String getCallingPackage(){return null;} public Context getContext()')
 STUBS['com/waenhancer/xposed/utils/Utils.java'] = STUBS['com/waenhancer/xposed/utils/Utils.java'].replace('public static boolean DEBUG', 'public static void log(String s){} public static boolean DEBUG')
 STUBS['android/content/ContentResolver.java'] = STUBS['android/content/ContentResolver.java'].replace('public volatile int calls;', 'public void notifyChange(android.net.Uri u,Object o){} public void registerContentObserver(android.net.Uri u,boolean d,android.database.ContentObserver o){} public volatile int calls;')
 STUBS['com/waenhancer/xposed/core/FeatureLoader.java'] = STUBS['com/waenhancer/xposed/core/FeatureLoader.java'].replace('public static int starts;', 'public static android.app.Application mApp; public static int starts;')

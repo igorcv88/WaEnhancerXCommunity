@@ -31,6 +31,8 @@ jobs:
           python3 tools/test_conversation_glass.py
           python3 tools/test_composer_backing.py
           python3 tools/test_composer_finishing.py
+          python3 tools/compatibility/inventory.py --check
+          python3 tools/compatibility/test_audit.py
       - name: Run local unit tests
         run: bash ./gradlew --no-daemon :app:testWhatsappDebugUnitTest
       - name: Run Android lint

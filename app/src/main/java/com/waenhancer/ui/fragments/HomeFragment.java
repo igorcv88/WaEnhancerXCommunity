@@ -858,7 +858,6 @@ public class HomeFragment extends BaseFragment {
 
         int colorError = androidx.core.content.ContextCompat.getColor(activity, android.R.color.holo_red_light);
         int colorOutline = androidx.core.content.ContextCompat.getColor(activity, android.R.color.darker_gray);
-        int colorSuccess = 0xFF2E7D32;
 
         try {
             var packageInfo = App.getInstance().getPackageManager().getPackageInfo(packageName, 0);
@@ -869,17 +868,15 @@ public class HomeFragment extends BaseFragment {
                     com.waenhancer.config.PreferenceStores.privateStore(activity);
             com.waenhancer.diagnostics.ValidationModel.Compatibility compatibility =
                     com.waenhancer.diagnostics.ValidationSession.compatibility(
-                            activity, diagnosticPrefs, packageName, installedVersion);
+                            activity, diagnosticPrefs, packageName);
             boolean isSupported = compatibility != com.waenhancer.diagnostics.ValidationModel.Compatibility.INCOMPATIBLE;
             unsupportedBtnView.setVisibility(View.GONE);
 
             if (isSupported) {
-                int compatibilityColor = compatibility == com.waenhancer.diagnostics.ValidationModel.Compatibility.VALIDATED
-                        ? colorSuccess : 0xFFF9A825;
+                int compatibilityColor = 0xFFF9A825;
                 statusView.setText(com.waenhancer.diagnostics.ValidationSession.label(compatibility));
                 statusView.setTextColor(compatibilityColor);
-                iconView.setImageResource(compatibility == com.waenhancer.diagnostics.ValidationModel.Compatibility.VALIDATED
-                        ? R.drawable.ic_round_check_circle_24 : R.drawable.ic_round_warning_24);
+                iconView.setImageResource(R.drawable.ic_round_warning_24);
                 iconView.setColorFilter(compatibilityColor);
                 rowView.setOnClickListener(v -> startActivity(new Intent(activity,
                         com.waenhancer.activities.DiagnosticsActivity.class)));

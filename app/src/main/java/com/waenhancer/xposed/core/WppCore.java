@@ -747,17 +747,21 @@ public class WppCore {
             if (conversation.getClass().getSimpleName().equals("HomeActivity")) {
                 try {
                     var convFragmentMethod = Unobfuscator.loadHomeConversationFragmentMethod(conversation.getClassLoader());
-                    var convFragment = convFragmentMethod.invoke(null, conversation);
-                    if (jidObject == null) {
-                        jidObject = resolveJidFromObjectMethods(convFragment);
-                    }
-                    var convField = Unobfuscator.loadAntiRevokeConvFragmentField(conversation.getClassLoader());
-                    var conversationDelegate = convField.get(convFragment);
-                    if (jidObject == null) {
-                        jidObject = extractJidFromConversationDelegate(conversationDelegate);
-                    }
-                    if (jidObject == null) {
-                        jidObject = findJidObjectInGraph(convFragment);
+                    convFragmentMethod.setAccessible(true);
+                    var convFragment = java.lang.reflect.Modifier.isStatic(convFragmentMethod.getModifiers())
+                            ? convFragmentMethod.invoke(null, conversation)
+                            : convFragmentMethod.invoke(conversation);
+                    if (jidObject == null && convFragment != null) {
+                        Object delegate = convFragment;
+                        for (Field field : Unobfuscator.loadHomeConversationDelegateFields(conversation.getClassLoader())) {
+                            if (delegate == null) break;
+                            field.setAccessible(true);
+                            delegate = field.get(delegate);
+                        }
+                        if (delegate != null && conversationJidField != null
+                                && conversationJidField.getDeclaringClass().isInstance(delegate)) {
+                            jidObject = conversationJidField.get(delegate);
+                        }
                     }
                 } catch (Exception e) {
                     XposedBridge.log(e);

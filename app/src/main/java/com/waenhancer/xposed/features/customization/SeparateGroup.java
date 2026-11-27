@@ -65,20 +65,12 @@ public class SeparateGroup extends Feature {
                 XC_MethodReplacement.returnConstant(6)
         );
 
-        // Modifying tab list order
-        hookTabList();
-
-        // Setting group icon
-        hookTabIcon();
-
-        // Setting up fragments
-        hookTabInstance();
-
-        // Setting group tab name
-        hookTabName();
-
-        // Setting tab count
-        hookTabCount();
+        // Publish the additional tab only after its fragment factory and UI hooks are installed.
+        if (hookTabIcon() && hookTabInstance() && hookTabName() && hookTabCount()) {
+            hookTabList();
+        } else {
+            throw new IllegalStateException("Separate Groups tab prerequisites did not install");
+        }
     }
     
     @NonNull
@@ -103,7 +95,7 @@ public class SeparateGroup extends Feature {
     }
 
     @SuppressLint("Range")
-    private void hookTabCount() {
+    private boolean hookTabCount() {
         try {
             // XposedBridge.log("[WAEX-SG] hookTabCount starting...");
             Method runMethod = Unobfuscator.loadTabCountMethod(classLoader);
@@ -275,13 +267,14 @@ public class SeparateGroup extends Feature {
                 }
             });
             // XposedBridge.log("[WAEX-SG] enableCountMethod hooked successfully");
+            return true;
         } catch (Throwable t) {
             XposedBridge.log("[WAEX-SG] hookTabCount error: " + t);
-            t.printStackTrace();
+            return false;
         }
     }
 
-    private void hookTabIcon() {
+    private boolean hookTabIcon() {
         try {
             Method iconTabMethod = Unobfuscator.loadIconTabMethod(classLoader);
             /* Log removed */
@@ -315,14 +308,15 @@ public class SeparateGroup extends Feature {
                 }
             });
             // XposedBridge.log("[WAEX-SG] hookTabIcon hooked successfully");
+            return true;
         } catch (Throwable t) {
             XposedBridge.log("[WAEX-SG] hookTabIcon error: " + t);
-            t.printStackTrace();
+            return false;
         }
     }
 
     @SuppressLint("ResourceType")
-    private void hookTabName() {
+    private boolean hookTabName() {
         try {
             Method tabNameMethod = Unobfuscator.loadTabNameMethod(classLoader);
             XposedBridge.hookMethod(tabNameMethod, new XC_MethodHook() {
@@ -335,13 +329,14 @@ public class SeparateGroup extends Feature {
                 }
             });
             // XposedBridge.log("[WAEX-SG] hookTabName hooked successfully");
+            return true;
         } catch (Throwable t) {
             XposedBridge.log("[WAEX-SG] hookTabName error: " + t);
-            t.printStackTrace();
+            return false;
         }
     }
 
-    private void hookTabInstance() {
+    private boolean hookTabInstance() {
         try {
             Class<?> cFragClass = Unobfuscator.findFirstClassUsingName(
                     classLoader,
@@ -483,9 +478,10 @@ public class SeparateGroup extends Feature {
                 }
             });
             // XposedBridge.log("[WAEX-SG] hookTabInstance hooked successfully");
+            return true;
         } catch (Throwable t) {
             XposedBridge.log("[WAEX-SG] hookTabInstance error: " + t);
-            t.printStackTrace();
+            return false;
         }
     }
 
@@ -520,7 +516,7 @@ public class SeparateGroup extends Feature {
                     }
                 }
             });
-            // XposedBridge.log("[WAEX-SG] hookTabList hooked successfully");
+            com.waenhancer.diagnostics.RuntimeDiagnostics.feature("SeparateGroup", "installed");
         } catch (Throwable t) {
             XposedBridge.log("[WAEX-SG] hookTabList error: " + t);
             t.printStackTrace();

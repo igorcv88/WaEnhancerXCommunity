@@ -2,6 +2,15 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
+## WhatsApp consumer 2.26.46.82 preview (2026-11-27)
+
+- Branch `port/whatsapp-2.26.46.82`, based on master `5bf501ce2bb21235a110fc21f1f3611c52ec0dcb`. PR #175 and #176 were merged before this task. The owner explicitly superseded the ready-for-review preference in AGENTS.md. Keep this PR in draft pending physical validation. Merge is blocked by the owner instruction.
+- Pinned upstreams WaEnhancerX `9afc43d9582eb7afa84f9ce45eed746252332241`, legacy Mubashar-dev `0b2f729e91aa1b773cf38ead91ba7bdb3ad2392c`, Dev4Mod `1f581f4b76618a810a2ebfd0863c719a3cddaee7`. Adaptations, exclusions, actual tool versions, measured contracts, and physical steps are in [the compatibility report](docs/compatibility/whatsapp-2.26.46.82.md).
+- Exact consumer preview target with the ordinary resolver path, unique shared DexKit lookups, and guarded publication of the Groups tab. Preserved the control and existing module data paths.
+- Diagnostics now uses an authenticated session-specific provider write. The private snapshot that previously attempted generic put_preference could not reach the private store. Missing/legacy evidence is unknown. Diagnostic exercise state is scoped by the process/session, installed variant and allowed settings fingerprint. Report core misses and optional misses independently.
+- Recomputed both input JSONs. Verified 14 APK signatures and manifest/resource identities. Nine L1 queries returned one candidate on each host. Source inventory and physical matrix cover a larger scope, with unmeasured contracts explicitly pending. Android/LSPosed reflection, device L2–L5, and two-endpoint outcomes remain pending. Retain the existing signed-preview CI path.
+- Run `python3 tools/compatibility/inventory.py --check` for source-only upstream audits. Use the private CLI workflow for authorized APKs. The APKs, decompiled source and private logs stay outside Git.
+
 ## CONTINUATION BRIEF — media library, PR #176 (read this first) — 2026-11-26
 
 A previous session became too long; this section is the complete handoff for the next one.
