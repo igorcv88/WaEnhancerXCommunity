@@ -249,6 +249,16 @@ public class Others extends Feature {
             propsBoolean.put(6251, false);
             propsBoolean.put(8026, false);
             propsBoolean.put(14886, false);
+            propsBoolean.put(7413, false);
+            propsBoolean.put(16358, false);
+            propsBoolean.put(17382, false);
+            propsBoolean.put(11827, false);
+            propsBoolean.put(10034, false);
+            propsBoolean.put(12048, false);
+            propsBoolean.put(13054, false);
+            propsBoolean.put(14210, false);
+            propsBoolean.put(12595, false);
+            propsBoolean.put(12597, false);
         }
 
         if (audio_transcription) {

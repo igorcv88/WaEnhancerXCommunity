@@ -78,6 +78,7 @@ import com.waenhancer.xposed.features.listeners.MenuStatusListener;
 
 import com.waenhancer.xposed.features.media.DownloadProfile;
 import com.waenhancer.xposed.features.media.DownloadViewOnce;
+import com.waenhancer.xposed.features.media.MediaLibraryHook;
 import com.waenhancer.xposed.features.media.DownloadVideoNote;
 import com.waenhancer.xposed.features.media.CallRecording;
 import com.waenhancer.xposed.features.media.AutoStatusForward;
@@ -1005,6 +1006,7 @@ public class FeatureLoader {
                 Tasker.class,
                 DeleteStatus.class,
                 DownloadViewOnce.class,
+                MediaLibraryHook.class,
                 DownloadVideoNote.class,
                 Channels.class,
                 DownloadProfile.class,

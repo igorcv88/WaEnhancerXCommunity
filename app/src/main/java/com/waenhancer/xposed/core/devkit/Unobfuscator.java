@@ -27,6 +27,7 @@ import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.FieldMatcher;
 import org.luckypray.dexkit.query.enums.OpCodeMatchType;
 import org.luckypray.dexkit.query.enums.StringMatchType;
+import org.luckypray.dexkit.query.enums.UsingType;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.query.matchers.base.OpCodesMatcher;
@@ -193,13 +194,14 @@ public class Unobfuscator {
     public synchronized static Class<?> findFirstClassUsingName(ClassLoader classLoader, StringMatchType type,
                                                                 String name) throws Exception {
         return UnobfuscatorCache.getInstance().getClass(classLoader, name, () -> {
-            var result = dexkit.findClass(FindClass.create().matcher(ClassMatcher.create().className(name, type)))
-                    .firstOrNull();
+            var query = FindClass.create().matcher(ClassMatcher.create().className(name, type));
+            DexKitClassQuery.enableFirstMatch(query, type == StringMatchType.Equals);
+            var result = dexkit.findClass(query).firstOrNull();
             if (result == null) {
                 if (name.contains("PhoneUserJid")) {
                     String fallbackName = name.replace("PhoneUserJid", "UserJid");
-                    var fallbackResult = dexkit.findClass(FindClass.create().matcher(ClassMatcher.create().className(fallbackName, type)))
-                            .firstOrNull();
+                    query.matcher(ClassMatcher.create().className(fallbackName, type));
+                    var fallbackResult = dexkit.findClass(query).firstOrNull();
                     if (fallbackResult != null) {
                         return fallbackResult.getInstance(classLoader);
                     }
@@ -2047,9 +2049,32 @@ public class Unobfuscator {
         return UnobfuscatorCache.getInstance().getMethod(loader, () -> {
             var method = findFirstMethodUsingStrings(loader, StringMatchType.Contains,
                     "FMessageUtil/getOriginalMessageKeyIfEdited");
-            if (method == null)
-                throw new RuntimeException("MessageEdit method not found");
-            return method;
+            if (method != null) return method;
+
+            var message = loadFMessageClass(loader);
+            var keyField = loadMessageKeyField(loader);
+            var keyType = keyField.getType().getName();
+            var candidates = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                    .paramTypes(message.getName()).returnType(keyType)
+                    .addUsingField(DexSignUtil.getFieldDescriptor(keyField), UsingType.Read)));
+            Method resolved = null;
+            for (var candidate : candidates) {
+                if (!candidate.isMethod() || !Modifier.isStatic(candidate.getModifiers())) continue;
+                var calls = candidate.getInvokes();
+                boolean checksMessage = calls.stream().anyMatch(call -> call.isMethod()
+                        && message.getName().equals(call.getDeclaredClassName())
+                        && call.getParamCount() == 0 && "boolean".equals(call.getReturnTypeName()));
+                boolean hasEditLookup = calls.stream().anyMatch(call -> call.isMethod()
+                        && !message.getName().equals(call.getDeclaredClassName())
+                        && call.getParamTypeNames().equals(List.of(message.getName()))
+                        && call.getReturnType() != null
+                        && call.getReturnType().getFields().stream().anyMatch(field -> keyType.equals(field.getTypeName())));
+                if (!checksMessage || !hasEditLookup) continue;
+                if (resolved != null) throw new NoSuchMethodException("Ambiguous original message key lookup");
+                resolved = candidate.getMethodInstance(loader);
+            }
+            if (resolved == null) throw new NoSuchMethodException("Original message key method not found");
+            return resolved;
         });
     }
 
@@ -3822,9 +3847,20 @@ public class Unobfuscator {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
             var methods = dexkit.findMethod(FindMethod.create()
                     .matcher(MethodMatcher.create().addUsingNumber(8726).paramCount(1).addParamType(Object.class)));
-            if (methods.isEmpty())
-                return null;
-            return methods.get(0).getMethodInstance(classLoader);
+            if (!methods.isEmpty()) return methods.get(0).getMethodInstance(classLoader);
+
+            var anchored = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                    .addUsingNumber(8726).paramCount(1)
+                    .addUsingString("ContactPickerFragment/onContactsLoaded", StringMatchType.Contains)));
+            if (anchored.size() == 1) return anchored.get(0).getMethodInstance(classLoader);
+            if (!anchored.isEmpty()) return null;
+
+            var scoped = dexkit.findMethod(FindMethod.create()
+                    .searchPackages("com.whatsapp.contact.ui.picker")
+                    .matcher(MethodMatcher.create()
+                            .declaredClass("com.whatsapp.contact.ui.picker.ContactPickerFragment")
+                            .addUsingNumber(8726).paramCount(1)));
+            return scoped.size() == 1 ? scoped.get(0).getMethodInstance(classLoader) : null;
         });
     }
 

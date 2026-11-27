@@ -65,6 +65,7 @@ public class LockedChatsEnhancer extends Feature {
         });
 
         var loadedContacts = Unobfuscator.loadLoadedContactsMethod(classLoader);
+        if (loadedContacts == null) return;
 
         XposedBridge.hookMethod(loadedContacts, new XC_MethodHook() {
             @Override

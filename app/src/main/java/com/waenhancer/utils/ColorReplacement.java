@@ -26,13 +26,13 @@ public class ColorReplacement {
         } else if (view instanceof ViewGroup viewGroup) {
             Group.replace(viewGroup, colors);
         } else if (view instanceof ViewStub viewStub) {
-            replaceColor(viewStub.getBackground(), colors);
+            replaceColor(viewStub.getBackground(), colors, true);
         }
     }
 
     public static class Image {
         static void replace(ImageView view, HashMap<String, String> colors) {
-            replaceColor(view.getBackground(), colors);
+            replaceColor(view.getBackground(), colors, true);
             var colorFilter = view.getColorFilter();
             if (colorFilter == null) return;
             if (colorFilter instanceof PorterDuffColorFilter filter) {
@@ -60,7 +60,7 @@ public class ColorReplacement {
             if (sColor.equals("#ffffffff") && !DesignUtils.isNightMode()) {
                 return;
             }
-            replaceColor(view.getBackground(), colors);
+            replaceColor(view.getBackground(), colors, true);
             var newColor = colors.get(sColor);
             if (newColor != null) {
                 view.setTextColor(IColors.parseColor(newColor));
@@ -84,7 +84,7 @@ public class ColorReplacement {
                 var child = view.getChildAt(i);
                 replaceColors(child, colors);
             }
-            replaceColor(bg, colors);
+            replaceColor(bg, colors, true);
         }
     }
 }

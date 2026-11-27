@@ -33,14 +33,19 @@ public class DrawableColors {
     private static Class<?> mMaterialShapeDrawableClass;
 
     public static void replaceColor(Drawable drawable, HashMap<String, String> colors) {
+        replaceColor(drawable, colors, false);
+    }
+
+    public static void replaceColor(Drawable drawable, HashMap<String, String> colors, boolean isolateState) {
         if (drawable == null) return;
+        if (isolateState) drawable.mutate();
         Class cls = null;
         if (drawable instanceof StateListDrawable stateListDrawable) {
             var count = StateListDrawableCompact.getStateCount(stateListDrawable);
             for (int i = 0; i < count; i++) {
                 var stateDrawable = StateListDrawableCompact.getStateDrawable(stateListDrawable, i);
                 if (stateDrawable != null)
-                    replaceColor(stateDrawable, colors);
+                    replaceColor(stateDrawable, colors, isolateState);
             }
         } else if (drawable instanceof GradientDrawable gradientDrawable) {
             var gradientColors = gradientDrawable.getColors();
@@ -54,7 +59,7 @@ public class DrawableColors {
                 gradientDrawable.setColors(gradientColors);
             }
         } else if (drawable instanceof DrawableWrapper drawableWrapper) {
-            replaceColor(drawableWrapper.getDrawable(), colors);
+            replaceColor(drawableWrapper.getDrawable(), colors, isolateState);
         } else if (drawable instanceof NinePatchDrawable ninePatchDrawable) {
             var color = getNinePatchDrawableColor(ninePatchDrawable);
             var newColor = IColors.getFromIntColor(color, colors);
@@ -75,7 +80,7 @@ public class DrawableColors {
             for (int i = 0; i < count; i++) {
                 Drawable levelDrawable = (Drawable) XposedHelpers.callMethod(levelListDrawable, "getDrawable", i);
                 if (levelDrawable != null) {
-                    replaceColor(levelDrawable, colors);
+                    replaceColor(levelDrawable, colors, isolateState);
                 }
             }
         } else if (drawable instanceof TransitionDrawable transitionDrawable) {
@@ -83,7 +88,7 @@ public class DrawableColors {
             for (int i = 0; i < count; i++) {
                 Drawable layerDrawable = transitionDrawable.getDrawable(i);
                 if (layerDrawable != null) {
-                    replaceColor(layerDrawable, colors);
+                    replaceColor(layerDrawable, colors, isolateState);
                 }
             }
         } else if (drawable instanceof LayerDrawable layerDrawable) {
@@ -92,14 +97,14 @@ public class DrawableColors {
             for (var childDrawable : mChildren) {
                 if (childDrawable != null) {
                     var drawable1 = (Drawable) XposedHelpers.getObjectField(childDrawable, "mDrawable");
-                    replaceColor(drawable1, colors);
+                    replaceColor(drawable1, colors, isolateState);
                 }
             }
         } else if (drawable instanceof DrawableContainer drawableContainer) {
             var containerState = drawableContainer.getConstantState();
             var drawables = (Drawable[]) XposedHelpers.getObjectField(containerState, "mDrawables");
             for (var drawable1 : drawables) {
-                replaceColor(drawable1, colors);
+                replaceColor(drawable1, colors, isolateState);
             }
         } else if ((cls = getMaterialShapeDrawable()) != null && cls.isInstance(drawable)) {
             var state = (Drawable.ConstantState) XposedHelpers.callMethod(drawable, "getConstantState");
@@ -170,18 +175,24 @@ public class DrawableColors {
         HashMap<Integer, Integer> contagemCores = new HashMap<>();
         int corMaisFrequente = 0;
         int contagemMaxima = 0;
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        // Keep column-major tie-breaking and bound the temporary pixel buffer.
+        int columnsPerBatch = Math.max(1, Math.min(width, 16384 / height));
+        int[] pixels = new int[columnsPerBatch * height];
 
-        for (int x = 0; x < bitmap.getWidth(); x++) {
-            for (int y = 0; y < bitmap.getHeight(); y++) {
-                int cor = bitmap.getPixel(x, y);
-                // Atualiza a contagem da cor no mapa
-                int contagemAtual = contagemCores.getOrDefault(cor, 0) + 1;
-                contagemCores.put(cor, contagemAtual);
-
-                // Verifica se essa cor se tornou a mais frequente até agora
-                if (contagemAtual > contagemMaxima) {
-                    corMaisFrequente = cor;
-                    contagemMaxima = contagemAtual;
+        for (int startX = 0; startX < width; startX += columnsPerBatch) {
+            int columns = Math.min(columnsPerBatch, width - startX);
+            bitmap.getPixels(pixels, 0, columns, startX, 0, columns, height);
+            for (int x = 0; x < columns; x++) {
+                for (int y = 0; y < height; y++) {
+                    int cor = pixels[y * columns + x];
+                    int contagemAtual = contagemCores.getOrDefault(cor, 0) + 1;
+                    contagemCores.put(cor, contagemAtual);
+                    if (contagemAtual > contagemMaxima) {
+                        corMaisFrequente = cor;
+                        contagemMaxima = contagemAtual;
+                    }
                 }
             }
         }

@@ -11,6 +11,7 @@ Depending on the features enabled, the app or injected module may process locall
 - message identifiers and metadata required by enabled features;
 - `Deleted for Me` records and their message content;
 - preserved media selected by the user;
+- photos and videos the user explicitly keeps in the media library, with their chat, message key, own-account identifier and caption (stored privately, never uploaded, excluded from Android cloud backup and device transfer, exported only into the user's password-encrypted library backup);
 - Tasker automation state/history;
 - local diagnostic events and stack traces;
 - data selected by the user for configuration or full backup.

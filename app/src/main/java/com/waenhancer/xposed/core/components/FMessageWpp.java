@@ -700,7 +700,8 @@ public class FMessageWpp {
                 if (str == null) return null;
                 if (str.contains(".") && str.contains("@") && str.indexOf(".") < str.indexOf("@")) {
                     return str.substring(0, str.indexOf("."));
-                } else if (str.contains("@g.us") || str.contains("@s.whatsapp.net") || str.contains("@broadcast") || str.contains("@lid")) {
+                } else if (str.contains("@g.us") || str.contains("@s.whatsapp.net") || str.contains("@broadcast") || str.contains("@lid")
+                        || str.contains("@newsletter")) {
                     return str.substring(0, str.indexOf("@"));
                 }
                 return str;
@@ -725,9 +726,10 @@ public class FMessageWpp {
         }
 
         public boolean isNewsletter() {
-            String raw = getPhoneRawString();
-            if (raw == null) return false;
-            return raw.endsWith("@newsletter");
+            String phoneRaw = getPhoneRawString();
+            if (phoneRaw != null && phoneRaw.endsWith("@newsletter")) return true;
+            String userRaw = getUserRawString();
+            return userRaw != null && userRaw.endsWith("@newsletter");
         }
 
         public boolean isBroadcast() {
@@ -775,13 +777,21 @@ public class FMessageWpp {
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
-            UserJid userJid1 = (UserJid) o;
-            return Objects.equals(getPhoneRawString(), userJid1.getPhoneRawString());
+            UserJid other = (UserJid) o;
+            String identity = getIdentity();
+            return identity != null && identity.equals(other.getIdentity());
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(getPhoneRawString());
+            String identity = getIdentity();
+            if (identity == null) return System.identityHashCode(this);
+            return Objects.hash(identity);
+        }
+
+        private String getIdentity() {
+            String phoneRaw = getPhoneRawString();
+            return phoneRaw != null ? phoneRaw : getUserRawString();
         }
     }
 
