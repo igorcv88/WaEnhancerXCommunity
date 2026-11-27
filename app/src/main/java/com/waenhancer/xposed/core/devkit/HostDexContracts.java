@@ -105,9 +105,9 @@ public final class HostDexContracts {
         Set<String> delegateTypes = new HashSet<>();
         for (ClassData owner : owners) {
             // A generic holder can also implement an interface on the delegate. Require the
-            // host declaration of the anchored lifecycle method, with its exact signature.
-            if (owner.getMethods().stream().anyMatch(method ->
-                    method.getMethodSign().equals(entry.getMethodSign()))) {
+            // host declaration of the anchored lifecycle method: same name and descriptor.
+            if (owner.getMethods().stream().anyMatch(method -> method.getName().equals(entry.getName())
+                    && method.getMethodSign().equals(entry.getMethodSign()))) {
                 delegateTypes.add(owner.getName());
             }
         }
@@ -196,5 +196,29 @@ public final class HostDexContracts {
                         .paramCount(2).returnType(void.class)))
                 .stream().filter(method -> !Modifier.isStatic(method.getModifiers())
                         && "int".equals(method.getParamTypeNames().get(1))).collect(Collectors.toList()));
+    }
+
+    public static final String VIDEO_ROW = "conversation-video-row";
+    private static final String VIDEO_ROW_ASSERTION = "thumb view type is not correct";
+    private static final String VIDEO_ROW_LEGACY = "frame_visibility_serial_worker";
+
+    /**
+     * The conversation row that renders a video message. Its animated-container accessor carries a
+     * unique assertion message on both supported hosts; the worker-name string used before is gone
+     * from 2.26.46.82 and remains only as a fallback for older hosts.
+     */
+    public static Candidates videoRowContainer(DexKitBridge dexkit) {
+        List<MethodData> accessors = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                        .addUsingString(VIDEO_ROW_ASSERTION, StringMatchType.Equals)))
+                .stream().filter(method -> !Modifier.isStatic(method.getModifiers())
+                        && method.getParamCount() == 0).collect(Collectors.toList());
+        if (!accessors.isEmpty()) return new Candidates("animated-container-accessor-assertion", accessors);
+        List<MethodData> legacy = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                .addUsingString(VIDEO_ROW_LEGACY, StringMatchType.Equals)));
+        // One candidate per declaring class: the runtime contract is the class, not the method.
+        Set<String> owners = new LinkedHashSet<>();
+        List<MethodData> perClass = legacy.stream().filter(method -> owners.add(method.getClassName()))
+                .collect(Collectors.toList());
+        return new Candidates("legacy-frame-worker-name", perClass);
     }
 }

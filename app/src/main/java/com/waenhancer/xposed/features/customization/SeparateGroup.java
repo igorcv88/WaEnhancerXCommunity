@@ -11,6 +11,7 @@ import android.widget.BaseAdapter;
 import androidx.annotation.NonNull;
 
 import com.waenhancer.xposed.core.Feature;
+import com.waenhancer.xposed.core.HookTransaction;
 import com.waenhancer.xposed.core.db.MessageStore;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.core.devkit.UnobfuscatorCache;
@@ -59,20 +60,38 @@ public class SeparateGroup extends Feature {
                 org.luckypray.dexkit.query.enums.StringMatchType.EndsWith,
                 ".BottomNavigationView"
         );
-        XposedHelpers.findAndHookMethod(
-                bottomNavigationViewCls,
-                "getMaxItemCount",
-                XC_MethodReplacement.returnConstant(6)
-        );
+        Method maxItemCount = XposedHelpers.findMethodExact(bottomNavigationViewCls, "getMaxItemCount");
 
-        // Publish the additional tab only after its fragment factory and UI hooks are installed.
-        if (hookTabIcon() && hookTabInstance() && hookTabName() && hookTabCount()) {
-            hookTabList();
-        } else {
-            throw new IllegalStateException("Separate Groups tab prerequisites did not install");
+        // All-or-nothing: a failure in any required step removes every hook installed before it,
+        // so the chat list, FAB, search and navigation are never left partially modified.
+        HookTransaction tx = new HookTransaction();
+        try {
+            tx.hook(maxItemCount, XC_MethodReplacement.returnConstant(6));
+            requireStep("icon", hookTabIcon(tx));
+            requireStep("fragment", hookTabInstance(tx));
+            requireStep("name", hookTabName(tx));
+            // Split unread badges are cosmetic: without them the tab still works, so a badge
+            // failure removes only the badge hooks and is reported as a degraded install.
+            HookTransaction badge = new HookTransaction();
+            if (hookTabCount(badge)) {
+                tx.adopt(badge);
+            } else {
+                badge.rollback();
+                diagnosticDegraded();
+            }
+            // Publishing the tab is the last step, after its fragment factory and UI hooks exist.
+            hookTabList(tx);
+            tx.commit();
+        } catch (Throwable failure) {
+            tx.rollback();
+            throw failure;
         }
     }
-    
+
+    private static void requireStep(String step, boolean installed) {
+        if (!installed) throw new IllegalStateException("Separate Groups step failed: " + step);
+    }
+
     @NonNull
     @Override
     public String getPluginName() {
@@ -95,7 +114,7 @@ public class SeparateGroup extends Feature {
     }
 
     @SuppressLint("Range")
-    private boolean hookTabCount() {
+    private boolean hookTabCount(HookTransaction tx) {
         try {
             // XposedBridge.log("[WAEX-SG] hookTabCount starting...");
             Method runMethod = Unobfuscator.loadTabCountMethod(classLoader);
@@ -107,7 +126,7 @@ public class SeparateGroup extends Feature {
             Class<?> emptyBadgeClass = Unobfuscator.loadEnableCountTabEmptyBadgeClass(classLoader);
             // XposedBridge.log("[WAEX-SG] enableCountMethod found: " + enableCountMethod);
 
-            XposedBridge.hookMethod(enableCountMethod, new XC_MethodHook() {
+            tx.hook(enableCountMethod, new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                     int indexTab = (int) param.args[2];
@@ -274,14 +293,14 @@ public class SeparateGroup extends Feature {
         }
     }
 
-    private boolean hookTabIcon() {
+    private boolean hookTabIcon(HookTransaction tx) {
         try {
             Method iconTabMethod = Unobfuscator.loadIconTabMethod(classLoader);
             /* Log removed */
             Method menuAddAndroidX = Unobfuscator.loadAddMenuAndroidX(classLoader);
             /* Log removed */
 
-            XposedBridge.hookMethod(iconTabMethod, new XC_MethodHook() {
+            tx.hook(iconTabMethod, new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                     XC_MethodHook.Unhook hooked = XposedBridge.hookMethod(menuAddAndroidX, new XC_MethodHook() {
@@ -316,10 +335,10 @@ public class SeparateGroup extends Feature {
     }
 
     @SuppressLint("ResourceType")
-    private boolean hookTabName() {
+    private boolean hookTabName(HookTransaction tx) {
         try {
             Method tabNameMethod = Unobfuscator.loadTabNameMethod(classLoader);
-            XposedBridge.hookMethod(tabNameMethod, new XC_MethodHook() {
+            tx.hook(tabNameMethod, new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                     int tab = (int) param.args[0];
@@ -336,7 +355,7 @@ public class SeparateGroup extends Feature {
         }
     }
 
-    private boolean hookTabInstance() {
+    private boolean hookTabInstance(HookTransaction tx) {
         try {
             Class<?> cFragClass = Unobfuscator.findFirstClassUsingName(
                     classLoader,
@@ -357,7 +376,7 @@ public class SeparateGroup extends Feature {
             Class<?> fragmentClass = Unobfuscator.loadFragmentClass(classLoader);
 
             // Hook recreate fragment constructor
-            XposedBridge.hookMethod(recreateFragmentMethod, new XC_MethodHook() {
+            tx.hook(recreateFragmentMethod, new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     String string;
@@ -396,7 +415,7 @@ public class SeparateGroup extends Feature {
             });
 
             // Hook getTab method
-            XposedBridge.hookMethod(getTabMethod, new XC_MethodHook() {
+            tx.hook(getTabMethod, new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                     int index = (int) param.args[0];
@@ -428,7 +447,7 @@ public class SeparateGroup extends Feature {
             });
 
             // Hook tab fragment method (filter chat list)
-            XposedBridge.hookMethod(methodTabInstance, new XC_MethodHook() {
+            tx.hook(methodTabInstance, new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     List<?> chatsList = (List<?>) param.getResult();
@@ -441,7 +460,7 @@ public class SeparateGroup extends Feature {
             Method fabintMethod = Unobfuscator.loadFabMethod(classLoader);
             /* Log removed */
 
-            XposedBridge.hookMethod(fabintMethod, new XC_MethodHook() {
+            tx.hook(fabintMethod, new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     if (tabInstances.get(GROUPS) == param.thisObject) {
@@ -455,7 +474,7 @@ public class SeparateGroup extends Feature {
             /* Log removed */
 
             final Method finalPublishResultsMethod = publishResultsMethod;
-            XposedBridge.hookMethod(publishResultsMethod, new XC_MethodHook() {
+            tx.hook(publishResultsMethod, new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                     Object filters = param.args[1];
@@ -499,28 +518,20 @@ public class SeparateGroup extends Feature {
         return editableChatList;
     }
 
-    private void hookTabList() {
-        try {
-            Method onCreateTabList = Unobfuscator.loadTabListMethod(classLoader);
-            /* Log removed */
-
-            XposedBridge.hookMethod(onCreateTabList, new XC_MethodHook() {
-                @SuppressWarnings("unchecked")
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    ArrayList<Integer> resultTabs = (ArrayList<Integer>) param.getResult();
-                    if (resultTabs == null) return;
-                    tabs = resultTabs;
-                    if (!tabs.contains(GROUPS)) {
-                        tabs.add(tabs.isEmpty() ? 0 : 1, GROUPS);
-                    }
+    private void hookTabList(HookTransaction tx) throws Exception {
+        Method onCreateTabList = Unobfuscator.loadTabListMethod(classLoader);
+        tx.hook(onCreateTabList, new XC_MethodHook() {
+            @SuppressWarnings("unchecked")
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                ArrayList<Integer> resultTabs = (ArrayList<Integer>) param.getResult();
+                if (resultTabs == null) return;
+                tabs = resultTabs;
+                if (!tabs.contains(GROUPS)) {
+                    tabs.add(tabs.isEmpty() ? 0 : 1, GROUPS);
                 }
-            });
-            com.waenhancer.diagnostics.RuntimeDiagnostics.feature("SeparateGroup", "installed");
-        } catch (Throwable t) {
-            XposedBridge.log("[WAEX-SG] hookTabList error: " + t);
-            t.printStackTrace();
-        }
+            }
+        });
     }
 
     /**
@@ -561,31 +572,7 @@ public class SeparateGroup extends Feature {
         }
 
         private boolean checkGroup(Object chat) {
-            if (chat == null) return true;
-
-            Object jid = null;
-            try {
-                jid = XposedHelpers.getObjectField(chat, "A00");
-            } catch (Throwable ignored) {
-            }
-            if (jid == null) {
-                try {
-                    jid = XposedHelpers.getObjectField(chat, "A01");
-                } catch (Throwable ignored) {
-                }
-            }
-            if (jid == null) return true;
-
-            if (XposedHelpers.findMethodExactIfExists(jid.getClass(), "getServer") != null) {
-                String server = (String) XposedHelpers.callMethod(jid, "getServer");
-                if (server == null) return true;
-                if (isGroup) {
-                    return "broadcast".equals(server) || "g.us".equals(server);
-                } else {
-                    return "s.whatsapp.net".equals(server) || "lid".equals(server);
-                }
-            }
-            return true;
+            return ChatListClassifier.keep(chat, isGroup);
         }
     }
 }

@@ -24,19 +24,45 @@ public abstract class Feature {
         this.classLoader = classLoader;
         this.prefs = preferences;
 
-        if (RuntimeDiagnostics.initializeOnce(FeatureLoader.mApp, preferences)) {
-            try {
-                HostCompatibility.probe(classLoader);
-            } catch (Throwable ignored) {
-                RuntimeDiagnostics.probeFailure();
-            }
-        }
-        RuntimeDiagnostics.feature(getClass().getSimpleName(), "loaded");
+        // Diagnostic events (loaded, installed, error) are recorded by the loader around
+        // construction and doHook, so a feature cannot report itself installed before it is.
     }
 
-    /** Call from a hook callback, never from installation, so Installed is not confused with Working. */
+    /**
+     * A hooked callback of this feature ran. It says the hook point is live, not that the feature
+     * did anything: callbacks also run for traffic the feature ignores. Call it at callback entry.
+     */
     protected final void diagnosticTriggered() {
-        RuntimeDiagnostics.feature(getClass().getSimpleName(), "triggered");
+        RuntimeDiagnostics.feature(getClass().getSimpleName(), "reached");
+    }
+
+    /**
+     * The feature changed the host's behaviour on {@code path} (for example it suppressed a read
+     * receipt in a direct chat). Call it after the decision, and only when the feature acted.
+     */
+    protected final void diagnosticActed(String path) {
+        RuntimeDiagnostics.acted(getClass().getSimpleName(), path);
+    }
+
+    /** The feature installed, but an optional part of it did not (reported, not fatal). */
+    protected final void diagnosticDegraded() {
+        RuntimeDiagnostics.feature(getClass().getSimpleName(), "degraded");
+    }
+
+    /**
+     * Installs the shared AB-override hook this feature relies on. Without it the feature keeps
+     * its other hooks and reports a degraded install instead of assuming another feature did it.
+     */
+    protected final boolean hostPropsOrDegraded() {
+        try {
+            HostProps.requireBooleanOverrides(classLoader);
+            return true;
+        } catch (Throwable t) {
+            de.robv.android.xposed.XposedBridge.log("[WAEX] " + getClass().getSimpleName()
+                    + ": AB overrides unavailable: " + t.getMessage());
+            diagnosticDegraded();
+            return false;
+        }
     }
 
     public abstract void doHook() throws Throwable;

@@ -12,6 +12,7 @@ import androidx.annotation.Nullable;
 
 import com.waenhancer.xposed.compat.HostArgCompat;
 import com.waenhancer.xposed.core.Feature;
+import com.waenhancer.xposed.core.HookTransaction;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.features.general.Others;
 import com.waenhancer.xposed.utils.ReflectionUtils;
@@ -52,187 +53,185 @@ public class MediaQuality extends Feature {
         var realResolution = prefs.getBoolean("video_real_resolution", false);
 
         // Disable manual calculation ProcessMediaQuality
+        hostPropsOrDegraded();
         Others.propsBoolean.put(14447, false);
 
         // Enable Media Quality selection for Stories with dual fallback
         enableMediaQualityForStories();
 
+        java.util.List<Throwable> failures = new java.util.ArrayList<>();
         if (videoQuality) {
-            Others.propsBoolean.put(5549, true);
+            HookTransaction video = new HookTransaction();
+            try {
+                Others.propsBoolean.put(5549, true);
+                video.onRollback(() -> Others.propsBoolean.remove(5549));
 
-            EncoderVideoCapabilities encoderVideoCapabilities = getPreferredEncoderCapabilities(VIDEO_MIME_AVC);
-            if (encoderVideoCapabilities == null) {
-                encoderVideoCapabilities = getPreferredEncoderCapabilities(VIDEO_MIME_HEVC);
-            }
-            final EncoderVideoCapabilities finalEncoderVideoCapabilities = encoderVideoCapabilities;
-
-            var ProcessVideoQualityClass = Unobfuscator.loadProcessVideoQualityClass(classLoader);
-            var processVideoQualityFields = Unobfuscator.getAllMapFields(ProcessVideoQualityClass);
-
-            XposedBridge.hookAllConstructors(ProcessVideoQualityClass, new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    var processVideoQuality = param.thisObject;
-                    var fieldvideoMaxBitrate = processVideoQualityFields.get("videoMaxBitrate");
-                    var fieldvideoMaxEdge = processVideoQualityFields.get("videoMaxEdge");
-                    var fieldvideoLimitMb = processVideoQualityFields.get("videoLimitMb");
-                    var fieldVideoBitrateMode = processVideoQualityFields.get("videoBitrateMode");
-                    if (fieldvideoLimitMb != null) {
-                        fieldvideoLimitMb.setInt(processVideoQuality, maxSize);
-                    }
-                    if (fieldvideoMaxEdge != null) {
-                        fieldvideoMaxEdge.setInt(processVideoQuality, 3840);
-                    }
-                    if (fieldvideoMaxBitrate != null) {
-                        int bitrateBps = 24000 * 1000;
-                        fieldvideoMaxBitrate.setInt(processVideoQuality, bitrateBps);
-                    }
-                    if (fieldVideoBitrateMode != null && finalEncoderVideoCapabilities != null && finalEncoderVideoCapabilities.supportsCBR()) {
-                        try {
-                            fieldVideoBitrateMode.set(processVideoQuality, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
-                        } catch (Throwable t) {
-                            logDebug("Unable to apply CBR bitrate mode", t);
-                        }
-                    }
+                EncoderVideoCapabilities encoderVideoCapabilities = getPreferredEncoderCapabilities(VIDEO_MIME_AVC);
+                if (encoderVideoCapabilities == null) {
+                    encoderVideoCapabilities = getPreferredEncoderCapabilities(VIDEO_MIME_HEVC);
                 }
-            });
+                final EncoderVideoCapabilities finalEncoderVideoCapabilities = encoderVideoCapabilities;
 
-            var MediaDataVideoConfiguration = Unobfuscator.loadMediaDataVideoConfigurationClass(classLoader);
-            var fieldsMediaDataVideoConfiguration = Unobfuscator.getAllMapFields(MediaDataVideoConfiguration);
+                var ProcessVideoQualityClass = Unobfuscator.loadProcessVideoQualityClass(classLoader);
+                var processVideoQualityFields = Unobfuscator.getAllMapFields(ProcessVideoQualityClass);
 
-            Method VideoTranscoderStart = Unobfuscator.loadVideoTranscoderStartMethod(classLoader);
-            XposedBridge.hookMethod(VideoTranscoderStart, new XC_MethodHook() {
-                @Override
-                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                    var videoProcessor = param.args[0];
-                    var booleanParams = ReflectionUtils.getFieldsByType(videoProcessor.getClass(), Boolean.TYPE);
-                    if (booleanParams.size() > 2) {
-                        Field field = booleanParams.get(2);
-                        field.setBoolean(videoProcessor, false);
-                    }
-                    var fieldMediaDataVideoConfiguration = ReflectionUtils.getFieldByType(videoProcessor.getClass(), MediaDataVideoConfiguration);
-                    if (fieldMediaDataVideoConfiguration != null) {
-                        var mediaDataVideoConfiguration = fieldMediaDataVideoConfiguration.get(videoProcessor);
-                        if (mediaDataVideoConfiguration != null) {
-                            var fieldforceSingleTranscoding = fieldsMediaDataVideoConfiguration.get("forceSingleTranscoding");
-                            if (fieldforceSingleTranscoding != null) {
-                                fieldforceSingleTranscoding.setBoolean(mediaDataVideoConfiguration, true);
+                video.hookAllConstructors(ProcessVideoQualityClass, new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        var processVideoQuality = param.thisObject;
+                        var fieldvideoMaxBitrate = processVideoQualityFields.get("videoMaxBitrate");
+                        var fieldvideoMaxEdge = processVideoQualityFields.get("videoMaxEdge");
+                        var fieldvideoLimitMb = processVideoQualityFields.get("videoLimitMb");
+                        var fieldVideoBitrateMode = processVideoQualityFields.get("videoBitrateMode");
+                        if (fieldvideoLimitMb != null) {
+                            fieldvideoLimitMb.setInt(processVideoQuality, maxSize);
+                        }
+                        if (fieldvideoMaxEdge != null) {
+                            fieldvideoMaxEdge.setInt(processVideoQuality, 3840);
+                        }
+                        if (fieldvideoMaxBitrate != null) {
+                            int bitrateBps = 24000 * 1000;
+                            fieldvideoMaxBitrate.setInt(processVideoQuality, bitrateBps);
+                        }
+                        if (fieldVideoBitrateMode != null && finalEncoderVideoCapabilities != null && finalEncoderVideoCapabilities.supportsCBR()) {
+                            try {
+                                fieldVideoBitrateMode.set(processVideoQuality, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
+                            } catch (Throwable t) {
+                                logDebug("Unable to apply CBR bitrate mode", t);
                             }
                         }
                     }
-                }
-            });
+                });
 
+                var videoMethod = Unobfuscator.loadMediaQualityVideoMethod2(classLoader);
+                /* Log removed */
 
-            var videoMethod = Unobfuscator.loadMediaQualityVideoMethod2(classLoader);
-            /* Log removed */
-
-            var mediaFields = Unobfuscator.loadMediaQualityOriginalVideoFields(classLoader);
-            var mediaTranscodeParams = Unobfuscator.loadMediaQualityVideoFields(classLoader);
+                var mediaFields = Unobfuscator.loadMediaQualityOriginalVideoFields(classLoader);
+                var mediaTranscodeParams = Unobfuscator.loadMediaQualityVideoFields(classLoader);
 
 
 
-            XposedBridge.hookMethod(videoMethod, new XC_MethodHook() {
+                video.hook(videoMethod, new XC_MethodHook() {
 
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    var resizeVideo = param.getResult();
-                    boolean isHighResolution;
-                    boolean isEnum = false;
-                    var enumObj = ReflectionUtils.getArg(param.args, Enum.class, 0);
-                    var intParams = ReflectionUtils.findInstancesOfType(param.args, Integer.class);
-                    if (enumObj != null) {
-                        isEnum = true;
-                        var hightResolution = Enum.valueOf((Class<Enum>) enumObj.getClass(), "RESOLUTION_1080P");
-                        isHighResolution = hightResolution == enumObj;
-                    } else {
-                        // 2.26.33 can move the resolution slot; never auto-unbox a fixed index.
-                        Integer resolutionArg = HostArgCompat.numberAt(param.args, 1) instanceof Integer
-                                ? (Integer) param.args[1]
-                                : (intParams.isEmpty() ? null : intParams.get(0).second);
-                        if (resolutionArg == null) return;
-                        isHighResolution = resolutionArg == 3;
-                    }
-                    if (isHighResolution) {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        var resizeVideo = param.getResult();
+                        boolean isHighResolution;
+                        boolean isEnum = false;
+                        var enumObj = ReflectionUtils.getArg(param.args, Enum.class, 0);
+                        var intParams = ReflectionUtils.findInstancesOfType(param.args, Integer.class);
+                        if (enumObj != null) {
+                            isEnum = true;
+                            var hightResolution = Enum.valueOf((Class<Enum>) enumObj.getClass(), "RESOLUTION_1080P");
+                            isHighResolution = hightResolution == enumObj;
+                        } else {
+                            // 2.26.33 can move the resolution slot; never auto-unbox a fixed index.
+                            Integer resolutionArg = HostArgCompat.numberAt(param.args, 1) instanceof Integer
+                                    ? (Integer) param.args[1]
+                                    : (intParams.isEmpty() ? null : intParams.get(0).second);
+                            if (resolutionArg == null) return;
+                            isHighResolution = resolutionArg == 3;
+                        }
+                        if (isHighResolution) {
 
-                        if (realResolution) {
-                            int width;
-                            int height;
-                            int rotationAngle;
+                            if (realResolution) {
+                                int width;
+                                int height;
+                                int rotationAngle;
 
-                            if (mediaFields.isEmpty()) {
-                                if (isEnum) {
-                                    width = intParams.get(intParams.size() - 3).second;
-                                    height = intParams.get(intParams.size() - 2).second;
-                                    rotationAngle = intParams.get(intParams.size() - 1).second;
+                                if (mediaFields.isEmpty()) {
+                                    if (isEnum) {
+                                        width = intParams.get(intParams.size() - 3).second;
+                                        height = intParams.get(intParams.size() - 2).second;
+                                        rotationAngle = intParams.get(intParams.size() - 1).second;
+                                    } else {
+                                        JSONObject mediaFields = (JSONObject) XposedHelpers.callMethod(param.args[0], "A00");
+                                        width = mediaFields.getInt("widthPx");
+                                        height = mediaFields.getInt("heightPx");
+                                        rotationAngle = mediaFields.getInt("rotationAngle");
+                                    }
                                 } else {
-                                    JSONObject mediaFields = (JSONObject) XposedHelpers.callMethod(param.args[0], "A00");
-                                    width = mediaFields.getInt("widthPx");
-                                    height = mediaFields.getInt("heightPx");
-                                    rotationAngle = mediaFields.getInt("rotationAngle");
+                                    width = mediaFields.get("widthPx").getInt(param.args[0]);
+                                    height = mediaFields.get("heightPx").getInt(param.args[0]);
+                                    rotationAngle = mediaFields.get("rotationAngle").getInt(param.args[0]);
                                 }
-                            } else {
-                                width = mediaFields.get("widthPx").getInt(param.args[0]);
-                                height = mediaFields.get("heightPx").getInt(param.args[0]);
-                                rotationAngle = mediaFields.get("rotationAngle").getInt(param.args[0]);
+                                var targetWidthField = mediaTranscodeParams.get("targetWidth");
+                                var targetHeightField = mediaTranscodeParams.get("targetHeight");
+
+                                var inverted = rotationAngle == 90 || rotationAngle == 270;
+
+                                int targetWidth = inverted ? height : width;
+                                int targetHeight = inverted ? width : height;
+
+                                var sanitizedTargetSize = sanitizeVideoSize(targetWidth, targetHeight, finalEncoderVideoCapabilities);
+                                if (sanitizedTargetSize != null) {
+                                    if (targetWidthField != null) {
+                                        targetWidthField.setInt(resizeVideo, sanitizedTargetSize.first);
+                                    }
+                                    if (targetHeightField != null) {
+                                        targetHeightField.setInt(resizeVideo, sanitizedTargetSize.second);
+                                    }
+                                }
+
                             }
-                            var targetWidthField = mediaTranscodeParams.get("targetWidth");
-                            var targetHeightField = mediaTranscodeParams.get("targetHeight");
-
-                            var inverted = rotationAngle == 90 || rotationAngle == 270;
-
-                            int targetWidth = inverted ? height : width;
-                            int targetHeight = inverted ? width : height;
-
-                            var sanitizedTargetSize = sanitizeVideoSize(targetWidth, targetHeight, finalEncoderVideoCapabilities);
-                            if (sanitizedTargetSize != null) {
-                                if (targetWidthField != null) {
-                                    targetWidthField.setInt(resizeVideo, sanitizedTargetSize.first);
-                                }
-                                if (targetHeightField != null) {
-                                    targetHeightField.setInt(resizeVideo, sanitizedTargetSize.second);
-                                }
-                            }
-
+                        }
+                        if (prefs.getBoolean("video_maxfps", false)) {
+                            var frameRateField = mediaTranscodeParams.get("frameRate");
+                            frameRateField.setInt(resizeVideo, 60);
                         }
                     }
-                    if (prefs.getBoolean("video_maxfps", false)) {
-                        var frameRateField = mediaTranscodeParams.get("frameRate");
-                        frameRateField.setInt(resizeVideo, 60);
-                    }
-                }
-            });
+                });
+                video.commit();
+            } catch (Throwable failure) {
+                // Video quality is independent of image quality: remove only its own hooks.
+                video.rollback();
+                failures.add(failure);
+            }
         }
 
         if (imageQuality) {
+            HookTransaction image = new HookTransaction();
+            try {
 
-            var processImageQualityClass = Unobfuscator.loadProcessImageQualityClass(classLoader);
-            var fieldsProcessImageQuality = Unobfuscator.getAllMapFields(processImageQualityClass);
+                var processImageQualityClass = Unobfuscator.loadProcessImageQualityClass(classLoader);
+                var fieldsProcessImageQuality = Unobfuscator.getAllMapFields(processImageQualityClass);
 
-            XposedBridge.hookAllConstructors(processImageQualityClass, new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    var processImageQuality = param.thisObject;
-                    var fieldimageMaxSize = fieldsProcessImageQuality.get("maxKb");
-                    var fieldimageMaxQuality = fieldsProcessImageQuality.get("quality");
-                    var fieldimageMaxEdge = fieldsProcessImageQuality.get("maxEdge");
-                    if (fieldimageMaxSize != null) {
-                        fieldimageMaxSize.setInt(processImageQuality, 50 * 1024);
+                image.hookAllConstructors(processImageQualityClass, new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        var processImageQuality = param.thisObject;
+                        var fieldimageMaxSize = fieldsProcessImageQuality.get("maxKb");
+                        var fieldimageMaxQuality = fieldsProcessImageQuality.get("quality");
+                        var fieldimageMaxEdge = fieldsProcessImageQuality.get("maxEdge");
+                        if (fieldimageMaxSize != null) {
+                            fieldimageMaxSize.setInt(processImageQuality, 50 * 1024);
+                        }
+                        if (fieldimageMaxQuality != null) {
+                            fieldimageMaxQuality.setInt(processImageQuality, 100);
+                        }
+                        if (fieldimageMaxEdge != null) {
+                            fieldimageMaxEdge.setInt(processImageQuality, 6000);
+                        }
                     }
-                    if (fieldimageMaxQuality != null) {
-                        fieldimageMaxQuality.setInt(processImageQuality, 100);
-                    }
-                    if (fieldimageMaxEdge != null) {
-                        fieldimageMaxEdge.setInt(processImageQuality, 6000);
-                    }
+                });
+
+                // Prevent crashes in Media preview
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    image.hook(XposedHelpers.findMethodExact(RecordingCanvas.class, "throwIfCannotDraw", Bitmap.class),
+                            XC_MethodReplacement.DO_NOTHING);
                 }
-            });
 
-            // Prevent crashes in Media preview
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                XposedHelpers.findAndHookMethod(RecordingCanvas.class, "throwIfCannotDraw", Bitmap.class, XC_MethodReplacement.DO_NOTHING);
+                image.commit();
+            } catch (Throwable failure) {
+                image.rollback();
+                failures.add(failure);
             }
+        }
 
+        if (!failures.isEmpty()) {
+            Throwable first = failures.get(0);
+            for (int i = 1; i < failures.size(); i++) first.addSuppressed(failures.get(i));
+            throw first instanceof Exception ? (Exception) first : new IllegalStateException(first);
         }
     }
 

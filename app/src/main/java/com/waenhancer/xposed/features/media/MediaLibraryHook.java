@@ -903,14 +903,14 @@ public class MediaLibraryHook extends Feature {
             // The view-once "1 Photo" pill becomes a media bubble showing the copy; a tap opens
             // the copy, never WhatsApp's view-once viewer (which would consume the message).
             if (presentAsMediaBubble(row, thumb, bitmap, afterLayout)) {
-                redirectClick(row, thumb, uuid);
+                redirectClick(row, thumb, ref, uuid);
                 shown(row, ref, thumbnailKey, uuid, viewOnce);
             }
             return;
         }
         if (thumb.getWidth() == 0) return;
         // A tap opens the kept copy, as a tap opens a normal photo; restored on rebind.
-        redirectClick(row, thumb, uuid);
+        redirectClick(row, thumb, ref, uuid);
         shown(row, ref, thumbnailKey, uuid, viewOnce);
         Drawable overlay = new CopyDrawable(row.getResources(), bitmap,
                 text(R.string.media_library_badge, "Library copy"));
@@ -929,13 +929,7 @@ public class MediaLibraryHook extends Feature {
             chip.setContentDescription(text(R.string.media_library_open, "Open media library"));
             int size = Utils.dipToPixels(44);
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(size, size, Gravity.CENTER);
-            chip.setOnClickListener(v -> {
-                Activity activity = WppCore.getCurrentConversation();
-                FMessageWpp.UserJid chat = WppCore.getCurrentUserJid();
-                if (activity != null && chat != null && !chat.isNull()) {
-                    WORKER.execute(() -> openGallery(activity, chat, uuid));
-                }
-            });
+            chip.setOnClickListener(v -> openGalleryForRow(row, ref, uuid));
             chip.setOnLongClickListener(v -> row.performLongClick());
             parent.addView(chip, params);
         }
@@ -1045,7 +1039,7 @@ public class MediaLibraryHook extends Feature {
      * consume the message, or its "Photo expired" dialog). The original listener is saved and put
      * back when the row is rebound; if it cannot be read, nothing is replaced.
      */
-    private static void redirectClick(ViewGroup row, View host, String uuid) {
+    private static void redirectClick(ViewGroup row, View host, InlineBinder.Ref ref, String uuid) {
         View clickable = host;
         while (clickable != null && clickable != row && !clickable.hasOnClickListeners()) {
             clickable = clickable.getParent() instanceof View ? (View) clickable.getParent() : null;
@@ -1060,14 +1054,34 @@ public class MediaLibraryHook extends Feature {
         }
         if (!(original instanceof View.OnClickListener)) return;
         View target = clickable;
-        target.setOnClickListener(v -> {
-            Activity activity = WppCore.getCurrentConversation();
-            FMessageWpp.UserJid chat = WppCore.getCurrentUserJid();
-            if (activity != null && chat != null && !chat.isNull()) {
-                WORKER.execute(() -> openGallery(activity, chat, uuid));
-            }
-        });
+        target.setOnClickListener(v -> openGalleryForRow(row, ref, uuid));
         XposedHelpers.setAdditionalInstanceField(row, TAG_CLICK, new Object[] { target, original });
+    }
+
+    /**
+     * Opens the library item of a row in the chat the row's message belongs to. The chat comes
+     * from the message key captured at bind time, never from the "current conversation", which on
+     * tablets and after onNewIntent can name another chat.
+     */
+    private static void openGalleryForRow(View row, InlineBinder.Ref ref, String uuid) {
+        if (ref == null || ref.chatJid == null || ref.chatJid.isEmpty()) return;
+        Context context = row.getContext();
+        while (!(context instanceof Activity) && context instanceof android.content.ContextWrapper) {
+            Context base = ((android.content.ContextWrapper) context).getBaseContext();
+            if (base == context) break;
+            context = base;
+        }
+        Activity activity = context instanceof Activity ? (Activity) context : WppCore.getCurrentConversation();
+        if (activity == null) return;
+        WORKER.execute(() -> {
+            String title = null;
+            try {
+                title = WppCore.getContactName(new FMessageWpp.UserJid(ref.chatJid));
+            } catch (Throwable ignored) {
+            }
+            String alt = ref.chatAltJid != null && !ref.chatAltJid.equals(ref.chatJid) ? ref.chatAltJid : null;
+            openGallery(activity, ref.chatJid, alt, title, uuid);
+        });
     }
 
     private static void clearOverlay(ViewGroup row) {

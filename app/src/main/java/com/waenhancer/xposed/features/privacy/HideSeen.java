@@ -164,6 +164,7 @@ public class HideSeen extends Feature {
 
                 if (isHide) {
                     recordHiddenMessages(sendReadReceiptJob, userJid);
+                    diagnosticActed(userJid.isGroup() ? "group-read-suppressed" : "direct-read-suppressed");
                 }
             }
         });
@@ -257,6 +258,10 @@ public class HideSeen extends Feature {
 
         final ThreadLocal<Boolean> inManualReceiptCheck = new ThreadLocal<>();
 
+        // The receipt-path choice below is enforced through AB flag 19148. Install the override
+        // hook here instead of assuming another feature did. Without it, keep installing the
+        // other receipt hooks (they still protect) and report the install as degraded.
+        hostPropsOrDegraded();
         if (modernMessageInfoClass != null && !usableModernDispatchMethods.isEmpty()) {
             Others.propsBoolean.put(19148, false);
             final Class<?> finalInfoClass = modernMessageInfoClass;

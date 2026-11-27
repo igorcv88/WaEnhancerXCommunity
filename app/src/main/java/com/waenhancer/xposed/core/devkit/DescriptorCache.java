@@ -21,6 +21,23 @@ import java.util.Objects;
  * <p>No Android types are used so the contract can be unit tested on the JVM.</p>
  */
 public final class DescriptorCache {
+    /** Receives the key of every failed lookup, including repeated negative hits. */
+    private static volatile java.util.function.Consumer<String> failureListener;
+
+    public static void setFailureListener(java.util.function.Consumer<String> listener) {
+        failureListener = listener;
+    }
+
+    private static void reportFailure(String kind, String key) {
+        var listener = failureListener;
+        if (listener == null) return;
+        try {
+            listener.accept(kind + ":" + key);
+        } catch (Throwable ignored) {
+            // A diagnostic listener must never change a lookup's outcome.
+        }
+    }
+
 
     /** Persistent string storage (SharedPreferences in production). */
     public interface Store {
@@ -88,6 +105,7 @@ public final class DescriptorCache {
     public <T> T get(String kind, String key, Codec<T> codec, Resolver<T> resolver) throws Exception {
         Objects.requireNonNull(key, "key");
         if (failures.containsKey(key)) {
+            reportFailure(kind, key);
             throw negativeHit(kind, key);
         }
         // Fast path without any lock: a valid persisted descriptor only needs decoding.
@@ -96,7 +114,8 @@ public final class DescriptorCache {
         synchronized (resolutionLock) {
             // Another thread may have resolved or failed while we waited for the monitor.
             if (failures.containsKey(key)) {
-                throw negativeHit(kind, key);
+                reportFailure(kind, key);
+            throw negativeHit(kind, key);
             }
             cached = decodePersisted(key, codec);
             if (cached != null) return cached;
@@ -105,10 +124,12 @@ public final class DescriptorCache {
                 value = resolver.resolve();
             } catch (Throwable error) {
                 failures.put(key, Boolean.TRUE);
+                reportFailure(kind, key);
                 throw new LookupFailedException("Error getting " + kind + " " + key + ": " + error.getMessage(), error);
             }
             if (value == null) {
                 failures.put(key, Boolean.TRUE);
+                reportFailure(kind, key);
                 throw new LookupFailedException("Error getting " + kind + " " + key + ": " + kind + " is null");
             }
             try {

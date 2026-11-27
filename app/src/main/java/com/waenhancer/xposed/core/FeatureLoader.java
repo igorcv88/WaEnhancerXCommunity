@@ -27,6 +27,7 @@ import com.waenhancer.utils.ApkMirrorFeedHelper;
 import com.waenhancer.xposed.core.components.FMessageWpp;
 import com.waenhancer.xposed.core.components.SharedPreferencesWrapper;
 import com.waenhancer.xposed.core.components.WaContactWpp;
+import com.waenhancer.xposed.core.devkit.DescriptorCache;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.core.devkit.UnobfuscatorCache;
 import com.waenhancer.xposed.core.db.MessageHistory;
@@ -1035,6 +1036,11 @@ public class FeatureLoader {
         if (Feature.DEBUG) {
             ;
         }
+        // Bind the diagnostic session (if any) before any feature runs, on this thread, so no
+        // feature event can precede it. A start without a session costs one provider call.
+        RuntimeDiagnostics.begin(mApp, pref);
+        DescriptorCache.setFailureListener(RuntimeDiagnostics::resolverFailed);
+        var submitted = new java.util.concurrent.atomic.AtomicInteger();
         var executorService = Executors.newWorkStealingPool(Math.min(Runtime.getRuntime().availableProcessors(), 4));
         var times = java.util.Collections.synchronizedList(new ArrayList<String>());
 
@@ -1049,13 +1055,18 @@ public class FeatureLoader {
                 continue;
             }
 
+            submitted.incrementAndGet();
             CompletableFuture.runAsync(() -> {
                 var timemillis = System.currentTimeMillis();
+                String featureName = classe.getSimpleName();
+                RuntimeDiagnostics.enter(featureName);
                 try {
                     var constructor = classe.getConstructor(ClassLoader.class, android.content.SharedPreferences.class);
                     Object pluginObj = constructor.newInstance(loader, pref);
+                    RuntimeDiagnostics.feature(featureName, "loaded");
                     if (pluginObj instanceof Feature) {
                         ((Feature) pluginObj).doHook();
+                        RuntimeDiagnostics.feature(featureName, "installed");
                     } else {
                         try {
                             var doHookMethod = pluginObj.getClass().getMethod("doHook");
@@ -1076,6 +1087,8 @@ public class FeatureLoader {
                             s -> !s.getClassName().startsWith("android") && !s.getClassName().startsWith("com.android"))
                             .map(StackTraceElement::toString).toArray()));
                     list.add(error);
+                } finally {
+                    RuntimeDiagnostics.leave();
                 }
                 var timemillis2 = System.currentTimeMillis() - timemillis;
                 times.add("* Loaded Plugin " + classe.getSimpleName() + " in " + timemillis2 + "ms");
@@ -1083,10 +1096,25 @@ public class FeatureLoader {
         }
 
         executorService.shutdown();
+        boolean finished = false;
         try {
-            executorService.awaitTermination(15, TimeUnit.SECONDS);
+            finished = executorService.awaitTermination(15, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             XposedBridge.log(e);
+        }
+        RuntimeDiagnostics.loaderFinished(submitted.get(), !finished);
+        if (RuntimeDiagnostics.bound()) {
+            // The core resolver probe runs only during a session and after installation, so it
+            // neither competes with features for the resolver lock nor delays their hooks.
+            Thread probe = new Thread(() -> {
+                try {
+                    HostCompatibility.probe(loader);
+                } catch (Throwable failure) {
+                    RuntimeDiagnostics.probeFailure();
+                }
+            }, "WaEnhancerProbe");
+            probe.setDaemon(true);
+            probe.start();
         }
     }
 

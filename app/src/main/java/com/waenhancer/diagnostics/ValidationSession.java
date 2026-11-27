@@ -126,7 +126,7 @@ public final class ValidationSession {
     private static boolean currentLease(Context context, SharedPreferences prefs, String pkg, JSONObject report)
             throws Exception {
         return validTarget(pkg) && active(prefs) && pkg.equals(target(prefs))
-                && report.optInt("schema") == 2
+                && report.optInt("schema") == 3
                 && ValidationModel.sameRun(prefs.getString(ID, ""), prefs.getString(PROCESS, ""),
                     prefs.getString(CONFIGURATION, ""), report.optString("session"),
                     report.optString("process"), report.optString("configuration"))
@@ -182,14 +182,29 @@ public final class ValidationSession {
             JSONObject f = runtime == null ? null : runtime.optJSONObject(name);
             e.required = item.getValue().required;
             e.instrumented = FeatureCatalog.hasRuntimeProbe(name);
-            e.enabled = FeatureCatalog.enabled(publicPrefs, name);
+            e.enablement = FeatureCatalog.enablement(publicPrefs, name);
             e.manualConfirmed = runtime != null && manual(prefs, name);
             e.loaded = observed(f, "loaded", started, captured);
             e.installed = observed(f, "installed", started, captured);
-            long exercisedAt = prefs.getLong(EXERCISE_PREFIX + name, Long.MAX_VALUE);
-            e.triggered = observed(f, "triggered", e.required ? Math.max(started, exercisedAt) : started, captured);
             e.error = observed(f, "error", started, captured);
+            e.degraded = observed(f, "degraded", started, captured);
             e.resolverFailed = observed(f, "resolverFailed", started, captured);
+            // A required case counts only what happened after it was armed, on its own path.
+            long from = e.required
+                    ? Math.max(started, prefs.getLong(EXERCISE_PREFIX + name, Long.MAX_VALUE)) : started;
+            e.reached = observed(f, "reached", from, captured);
+            JSONObject acted = f == null ? null : f.optJSONObject("acted");
+            String path = FeatureCatalog.requiredPath(name);
+            if (acted != null) {
+                if (path != null) {
+                    e.acted = ValidationModel.occurredDuringSession(acted.optLong(path, 0L), from, captured);
+                } else {
+                    var paths = acted.keys();
+                    while (paths.hasNext() && !e.acted) {
+                        e.acted = ValidationModel.occurredDuringSession(acted.optLong(paths.next(), 0L), from, captured);
+                    }
+                }
+            }
             result.put(name, e);
         }
         return result;
@@ -214,7 +229,7 @@ public final class ValidationSession {
             out.append("Identity: ").append(identity).append('\n');
             out.append("Session ID: ").append(report.optString("session")).append('\n');
             out.append("Process ID: ").append(report.optString("process")).append('\n');
-            out.append("Configuration (schema-approved scalar settings): ")
+            out.append("Configuration (schema-approved scalar and list settings): ")
                     .append(report.optString("configuration")).append('\n');
             out.append("Xposed API: ").append(report.optInt("xposedApi")).append('\n');
             out.append("Source: OPT_IN_RUNTIME; timestamp: ").append(report.optLong("updatedAt")).append('\n');
@@ -225,14 +240,26 @@ public final class ValidationSession {
         if (contracts != null) for (int i = 0; i < contracts.length(); i++) {
             out.append(contracts.optJSONObject(i)).append('\n');
         }
-        out.append("\nCallback probes (L3): ").append(FeatureCatalog.runtimeProbeCount()).append('\n');
+        JSONObject loader = report.optJSONObject("loader");
+        out.append("Feature loader: ").append(loader == null ? "NO COMPLETION MARKER" : loader.optString("state"))
+                .append(loader == null ? "" : " (" + loader.optInt("submitted") + " eager features)").append('\n');
+        if (report.optInt("droppedEvents") > 0) {
+            out.append("Dropped early events: ").append(report.optInt("droppedEvents")).append('\n');
+        }
+        out.append("\nFeatures: ").append(evidence.size()).append(" registered; callback probes: ")
+                .append(FeatureCatalog.runtimeProbeCount()).append('\n');
         for (var item : evidence.entrySet()) {
             var e = item.getValue();
             out.append("- ").append(item.getKey()).append(": ").append(e.state());
-            if (e.installed) out.append(" · L2");
-            if (e.triggered && e.required) {
-                out.append(" · L3 at ").append(report.optJSONObject("features")
-                        .optJSONObject(item.getKey()).optLong("triggered"));
+            if (e.enablement == ValidationModel.Enablement.UNKNOWN) out.append(" · enablement not modelled");
+            if (e.installed) out.append(" · L2 installed");
+            String path = FeatureCatalog.requiredPath(item.getKey());
+            if (e.required && path != null) out.append(" · case path ").append(path);
+            if (e.acted && e.required) out.append(" · acted after arming");
+            JSONObject runtimeFeature = report.optJSONObject("features") == null ? null
+                    : report.optJSONObject("features").optJSONObject(item.getKey());
+            if (runtimeFeature != null && runtimeFeature.optJSONArray("resolverKeys") != null) {
+                out.append(" · resolver misses ").append(runtimeFeature.optJSONArray("resolverKeys"));
             }
             if (e.required && e.manualConfirmed && e.state() == ValidationModel.Status.TRIGGERED_UNVERIFIED)
                 out.append(" · user observation recorded");
@@ -244,12 +271,7 @@ public final class ValidationSession {
             while (names.hasNext()) {
                 String name = names.next();
                 if (evidence.containsKey(name) || !name.matches("[A-Za-z][A-Za-z0-9]{0,79}")) continue;
-                var item = runtime.optJSONObject(name);
-                if (item == null) continue;
-                out.append("- ").append(name).append(": ").append(item.has("error")
-                        ? ValidationModel.Status.INSTALL_FAILED : ValidationModel.Status.NOT_INSTRUMENTED);
-                if (item.has("installed")) out.append(" · L2 install marker");
-                out.append('\n');
+                out.append("- ").append(name).append(": UNREGISTERED FEATURE EVENT\n");
             }
         }
         out.append("\nDiagnostic smoke cases: ").append(
@@ -267,7 +289,7 @@ public final class ValidationSession {
             try (var input = context.getAssets().open("validated_builds.json")) {
                 String raw = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
                 JSONObject catalog = new JSONObject(raw);
-                if (catalog.optInt("schema") != 2) return;
+                if (catalog.optInt("schema") != 3) return;
                 JSONArray records = catalog.getJSONArray("builds");
                 for (int i = 0; i < records.length(); i++) {
                     JSONObject record = records.getJSONObject(i);
@@ -298,7 +320,17 @@ public final class ValidationSession {
                     && !item.optBoolean("returned");
         }
         return ValidationModel.aggregate(report.optBoolean("probeDefinitive"),
-                report.optBoolean("corePassed"), optionalFailed, evidence.values());
+                report.optBoolean("corePassed"), optionalFailed, loader(report), evidence.values());
+    }
+
+    static ValidationModel.Loader loader(JSONObject report) {
+        JSONObject loader = report.optJSONObject("loader");
+        if (loader == null) return ValidationModel.Loader.ABSENT;
+        switch (loader.optString("state")) {
+            case "COMPLETE": return ValidationModel.Loader.COMPLETE;
+            case "TIMED_OUT": return ValidationModel.Loader.TIMED_OUT;
+            default: return ValidationModel.Loader.ABSENT;
+        }
     }
 
     public static String label(ValidationModel.Compatibility state) {

@@ -2,6 +2,7 @@ package com.waenhancer.xposed.core;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Intent;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -34,6 +35,9 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Map;
+import java.lang.ref.WeakReference;
+import java.util.WeakHashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -75,7 +79,6 @@ public class WppCore {
     private static Field conversationJidField;
     private static Field meManagerPhoneJidField;
     private static Object meManagerInstance;
-    private static Object mConversationDelegate;
     private static Method statusToMessageMethod;
     private static Object statusToMessageMapper;
 
@@ -137,19 +140,6 @@ public class WppCore {
                 meManagerInstance = param.thisObject;
             }
         });
-
-        if (conversationJidField != null) {
-            XposedBridge.hookAllConstructors(conversationJidField.getDeclaringClass(), new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    mConversationDelegate = param.thisObject;
-                    if (Utils.DEBUG) {
-                        ;
-                    }
-                }
-            });
-        }
-
 
         // Load wa database
         loadWADatabase();
@@ -674,9 +664,15 @@ public class WppCore {
         return null;
     }
 
-    private static volatile FMessageWpp.UserJid currentConversationJid;
-    private static FMessageWpp.UserJid cachedUserJid;
-    private static int cachedActivityHash;
+    /**
+     * Chat JID carried by each live Conversation activity's intent, keyed by the activity instance.
+     * Updated on onNewIntent, because WhatsApp reuses a Conversation for another chat (notification,
+     * share) without recreating it.
+     */
+    private static final Map<Activity, FMessageWpp.UserJid> conversationIntentJids =
+            Collections.synchronizedMap(new WeakHashMap<>());
+    /** Most recently resumed Conversation, for callers running on top of it (dialogs, viewers). */
+    private static volatile WeakReference<Activity> lastConversation = new WeakReference<>(null);
 
     private static void hookConversationUserJid(ClassLoader loader) {
         try {
@@ -688,15 +684,27 @@ public class WppCore {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
                     if (!conversationClass.isInstance(param.thisObject)) return;
-                    try {
-                        var intent = ((Activity) param.thisObject).getIntent();
-                        var extras = intent == null ? null : intent.getExtras();
-                        String jid = extras == null ? null : extras.getString("jid");
-                        currentConversationJid = (jid == null || jid.isEmpty())
-                                ? null
-                                : new FMessageWpp.UserJid(jid);
-                    } catch (Throwable ignored) {
-                        currentConversationJid = null;
+                    Activity activity = (Activity) param.thisObject;
+                    trackConversationIntent(activity, activity.getIntent());
+                    lastConversation = new WeakReference<>(activity);
+                }
+            });
+
+            XposedBridge.hookAllMethods(Activity.class, "onNewIntent", new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    if (!conversationClass.isInstance(param.thisObject)) return;
+                    Object intent = param.args != null && param.args.length > 0 ? param.args[0] : null;
+                    trackConversationIntent((Activity) param.thisObject,
+                            intent instanceof Intent ? (Intent) intent : null);
+                }
+            });
+
+            XposedBridge.hookAllMethods(Activity.class, "onResume", new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    if (conversationClass.isInstance(param.thisObject)) {
+                        lastConversation = new WeakReference<>((Activity) param.thisObject);
                     }
                 }
             });
@@ -704,9 +712,9 @@ public class WppCore {
             XposedBridge.hookAllMethods(Activity.class, "onDestroy", new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) {
-                    if (conversationClass.isInstance(param.thisObject)) {
-                        currentConversationJid = null;
-                    }
+                    if (!conversationClass.isInstance(param.thisObject)) return;
+                    conversationIntentJids.remove(param.thisObject);
+                    if (lastConversation.get() == param.thisObject) lastConversation = new WeakReference<>(null);
                 }
             });
         } catch (Throwable t) {
@@ -714,80 +722,93 @@ public class WppCore {
         }
     }
 
+    private static void trackConversationIntent(Activity activity, @Nullable Intent intent) {
+        try {
+            var extras = intent == null ? null : intent.getExtras();
+            String jid = extras == null ? null : extras.getString("jid");
+            if (jid == null || jid.isEmpty()) {
+                // An intent without a chat leaves this activity's chat unknown, never the old one.
+                conversationIntentJids.remove(activity);
+            } else {
+                conversationIntentJids.put(activity, new FMessageWpp.UserJid(jid));
+            }
+        } catch (Throwable ignored) {
+            conversationIntentJids.remove(activity);
+        }
+    }
+
+    /**
+     * JID of the chat shown in the current conversation surface, resolved on every call from that
+     * surface's own state. Nothing is cached per Activity: on tablets one HomeActivity shows many
+     * chats in turn. Returns an empty JID rather than a guess when the chat cannot be identified.
+     * An action on a specific message must use that message's key, not this method.
+     */
     @NonNull
     public static FMessageWpp.UserJid getCurrentUserJid() {
-        var trackedJid = currentConversationJid;
-        if (trackedJid != null && !trackedJid.isNull()) return trackedJid;
-
-        var currentActivity = getCurrentActivity();
-        if (currentActivity == null) return new FMessageWpp.UserJid();
-
-        int currentHash = System.identityHashCode(currentActivity);
-        if (cachedUserJid != null && cachedActivityHash == currentHash) {
-            return cachedUserJid;
-        }
-
-        try {
-            var conversation = getCurrentConversation();
-            if (conversation == null)
+        Activity conversation = getCurrentConversation();
+        if (conversation == null) {
+            // A dialog or viewer above a conversation: use the conversation it was opened from.
+            Activity previous = lastConversation.get();
+            if (previous == null || previous.isFinishing() || previous.isDestroyed()) {
                 return new FMessageWpp.UserJid();
+            }
+            conversation = previous;
+        }
+        try {
             ensureConversationJidResolvers(conversation.getClassLoader());
-
-            Object jidObject = null;
-
-            if (mConversationDelegate != null && conversationJidField != null) {
-                try {
-                    jidObject = conversationJidField.get(mConversationDelegate);
-                } catch (Exception ignored) {}
-            }
-
-            if (jidObject == null) {
-                jidObject = resolveJidFromObjectMethods(conversation);
-            }
+            Object jidObject;
             if (conversation.getClass().getSimpleName().equals("HomeActivity")) {
-                try {
-                    var convFragmentMethod = Unobfuscator.loadHomeConversationFragmentMethod(conversation.getClassLoader());
-                    convFragmentMethod.setAccessible(true);
-                    var convFragment = java.lang.reflect.Modifier.isStatic(convFragmentMethod.getModifiers())
-                            ? convFragmentMethod.invoke(null, conversation)
-                            : convFragmentMethod.invoke(conversation);
-                    if (jidObject == null && convFragment != null) {
-                        Object delegate = convFragment;
-                        for (Field field : Unobfuscator.loadHomeConversationDelegateFields(conversation.getClassLoader())) {
-                            if (delegate == null) break;
-                            field.setAccessible(true);
-                            delegate = field.get(delegate);
-                        }
-                        if (delegate != null && conversationJidField != null
-                                && conversationJidField.getDeclaringClass().isInstance(delegate)) {
-                            jidObject = conversationJidField.get(delegate);
-                        }
-                    }
-                } catch (Exception e) {
-                    XposedBridge.log(e);
-                }
+                // No activity-wide fallback: HomeActivity exposes several JIDs, so fail closed.
+                jidObject = jidFromHomeConversation(conversation);
             } else {
-                Object conversationDelegate = resolveConversationDelegate(conversation);
-                if (jidObject == null) {
-                    jidObject = extractJidFromConversationDelegate(conversationDelegate);
-                }
-                if (jidObject == null) {
-                    jidObject = findJidObjectInGraph(conversation);
-                }
+                var tracked = conversationIntentJids.get(conversation);
+                if (tracked != null && !tracked.isNull()) return tracked;
+                jidObject = jidFromDelegate(resolveConversationDelegate(conversation));
+                if (jidObject == null) jidObject = resolveJidFromObjectMethods(conversation);
+                if (jidObject == null) jidObject = findJidObjectInGraph(conversation);
             }
-            if (jidObject != null) {
-                var jid = new FMessageWpp.UserJid(jidObject);
-                cachedUserJid = jid;
-                cachedActivityHash = currentHash;
-                if (Utils.DEBUG) {
-                    ;
-                }
-                return jid;
-            }
+            if (jidObject != null) return new FMessageWpp.UserJid(jidObject);
         } catch (Exception e) {
             XposedBridge.log(e);
         }
         return new FMessageWpp.UserJid();
+    }
+
+    /** Tablet: HomeActivity, then its ConversationFragment, then the fragment's conversation delegate. */
+    @Nullable
+    private static Object jidFromHomeConversation(@NonNull Activity home) {
+        try {
+            var convFragmentMethod = Unobfuscator.loadHomeConversationFragmentMethod(home.getClassLoader());
+            convFragmentMethod.setAccessible(true);
+            Object delegate = Modifier.isStatic(convFragmentMethod.getModifiers())
+                    ? convFragmentMethod.invoke(null, home)
+                    : convFragmentMethod.invoke(home);
+            for (Field field : Unobfuscator.loadHomeConversationDelegateFields(home.getClassLoader())) {
+                if (delegate == null) return null;
+                field.setAccessible(true);
+                delegate = field.get(delegate);
+            }
+            if (delegate != null && conversationJidField != null
+                    && conversationJidField.getDeclaringClass().isInstance(delegate)) {
+                return conversationJidField.get(delegate);
+            }
+        } catch (Exception e) {
+            XposedBridge.log(e);
+        }
+        return null;
+    }
+
+    @Nullable
+    private static Object jidFromDelegate(@Nullable Object delegate) {
+        if (delegate == null) return null;
+        try {
+            if (conversationJidField != null && conversationJidField.getDeclaringClass().isInstance(delegate)) {
+                Object jid = conversationJidField.get(delegate);
+                if (jid != null) return jid;
+            }
+        } catch (Exception ignored) {
+        }
+        return extractJidFromConversationDelegate(delegate);
     }
 
     private static synchronized void ensureConversationJidResolvers(ClassLoader loader) {

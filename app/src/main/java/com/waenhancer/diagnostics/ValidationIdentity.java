@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 /** Exact installed binary identity. APK reads are restricted to the provider's worker threads. */
@@ -61,7 +62,7 @@ final class ValidationIdentity {
                 .put("baseSha256", digestApk(host, host.applicationInfo.sourceDir))
                 .put("splits", new JSONObject(splits)).put("signerSha256", new JSONArray(signers))
                 .put("moduleVersion", module.versionName).put("moduleVersionCode", module.getLongVersionCode())
-                .put("moduleSha256", digestApk(module, module.applicationInfo.sourceDir))
+                .put("moduleCodeSha256", moduleCodeDigest(module, module.applicationInfo.sourceDir))
                 .put("androidApi", Build.VERSION.SDK_INT)
                 .put("deviceKind", deviceKind());
         // Local-only token to detect a reinstall even when its APK contents are identical.
@@ -75,7 +76,7 @@ final class ValidationIdentity {
         }
         JSONObject record = new JSONObject();
         for (String key : new String[]{"hostPackage", "hostVersion", "hostVersionCode", "baseSha256",
-                "splits", "signerSha256", "moduleVersion", "moduleVersionCode", "moduleSha256",
+                "splits", "signerSha256", "moduleVersion", "moduleVersionCode", "moduleCodeSha256",
                 "androidApi", "deviceKind"}) {
             record.put(key, identity.get(key));
         }
@@ -101,8 +102,20 @@ final class ValidationIdentity {
         return hex(sha256().digest(token.toString().getBytes(StandardCharsets.UTF_8)));
     }
 
+    /**
+     * Public list settings: their values come from a closed set of entry values, so they change
+     * behaviour without carrying free text. {@code ValidationIdentityTest} keeps this set equal to
+     * the ListPreference keys of the settings screens that the schema marks public.
+     */
+    static final Set<String> LIST_SETTINGS = Set.of(
+            "animation_list", "antirevoke", "antirevokestatus", "audio_type", "call_privacy",
+            "call_recording_mode", "call_type", "changecolor_mode", "chatfilter", "custom_privacy_type",
+            "open_settings_mode", "open_waex", "seentick", "separategroups_counter_type",
+            "show_home_menu", "status_style", "thememode", "transcription_provider", "typearchive",
+            "wae_color_mode", "wae_color_preset");
+
     static String configuration(SharedPreferences prefs) throws Exception {
-        // Only schema-approved scalar settings and the enumerated non-secret Anti-Revoke mode.
+        // Schema-approved scalar settings and public list settings (closed value sets).
         // Exclude free-form strings, paths, contact lists, set values, caches and secrets.
         TreeMap<String, String> values = new TreeMap<>();
         for (var item : prefs.getAll().entrySet()) {
@@ -112,8 +125,8 @@ final class ValidationIdentity {
             Object value = item.getValue();
             if (value instanceof Boolean || value instanceof Integer
                     || value instanceof Long || value instanceof Float
-                    || ("antirevoke".equals(item.getKey())
-                    && value instanceof String && ((String) value).matches("[0-9]{1,2}"))) {
+                    || (LIST_SETTINGS.contains(item.getKey()) && value instanceof String
+                    && ((String) value).matches("[A-Za-z0-9_.#-]{0,64}"))) {
                 values.put(item.getKey(), value.getClass().getSimpleName() + ":" + value);
             }
         }
@@ -133,6 +146,53 @@ final class ValidationIdentity {
         }
         token.append(path).append(':').append(file.length()).append(':')
                 .append(file.lastModified()).append('\n');
+    }
+
+    /**
+     * Digest of the module's executable content: every APK entry except the signature block and
+     * the official-records catalog. Hashing the whole APK made a record self-referential: adding
+     * it to {@code assets/validated_builds.json} changed the very digest it certified.
+     */
+    private static synchronized String moduleCodeDigest(PackageInfo pkg, String path) throws Exception {
+        String cacheKey = "code:" + path;
+        StringBuilder stampBuilder = new StringBuilder().append(pkg.getLongVersionCode()).append(':')
+                .append(pkg.lastUpdateTime).append(':');
+        addStamp(stampBuilder, path);
+        String stamp = stampBuilder.toString();
+        CachedDigest old = DIGESTS.get(cacheKey);
+        if (old != null && stamp.equals(old.stamp)) return old.digest;
+        String digest = codeDigest(new File(path));
+        if (DIGESTS.size() >= 64) DIGESTS.clear();
+        DIGESTS.put(cacheKey, new CachedDigest(stamp, digest));
+        return digest;
+    }
+
+    static boolean excludedFromCode(String entry) {
+        return entry.startsWith("META-INF/") || "assets/validated_builds.json".equals(entry);
+    }
+
+    static String codeDigest(File apk) throws Exception {
+        MessageDigest md = sha256();
+        try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(apk)) {
+            ArrayList<String> names = new ArrayList<>();
+            var entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                var entry = entries.nextElement();
+                if (!entry.isDirectory() && !excludedFromCode(entry.getName())) names.add(entry.getName());
+            }
+            Collections.sort(names);
+            byte[] buffer = new byte[64 * 1024];
+            for (String name : names) {
+                md.update(name.getBytes(StandardCharsets.UTF_8));
+                md.update((byte) 0);
+                MessageDigest entryDigest = sha256();
+                try (var input = zip.getInputStream(zip.getEntry(name))) {
+                    for (int read; (read = input.read(buffer)) != -1;) entryDigest.update(buffer, 0, read);
+                }
+                md.update(entryDigest.digest());
+            }
+        }
+        return hex(md.digest());
     }
 
     private static synchronized String digestApk(PackageInfo pkg, String path) throws Exception {

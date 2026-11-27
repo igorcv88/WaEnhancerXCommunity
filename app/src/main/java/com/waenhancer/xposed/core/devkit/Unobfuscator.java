@@ -1258,6 +1258,10 @@ public class Unobfuscator {
     public synchronized static Method loadHomeConversationFragmentMethod(ClassLoader loader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(loader, () -> {
             var homeClass = WppCore.getHomeActivityClass(loader);
+            // com.whatsapp.ConversationFragment exists in neither audited host (2.26.38.74,
+            // 2.26.46.82); both use com.whatsapp.conversation.ConversationFragment, so this branch
+            // never runs there and the tablet path below is new behaviour on both. It is kept,
+            // guarded by the class lookup, for older supported hosts that were not audited.
             var oldFragment = XposedHelpers.findClassIfExists("com.whatsapp.ConversationFragment", loader);
             if (oldFragment != null) {
                 var homeData = dexkit.getClassData(homeClass);
@@ -1475,23 +1479,22 @@ public class Unobfuscator {
 
     public synchronized static Field loadMessageKeyField(ClassLoader loader) throws Exception {
         return UnobfuscatorCache.getInstance().getField(loader, () -> {
+            var classMessage = loadFMessageClass(loader);
             var evidence = HostDexContracts.messageKey(dexkit);
-            if (evidence.size() == 1) return evidence.get(0).getFieldInstance(loader);
-            if (!evidence.isEmpty()) throw new NoSuchFieldException("Ambiguous primary message key");
-            // Preserve the legacy contract on earlier hosts without the sender read pattern.
+            if (evidence.size() > 1) throw new NoSuchFieldException("Ambiguous primary message key");
+            if (evidence.size() == 1) {
+                Field field = evidence.get(0).getFieldInstance(loader);
+                return MessageKeyContract.requireIdentityField(field, classMessage);
+            }
+            // Hosts without the sender read pattern: accept only a single final field of the key
+            // type. Field order is never evidence; two mutable/final candidates fail closed.
             var classList = dexkit.findClass(new FindClass().matcher(new ClassMatcher().fieldCount(3)
                     .addMethod(new MethodMatcher().addUsingString("Key").name("toString"))));
-            if (classList.isEmpty())
-                throw new Exception("MessageKey class not found");
-            for (ClassData classData : classList) {
-                Class<?> keyMessageClass = classData.getInstance(loader);
-                var classMessage = loadFMessageClass(loader);
-                var fields = ReflectionUtils.getFieldsByExtendType(classMessage, keyMessageClass);
-                if (fields.isEmpty())
-                    continue;
-                return fields.get(fields.size() - 1);
-            }
-            throw new Exception("MessageKey field not found");
+            if (classList.size() != 1)
+                throw new NoSuchFieldException("MessageKey class not unique: " + classList.size());
+            Class<?> keyMessageClass = classList.get(0).getInstance(loader);
+            return MessageKeyContract.selectFinalField(
+                    ReflectionUtils.getFieldsByExtendType(classMessage, keyMessageClass), classMessage);
         });
     }
 
@@ -2606,10 +2609,10 @@ public class Unobfuscator {
 
     public synchronized static Class loadVideoViewContainerClass(ClassLoader loader) throws Exception {
         return UnobfuscatorCache.getInstance().getClass(loader, () -> {
-            var clazz = findFirstClassUsingStrings(loader, StringMatchType.Contains, "frame_visibility_serial_worker");
-            if (clazz == null)
-                throw new RuntimeException("VideoViewContainer class not found");
-            return clazz;
+            // The conversation video row. 2.26.46.82 removed the worker-name string; the
+            // accessor's assertion message is present once in both supported hosts.
+            var accessors = HostDexContracts.videoRowContainer(dexkit).unique();
+            return loader.loadClass(accessors.getClassName());
         });
     }
 
@@ -3846,11 +3849,6 @@ public class Unobfuscator {
         });
     }
 
-    public static Method loadVideoTranscoderStartMethod(ClassLoader classLoader) throws Exception {
-        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> findFirstMethodUsingStrings(classLoader,
-                StringMatchType.Contains, "VideoTranscoder/transcodeVideoNew/"));
-    }
-
     public static Field loadWaContactGetWaNameField(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getField(classLoader, () -> {
             var waContact = loadWaContactClass(classLoader).getName();
@@ -4176,10 +4174,6 @@ public class Unobfuscator {
             idxFields++;
         }
         return result;
-    }
-
-    public static Class<?> loadMediaDataVideoConfigurationClass(ClassLoader classLoader) throws Exception {
-        return UnobfuscatorCache.getInstance().getClass(classLoader, () -> findFirstClassUsingStrings(classLoader, StringMatchType.Contains, "MediaDataVideoConfiguration("));
     }
 
     public static Method loadStatusStyleMethod(ClassLoader classLoader) throws Exception {

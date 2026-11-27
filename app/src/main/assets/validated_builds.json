@@ -1,5 +1,5 @@
 {
-  "schema": 2,
-  "description": "Reviewed records require an exact build key, scope and prerequisites. Runtime smoke results do not populate this list.",
+  "schema": 3,
+  "description": "Reviewed records require an exact build key, scope and prerequisites. The key covers the module code digest, which excludes this file. Runtime smoke results do not populate this list.",
   "builds": []
 }

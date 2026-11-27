@@ -91,8 +91,13 @@ public class UnobfuscatorCache {
                 savedSchema = sPrefsCacheHooks.getInt(SCHEMA_KEY, 0);
             } catch (Exception ignored) {
             }
+            // Descriptors are valid only for the exact installed host files: the same versionCode
+            // can be installed from different base/split sets (e.g. a different feature split).
+            String hostInstall = CacheIdentity.hostInstallation(mApplication.getApplicationInfo());
+            String savedHostInstall = sPrefsCacheHooks.getString(HOST_INSTALL_KEY, "");
             if (version != currentVersion || savedUpdateTime != lastUpdateTime
-                    || !versionName.equals(savedVersionName) || savedSchema != CACHE_SCHEMA) {
+                    || !versionName.equals(savedVersionName) || savedSchema != CACHE_SCHEMA
+                    || !hostInstall.equals(savedHostInstall)) {
                 int toastResId = R.string.starting_cache;
                 try {
                     if (XResManager.moduleResources != null) {
@@ -112,7 +117,8 @@ public class UnobfuscatorCache {
                 sPrefsCacheHooks.edit().putLong("updateTime", lastUpdateTime).commit();
                 sPrefsCacheHooks.edit().putString("wae_version_name", versionName).commit();
                 sPrefsCacheHooks.edit().putInt(SCHEMA_KEY, CACHE_SCHEMA).commit();
-                if (version != currentVersion) {
+                sPrefsCacheHooks.edit().putString(HOST_INSTALL_KEY, hostInstall).commit();
+                if (version != currentVersion || !hostInstall.equals(savedHostInstall)) {
                     sPrefsCacheStrings.edit().clear().commit();
                 }
             }
@@ -149,6 +155,8 @@ public class UnobfuscatorCache {
             sPrefsCacheHooks.edit().putLong("updateTime", lastUpdateTime).commit();
             sPrefsCacheHooks.edit().putString("wae_version_name", versionName).commit();
             sPrefsCacheHooks.edit().putInt(SCHEMA_KEY, CACHE_SCHEMA).commit();
+            sPrefsCacheHooks.edit().putString(HOST_INSTALL_KEY,
+                    CacheIdentity.hostInstallation(mApplication.getApplicationInfo())).commit();
         } catch (Exception ignored) {
         }
         // An explicit clear is a request to search again in this process too.
@@ -175,7 +183,8 @@ public class UnobfuscatorCache {
             var typeChunks = pkg.getTypeChunks("string");
             var chunk = typeChunks.stream().filter(typeChunk -> typeChunk.getConfiguration().isDefault()).findFirst().orElse(null);
             var entries = chunk.getEntries();
-            int baseValue = 0x7f12;
+            // Resource ids are package << 24 | type << 16 | entry; read both from the table.
+            int baseValue = (pkg.getId() << 8) | chunk.getId();
             for (var entry : entries.entrySet()) {
                 try {
                     int keyHexValue = entry.getKey();
@@ -267,7 +276,9 @@ public class UnobfuscatorCache {
     }
 
     /** Bumped when descriptor semantics change; a mismatch clears persisted descriptors once. */
-    static final int CACHE_SCHEMA = 2;
+    // 3: primary message key accepted only on evidence; host installation identity in the key.
+    static final int CACHE_SCHEMA = 3;
+    private static final String HOST_INSTALL_KEY = "wae_host_install";
     private static final String SCHEMA_KEY = "wae_cache_schema";
 
     private final DescriptorCache descriptors = new DescriptorCache(new DescriptorCache.Store() {

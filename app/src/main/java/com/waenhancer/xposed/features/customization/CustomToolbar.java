@@ -94,6 +94,7 @@ public class CustomToolbar extends Feature {
         );
 
         hookExpirationInfo();
+        hostPropsOrDegraded();
         Others.propsBoolean.put(6481, false);
     }
 
