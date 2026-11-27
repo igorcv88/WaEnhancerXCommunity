@@ -59,7 +59,20 @@ public abstract class Feature {
             return true;
         } catch (Throwable t) {
             de.robv.android.xposed.XposedBridge.log("[WAEX] " + getClass().getSimpleName()
-                    + ": AB overrides unavailable: " + t.getMessage());
+                    + ": AB boolean overrides unavailable: " + t.getMessage());
+            diagnosticDegraded();
+            return false;
+        }
+    }
+
+    /** As {@link #hostPropsOrDegraded}, for features that force integer properties. */
+    protected final boolean hostIntegerPropsOrDegraded() {
+        try {
+            HostProps.requireIntegerOverrides(classLoader);
+            return true;
+        } catch (Throwable t) {
+            de.robv.android.xposed.XposedBridge.log("[WAEX] " + getClass().getSimpleName()
+                    + ": AB integer overrides unavailable: " + t.getMessage());
             diagnosticDegraded();
             return false;
         }

@@ -2294,6 +2294,17 @@ public class Unobfuscator {
         });
     }
 
+    /** Concrete implementations of a NavigationBarView method in the base and every subclass. */
+    public synchronized static List<Method> loadTabFrameOverrides(ClassLoader loader, String name, int paramCount)
+            throws Exception {
+        Class<?> base = loadTabFrameClass(loader);
+        var methods = new java.util.ArrayList<Method>();
+        for (var data : HostDexContracts.concreteOverrides(dexkit, base.getName(), name, paramCount).methods()) {
+            methods.add(data.getMethodInstance(loader));
+        }
+        return methods;
+    }
+
     public synchronized static Class loadRemoveChannelRecClass(ClassLoader loader) throws Exception {
         return UnobfuscatorCache.getInstance().getClass(loader, () -> {
             var clazz = findFirstClassUsingStrings(loader, StringMatchType.Contains, "hasNewsletterSubscriptions");
@@ -3781,6 +3792,11 @@ public class Unobfuscator {
      * scanned. Only a getter also reachable from the notification method and filtering by a
      * (Jid) -> boolean check is accepted; ambiguity returns null and the legacy route runs.
      */
+    static boolean isPlatformClass(String name) {
+        return name.startsWith("java.") || name.startsWith("javax.") || name.startsWith("android.")
+                || name.startsWith("androidx.") || name.startsWith("kotlin.");
+    }
+
     private static Method findLockedChatsGetterFromFragment(ClassLoader classLoader) throws Exception {
         var fragment = dexkit.getClassData("com.whatsapp.conversation.conversationslist.LockedConversationsFragment");
         if (fragment == null) return null;
@@ -3804,8 +3820,13 @@ public class Unobfuscator {
                     if (!seen.add(invoke.getDescriptor()) || !reachable.contains(invoke.getDescriptor())) continue;
                     boolean filtersByJid = false;
                     for (var inner : invoke.getInvokes()) {
+                        // A host predicate on the chat JID. Collection.add(Object) is also a
+                        // one-argument boolean call, and it made the filtered locked-chats getter
+                        // indistinguishable from the unfiltered sibling on both audited hosts
+                        // (0WL.A0O/A0N in 2.26.38.74, 0Wo.A0Q/A0P in 2.26.46.82).
                         if (inner.isMethod() && inner.getParamCount() == 1 && inner.getReturnType() != null
-                                && "boolean".equals(inner.getReturnType().getName())) {
+                                && "boolean".equals(inner.getReturnType().getName())
+                                && !isPlatformClass(inner.getClassName())) {
                             filtersByJid = true;
                             break;
                         }

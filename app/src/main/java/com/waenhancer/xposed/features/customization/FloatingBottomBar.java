@@ -473,17 +473,16 @@ public class FloatingBottomBar extends Feature {
 
         // Hook the tab item selection listener of BottomNavigationView to capture tab taps/clicks
         try {
-            java.lang.reflect.Method targetSetListenerMethod = null;
-            for (java.lang.reflect.Method m : loadTabFrameClass.getMethods()) {
-                String name = m.getName();
-                if ((name.equals("setOnItemSelectedListener") || name.equals("setOnNavigationItemSelectedListener")) 
-                    && m.getParameterCount() == 1) {
-                    targetSetListenerMethod = m;
-                    break;
-                }
+            // 2.26.46.82 declares setOnItemSelectedListener abstract in the navigation base and
+            // implements it in each bar/rail class; hook every concrete implementation instead.
+            // A listener already wrapped (an override calling super) is left as is below.
+            java.util.List<java.lang.reflect.Method> listenerSetters =
+                    Unobfuscator.loadTabFrameOverrides(classLoader, "setOnItemSelectedListener", 1);
+            if (listenerSetters.isEmpty()) {
+                listenerSetters = Unobfuscator.loadTabFrameOverrides(classLoader, "setOnNavigationItemSelectedListener", 1);
             }
-
-            if (targetSetListenerMethod != null) {
+            if (listenerSetters.isEmpty()) throw new NoSuchMethodException("no concrete item-selection listener setter");
+            for (java.lang.reflect.Method targetSetListenerMethod : listenerSetters) {
                 final Class<?> listenerInterface = targetSetListenerMethod.getParameterTypes()[0];
                 
                 XposedBridge.hookMethod(targetSetListenerMethod, new XC_MethodHook() {

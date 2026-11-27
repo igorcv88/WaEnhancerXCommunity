@@ -2,6 +2,9 @@ package com.waenhancer.xposed.core.devkit;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
+import org.luckypray.dexkit.query.enums.UsingType;
+import org.luckypray.dexkit.query.matchers.ClassMatcher;
+import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.enums.StringMatchType;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.ClassData;
@@ -10,6 +13,7 @@ import org.luckypray.dexkit.result.FieldData;
 import org.luckypray.dexkit.result.UsingFieldData;
 
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -220,5 +224,223 @@ public final class HostDexContracts {
         List<MethodData> perClass = legacy.stream().filter(method -> owners.add(method.getClassName()))
                 .collect(Collectors.toList());
         return new Candidates("legacy-frame-worker-name", perClass);
+    }
+
+    // ---- Message identity, contacts, calls, AB props and media: DEX-only queries shared with the
+    // offline audit. Each returns every candidate; callers require uniqueness.
+
+    public static final String MESSAGE_CLASS = "message-class";
+    public static final String MESSAGE_KEY_TYPE = "message-key-type";
+    public static final String MESSAGE_KEY_LEGACY = "message-key-legacy-final-field";
+    public static final String ORIGINAL_MESSAGE_KEY = "original-message-key";
+    public static final String WA_CONTACT = "wa-contact-class";
+    public static final String OUTGOING_CALL = "outgoing-call-launcher";
+    public static final String PROPS_BOOLEAN = "ab-props-boolean-getter";
+    public static final String PROPS_INTEGER = "ab-props-integer-getter";
+    public static final String IMAGE_ROW = "conversation-image-row";
+
+    private static final String MESSAGE_ANCHOR = "FMessage/getSenderUserJid/key.id";
+    private static final String ORIGINAL_KEY_ANCHOR = "FMessageUtil/getOriginalMessageKeyIfEdited";
+    private static final String CONTACT_ANCHOR = "ContactManager/getContactFromCacheOrDbByJid";
+    private static final String CONTACT_FALLBACK = "problematic contact:";
+    private static final String CALL_ANCHOR = "outgoing-launch/cm-null-contact";
+    private static final String SINGLETON_LIST =
+            "Ljava/util/Collections;->singletonList(Ljava/lang/Object;)Ljava/util/List;";
+
+    public record Types(String strategy, List<ClassData> classes) {
+        public ClassData unique() throws ClassNotFoundException {
+            if (classes.size() != 1) throw new ClassNotFoundException(strategy + ": candidates=" + classes.size());
+            return classes.get(0);
+        }
+    }
+
+    public record Fields(String strategy, List<FieldData> fields) {
+        public FieldData unique() throws NoSuchFieldException {
+            if (fields.size() != 1) throw new NoSuchFieldException(strategy + ": candidates=" + fields.size());
+            return fields.get(0);
+        }
+    }
+
+    /** Classes declaring a method that loads {@code anchor}, in DEX order, without repeats. */
+    private static List<ClassData> anchoredClasses(DexKitBridge dexkit, String anchor) {
+        Set<String> seen = new LinkedHashSet<>();
+        List<ClassData> out = new ArrayList<>();
+        for (MethodData method : anchoredMethods(dexkit, anchor)) {
+            if (seen.add(method.getClassName())) out.add(method.getDeclaredClass());
+        }
+        return out;
+    }
+
+    public static Types messageClass(DexKitBridge dexkit) {
+        return new Types("sender-jid-log-anchor", anchoredClasses(dexkit, MESSAGE_ANCHOR));
+    }
+
+    /** The key value type: three fields and a toString that names "Key". */
+    public static Types messageKeyType(DexKitBridge dexkit) {
+        return new Types("three-fields-key-tostring", dexkit.findClass(FindClass.create().matcher(
+                ClassMatcher.create().fieldCount(3)
+                        .addMethod(MethodMatcher.create().addUsingString("Key").name("toString")))));
+    }
+
+    /**
+     * Hosts without the sender-read pattern: the final instance fields of the key type declared
+     * by the message class or its superclasses. Exactly one is accepted; field order is never
+     * evidence (both audited hosts also carry a mutable field of the same type).
+     */
+    public static Fields legacyMessageKey(DexKitBridge dexkit, String messageClass, String keyType) {
+        List<FieldData> out = new ArrayList<>();
+        for (ClassData owner = dexkit.getClassData(messageClass); owner != null; owner = owner.getSuperClass()) {
+            for (FieldData field : owner.getFields()) {
+                int modifiers = field.getModifiers();
+                if (keyType.equals(field.getTypeName()) && Modifier.isFinal(modifiers)
+                        && !Modifier.isStatic(modifiers)) out.add(field);
+            }
+        }
+        return new Fields("final-instance-field-of-key-type", out);
+    }
+
+    /** Instance fields of the key type (mutable or final), for the audit's ambiguity report. */
+    public static int keyTypedFieldCount(DexKitBridge dexkit, String messageClass, String keyType) {
+        int count = 0;
+        for (ClassData owner = dexkit.getClassData(messageClass); owner != null; owner = owner.getSuperClass()) {
+            for (FieldData field : owner.getFields()) {
+                if (keyType.equals(field.getTypeName()) && !Modifier.isStatic(field.getModifiers())) count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * The static (message) -> key lookup that returns the original key of an edited message. The
+     * log anchor is gone in 2.26.46.82; the structural rule needs the primary key field, a
+     * boolean accessor of the message and a call that maps the message to an object holding a key.
+     */
+    public static Candidates originalMessageKey(DexKitBridge dexkit, String messageClass, FieldData keyField) {
+        List<MethodData> logged = anchoredMethods(dexkit, ORIGINAL_KEY_ANCHOR).stream()
+                .filter(MethodData::isMethod).collect(Collectors.toList());
+        if (!logged.isEmpty()) return new Candidates("edited-original-key-log-anchor", logged);
+        String keyType = keyField.getTypeName();
+        List<MethodData> out = new ArrayList<>();
+        for (MethodData candidate : dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                .paramTypes(messageClass).returnType(keyType)
+                .addUsingField(keyField.getDescriptor(), UsingType.Read)))) {
+            if (!candidate.isMethod() || !Modifier.isStatic(candidate.getModifiers())) continue;
+            var calls = candidate.getInvokes();
+            boolean checksMessage = calls.stream().anyMatch(call -> call.isMethod()
+                    && messageClass.equals(call.getClassName())
+                    && call.getParamCount() == 0 && "boolean".equals(call.getReturnTypeName()));
+            boolean hasEditLookup = calls.stream().anyMatch(call -> call.isMethod()
+                    && !messageClass.equals(call.getClassName())
+                    && call.getParamTypeNames().equals(List.of(messageClass))
+                    && call.getReturnType() != null
+                    && call.getReturnType().getFields().stream().anyMatch(field -> keyType.equals(field.getTypeName())));
+            if (checksMessage && hasEditLookup) out.add(candidate);
+        }
+        return new Candidates("static-key-lookup-with-edit-check", out);
+    }
+
+    public static Types waContact(DexKitBridge dexkit) {
+        List<ClassData> returned = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (MethodData method : anchoredMethods(dexkit, CONTACT_ANCHOR)) {
+            if (!method.isMethod() || method.getReturnType() == null
+                    || "void".equals(method.getReturnTypeName())) continue;
+            if (seen.add(method.getReturnTypeName())) returned.add(method.getReturnType());
+        }
+        if (!returned.isEmpty()) return new Types("contact-lookup-return-type", returned);
+        return new Types("problematic-contact-anchor", anchoredClasses(dexkit, CONTACT_FALLBACK));
+    }
+
+    /**
+     * The (Context, WaContact, int, boolean) call launcher that wraps the contact in a singleton
+     * list. The log string is not a selector: 2.26.38.74 uses it in three methods and 2.26.46.82
+     * not at all; it is consulted only together with the launcher's signature.
+     */
+    public static Candidates outgoingCall(DexKitBridge dexkit, String contactClass) {
+        String[] signature = {"android.content.Context", contactClass, "int", "boolean"};
+        List<MethodData> shaped = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                .paramTypes(signature).addInvoke(SINGLETON_LIST)));
+        if (shaped.size() == 1) return new Candidates("contact-launcher-singleton-list", shaped);
+        List<MethodData> logged = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                .paramTypes(signature).addUsingString(CALL_ANCHOR, StringMatchType.Contains)));
+        if (logged.size() == 1) return new Candidates("contact-launcher-log-anchor", logged);
+        return new Candidates("contact-launcher-singleton-list", shaped);
+    }
+
+    public static Candidates propsBoolean(DexKitBridge dexkit) {
+        return new Candidates("unknown-boolean-field-anchor", anchoredMethods(dexkit, "Unknown BooleanField")
+                .stream().filter(MethodData::isMethod).collect(Collectors.toList()));
+    }
+
+    public static Candidates propsInteger(DexKitBridge dexkit) {
+        return new Candidates("unknown-int-field-anchor", anchoredMethods(dexkit, "Unknown IntField")
+                .stream().filter(MethodData::isMethod).collect(Collectors.toList()));
+    }
+
+    /**
+     * Index of the property key among a getter's parameters: the only {@code int}, else the only
+     * {@code Integer}; -1 when absent or ambiguous. Runtime (HostArgCompat) and offline share it.
+     */
+    public static int keyParameterIndex(List<String> parameterTypes) {
+        if (parameterTypes == null) return -1;
+        for (String type : new String[]{"int", "java.lang.Integer"}) {
+            int index = -1;
+            for (int i = 0; i < parameterTypes.size(); i++) {
+                if (!type.equals(parameterTypes.get(i))) continue;
+                if (index >= 0) return -1;
+                index = i;
+            }
+            if (index >= 0) return index;
+        }
+        return -1;
+    }
+
+    /**
+     * The image message row: a class with a method that uses both the HD-overlay and the control
+     * button view ids. Resource ids come from each host's own resource table (runtime: Resources;
+     * offline: aapt2), so the contract is checked per APK.
+     */
+    public static Types imageRowContainer(DexKitBridge dexkit, int hdInvisibleTouchId, int controlButtonId) {
+        if (hdInvisibleTouchId == 0 || controlButtonId == 0) return new Types("resource-ids-missing", List.of());
+        return new Types("hd-overlay-and-control-button-ids", dexkit.findClass(FindClass.create().matcher(
+                ClassMatcher.create().addMethod(MethodMatcher.create()
+                        .addUsingNumber(hdInvisibleTouchId).addUsingNumber(controlButtonId)))));
+    }
+
+    public static final String TAB_FRAME = "navigation-bar-base";
+    public static final String NAVIGATION_MAX_ITEMS = "navigation-bar-max-item-count";
+    public static final String NAVIGATION_LISTENER = "navigation-bar-item-selected-listener";
+
+    /** Material's NavigationBarView base, which saves its menu presenters under this key. */
+    public static Types tabFrame(DexKitBridge dexkit) {
+        return new Types("menu-presenters-state-key", anchoredClasses(dexkit, "android:menu:presenters"));
+    }
+
+    /**
+     * Concrete implementations of {@code name} with {@code paramCount} parameters in {@code base}
+     * and all its subclasses. 2.26.46.82 made NavigationBarView#setOnItemSelectedListener abstract
+     * and implements it in HomeLegacyBottomNavigationView, WDSBottomBar and WDSNavigationRail;
+     * getMaxItemCount is implemented by the bottom bar and the rail bases, not by
+     * BottomNavigationView, which no longer exists under that name.
+     */
+    public static Candidates concreteOverrides(DexKitBridge dexkit, String base, String name, int paramCount) {
+        List<MethodData> out = new ArrayList<>();
+        Set<String> visited = new LinkedHashSet<>();
+        java.util.ArrayDeque<String> pending = new java.util.ArrayDeque<>(List.of(base));
+        while (!pending.isEmpty() && visited.size() < 256) {
+            String type = pending.poll();
+            if (!visited.add(type)) continue;
+            ClassData data = dexkit.getClassData(type);
+            if (data != null) {
+                for (MethodData method : data.getMethods()) {
+                    if (method.isMethod() && name.equals(method.getName()) && method.getParamCount() == paramCount
+                            && !Modifier.isAbstract(method.getModifiers())) out.add(method);
+                }
+            }
+            for (ClassData child : dexkit.findClass(FindClass.create().matcher(ClassMatcher.create().superClass(type)))) {
+                pending.add(child.getName());
+            }
+        }
+        return new Candidates("concrete-overrides-in-hierarchy", out);
     }
 }

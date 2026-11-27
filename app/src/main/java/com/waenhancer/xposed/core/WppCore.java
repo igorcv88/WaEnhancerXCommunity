@@ -492,10 +492,8 @@ public class WppCore {
 
     public synchronized static Class getSettingsActivityClass(@NonNull ClassLoader loader) {
         try {
-            try {
-                return loader.loadClass("com.whatsapp.settings.ui.SettingsTabActivity");
-            } catch (Throwable ignored) {}
-            return Unobfuscator.loadSettingsActivityClass(loader);
+            Class<?> tab = HostClassNames.first(HostClassNames.SETTINGS_TAB, loader);
+            return tab != null ? tab : Unobfuscator.loadSettingsActivityClass(loader);
         } catch (Exception e) {
             return null;
         }
@@ -510,11 +508,9 @@ public class WppCore {
     }
 
     public synchronized static Class getAboutActivityClass(@NonNull ClassLoader loader) {
-        Class oldClass = XposedHelpers.findClassIfExists("com.whatsapp.settings.About", loader);
-
-        return oldClass != null
-                ? oldClass
-                : XposedHelpers.findClass("com.whatsapp.settings.ui.About", loader);
+        Class<?> about = HostClassNames.first(HostClassNames.ABOUT, loader);
+        if (about == null) throw new IllegalStateException("About activity: none of " + HostClassNames.ABOUT);
+        return about;
     }
 
     public synchronized static Class getSettingsNotificationsActivityClass(@NonNull ClassLoader loader) {

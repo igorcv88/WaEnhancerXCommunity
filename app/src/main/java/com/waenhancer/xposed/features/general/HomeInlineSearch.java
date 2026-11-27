@@ -243,23 +243,23 @@ final class HomeInlineSearch {
                     if (param.thisObject instanceof Activity) attach((Activity) param.thisObject);
                 }
             });
-            Method resume = declared(home, "onResume");
+            Method resume = nearest(home, "onResume");
             if (resume != null) {
-                XposedBridge.hookMethod(resume, new XC_MethodHook() {
+                XposedBridge.hookMethod(resume, com.waenhancer.xposed.core.HostHooks.scopedTo(home, resume, new XC_MethodHook() {
                     @Override protected void afterHookedMethod(MethodHookParam param) {
                         if (param.thisObject instanceof Activity) attach((Activity) param.thisObject);
                     }
-                });
+                }));
             }
-            Method destroy = declared(home, "onDestroy");
+            Method destroy = nearest(home, "onDestroy");
             if (destroy != null) {
-                XposedBridge.hookMethod(destroy, new XC_MethodHook() {
+                XposedBridge.hookMethod(destroy, com.waenhancer.xposed.core.HostHooks.scopedTo(home, destroy, new XC_MethodHook() {
                     @Override protected void beforeHookedMethod(MethodHookParam param) {
                         if (param.thisObject instanceof Activity) detach((Activity) param.thisObject);
                     }
-                });
+                }));
             }
-            XposedHelpers.findAndHookMethod(home, "onPrepareOptionsMenu", Menu.class, new XC_MethodHook() {
+            com.waenhancer.xposed.core.HostHooks.hookNearest(home, "onPrepareOptionsMenu", Menu.class, new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     if (!(param.thisObject instanceof Activity)) return;
                     MenuItem item = ((Menu) param.args[0]).findItem(menuId);
@@ -269,15 +269,15 @@ final class HomeInlineSearch {
                     item.setOnMenuItemClickListener(clicked -> toggle(activity));
                 }
             });
-            Method selected = declared(home, "onOptionsItemSelected", MenuItem.class);
+            Method selected = nearest(home, "onOptionsItemSelected", MenuItem.class);
             if (selected != null) {
-                XposedBridge.hookMethod(selected, new XC_MethodHook() {
+                XposedBridge.hookMethod(selected, com.waenhancer.xposed.core.HostHooks.scopedTo(home, selected, new XC_MethodHook() {
                     @Override protected void beforeHookedMethod(MethodHookParam param) {
                         if (!(param.thisObject instanceof Activity) || !(param.args[0] instanceof MenuItem)) return;
                         if (((MenuItem) param.args[0]).getItemId() == menuId
                                 && toggle((Activity) param.thisObject)) param.setResult(true);
                     }
-                });
+                }));
             }
             keepSearchMenuAvailable();
             return true;
@@ -294,8 +294,9 @@ final class HomeInlineSearch {
         }
     }
 
-    private static Method declared(Class<?> owner, String name, Class<?>... parameters) {
-        try { return owner.getDeclaredMethod(name, parameters); }
+    /** Nearest declaration in Home's hierarchy (2.26.46.82 moved most callbacks to HomeActivityKt). */
+    private static Method nearest(Class<?> owner, String name, Class<?>... parameters) {
+        try { return com.waenhancer.xposed.core.HostHooks.nearestDeclared(owner, name, parameters); }
         catch (NoSuchMethodException ignored) { return null; }
     }
 

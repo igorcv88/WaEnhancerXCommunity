@@ -274,8 +274,10 @@ public class Others extends Feature {
             Others.propsBoolean.put(13949, true);
         }
 
-        // Install the shared override hook before resolvers whose failure would otherwise skip it.
-        HostProps.ensureInstalled(classLoader);
+        // Install both override getters before resolvers whose failure would otherwise skip them.
+        // Each is independent: one missing getter degrades only the overrides of its own kind.
+        hostPropsOrDegraded();
+        hostIntegerPropsOrDegraded();
 
         // Whatsapp Status Style
         var retStatusStyle = Unobfuscator.loadStatusStyleMethod(classLoader);
@@ -1843,7 +1845,7 @@ public class Others extends Feature {
         } catch (Throwable ignored) {
         }
 
-        XposedHelpers.findAndHookMethod(WppCore.getHomeActivityClass(classLoader), "onPrepareOptionsMenu", Menu.class, new XC_MethodHook() {
+        com.waenhancer.xposed.core.HostHooks.hookNearest(WppCore.getHomeActivityClass(classLoader), "onPrepareOptionsMenu", Menu.class, new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 var menu = (Menu) param.args[0];

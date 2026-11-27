@@ -1,6 +1,7 @@
 import com.waenhancer.xposed.core.devkit.HostDexContracts;
 
 import org.luckypray.dexkit.DexKitBridge;
+import org.luckypray.dexkit.result.ClassData;
 import org.luckypray.dexkit.result.FieldData;
 import org.luckypray.dexkit.result.MethodData;
 import org.luckypray.dexkit.result.base.BaseData;
@@ -15,7 +16,12 @@ public final class OfflineDexAudit {
     private OfflineDexAudit() {}
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 1) throw new IllegalArgumentException("Expected one local base APK");
+        if (args.length != 1 && args.length != 3) {
+            throw new IllegalArgumentException("Expected a local base APK and optionally the ids of "
+                    + "id/hd_invisible_touch and id/control_btn from that APK's resource table");
+        }
+        int hdInvisibleTouch = args.length == 3 ? Integer.decode(args[1]) : 0;
+        int controlButton = args.length == 3 ? Integer.decode(args[2]) : 0;
         System.loadLibrary("dexkit");
         try (DexKitBridge bridge = DexKitBridge.create(args[0])) {
             emit(HostDexContracts.CHAT_LIST, HostDexContracts.chatList(bridge));
@@ -29,6 +35,16 @@ public final class OfflineDexAudit {
             var keys = HostDexContracts.messageKey(bridge);
             result("message-key", "sender-read-of-final-key-written-by-owner-constructor", keys.size());
             for (var key : keys) row("path", "message-key", key.getDescriptor(), dexName(key));
+            identity(bridge, keys);
+            var contact = types(HostDexContracts.WA_CONTACT, HostDexContracts.waContact(bridge));
+            if (contact != null) {
+                emit(HostDexContracts.OUTGOING_CALL, HostDexContracts.outgoingCall(bridge, contact.getName()));
+            } else {
+                result(HostDexContracts.OUTGOING_CALL, "needs-unique-wa-contact", 0);
+            }
+            emitProps(HostDexContracts.PROPS_BOOLEAN, HostDexContracts.propsBoolean(bridge));
+            emitProps(HostDexContracts.PROPS_INTEGER, HostDexContracts.propsInteger(bridge));
+            types(HostDexContracts.IMAGE_ROW, HostDexContracts.imageRowContainer(bridge, hdInvisibleTouch, controlButton));
             var paths = HostDexContracts.homeDelegatePaths(bridge);
             String contract = "tablet-conversation-delegate";
             result(contract, "fragment-field-reads-and-delegate-interface", paths.size());
@@ -36,6 +52,52 @@ public final class OfflineDexAudit {
                 row("path", contract, String.join(",", path.stream().map(FieldData::getDescriptor).toList()),
                         String.join(",", path.stream().map(OfflineDexAudit::dexName).toList()));
             }
+        }
+    }
+
+    /** Message class, key type, legacy final key and the original-key lookup (edits). */
+    private static void identity(DexKitBridge bridge, List<FieldData> primaryKeys) throws Exception {
+        var message = types(HostDexContracts.MESSAGE_CLASS, HostDexContracts.messageClass(bridge));
+        var keyType = types(HostDexContracts.MESSAGE_KEY_TYPE, HostDexContracts.messageKeyType(bridge));
+        if (message == null || keyType == null) {
+            result(HostDexContracts.MESSAGE_KEY_LEGACY, "needs-unique-message-and-key-type", 0);
+            result(HostDexContracts.ORIGINAL_MESSAGE_KEY, "needs-unique-message-and-key-type", 0);
+            return;
+        }
+        var legacy = HostDexContracts.legacyMessageKey(bridge, message.getName(), keyType.getName());
+        result(HostDexContracts.MESSAGE_KEY_LEGACY, legacy.strategy(), legacy.fields().size());
+        for (var field : legacy.fields()) row("field", HostDexContracts.MESSAGE_KEY_LEGACY, field.getDescriptor(), dexName(field));
+        row("count", HostDexContracts.MESSAGE_KEY_LEGACY, "instance-fields-of-key-type",
+                String.valueOf(HostDexContracts.keyTypedFieldCount(bridge, message.getName(), keyType.getName())));
+        // The runtime key is the primary evidence when unique, otherwise the legacy final field.
+        FieldData key = primaryKeys.size() == 1 ? primaryKeys.get(0)
+                : legacy.fields().size() == 1 ? legacy.fields().get(0) : null;
+        row("agreement", HostDexContracts.MESSAGE_KEY_LEGACY, "primary-equals-legacy",
+                String.valueOf(primaryKeys.size() == 1 && legacy.fields().size() == 1
+                        && primaryKeys.get(0).getDescriptor().equals(legacy.fields().get(0).getDescriptor())));
+        if (key == null) {
+            result(HostDexContracts.ORIGINAL_MESSAGE_KEY, "needs-unique-message-key", 0);
+            return;
+        }
+        emit(HostDexContracts.ORIGINAL_MESSAGE_KEY, HostDexContracts.originalMessageKey(bridge, message.getName(), key));
+    }
+
+    private static ClassData types(String contract, HostDexContracts.Types candidates) {
+        result(contract, candidates.strategy(), candidates.classes().size());
+        for (ClassData type : candidates.classes()) {
+            ClassData parent = type.getSuperClass();
+            row("class", contract, type.getDescriptor(), dexName(type),
+                    parent == null ? "super=?" : "super=" + parent.getName());
+        }
+        return candidates.classes().size() == 1 ? candidates.classes().get(0) : null;
+    }
+
+    /** A props getter is usable only with an unambiguous key parameter. */
+    private static void emitProps(String contract, HostDexContracts.Candidates candidates) throws Exception {
+        emit(contract, candidates);
+        for (MethodData method : candidates.methods()) {
+            row("key-index", contract, method.getDescriptor(),
+                    String.valueOf(HostDexContracts.keyParameterIndex(method.getParamTypeNames())));
         }
     }
 

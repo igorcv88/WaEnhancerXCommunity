@@ -55,18 +55,17 @@ public class SeparateGroup extends Feature {
     public void doHook() throws Throwable {
         if (!prefs.getBoolean("separategroups", false)) return;
 
-        Class<?> bottomNavigationViewCls = Unobfuscator.findFirstClassUsingName(
-                classLoader,
-                org.luckypray.dexkit.query.enums.StringMatchType.EndsWith,
-                ".BottomNavigationView"
-        );
-        Method maxItemCount = XposedHelpers.findMethodExact(bottomNavigationViewCls, "getMaxItemCount");
+        // Every concrete getMaxItemCount of the navigation bar: BottomNavigationView (and a rail)
+        // in 2.26.38.74; the bottom-bar and rail bases in 2.26.46.82, where BottomNavigationView
+        // is no longer a class name. Phones use the bar, tablets the rail.
+        var maxItemCounts = Unobfuscator.loadTabFrameOverrides(classLoader, "getMaxItemCount", 0);
+        if (maxItemCounts.isEmpty()) throw new NoSuchMethodException("Navigation bar getMaxItemCount not found");
 
         // All-or-nothing: a failure in any required step removes every hook installed before it,
         // so the chat list, FAB, search and navigation are never left partially modified.
         HookTransaction tx = new HookTransaction();
         try {
-            tx.hook(maxItemCount, XC_MethodReplacement.returnConstant(6));
+            for (Method maxItemCount : maxItemCounts) tx.hook(maxItemCount, MAX_ITEMS);
             requireStep("icon", hookTabIcon(tx));
             requireStep("fragment", hookTabInstance(tx));
             requireStep("name", hookTabName(tx));
@@ -87,6 +86,13 @@ public class SeparateGroup extends Feature {
             throw failure;
         }
     }
+
+    private static final XC_MethodHook MAX_ITEMS = new XC_MethodHook() {
+        @Override
+        protected void afterHookedMethod(MethodHookParam param) {
+            param.setResult(SeparateGroupLimits.atLeastNavigationItems(param.getResult()));
+        }
+    };
 
     private static void requireStep(String step, boolean installed) {
         if (!installed) throw new IllegalStateException("Separate Groups step failed: " + step);

@@ -76,22 +76,10 @@ public final class HostArgCompat {
      */
     public static int findPreferredIntParameterIndex(Class<?>[] parameterTypes) {
         if (parameterTypes == null) return -1;
-
-        int primitiveIndex = -1;
-        for (int i = 0; i < parameterTypes.length; i++) {
-            if (parameterTypes[i] != int.class) continue;
-            if (primitiveIndex >= 0) return -1;
-            primitiveIndex = i;
-        }
-        if (primitiveIndex >= 0) return primitiveIndex;
-
-        int boxedIndex = -1;
-        for (int i = 0; i < parameterTypes.length; i++) {
-            if (parameterTypes[i] != Integer.class) continue;
-            if (boxedIndex >= 0) return -1;
-            boxedIndex = i;
-        }
-        return boxedIndex;
+        var names = new java.util.ArrayList<String>(parameterTypes.length);
+        for (Class<?> type : parameterTypes) names.add(type.getName());
+        // Same rule the offline DEX audit applies to the getters' type names.
+        return com.waenhancer.xposed.core.devkit.HostDexContracts.keyParameterIndex(names);
     }
 
     /**
