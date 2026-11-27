@@ -97,10 +97,10 @@ def dependencies(items, host_source):
 def inventory():
     sources = {}
     registrations = []
-    for path in sorted((ROOT / "app/src").glob("*/java/**/*")):
+    for path in sorted((ROOT / "app/src").glob("*/java/**/*"), key=lambda p: p.as_posix()):
         if path.suffix not in (".java", ".kt") or "/src/test" in path.as_posix():
             continue
-        src = path.read_text()
+        src = path.read_text(encoding="utf-8")
         relative = path.relative_to(ROOT).as_posix()
         items = tokens(src)
         if path.name == "FeatureLoader.java":
@@ -146,9 +146,9 @@ def main():
     args = parser.parse_args()
     rendered = render()
     if args.update:
-        MANIFEST.write_text(rendered)
+        MANIFEST.write_text(rendered, encoding="utf-8", newline="\n")
     else:
-        recorded = MANIFEST.read_text()
+        recorded = MANIFEST.read_text(encoding="utf-8")
         if recorded != rendered:
             for line in difflib.unified_diff(
                     recorded.splitlines(), rendered.splitlines(), fromfile="recorded", tofile="source"):

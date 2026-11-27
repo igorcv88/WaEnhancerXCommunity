@@ -41,6 +41,17 @@ python3 tools/compatibility/audit.py \
 
 Run the same command against the target base and add a repeated `--split /private/fixtures/target/SPLIT.apk` for each user-authorized split under audit. Record the smaller selected set separately for an installed test device. APK analysis is a local optional workflow. PR CI runs the source inventory and synthetic checks without APKs. The source gate tracks literal dependency calls, owners and the loader's 70 registrations. It flags additions, removed sites and changed expressions. Dynamic dispatch, inferred hook semantics and runtime behavior remain audit work.
 
+### Independent anchor census
+
+`tools/compatibility/anchor_census.py` counts, per host APK and without DexKit, the methods and classes that load each of the 172 string anchors used by `Unobfuscator` and `HostDexContracts` (`dexdump -d`). The recorded result for both mandatory builds is in `tools/compatibility/fixtures/anchor_census.json`; CI checks that every source anchor has a census and runs the parameterized tests. Re-record after changing an anchor:
+
+```sh
+python3 tools/compatibility/anchor_census.py census --dexdump /opt/android/build-tools/36.0.0/dexdump   --apk /private/fixtures/target/base.apk --label 2.26.46.82 --version-code 264608200
+WAE_DEXDUMP=... WAE_APK_2_26_46_82=... python3 tools/compatibility/test_anchor_census.py
+```
+
+The census is L0: it shows that an anchor exists or is unique, not that a resolver selects the right member. Triage of both PR #177 reviews, including the census findings, is in [pr177-triage.md](pr177-triage.md).
+
 ## Physical test and signed preview
 
 Use the existing signed module artifact for the exact PR head once its CI completes. Use a disposable test profile with backups and two consenting test accounts. Start with the control, then repeat the [regression matrix](regression-matrix.csv) on the exact target plus the correct ABI and density splits. Do not use the target base alone. Record the installed split identity and source, module digest/version, Android and LSPosed API, screen/layout direction, time and both endpoints for external effects.
@@ -49,6 +60,6 @@ Use the existing signed module artifact for the exact PR head once its CI comple
 2. Repeat with module on and Inspector, BubbleTouch debug and validation sessions off. Vary feature settings independently. Check Separate Groups, Home search, badges/FAB, tablet pane switches, distinct JID and LID chats, offline/reconnect, and background/foreground. Compare receipt icons and message state on both accounts.
 3. With diagnostics off, repeat authorized consecutive view-once items with Text Bubbles Liquid Glass off then on. Check both taps, media rows after rebind, first frame, scrolling, RTL, light/dark, accessibility, layout restoration and renderer safety. Only use explicitly authorized synthetic media and preserve sender restrictions. Use a disposable library with a synthetic migration, interruption/resume, deduplication and source checksum.
 4. For native sound stickers, compare download/play/pause, send/receive, voice interaction, competing audio focus, rebind and reconnect under stock, module ON with aesthetics OFF, and Glass ON. Record expected and observed separately for each endpoint. The preview does not add a sound-sticker backport or gate override.
-5. If resolver or callback evidence is needed, open **Diagnostics**, start a 30-minute session, then force-stop and relaunch the test host. Arm the individual smoke exercise before performing it. A callback plus user observation describes that instrumented exercise. It cannot certify the physical checks above. Changing the observed configuration or restarting the host invalidates the old process evidence. Business remains outside this matrix.
+5. If resolver or callback evidence is needed, open **Diagnostics**, start a 30-minute session, then force-stop and relaunch the test host. Wait until the report shows the feature loader as COMPLETE; a snapshot without that marker is UNKNOWN. Arm the individual smoke exercise before performing it. A required case passes only on its own behaviour path after arming (HideSeen: a suppressed direct read receipt; AntiRevoke: a blocked message revoke), plus user observation; reaching the hook is reported separately. That describes the instrumented exercise. It cannot certify the physical checks above. Changing the observed configuration or restarting the host invalidates the old process evidence. Business remains outside this matrix.
 
 The official validated-build list stays empty. A future scoped record must match the report’s exact build key and declare its prerequisites. A report with partial resolver, callback or manual smoke evidence does not establish a validated build. Remaining work includes full resolver coverage, installed-resource and reflection checks, device L2–L5 and native account availability.

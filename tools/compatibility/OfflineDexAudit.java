@@ -21,6 +21,7 @@ public final class OfflineDexAudit {
             emit(HostDexContracts.CHAT_LIST, HostDexContracts.chatList(bridge));
             emit(HostDexContracts.HOME_CONVERSATION, HostDexContracts.homeConversation(bridge));
             emit(HostDexContracts.READ_RECEIPT, HostDexContracts.incomingReadReceipt(bridge));
+            emit(HostDexContracts.VIDEO_ROW, HostDexContracts.videoRowContainer(bridge));
             emit("startup-preferences", HostDexContracts.startupPreferences(bridge));
             emit("cached-message-store", HostDexContracts.cachedMessage(bridge));
             emit("convert-lid-to-jid", HostDexContracts.convertLidToJid(bridge));

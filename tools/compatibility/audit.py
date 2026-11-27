@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import os
 import subprocess
 import tempfile
 import zipfile
@@ -117,7 +118,7 @@ def main():
     interesting = set()
     for relative in ("app/src/main/java/com/waenhancer/xposed",):
         for source in (ROOT / relative).rglob("*.java"):
-            for name, typ in re.findall(r'getID\("([\w.]+)",\s*"([\w]+)"\)', source.read_text()):
+            for name, typ in re.findall(r'getID\("([\w.]+)",\s*"([\w]+)"\)', source.read_text(encoding="utf-8")):
                 interesting.add(f"{typ}/{name}")
     # Include the native widget and view IDs used by layout and media interactions.
     interesting.update(("drawable/ic_viewonce", "id/conversation_contact_status",
@@ -136,7 +137,7 @@ def main():
         run(javac, "-cp", args.dexkit_classpath, "-d", classes,
             str(HERE / "OfflineDexAudit.java"), str(RESOLVERS))
         contracts = parse_dexkit(run(java, f"-Djava.library.path={args.dexkit_native.resolve()}",
-                                     "-cp", f"{classes}:{args.dexkit_classpath}", "OfflineDexAudit",
+                                     "-cp", f"{classes}{os.pathsep}{args.dexkit_classpath}", "OfflineDexAudit",
                                      str(args.base.resolve())))
     report = {
         "schema": 1,
