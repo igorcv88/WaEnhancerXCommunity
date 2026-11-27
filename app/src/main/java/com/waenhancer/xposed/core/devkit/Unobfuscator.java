@@ -301,17 +301,23 @@ public class Unobfuscator {
 
     public synchronized static Method loadStartOutgoingCallMethod(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
-            Method method = findFirstMethodUsingStrings(classLoader, StringMatchType.Contains, "outgoing-launch/cm-null-contact");
-            if (method != null) return method;
-            // Dev4Mod 2d2301a: newer builds dropped the log string; match the
-            // (Context, WaContact, int, boolean) launcher that wraps the contact in a singleton list.
+            // The (Context, WaContact, int, boolean) launcher that wraps the contact in a singleton
+            // list (Dev4Mod 2d2301a). It is unique in 2.26.38.74 and 2.26.46.82. The log string is
+            // not: 2.26.38.74 uses it in three methods (this launcher, a String-argument sibling
+            // and a click handler), so "first match" depended on DEX order; 2.26.46.82 dropped it.
+            String contact = loadWaContactClass(classLoader).getName();
             var candidates = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
-                    .paramTypes(Context.class.getName(), loadWaContactClass(classLoader).getName(),
-                            int.class.getName(), boolean.class.getName())
+                    .paramTypes(Context.class.getName(), contact, int.class.getName(), boolean.class.getName())
                     .addInvoke("Ljava/util/Collections;->singletonList(Ljava/lang/Object;)Ljava/util/List;")));
-            if (candidates.size() != 1)
-                throw new NoSuchMethodException("StartOutgoingCall method not found (candidates=" + candidates.size() + ")");
-            return candidates.get(0).getMethodInstance(classLoader);
+            if (candidates.size() == 1) return candidates.get(0).getMethodInstance(classLoader);
+            // Fallback for builds without the singleton-list shape: the logged launcher, accepted
+            // only when exactly one method with the launcher's signature uses the string.
+            var logged = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                    .paramTypes(Context.class.getName(), contact, int.class.getName(), boolean.class.getName())
+                    .addUsingString("outgoing-launch/cm-null-contact", StringMatchType.Contains)));
+            if (logged.size() == 1) return logged.get(0).getMethodInstance(classLoader);
+            throw new NoSuchMethodException("StartOutgoingCall method not unique (shape=" + candidates.size()
+                    + ", logged=" + logged.size() + ")");
         });
     }
 
