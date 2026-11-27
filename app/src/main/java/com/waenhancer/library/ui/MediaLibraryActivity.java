@@ -63,6 +63,7 @@ public final class MediaLibraryActivity extends BaseActivity {
     private GalleryAccess.Grant grant;
     private boolean showingTrash;
     private boolean openedRequested;
+    private View content;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -114,6 +115,9 @@ public final class MediaLibraryActivity extends BaseActivity {
         grid.setAdapter(adapter);
         root.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         setContentView(root);
+        content = root;
+        // A direct-open request shows the viewer, not this gallery; avoid flashing the grid.
+        if (grant != null && grant.openUuid != null) root.setVisibility(View.INVISIBLE);
         if (toolbar != null) setSupportActionBar(toolbar);
         setTitle(grant != null && grant.title != null && !grant.title.isEmpty()
                 ? getString(R.string.media_library_chat_title, grant.title) : getString(R.string.media_library_title));
@@ -153,16 +157,24 @@ public final class MediaLibraryActivity extends BaseActivity {
         });
     }
 
-    /** A tap on an inline copy in WhatsApp opens that item directly, once. */
+    /**
+     * A tap on an inline copy in WhatsApp (or on an item of the "View once" tab) opens that item
+     * directly, once. This activity then finishes, so Back from the viewer returns to the WhatsApp
+     * screen the tap came from instead of to this gallery. When the item is not in this chat's
+     * list (deleted meanwhile), the gallery stays as the fallback.
+     */
     private void openRequestedItem() {
         if (grant == null || grant.openUuid == null || openedRequested) return;
         openedRequested = true;
         for (int i = 0; i < adapter.items().size(); i++) {
             if (grant.openUuid.equals(adapter.items().get(i).uuid)) {
                 openViewer(i);
+                finish();
+                overridePendingTransition(0, 0);
                 return;
             }
         }
+        if (content != null) content.setVisibility(View.VISIBLE);
     }
 
     private void openViewer(int position) {

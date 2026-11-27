@@ -43,6 +43,16 @@ acceptance criteria, test matrix, 18 device checks) and `docs/MEDIA_LIFECYCLE_EV
 - Owner preference: clinical, direct, no cheerleading. AGENTS.md: English in code/commits/PRs,
   update this handoff each task, report blocked checks honestly.
 
+### Owner device report on df361a3 (2026-11-27) and follow-up
+- Owner: view-once copies now replace the bubble in the conversation, stable under fast scrolling;
+  the "View once" chip is styled but still oversized and the wrong colour; bug: tapping the bubble
+  opened the viewer, but Back returned to the module's library instead of the conversation.
+- Fixed: `MediaLibraryActivity.openRequestedItem` finishes the gallery after launching the viewer
+  for a direct-open request (grid hidden meanwhile; gallery stays if the item is gone).
+- Fixed: chip look is read from rendered native chips (`ChipLook`, `ChipLookTest` 3 tests): inset
+  pill (native chips are 48dp touch targets around a smaller pill), sampled fill/outline/content
+  colours, checked look from the checked chip, 18dp icon. Device check pending.
+
 ### DONE (2026-11-26, after 4f3a2d2) — items 1 and 2 below, as planned
 - Item 1 (`ViewOnceGalleryTab.styledChip`/`pill`): plain `TextView`, `StateListDrawable` of two
   `GradientDrawable` pills (radius height/2, 1.25dp stroke = text colour @ 0x61, selected fill @

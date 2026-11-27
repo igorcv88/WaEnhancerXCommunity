@@ -188,11 +188,13 @@ View-once tab in WhatsApp's media screen: `ViewOnceGalleryTab` adds a "View once
 `com.whatsapp.gallery.ui.MediaGalleryActivity` (`chip_layout`, IDs from the owner's 2026-11-26
 inspector trace) only when the contact has kept view-once items. It shows them in a grid drawn
 inside `media_hub_fragment_container`, separate from WhatsApp's Photos/Videos. The chip is a plain
-`TextView` styled like the outlined WDS chips (the native `Chip`s draw outline, icon and text in
-their `ChipDrawable`, so copying their background/text attributes did not reproduce them): pill
-`GradientDrawable` with a 1.25dp outline in the native text colour at 38% (15% fill when
-selected), the template's current text colour at full alpha, text size and height, bold, 16dp
-horizontal padding, WhatsApp's `ic_viewonce` tinted at 20dp when present; it stays outside
+`TextView` styled like the WDS chips. The native chips are Material `Chip`s: a 48dp touch target
+with a smaller pill drawn inset by a `ChipDrawable` whose fill, outline and text colours the view
+does not report (copying them gave a grey, oversized pill on the 36b6593/df361a3 builds). One
+unchecked and, if present, one checked native chip are drawn into bitmaps and read by `ChipLook`
+(pure, JVM-tested): visible pill box, fill, outline colour/width, content colour, content padding.
+Ours keeps the native view height with the pill inset the same way, uses the checked chip's look
+when selected, WhatsApp's `ic_viewonce` at 18dp tinted like the text; it stays outside
 `WDSChipGroup`'s checked-state logic and consumes its own tap; tapping a native
 chip hides it; tapping an item opens it in the module viewer. WhatsApp's lists and database are
 untouched, so view-once copies never mix into WhatsApp's own Photos/Videos. The contact comes from
@@ -386,7 +388,9 @@ Nothing below has been observed on a phone. Each item names what proves it.
 20. View-once bubble: a received view-once whose file WhatsApp still has shows the image as a
     media-sized bubble (no "1 Photo" pill, no badge) once kept; the same after expiry; own sent
     view-once with a copy likewise; tap opens the copy in the module viewer and the message is not
-    consumed (WhatsApp still lists it as unopened); long-press still selects the row.
+    consumed (WhatsApp still lists it as unopened); long-press still selects the row; **Back from
+    the viewer returns to the conversation** (the gallery activity that launches the viewer for a
+    direct-open request finishes itself; owner found it returning to the library on df361a3).
 21. Fast scrolling/recycling through view-once and text rows: no row keeps a resized body, hidden
     "1 Photo" children or a stale image after rebinding; with Text Bubbles Liquid Glass on, the
     enlarged bubble's glass and the view-once fill clearing behave as before.
