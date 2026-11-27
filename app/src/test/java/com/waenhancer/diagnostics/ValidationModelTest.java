@@ -68,6 +68,16 @@ public class ValidationModelTest {
         assertTrue(occurredDuringSession(1_005, 1_000, 1_010));
     }
 
+    @Test
+    public void officialRecordRequiresExactIdentityAndExplicitScope() {
+        String exact = "a".repeat(64);
+        assertTrue(matchesOfficialRecord(exact, exact, "two receipt cases", "physical endpoints"));
+        assertFalse(matchesOfficialRecord(exact, "b".repeat(64), "two receipt cases", "physical endpoints"));
+        assertFalse(matchesOfficialRecord(exact, exact, "", "physical endpoints"));
+        assertFalse(matchesOfficialRecord(exact, exact, "two receipt cases", ""));
+        assertFalse(matchesOfficialRecord("2.26.46.82", "2.26.46.82", "scope", "legacy"));
+    }
+
     private static FeatureEvidence observedRequiredCase() {
         var e = new FeatureEvidence();
         e.required = true;

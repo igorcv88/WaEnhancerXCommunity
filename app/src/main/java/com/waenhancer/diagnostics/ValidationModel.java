@@ -23,6 +23,12 @@ public final class ValidationModel {
                 && session.equals(eventSession) && process.equals(eventProcess) && config.equals(eventConfig);
     }
 
+    static boolean matchesOfficialRecord(String exactBuild, String recordedBuild, String scope,
+            String prerequisites) {
+        return exactBuild.matches("[0-9a-f]{64}") && exactBuild.equals(recordedBuild)
+                && !scope.isBlank() && !prerequisites.isBlank();
+    }
+
     public static final class FeatureEvidence {
         public boolean enabled = true;
         public boolean instrumented;

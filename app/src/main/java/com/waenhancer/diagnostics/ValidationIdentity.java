@@ -69,6 +69,20 @@ final class ValidationIdentity {
         return identity;
     }
 
+    static String exactBuildKey(JSONObject identity, String configuration, int xposedApi) throws Exception {
+        if (!configuration.matches("[0-9a-f]{64}") || xposedApi <= 0) {
+            throw new IllegalArgumentException("Missing configuration or Xposed API");
+        }
+        JSONObject record = new JSONObject();
+        for (String key : new String[]{"hostPackage", "hostVersion", "hostVersionCode", "baseSha256",
+                "splits", "signerSha256", "moduleVersion", "moduleVersionCode", "moduleSha256",
+                "androidApi", "deviceKind"}) {
+            record.put(key, identity.get(key));
+        }
+        record.put("configuration", configuration).put("xposedApi", xposedApi);
+        return hex(sha256().digest(record.toString().getBytes(StandardCharsets.UTF_8)));
+    }
+
     static String installation(Context context, String target) throws Exception {
         PackageManager pm = context.getPackageManager();
         StringBuilder token = new StringBuilder();
@@ -124,7 +138,7 @@ final class ValidationIdentity {
     private static synchronized String digestApk(PackageInfo pkg, String path) throws Exception {
         File file = new File(path);
         StringBuilder stampBuilder = new StringBuilder().append(pkg.getLongVersionCode()).append(':')
-                .append(pkg.firstInstallTime).append(':').append(pkg.lastUpdateTime()).append(':');
+                .append(pkg.firstInstallTime).append(':').append(pkg.lastUpdateTime).append(':');
         addStamp(stampBuilder, path);
         String stamp = stampBuilder.toString();
         CachedDigest old = DIGESTS.get(path);

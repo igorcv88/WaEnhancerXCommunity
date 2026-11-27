@@ -218,6 +218,7 @@ public final class ValidationSession {
                     .append(report.optString("configuration")).append('\n');
             out.append("Xposed API: ").append(report.optInt("xposedApi")).append('\n');
             out.append("Source: OPT_IN_RUNTIME; timestamp: ").append(report.optLong("updatedAt")).append('\n');
+            appendOfficialScope(context, out, report, identity);
         }
         if (report.optBoolean("probeError")) out.append("Core probe execution failed\n");
         JSONArray contracts = report.optJSONArray("contracts");
@@ -255,6 +256,31 @@ public final class ValidationSession {
                 ValidationModel.smokeConfirmed(evidence.values()) ? "OBSERVED (instrumented session)" : "INCOMPLETE");
         out.append("\nPhysical compatibility and two-endpoint cases are recorded separately.\n");
         return out.toString();
+    }
+
+    private static void appendOfficialScope(Context context, StringBuilder out, JSONObject report,
+            JSONObject identity) {
+        try {
+            String build = ValidationIdentity.exactBuildKey(identity, report.getString("configuration"),
+                    report.getInt("xposedApi"));
+            out.append("Exact build key: ").append(build).append('\n');
+            try (var input = context.getAssets().open("validated_builds.json")) {
+                String raw = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                JSONObject catalog = new JSONObject(raw);
+                if (catalog.optInt("schema") != 2) return;
+                JSONArray records = catalog.getJSONArray("builds");
+                for (int i = 0; i < records.length(); i++) {
+                    JSONObject record = records.getJSONObject(i);
+                    String scope = record.optString("scope");
+                    String prerequisites = record.optString("prerequisites");
+                    if (ValidationModel.matchesOfficialRecord(build, record.optString("exactBuildKey"),
+                            scope, prerequisites)) {
+                        out.append("Official record scope: ").append(scope).append('\n');
+                        out.append("Official record prerequisites: ").append(prerequisites).append('\n');
+                    }
+                }
+            }
+        } catch (Exception ignored) { /* No official claim if identity or catalog is incomplete. */ }
     }
 
     public static ValidationModel.Compatibility compatibility(Context context, SharedPreferences prefs, String pkg) {
