@@ -33,6 +33,26 @@ public class DownloadViewOnce extends Feature {
     }
 
     private static void downloadFile(FMessageWpp.UserJid userJid, File file) throws Exception {
+        // Android 10+: a dedicated public album "DCIM/WhatsApp View Once", separate from WhatsApp's
+        // own DCIM/WhatsApp saves (owner decision 2026-11-26). Older Android, Lite Mode or a
+        // MediaStore failure keep the previous download-folder behaviour.
+        if (com.waenhancer.library.android.GallerySaver.supported() && !Utils.xprefs.getBoolean("lite_mode", false)) {
+            try (var input = new java.io.FileInputStream(file)) {
+                String path = file.getName();
+                String extension = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1).toLowerCase(java.util.Locale.ROOT) : "";
+                String mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
+                if (mime == null) mime = "image/jpeg";
+                String name = Utils.generateName(userJid, extension);
+                com.waenhancer.library.android.GallerySaver.save(Utils.getApplication().getContentResolver(), input,
+                        mime, name, com.waenhancer.library.core.GalleryAlbums.VIEW_ONCE);
+                Utils.showToast(com.waenhancer.xposed.core.FeatureLoader.getModuleString(com.waenhancer.xposed.utils.Utils.getApplication(), R.string.saved_to)
+                        + com.waenhancer.library.core.GalleryAlbums.VIEW_ONCE, Toast.LENGTH_LONG);
+                return;
+            } catch (Exception mediaStoreFailure) {
+                de.robv.android.xposed.XposedBridge.log("[WAEX] View Once album save failed, using download folder: "
+                        + mediaStoreFailure.getClass().getSimpleName());
+            }
+        }
         var dest = Utils.getDestination("View Once");
         var fileExtension = file.getAbsolutePath().substring(file.getAbsolutePath().lastIndexOf(".") + 1);
         var name = Utils.generateName(userJid, fileExtension);

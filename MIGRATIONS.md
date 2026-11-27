@@ -48,6 +48,10 @@ Database migrations are incremental and transactional. A destructive operation r
 
 Preserved-media migrations must verify storage IDs, paths, hashes, sizes, quotas, and database/file consistency. A database row may not claim a preserved file exists until the file has been successfully written and validated.
 
+## Media library
+
+`media_library.db` uses `PRAGMA user_version` with `LibrarySchema` steps (current version 1). Each step runs in one transaction with `PRAGMA integrity_check` before and after and refuses to reduce the row count of any existing table; a failure leaves the file unchanged. A database from a newer module is refused without modification. Reconciliation may delete only staging files and blob files that no row references; rows whose file is missing or damaged are marked, never removed. The library is not derived from, and never alters, `delmessages.db` or `files/deleted_media`.
+
 ## Full backup and restore
 
 Portable full backup is a separate format from configuration backup. The current format contains `Deleted for Me` records, schema-defined private secrets, and optional preserved media, then encrypts/authenticates the complete manifest with a user-provided password.

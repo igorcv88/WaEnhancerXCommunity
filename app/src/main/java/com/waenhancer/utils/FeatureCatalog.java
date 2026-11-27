@@ -918,6 +918,14 @@ public class FeatureCatalog {
                                 null,
                                 Arrays.asList("download", "view", "once")));
 
+                catalog.add(new SearchableFeature("media_library",
+                                context.getString(R.string.media_library),
+                                context.getString(R.string.media_library_sum),
+                                SearchableFeature.Category.MEDIA,
+                                SearchableFeature.FragmentType.MEDIA,
+                                null,
+                                Arrays.asList("library", "gallery", "keep", "save", "photo", "video")));
+
                 catalog.add(new SearchableFeature("download_video_note",
                                 context.getString(R.string.download_video_note),
                                 context.getString(R.string.download_video_note_sum),

@@ -73,6 +73,34 @@
             android:authorities="${applicationId}.provider"
             android:exported="true" />
 
+        <!-- Persistent private media library. The provider re-checks the calling UID on every
+             operation and scopes data by the WhatsApp package of that UID. -->
+        <provider
+            android:name=".provider.MediaLibraryProvider"
+            android:authorities="${applicationId}.medialibrary"
+            android:exported="true"
+            tools:ignore="ExportedContentProvider" />
+
+        <activity
+            android:name=".library.ui.MediaLibraryActivity"
+            android:exported="false"
+            android:parentActivityName=".activities.MainActivity"
+            android:theme="@style/AppTheme" />
+
+        <!-- WhatsApp opens one conversation's gallery here; the activity requires a single-use
+             token issued by MediaLibraryProvider and otherwise closes at once. -->
+        <activity-alias
+            android:name=".library.ui.ChatMediaGallery"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:targetActivity=".library.ui.MediaLibraryActivity" />
+
+        <activity
+            android:name=".library.ui.LibraryViewerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:theme="@style/Theme.AppCompat.NoActionBar" />
+
         <activity
             android:name=".xposed.features.others.EmbeddedSettingsActivity"
             android:exported="true"

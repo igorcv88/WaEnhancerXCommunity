@@ -223,6 +223,8 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:rules:1.6.1")
     testImplementation("org.json:json:20260814")
+    // Real SQLite for the media library catalog tests (same SQL as the device, not a mock).
+    testImplementation("org.xerial:sqlite-jdbc:3.54.1.0")
     // The Xposed API is compileOnly for the APK, but unit tests exercise helper classes
     // (ReflectionUtils, argument compat) whose bytecode references XposedHelpers. Without it
     // on the test runtime classpath those tests fail with NoClassDefFoundError.
