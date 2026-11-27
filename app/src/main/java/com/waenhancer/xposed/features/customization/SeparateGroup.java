@@ -464,6 +464,10 @@ public class SeparateGroup extends Feature {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                     Object filters = param.args[1];
+                    if (filters == null || filters.getClass() == finalPublishResultsMethod.getParameterTypes()[1]) {
+                        param.setResult(null);
+                        return;
+                    }
                     List<?> chatsList = (List<?>) XposedHelpers.getObjectField(filters, "values");
                     Field baseField = ReflectionUtils.getFieldByExtendType(
                             finalPublishResultsMethod.getDeclaringClass(),

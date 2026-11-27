@@ -304,7 +304,7 @@ public class CustomThemeV2 extends Feature {
                     processedWallpaperFrames.add(viewGroup);
                 }
                 var background = viewGroup.getBackground();
-                replaceColor(background, navAlpha);
+                replaceColor(background, navAlpha, true);
                 PerfLogger.end("CustomThemeV2.tabFrameAttach", perfStart, 1);
             }
         });

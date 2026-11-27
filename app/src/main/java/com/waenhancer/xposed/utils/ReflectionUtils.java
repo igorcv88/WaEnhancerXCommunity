@@ -141,32 +141,37 @@ public class ReflectionUtils {
     }
 
 
+    private record TypedFieldKey(Class<?> owner, Class<?> type, boolean assignable) {}
+
+    private static final Map<TypedFieldKey, List<Field>> typedFieldsCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     public static List<Field> getFieldsByExtendType(Class<?> cls, Class<?> type) {
-        List<Field> fields = new ArrayList<>();
-        Class<?> current = cls;
-        while (current != null) {
-            for (Field f : getCachedDeclaredFields(current)) {
-                if (type.isAssignableFrom(f.getType())) {
-                    f.setAccessible(true);
-                    fields.add(f);
-                }
+        return getTypedFields(cls, type, true);
+    }
+
+    public static List<Field> getFieldsByType(Class<?> cls, Class<?> type) {
+        return getTypedFields(cls, type, false);
+    }
+
+    private static List<Field> getTypedFields(Class<?> cls, Class<?> type, boolean assignable) {
+        var fields = new ArrayList<Field>();
+        for (Class<?> current = cls; current != null; current = current.getSuperclass()) {
+            var key = new TypedFieldKey(current, type, assignable);
+            for (Field field : typedFieldsCache.computeIfAbsent(key, ReflectionUtils::collectTypedFields)) {
+                field.setAccessible(true);
+                fields.add(field);
             }
-            current = current.getSuperclass();
         }
         return fields;
     }
 
-    public static List<Field> getFieldsByType(Class<?> cls, Class<?> type) {
-        List<Field> fields = new ArrayList<>();
-        Class<?> current = cls;
-        while (current != null) {
-            for (Field f : getCachedDeclaredFields(current)) {
-                if (type == f.getType()) {
-                    f.setAccessible(true);
-                    fields.add(f);
-                }
+    private static List<Field> collectTypedFields(TypedFieldKey key) {
+        var fields = new ArrayList<Field>();
+        for (Field field : getCachedDeclaredFields(key.owner())) {
+            if (key.assignable() ? key.type().isAssignableFrom(field.getType()) : key.type() == field.getType()) {
+                fields.add(field);
             }
-            current = current.getSuperclass();
         }
         return fields;
     }
