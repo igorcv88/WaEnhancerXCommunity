@@ -126,8 +126,11 @@ public class ActivityController extends Feature {
             });
         }
 
-        XposedHelpers.findAndHookMethod("com.whatsapp.status.audienceselector.StatusTemporalRecipientsActivity",
-                classLoader, "onCreate", Bundle.class, new XC_MethodHook() {
+        // 2.26.46 no longer declares onCreate here (it is inherited): hook the nearest
+        // declaration, scoped to this activity.
+        com.waenhancer.xposed.core.HostHooks.hookNearest(XposedHelpers.findClass(
+                "com.whatsapp.status.audienceselector.StatusTemporalRecipientsActivity", classLoader),
+                "onCreate", Bundle.class, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                         var activity = (Activity) param.thisObject;
