@@ -1,0 +1,879 @@
+{
+  "androidClassLoaderAndResources": "NOT_TESTED",
+  "capturedAt": "2026-11-28T00:09:11.445157+00:00",
+  "l0": {
+    "base": {
+      "dex": [
+        "classes.dex",
+        "classes10.dex",
+        "classes11.dex",
+        "classes12.dex",
+        "classes2.dex",
+        "classes3.dex",
+        "classes4.dex",
+        "classes5.dex",
+        "classes6.dex",
+        "classes7.dex",
+        "classes8.dex",
+        "classes9.dex"
+      ],
+      "longVersionCode": 263807433,
+      "nativeLibraries": [
+        "lib/arm64-v8a/libs.so",
+        "lib/arm64-v8a/libsuperpack.so",
+        "lib/arm64-v8a/libunwindstack_binary.so",
+        "lib/armeabi-v7a/libs.so",
+        "lib/armeabi-v7a/libsuperpack.so",
+        "lib/armeabi-v7a/libunwindstack_binary.so",
+        "lib/x86/libs.so",
+        "lib/x86/libsuperpack.so",
+        "lib/x86/libunwindstack_binary.so",
+        "lib/x86_64/libs.so",
+        "lib/x86_64/libsuperpack.so",
+        "lib/x86_64/libunwindstack_binary.so"
+      ],
+      "package": "com.whatsapp",
+      "resources": {
+        "drawable/home_tab_calls_selector": "0x7f080448",
+        "drawable/home_tab_chats_selector": "0x7f080449",
+        "drawable/home_tab_communities_selector": "0x7f08044a",
+        "drawable/ic_download": "0x7f080577",
+        "drawable/ic_notif_mark_read": "0x7f0806bd",
+        "drawable/ic_viewonce": "0x7f0807ed",
+        "id/attach_picker_row": "0x7f0b03f1",
+        "id/background": "0x7f0b04b2",
+        "id/bottom_sheet": "0x7f0b06ee",
+        "id/broadcast_icon": "0x7f0b0759",
+        "id/caption": "0x7f0b0964",
+        "id/color_picker_btn": "0x7f0b0b67",
+        "id/contact_info_security_card_layout": "0x7f0b0cad",
+        "id/contact_photo": "0x7f0b0cca",
+        "id/contact_selector": "0x7f0b0ced",
+        "id/container_view": "0x7f0b0d39",
+        "id/control_btn": "0x7f0b0d63",
+        "id/control_frame": "0x7f0b0d66",
+        "id/controls": "0x7f0b0d6c",
+        "id/conversation_contact": "0x7f0b0d77",
+        "id/conversation_contact_status": "0x7f0b0d7c",
+        "id/conversations_inbox_filters_stub": "0x7f0b0e1b",
+        "id/conversations_row_content": "0x7f0b0e2d",
+        "id/conversations_row_header_stub": "0x7f0b0e33",
+        "id/conversations_row_message_count": "0x7f0b0e3b",
+        "id/conversations_swipe_to_reveal_filters_stub": "0x7f0b0e42",
+        "id/date": "0x7f0b0efd",
+        "id/date_wrapper": "0x7f0b0f21",
+        "id/edit_label": "0x7f0b11cd",
+        "id/entry": "0x7f0b1325",
+        "id/fab_second": "0x7f0b149e",
+        "id/fast_playback_overlay": "0x7f0b14c5",
+        "id/font_picker_btn": "0x7f0b15ec",
+        "id/hd_invisible_touch": "0x7f0b1864",
+        "id/header": "0x7f0b1867",
+        "id/invisible_height_placeholder": "0x7f0b1ae3",
+        "id/invisible_press_surface": "0x7f0b1ae4",
+        "id/list": "0x7f0b1c72",
+        "id/media_container": "0x7f0b1e84",
+        "id/menu": "0x7f0b1f2f",
+        "id/menuitem_conversations_message_contact": "0x7f0b1f9f",
+        "id/menuitem_create_newsletter": "0x7f0b1fae",
+        "id/menuitem_search": "0x7f0b1ff7",
+        "id/message_text": "0x7f0b2051",
+        "id/mute_indicator": "0x7f0b21c9",
+        "id/my_search_bar": "0x7f0b21e9",
+        "id/name_in_group": "0x7f0b21f3",
+        "id/pager_holder": "0x7f0b2520",
+        "id/pin_indicator": "0x7f0b2792",
+        "id/reactions_bubble_layout": "0x7f0b2b32",
+        "id/reactions_tray_layout": "0x7f0b2b4f",
+        "id/root_view": "0x7f0b2dfb",
+        "id/row_content": "0x7f0b2e0c",
+        "id/search_bar_inner_layout": "0x7f0b2ec8",
+        "id/status_header": "0x7f0b33b4",
+        "id/sticker": "0x7f0b3484",
+        "id/text_view": "0x7f0b36b6",
+        "id/toolbar": "0x7f0b3757",
+        "id/toolbar_container": "0x7f0b375d",
+        "id/toolbar_logo": "0x7f0b3762",
+        "id/touch_outside": "0x7f0b37aa",
+        "id/version": "0x7f0b3b7a",
+        "id/view_once_control_icon": "0x7f0b3bcf",
+        "id/view_once_media_container_large": "0x7f0b3bd4"
+      },
+      "sha256": "a013d2250a28c8f2c38d1e4964a758b37584549589251e077fa7051bcd3ac9fd",
+      "signers": [
+        "3987d043d10aefaf5a8710b3671418fe57e0e19b653c9df82558feb5ffce5d44",
+        "fb920d381bee1b2093f27dc8f13d994da629dc91887d0529b35c9a2dc4f4a6c2"
+      ],
+      "split": "",
+      "versionName": "2.26.38.74"
+    },
+    "splits": []
+  },
+  "l1": {
+    "ab-props-boolean-getter": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/00D;",
+          "descriptor": "LX/00D;->A0D(LX/00F;LX/00D;Ljava/lang/Boolean;I)Z",
+          "dex": "classes.dex",
+          "keyParameterIndex": 3,
+          "references": {
+            "caller": [
+              "LX/00D;->A0q()V",
+              "LX/00D;->A0s()V",
+              "LX/1XJ;->invoke(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
+            ],
+            "caller-count": 6,
+            "invoke": [
+              "LX/00D;->A0B(LX/00F;LX/00D;Ljava/lang/String;)V",
+              "LX/00D;->A0F(LX/00D;I)Z",
+              "LX/00D;->A0h(LX/00F;I)Ljava/lang/Object;",
+              "LX/00D;->A0w(IZ)V",
+              "LX/00D;->A17()Lcom/google/common/collect/ImmutableMap;",
+              "Landroid/content/SharedPreferences;->getBoolean(Ljava/lang/String;Z)Z",
+              "Lcom/google/common/collect/ImmutableMap;->get(Ljava/lang/Object;)Ljava/lang/Object;",
+              "Ljava/lang/Boolean;->booleanValue()Z",
+              "Ljava/lang/Boolean;->valueOf(Z)Ljava/lang/Boolean;",
+              "Ljava/lang/IllegalArgumentException;-><init>(Ljava/lang/String;)V",
+              "Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;",
+              "Ljava/lang/Object;->toString()Ljava/lang/String;",
+              "Ljava/lang/String;->valueOf(I)Ljava/lang/String;",
+              "Ljava/lang/StringBuilder;-><init>()V",
+              "Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V",
+              "Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;",
+              "Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;",
+              "Ljava/util/AbstractMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
+            ],
+            "invoke-count": 23
+          },
+          "structuralSha256": "b10497d47df9d4321bfc2652b051ad09291d6460014d60b69f5c1ec561574f59"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "unknown-boolean-field-anchor"
+    },
+    "ab-props-integer-getter": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/00D;",
+          "descriptor": "LX/00D;->A01(LX/00F;LX/00D;Ljava/lang/Integer;I)I",
+          "dex": "classes.dex",
+          "keyParameterIndex": 3,
+          "references": {
+            "caller": [
+              "LX/00D;->A0C(LX/CPo;Ljava/lang/Integer;Ljava/lang/Object;IZ)V",
+              "LX/00D;->A0s()V",
+              "LX/1XJ;->invoke(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
+            ],
+            "caller-count": 3,
+            "invoke": [
+              "LX/00D;->A0B(LX/00F;LX/00D;Ljava/lang/String;)V",
+              "LX/00D;->A0F(LX/00D;I)Z",
+              "LX/00D;->A0h(LX/00F;I)Ljava/lang/Object;",
+              "LX/00D;->A0u(II)V",
+              "LX/00D;->A19()Lcom/google/common/collect/ImmutableMap;",
+              "Landroid/content/SharedPreferences;->getInt(Ljava/lang/String;I)I",
+              "Lcom/google/common/collect/ImmutableMap;->get(Ljava/lang/Object;)Ljava/lang/Object;",
+              "Ljava/lang/IllegalArgumentException;-><init>(Ljava/lang/String;)V",
+              "Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;",
+              "Ljava/lang/Number;->intValue()I",
+              "Ljava/lang/Object;->toString()Ljava/lang/String;",
+              "Ljava/lang/String;->valueOf(I)Ljava/lang/String;",
+              "Ljava/lang/StringBuilder;-><init>()V",
+              "Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V",
+              "Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;",
+              "Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;",
+              "Ljava/util/AbstractMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
+            ],
+            "invoke-count": 23
+          },
+          "structuralSha256": "00326bef8e592ce8cc2a3cf83ffd7a8f2842c85d9fd79d646d9aca166fe4f0ec"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "unknown-int-field-anchor"
+    },
+    "cached-message-store": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/0VF;",
+          "descriptor": "LX/0VF;->A05(LX/1cr;)LX/18X;",
+          "dex": "classes.dex",
+          "references": {
+            "caller": [
+              "LX/11a;->At8(LX/18X;LX/3FG;)LX/18X;",
+              "LX/3GB;->CkK(LX/18X;)V",
+              "LX/3Mx;->run()V"
+            ],
+            "caller-count": 3,
+            "invoke": [
+              "LX/00t;->get()Ljava/lang/Object;",
+              "LX/07g;->A00(Ljava/io/Closeable;Ljava/lang/Throwable;)V",
+              "LX/0Gb;->A07()LX/0ZO;",
+              "LX/0Ir;->A0A(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;)Landroid/database/Cursor;",
+              "LX/0V9;->A01(Ljava/lang/String;J)V",
+              "LX/0VG;->A01(LX/1cr;LX/0VG;)LX/18X;",
+              "LX/0VG;->A02(LX/0VG;)V",
+              "LX/0VG;->A05(Landroid/database/Cursor;LX/0D2;ZZ)LX/18X;",
+              "LX/0VY;->A0B(LX/0D2;)J",
+              "LX/0ZO;->close()V",
+              "Landroid/database/Cursor;->close()V",
+              "Landroid/database/Cursor;->moveToLast()Z",
+              "Landroid/os/SystemClock;->uptimeMillis()J",
+              "Ljava/lang/String;->valueOf(I)Ljava/lang/String;",
+              "Ljava/lang/String;->valueOf(J)Ljava/lang/String;"
+            ],
+            "invoke-count": 20
+          },
+          "structuralSha256": "ed28fad21ff93c2eae6ba000558c76216f0be6cfcfc203fbe0dca87269371ccf"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "cached-message-key-anchor"
+    },
+    "chat-list-source": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "Lcom/whatsapp/conversationslist/ConversationsFragment;",
+          "descriptor": "Lcom/whatsapp/conversationslist/ConversationsFragment;->A2k()Ljava/util/List;",
+          "dex": "classes.dex",
+          "references": {
+            "caller": [
+              "LX/1LH;->performFiltering(Ljava/lang/CharSequence;)Landroid/widget/Filter$FilterResults;",
+              "LX/1LH;->publishResults(Ljava/lang/CharSequence;Landroid/widget/Filter$FilterResults;)V",
+              "Lcom/whatsapp/conversationslist/ConversationsFragment;->A08(Lcom/whatsapp/conversationslist/ConversationsFragment;)Ljava/util/List;",
+              "Lcom/whatsapp/conversationslist/ConversationsFragment;->A1x(Landroid/os/Bundle;)V",
+              "Lcom/whatsapp/conversationslist/ConversationsFragment;->A2n()V"
+            ],
+            "caller-count": 5,
+            "invoke": [
+              "LX/00D;->A12(I)Z",
+              "LX/00m;->getValue()Ljava/lang/Object;",
+              "LX/00t;->get()Ljava/lang/Object;",
+              "LX/05B;->get()Ljava/lang/Object;",
+              "LX/08a;->A00(LX/00Y;I)LX/05B;",
+              "LX/0AC;->A0G(Ljava/lang/Iterable;I)I",
+              "LX/0DI;->A0b(Lcom/whatsapp/infra/core/jid/Jid;)Z",
+              "LX/0L9;->A08()Z",
+              "LX/0Vy;->A14(LX/0D2;)Z",
+              "LX/0aD;->A06(LX/1ZX;)LX/1ZX;",
+              "LX/0aD;->A0T()Z",
+              "LX/0aD;->A0Z(LX/1ZX;)Z",
+              "LX/0fW;->A00()LX/0fW;",
+              "LX/1LF;->AhJ()LX/0fW;",
+              "LX/1NI;->A00(LX/1G6;Ljava/util/List;)Ljava/util/Set;",
+              "LX/1NL;-><init>(LX/0D2;I)V",
+              "LX/1ZY;->A00(Lcom/whatsapp/infra/core/jid/Jid;)LX/1ZX;",
+              "Lcom/google/common/base/Supplier;->get()Ljava/lang/Object;",
+              "Lcom/whatsapp/conversationslist/ConversationsFragment;->A07(Lcom/whatsapp/conversationslist/ConversationsFragment;)Ljava/util/ArrayList;",
+              "Lcom/whatsapp/conversationslist/ConversationsFragmentKt;->A2c()Z",
+              "Lcom/whatsapp/conversationslist/delegate/ChatListHiddenChatsDelegate;->A03(LX/0fW;Ljava/util/List;)Ljava/util/List;",
+              "Lcom/whatsapp/ui/coreui/fragments/WaFragment;->A2C()LX/00Z;",
+              "Ljava/lang/Boolean;->booleanValue()Z",
+              "Ljava/util/AbstractCollection;->add(Ljava/lang/Object;)Z",
+              "Ljava/util/AbstractCollection;->addAll(Ljava/util/Collection;)Z",
+              "Ljava/util/AbstractCollection;->remove(Ljava/lang/Object;)Z",
+              "Ljava/util/AbstractList;->add(ILjava/lang/Object;)V",
+              "Ljava/util/ArrayList;-><init>(I)V",
+              "Ljava/util/HashSet;-><init>()V",
+              "Ljava/util/Iterator;->hasNext()Z",
+              "Ljava/util/Iterator;->next()Ljava/lang/Object;",
+              "Ljava/util/List;->iterator()Ljava/util/Iterator;",
+              "Ljava/util/List;->size()I",
+              "Ljava/util/Set;->contains(Ljava/lang/Object;)Z",
+              "Ljava/util/Set;->isEmpty()Z",
+              "Ljava/util/Set;->iterator()Ljava/util/Iterator;",
+              "Ljava/util/Set;->size()I"
+            ],
+            "invoke-count": 78
+          },
+          "structuralSha256": "18d91cd56ed6d7fd98c6fd152b33934c2d369aba719283ca8e758d3c9ef739c9"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "declared-instance-list"
+    },
+    "conversation-image-row": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "descriptor": "LX/DQA;",
+          "dex": "classes8.dex",
+          "superclass": "X.DQ7"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "hd-overlay-and-control-button-ids-view"
+    },
+    "conversation-video-row": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/Dr2;",
+          "descriptor": "LX/Dr2;->getAnimatedMediaViewContainer()LX/Eix;",
+          "dex": "classes8.dex",
+          "references": {
+            "caller-count": 0,
+            "invoke": [
+              "LX/00m;->getValue()Ljava/lang/Object;",
+              "LX/1uI;->A13(Ljava/lang/String;)Ljava/lang/IllegalStateException;",
+              "LX/1uI;->A1Y(Ljava/lang/Object;)Z",
+              "LX/1uJ;->A1J(LX/00t;)Ljava/lang/Object;",
+              "LX/1uM;->A01(LX/00m;)I",
+              "LX/6QG;->A0B(LX/00m;)Landroid/widget/ImageView;",
+              "LX/Dr2;->getMediaContainer()Landroid/widget/FrameLayout;",
+              "LX/Dr2;->getVideoImageViewController()LX/Dqe;",
+              "LX/Eix;-><init>(Landroid/view/View;Landroid/view/View;LX/Esn;)V",
+              "LX/Esn;-><init>(Landroid/view/animation/Interpolator;IZZ)V"
+            ],
+            "invoke-count": 12
+          },
+          "structuralSha256": "071cb8a64f0121925e0446af2656920d038ca64ff8aafa6edc5c6e5c70b6430e"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "animated-container-accessor-assertion"
+    },
+    "convert-jid-to-lid": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/0Y1;",
+          "descriptor": "LX/0Y1;->A0C(Lcom/whatsapp/infra/core/jid/PhoneUserJid;)LX/0Zc;",
+          "dex": "classes.dex",
+          "references": {
+            "caller": [
+              "LX/0Y1;->A0D(Lcom/whatsapp/infra/core/jid/UserJid;)LX/0Zc;",
+              "LX/0Y1;->A0E(Lcom/whatsapp/infra/core/jid/PhoneUserJid;)LX/0Zd;",
+              "LX/0Y1;->A0I(Lcom/whatsapp/infra/core/jid/UserJid;)Lcom/whatsapp/infra/core/jid/UserJid;",
+              "LX/0Y1;->A0a(LX/0Zc;Lcom/whatsapp/infra/core/jid/PhoneUserJid;)Z",
+              "LX/0YF;->A00(LX/0DY;)LX/0Zc;",
+              "LX/0YF;->A0L(LX/0DY;Ljava/util/Map;)V",
+              "LX/0YH;->A01(Lcom/whatsapp/infra/core/jid/UserJid;)Lcom/whatsapp/infra/core/jid/UserJid;",
+              "LX/0Yj;->A0C(Lcom/whatsapp/infra/core/jid/UserJid;Ljava/lang/String;)Lcom/whatsapp/infra/core/jid/UserJid;",
+              "LX/0ZW;->BsG(Lcom/whatsapp/infra/core/jid/PhoneUserJid;Ljava/lang/Integer;)V",
+              "LX/0bN;->A09(LX/0c8;Lcom/whatsapp/infra/core/jid/UserJid;)LX/A8V;",
+              "LX/0bN;->A0o(Lcom/whatsapp/infra/core/jid/GroupJid;Lcom/whatsapp/infra/core/jid/UserJid;)Z",
+              "LX/0lH;->A02(LX/8dw;Ljava/lang/String;Ljava/lang/String;)LX/8dw;",
+              "LX/0pz;->A03(LX/A5W;LX/0D2;Ljava/util/Map;Ljava/util/Map;)LX/BM8;",
+              "LX/0qM;->A0L(Lcom/whatsapp/infra/core/jid/UserJid;)Lcom/whatsapp/infra/core/jid/UserJid;",
+              "LX/10T;->A09(LX/0hw;I)V",
+              "LX/120;->A0J(LX/0D2;)LX/0D2;",
+              "LX/120;->A0V(LX/0D2;)V",
+              "LX/18i;->BFj(Landroid/os/Message;I)Z",
+              "LX/1R8;->A02(LX/0D2;Z)LX/0D2;",
+              "LX/1YF;->A01(Lcom/whatsapp/infra/core/jid/UserJid;)Lcom/whatsapp/infra/core/jid/UserJid;",
+              "LX/1YF;->A02(Lcom/whatsapp/infra/core/jid/UserJid;)Lcom/whatsapp/infra/core/jid/UserJid;",
+              "LX/1Yn;->A04(Lcom/whatsapp/infra/core/jid/UserJid;LX/Bj7;)I",
+              "LX/1bX;->A0T(Lcom/whatsapp/infra/core/jid/UserJid;)Z",
+              "LX/1cp;->A00(LX/0DY;)LX/0Zd;",
+              "LX/1fq;->A00(LX/1fq;Lcom/whatsapp/infra/core/jid/UserJid;)Lcom/whatsapp/infra/core/jid/UserJid;",
+              "LX/1zR;->BsF(Lcom/whatsapp/infra/core/jid/PhoneUserJid;)V",
+              "LX/1zX;->A03(LX/1ZX;Lcom/whatsapp/infra/core/jid/UserJid;)V",
+              "LX/20n;->A00(LX/0D2;LX/20n;)Ljava/lang/String;",
+              "LX/2wF;->A00(Lcom/whatsapp/infra/core/jid/UserJid;)Ljava/lang/Integer;",
+              "LX/2y3;->A00(LX/2y3;LX/0D2;)Ljava/lang/Long;",
+              "LX/3H8;->BsG(Lcom/whatsapp/infra/core/jid/PhoneUserJid;Ljava/lang/Integer;)V",
+              "LX/3Ml;->run()V",
+              "LX/7nD;->A08(Ljava/util/Map;J)V",
+              "LX/84U;->A00(LX/0D2;Ljava/lang/Long;Ljava/lang/Long;)V",
+              "LX/8Pw;->invokeSuspend(Ljava/lang/Object;)Ljava/lang/Object;",
+              "LX/8Zf;->A02(LX/0DY;LX/8Zf;)Ljava/lang/String;",
+              "LX/9AG;->A0a([Ljava/lang/Object;)Ljava/lang/Object;",
+              "LX/9AZ;->A0a([Ljava/lang/Object;)Ljava/lang/Object;",
+              "LX/9qC;->A00(LX/99P;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Z)V",
+              "LX/9yL;->A01(Ljava/util/List;)Ljava/util/List;"
+            ],
+            "caller-count": 74,
+            "invoke": [
+              "LX/00i;->A0A(Ljava/lang/Object;I)V",
+              "LX/08Y;->AqF()LX/0Zd;",
+              "LX/08Y;->BOk(LX/0D2;)Z",
+              "LX/0Gb;->A0D()Z",
+              "LX/0VZ;->A08(Lcom/whatsapp/infra/core/jid/Jid;)J",
+              "LX/0Y1;->A00(Ljava/lang/Class;J)Lcom/whatsapp/infra/core/jid/Jid;",
+              "LX/0Y1;->A06(LX/0e6;J)V",
+              "LX/0Y2;->A01(J)LX/0e6;",
+              "LX/0e6;->A00()Ljava/lang/Long;",
+              "Lcom/whatsapp/infra/logging/Log;->e(Ljava/lang/String;)V",
+              "Ljava/lang/Long;->valueOf(J)Ljava/lang/Long;",
+              "Ljava/lang/Number;->longValue()J",
+              "Ljava/lang/Object;->toString()Ljava/lang/String;",
+              "Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V",
+              "Ljava/lang/StringBuilder;->append(Z)Ljava/lang/StringBuilder;",
+              "Ljava/util/Map;->get(Ljava/lang/Object;)Ljava/lang/Object;"
+            ],
+            "invoke-count": 18
+          },
+          "structuralSha256": "7c0cf4eaf3e42b58c7b5c97dedd2828303fdfcd5339549b0bcab54cc71c760af"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "account-jid-by-phone-jid-anchor"
+    },
+    "convert-lid-to-jid": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/0Y1;",
+          "descriptor": "LX/0Y1;->A0H(LX/0Zc;)Lcom/whatsapp/infra/core/jid/PhoneUserJid;",
+          "dex": "classes.dex",
+          "references": {
+            "caller": [
+              "LX/0VV;->A0E(LX/18X;Ljava/util/Map;JZ)LX/7Nl;",
+              "LX/0Vy;->A16(LX/0D2;)Z",
+              "LX/0Xr;->A09(Lcom/whatsapp/infra/core/jid/GroupJid;Lcom/whatsapp/infra/core/jid/UserJid;)Lcom/whatsapp/infra/core/jid/UserJid;",
+              "LX/0Xr;->A0A(LX/97v;)Ljava/lang/String;",
+              "LX/0Xr;->A0H(Lcom/whatsapp/infra/core/jid/UserJid;Ljava/lang/String;)[LX/0hu;",
+              "LX/0Xx;->BK3(LX/0Zc;Ljava/lang/Integer;Ljava/lang/String;)Z",
+              "LX/0Y1;->A0D(Lcom/whatsapp/infra/core/jid/UserJid;)LX/0Zc;",
+              "LX/0Y1;->A0I(Lcom/whatsapp/infra/core/jid/UserJid;)Lcom/whatsapp/infra/core/jid/UserJid;",
+              "LX/0Y1;->A0J(Lcom/whatsapp/infra/core/jid/UserJid;)Lcom/whatsapp/infra/core/jid/UserJid;",
+              "LX/0Y1;->A0L(Ljava/util/Collection;)Ljava/util/LinkedHashMap;",
+              "LX/0Y1;->A0N(Lcom/whatsapp/infra/core/jid/UserJid;)Ljava/util/List;",
+              "LX/0YF;->A05(LX/0YF;LX/0DY;LX/0kN;Z)Z",
+              "LX/0YF;->A0I(LX/0DY;)V",
+              "LX/0YH;->A00(Lcom/whatsapp/infra/core/jid/UserJid;)Lcom/whatsapp/infra/core/jid/UserJid;",
+              "LX/0Yj;->A0C(Lcom/whatsapp/infra/core/jid/UserJid;Ljava/lang/String;)Lcom/whatsapp/infra/core/jid/UserJid;",
+              "LX/0ZW;->A04(Landroid/content/ContentValues;LX/0D2;Ljava/lang/String;)Z",
+              "LX/0bN;->A09(LX/0c8;Lcom/whatsapp/infra/core/jid/UserJid;)LX/A8V;",
+              "LX/0bR;->A0C(LX/0bV;LX/0c8;)LX/1fP;",
+              "LX/0bU;->A07(Lcom/google/common/collect/ImmutableSet;Lcom/google/common/collect/ImmutableSet;Lcom/google/common/collect/ImmutableSet;LX/0bU;Lcom/whatsapp/infra/core/jid/UserJid;LX/1fP;)Z",
+              "LX/0bZ;->A00(LX/0bZ;Lcom/whatsapp/infra/core/jid/GroupJid;Lcom/whatsapp/infra/core/jid/UserJid;)LX/2mC;",
+              "LX/0kF;->A02(LX/8dw;)Ljava/lang/String;",
+              "LX/0nY;->A03(LX/0DY;)Lcom/whatsapp/infra/core/jid/PhoneUserJid;",
+              "LX/0nY;->A09(LX/0DY;Z)Z",
+              "LX/0ry;->A06(LX/0Zd;)V",
+              "LX/0s1;->A03(LX/0c8;Lcom/whatsapp/infra/core/jid/UserJid;)V",
+              "LX/0vR;->A0C(LX/0D2;)Ljava/lang/String;",
+              "LX/0vR;->A0W(LX/0D2;)Z",
+              "LX/12L;->A09(LX/0hw;I)V",
+              "LX/13m;->A05(Lcom/whatsapp/infra/core/jid/UserJid;LX/0Y1;LX/0HP;)LX/E8h;",
+              "LX/13m;->A0C(LX/0Y1;LX/E8h;LX/0HP;)Z",
+              "LX/13s;->A00(Lcom/whatsapp/infra/core/jid/UserJid;LX/0Y1;LX/0vR;)I",
+              "LX/18i;->BFj(Landroid/os/Message;I)Z",
+              "LX/18p;->A09(LX/0hw;I)V",
+              "LX/1MJ;->A0E(Landroid/text/SpannableStringBuilder;LX/0D2;LX/18X;Ljava/lang/String;ZZ)V",
+              "LX/1N9;->A08(LX/18X;)Z",
+              "LX/1R8;->A03(LX/0D2;Z)LX/0D2;",
+              "LX/1VC;->A01(Lcom/whatsapp/infra/core/jid/UserJid;Ljava/lang/String;)Lcom/whatsapp/infra/core/jid/PhoneUserJid;",
+              "LX/1VC;->A0c(LX/1ZK;ZZ)Ljava/lang/String;",
+              "LX/1Y3;->A01(Landroid/content/Context;Lcom/whatsapp/infra/core/jid/UserJid;)LX/CMN;",
+              "LX/1fq;->A00(LX/1fq;Lcom/whatsapp/infra/core/jid/UserJid;)Lcom/whatsapp/infra/core/jid/UserJid;"
+            ],
+            "caller-count": 121,
+            "invoke": [
+              "LX/00i;->A0A(Ljava/lang/Object;I)V",
+              "LX/00i;->areEqual(Ljava/lang/Object;Ljava/lang/Object;)Z",
+              "LX/08Y;->AqF()LX/0Zd;",
+              "LX/08Y;->AqI()Lcom/whatsapp/infra/core/jid/PhoneUserJid;",
+              "LX/0Gb;->A0D()Z",
+              "LX/0VZ;->A07(Lcom/whatsapp/infra/core/jid/Jid;)J",
+              "LX/0Y1;->A01(J)Lcom/whatsapp/infra/core/jid/PhoneUserJid;",
+              "Lcom/whatsapp/infra/logging/Log;->e(Ljava/lang/String;)V"
+            ],
+            "invoke-count": 8
+          },
+          "structuralSha256": "e0662bce7cb36d7126e5237c261870b5b37e5cac178238348ecf1474514cf7d9"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "phone-jid-by-account-jid-anchor"
+    },
+    "incoming-read-receipt": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/10x;",
+          "descriptor": "LX/10x;->A0K(LX/18X;I)V",
+          "dex": "classes.dex",
+          "references": {
+            "caller": [
+              "LX/10r;->A0A(LX/18X;I)LX/9jt;",
+              "LX/10r;->A0Z(LX/18X;LX/18X;)Z",
+              "LX/10x;->A0G(LX/18X;LX/Aqv;)LX/1bp;",
+              "LX/10x;->A0P(LX/18X;Z)V",
+              "LX/16t;->A05(LX/18X;)LX/Aqv;",
+              "LX/16v;->A00(LX/16v;LX/18X;IZ)LX/9gl;",
+              "LX/1dF;->A00(LX/1dF;LX/18X;LX/AUn;LX/9CD;)LX/Aqv;",
+              "LX/9ru;->A01(LX/18X;LX/18X;)Z",
+              "LX/Ah1;->run()V",
+              "LX/B1k;->A02(LX/BiR;)V",
+              "LX/Cen;->A02(LX/CHH;LX/CFS;LX/Cen;Ljava/io/File;[BII)V"
+            ],
+            "caller-count": 26,
+            "invoke": [
+              "LX/00i;->A06(Ljava/lang/Object;)V",
+              "LX/00i;->A0A(Ljava/lang/Object;I)V",
+              "LX/00t;->get()Ljava/lang/Object;",
+              "LX/10x;->A01(LX/07r;LX/0AG;LX/18X;I)Landroid/os/Message;",
+              "LX/10x;->A03(LX/10x;)LX/07r;",
+              "LX/10x;->A04(LX/10x;)LX/0AG;",
+              "LX/10x;->A07(Landroid/os/Message;LX/10x;)V",
+              "LX/10x;->A08(LX/18X;)V",
+              "LX/10x;->A0F(LX/18X;)Z",
+              "LX/10x;->A0M(LX/18X;Ljava/lang/String;)V",
+              "LX/10x;->A0O(LX/18X;Z)V",
+              "LX/10x;->A0Y(LX/18X;)Z",
+              "LX/10x;->A0Z(LX/18X;)Z",
+              "LX/11I;->A06(LX/0D2;)Z",
+              "LX/11I;->A09(LX/18X;)Z",
+              "LX/18X;->B3z()I",
+              "LX/1cs;->A18(LX/18X;)Z",
+              "Lcom/whatsapp/infra/logging/Log;->i(Ljava/lang/String;)V",
+              "Ljava/lang/Object;->toString()Ljava/lang/String;",
+              "Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V",
+              "Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;",
+              "Ljava/lang/StringBuilder;->append(Ljava/lang/Object;)Ljava/lang/StringBuilder;",
+              "Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;",
+              "Ljava/lang/StringBuilder;->append(Z)Ljava/lang/StringBuilder;"
+            ],
+            "invoke-count": 37
+          },
+          "structuralSha256": "9fff7810c50b05c265e9901ea86d0219c246d3580daf5a5c518a879983b2956a"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "incoming-receipt-anchor-instance-void"
+    },
+    "message-class": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "descriptor": "LX/18X;",
+          "dex": "classes.dex",
+          "superclass": "java.lang.Object"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "sender-jid-log-anchor"
+    },
+    "message-key": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "dex": [
+            "classes.dex"
+          ],
+          "fields": [
+            "LX/18X;->A0i:LX/1cr;"
+          ]
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "sender-read-of-final-key-written-by-owner-constructor"
+    },
+    "message-key-legacy-final-field": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "descriptor": "LX/18X;->A0i:LX/1cr;",
+          "dex": "classes.dex"
+        }
+      ],
+      "evidence": {
+        "instance-fields-of-key-type": 2,
+        "primary-equals-legacy": true
+      },
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "final-instance-field-of-key-type"
+    },
+    "message-key-type": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "descriptor": "LX/1cr;",
+          "dex": "classes2.dex",
+          "superclass": "java.lang.Object"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "three-fields-key-tostring-held-by-message"
+    },
+    "navigation-bar-base": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "descriptor": "LX/0gD;",
+          "dex": "classes.dex",
+          "superclass": "android.widget.FrameLayout"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "menu-presenters-state-key"
+    },
+    "navigation-bar-item-selected-listener": {
+      "candidateCount": 2,
+      "candidates": [
+        {
+          "declaringClass": "LX/0gD;",
+          "descriptor": "LX/0gD;->setOnItemSelectedListener(LX/0g0;)V",
+          "dex": "classes.dex",
+          "references": {},
+          "structuralSha256": "494f351bdc942fd7274188e0acfb64d7113799444e257c7128931ffec4311950"
+        },
+        {
+          "declaringClass": "Lcom/whatsapp/ui/wds/components/bottombar/WDSBottomBar;",
+          "descriptor": "Lcom/whatsapp/ui/wds/components/bottombar/WDSBottomBar;->setOnItemSelectedListener(LX/0g0;)V",
+          "dex": "classes.dex",
+          "references": {},
+          "structuralSha256": "9cf6aa40d74aad8cb1f4b26ad679549649c6ea99bffaa160424bdc5452fd7b7e"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_SET",
+      "strategy": "concrete-overrides-in-hierarchy"
+    },
+    "navigation-bar-max-item-count": {
+      "candidateCount": 2,
+      "candidates": [
+        {
+          "declaringClass": "LX/0rP;",
+          "descriptor": "LX/0rP;->getMaxItemCount()I",
+          "dex": "classes.dex",
+          "references": {},
+          "structuralSha256": "ee89bfafdfac0522c39ddd83b6c2c4fb796e2eb719fe4b930cf9b970d5edb524"
+        },
+        {
+          "declaringClass": "Lcom/google/android/material/bottomnavigation/BottomNavigationView;",
+          "descriptor": "Lcom/google/android/material/bottomnavigation/BottomNavigationView;->getMaxItemCount()I",
+          "dex": "classes.dex",
+          "references": {},
+          "structuralSha256": "ee89bfafdfac0522c39ddd83b6c2c4fb796e2eb719fe4b930cf9b970d5edb524"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_SET",
+      "strategy": "concrete-overrides-in-hierarchy"
+    },
+    "original-message-key": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/1cs;",
+          "descriptor": "LX/1cs;->A09(LX/18X;)LX/1cr;",
+          "dex": "classes2.dex",
+          "references": {
+            "caller": [
+              "LX/0nY;->A0J(Ljava/util/Collection;Z)Ljava/util/Set;",
+              "LX/0nY;->A0K(Ljava/util/Collection;Z)Ljava/util/Set;",
+              "LX/1cs;->A1Q(LX/18X;LX/18X;)Z",
+              "LX/DLo;->A0T(LX/18X;)LX/1cr;"
+            ],
+            "caller-count": 5,
+            "invoke": [
+              "LX/1cs;->A0x(LX/18X;)Z",
+              "LX/EnP;->A00(LX/18X;)LX/FFp;",
+              "Lcom/whatsapp/infra/logging/Log;->e(Ljava/lang/String;)V"
+            ],
+            "invoke-count": 3
+          },
+          "structuralSha256": "00346e709869911ade4c182261251996602dd5578e39b0d4ab213af7ba994f88"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "edited-original-key-log-anchor"
+    },
+    "outgoing-call-launcher": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/1Xw;",
+          "descriptor": "LX/1Xw;->CdY(Landroid/content/Context;LX/0DY;IZ)LX/1pU;",
+          "dex": "classes2.dex",
+          "references": {
+            "caller-count": 0,
+            "invoke": [
+              "LX/1Xw;->A03(Landroid/content/Context;LX/1Xw;Lcom/whatsapp/infra/core/jid/GroupJid;Ljava/lang/Long;Ljava/util/List;IZZ)LX/1pU;",
+              "LX/1Xw;->A0I(LX/1Xw;Ljava/lang/String;)V",
+              "Ljava/util/Collections;->singletonList(Ljava/lang/Object;)Ljava/util/List;"
+            ],
+            "invoke-count": 3
+          },
+          "structuralSha256": "ca84a290b0fd233b1b749d3937ba15ea17c62180298958ee0ff4496a9f34a17a"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "contact-launcher-singleton-list"
+    },
+    "startup-preferences": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/08m;",
+          "descriptor": "LX/08m;-><init>()V",
+          "dex": "classes.dex",
+          "references": {
+            "caller": [
+              "LX/1QL;->A01(ILX/068;Ljava/lang/Object;)Ljava/lang/Object;"
+            ],
+            "caller-count": 1,
+            "invoke": [
+              "LX/00C;->A02(I)Ljava/lang/Object;",
+              "LX/00S;->A04(Ljava/lang/String;)Landroid/content/SharedPreferences;",
+              "LX/2V2;-><init>()V",
+              "LX/2V3;-><init>()V",
+              "LX/2V4;-><init>()V",
+              "LX/2s8;->A00()Ljava/lang/String;",
+              "LX/2s8;->A01(Landroid/content/SharedPreferences;Landroid/content/SharedPreferences;I)V",
+              "Landroid/content/SharedPreferences$Editor;->apply()V",
+              "Landroid/content/SharedPreferences$Editor;->putInt(Ljava/lang/String;I)Landroid/content/SharedPreferences$Editor;",
+              "Landroid/content/SharedPreferences;->edit()Landroid/content/SharedPreferences$Editor;",
+              "Landroid/content/SharedPreferences;->getInt(Ljava/lang/String;I)I",
+              "Ljava/lang/Object;-><init>()V",
+              "Ljava/util/AbstractCollection;->add(Ljava/lang/Object;)Z",
+              "Ljava/util/AbstractCollection;->iterator()Ljava/util/Iterator;",
+              "Ljava/util/ArrayList;-><init>()V",
+              "Ljava/util/Iterator;->hasNext()Z",
+              "Ljava/util/Iterator;->next()Ljava/lang/Object;"
+            ],
+            "invoke-count": 22
+          },
+          "structuralSha256": "9df625c91a2b39382b86df2c8680e0e3ee3e329a51945b19976a81be059ad216"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "startup-migration-anchor-constructor"
+    },
+    "tablet-active-conversation": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/0Ib;",
+          "descriptor": "LX/0Ib;->A5I()Lcom/whatsapp/conversation/ConversationFragment;",
+          "dex": "classes.dex",
+          "references": {
+            "caller": [
+              "LX/0Ib;->A3C()V",
+              "LX/0Ib;->A3Q()V",
+              "LX/0Ib;->A4E(I)V",
+              "LX/0Ib;->A4l()V",
+              "LX/0Ib;->A86(LX/0DY;LX/0D2;)V",
+              "LX/0Ib;->BbZ(Lcom/whatsapp/infra/core/jid/UserJid;Z)V",
+              "LX/0Ib;->Bcf()V",
+              "LX/0Ib;->BiP(LX/0D2;I)Z",
+              "LX/0Ib;->BjJ(Lcom/whatsapp/infra/core/jid/UserJid;Z)V",
+              "LX/0Ib;->Bz2(Lcom/whatsapp/picker/ui/search/PickerSearchDialogFragment;)V",
+              "LX/0Ib;->CAU(LX/Gz9;)V",
+              "LX/0Ib;->CAW(LX/Gz9;)V",
+              "LX/0Ib;->CDb()V",
+              "LX/0Ib;->CbS(Landroidx/fragment/app/DialogFragment;)V",
+              "LX/0Ib;->onActivityResult(IILandroid/content/Intent;)V",
+              "LX/0Ib;->onBackPressed()V",
+              "LX/0Ib;->onContentChanged()V",
+              "LX/0Ib;->onCreateDialog(I)Landroid/app/Dialog;",
+              "LX/0Ib;->onKeyDown(ILandroid/view/KeyEvent;)Z",
+              "LX/0Ib;->onKeyUp(ILandroid/view/KeyEvent;)Z",
+              "LX/0Ib;->onProvideAssistContent(Landroid/app/assist/AssistContent;)V",
+              "LX/0Ib;->onRestart()V",
+              "LX/2OY;->AQJ()V"
+            ],
+            "caller-count": 44,
+            "invoke": [
+              "LX/0JZ;->A0Q(Ljava/lang/String;)Landroidx/fragment/app/Fragment;"
+            ],
+            "invoke-count": 1
+          },
+          "structuralSha256": "9d5519c22e874d96f2d34a80af12fcf1d2060c052ed88703d567bee762a570a6"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "home-tag-and-fragment-lookup"
+    },
+    "tablet-conversation-delegate": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "dex": [
+            "classes.dex",
+            "classes3.dex"
+          ],
+          "fields": [
+            "Lcom/whatsapp/conversation/ConversationFragment;->A02:LX/2OY;",
+            "LX/2OY;->A03:LX/3WU;"
+          ]
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "fragment-field-reads-and-delegate-interface"
+    },
+    "wa-contact-class": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "descriptor": "LX/0DY;",
+          "dex": "classes.dex",
+          "superclass": "java.lang.Object"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "contact-lookup-return-type"
+    }
+  },
+  "l1Source": "OfflineDexAudit over the same base APK as l0 (L0 not re-captured: identical file)",
+  "l2_l3_l4_l5": "NOT_TESTED",
+  "schema": 1,
+  "source": "OFFLINE_LOCAL_FIXTURES",
+  "tools": {
+    "aapt2": "Android Asset Packaging Tool (aapt) 2.20-13193326",
+    "apksigner": "0.9",
+    "dexkit": "2.2.0 (ffa6c51c, built from source; JVM classes from the 2.2.0 AAR)",
+    "sdkBuildTools": "36.0.0"
+  },
+  "unobservedResources": [
+    "drawable/ic_action_download",
+    "drawable/ic_attach_video",
+    "drawable/ic_video",
+    "id/attach_content",
+    "id/attach_row_container",
+    "id/bubble",
+    "id/bubble_row",
+    "id/participant_header_main"
+  ]
+}

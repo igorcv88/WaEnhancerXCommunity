@@ -164,20 +164,23 @@ public class FeatureRegistry {
             }
 
             long startTime = System.currentTimeMillis();
+            // A lazy feature can load after a transient provider failure at startup: retry once.
+            RuntimeDiagnostics.begin(FeatureLoader.mApp, pref);
+            RuntimeDiagnostics.enter(key);
             try {
                 Constructor<? extends Feature> constructor = reg.featureClass.getConstructor(
                         ClassLoader.class, SharedPreferences.class);
                 Feature feature = constructor.newInstance(loader, pref);
+                RuntimeDiagnostics.feature(key, "loaded");
                 feature.doHook();
-
-                RuntimeDiagnostics.feature(FeatureLoader.mApp, key, "resolverPassed", null);
-                RuntimeDiagnostics.feature(FeatureLoader.mApp, key, "installed", null);
-                RuntimeDiagnostics.flush(FeatureLoader.mApp);
+                RuntimeDiagnostics.feature(key, "installed");
 
                 loadedFeatures.add(key);
             } catch (Throwable e) {
-                RuntimeDiagnostics.feature(FeatureLoader.mApp, key, "error", e);
+                RuntimeDiagnostics.feature(key, "error");
                 XposedBridge.log("[FeatureRegistry] Failed to lazy load " + reg.featureName + ": " + e.getMessage());
+            } finally {
+                RuntimeDiagnostics.leave();
             }
         }
     }

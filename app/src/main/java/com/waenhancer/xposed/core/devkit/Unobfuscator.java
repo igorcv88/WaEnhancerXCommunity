@@ -301,17 +301,23 @@ public class Unobfuscator {
 
     public synchronized static Method loadStartOutgoingCallMethod(ClassLoader classLoader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
-            Method method = findFirstMethodUsingStrings(classLoader, StringMatchType.Contains, "outgoing-launch/cm-null-contact");
-            if (method != null) return method;
-            // Dev4Mod 2d2301a: newer builds dropped the log string; match the
-            // (Context, WaContact, int, boolean) launcher that wraps the contact in a singleton list.
+            // The (Context, WaContact, int, boolean) launcher that wraps the contact in a singleton
+            // list (Dev4Mod 2d2301a). It is unique in 2.26.38.74 and 2.26.46.82. The log string is
+            // not: 2.26.38.74 uses it in three methods (this launcher, a String-argument sibling
+            // and a click handler), so "first match" depended on DEX order; 2.26.46.82 dropped it.
+            String contact = loadWaContactClass(classLoader).getName();
             var candidates = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
-                    .paramTypes(Context.class.getName(), loadWaContactClass(classLoader).getName(),
-                            int.class.getName(), boolean.class.getName())
+                    .paramTypes(Context.class.getName(), contact, int.class.getName(), boolean.class.getName())
                     .addInvoke("Ljava/util/Collections;->singletonList(Ljava/lang/Object;)Ljava/util/List;")));
-            if (candidates.size() != 1)
-                throw new NoSuchMethodException("StartOutgoingCall method not found (candidates=" + candidates.size() + ")");
-            return candidates.get(0).getMethodInstance(classLoader);
+            if (candidates.size() == 1) return candidates.get(0).getMethodInstance(classLoader);
+            // Fallback for builds without the singleton-list shape: the logged launcher, accepted
+            // only when exactly one method with the launcher's signature uses the string.
+            var logged = dexkit.findMethod(FindMethod.create().matcher(MethodMatcher.create()
+                    .paramTypes(Context.class.getName(), contact, int.class.getName(), boolean.class.getName())
+                    .addUsingString("outgoing-launch/cm-null-contact", StringMatchType.Contains)));
+            if (logged.size() == 1) return logged.get(0).getMethodInstance(classLoader);
+            throw new NoSuchMethodException("StartOutgoingCall method not unique (shape=" + candidates.size()
+                    + ", logged=" + logged.size() + ")");
         });
     }
 
@@ -320,13 +326,8 @@ public class Unobfuscator {
      * additional enforcement point for HideSeen; callers must treat a failure as fail-open.
      */
     public synchronized static Method loadReadReceiptMethod(ClassLoader classLoader) throws Exception {
-        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
-            var method = findFirstMethodUsingStrings(classLoader, StringMatchType.Contains,
-                    "ReadReceipts/sendReceiptForIncomingMessage");
-            if (method == null)
-                throw new Exception("ReadReceipt method not found");
-            return method;
-        });
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () ->
+                HostDexContracts.incomingReadReceipt(dexkit).unique().getMethodInstance(classLoader));
     }
 
     public synchronized static Method loadReceiptMethod(ClassLoader classLoader) throws Exception {
@@ -606,16 +607,8 @@ public class Unobfuscator {
     }
 
     public synchronized static Method loadTabFragmentMethod(ClassLoader classLoader) throws Exception {
-        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> {
-            Class<?> clsFrag = XposedHelpers.findClass("com.whatsapp.conversationslist.ConversationsFragment",
-                    classLoader);
-            Method result = Arrays.stream(clsFrag.getDeclaredMethods()).parallel()
-                    .filter(m -> m.getParameterTypes().length == 0 && m.getReturnType().equals(List.class)).findFirst()
-                    .orElse(null);
-            if (result == null)
-                throw new Exception("TabFragment method not found");
-            return result;
-        });
+        return UnobfuscatorCache.getInstance().getMethod(classLoader, () ->
+                HostDexContracts.chatList(dexkit).unique().getMethodInstance(classLoader));
     }
 
     public synchronized static Method loadTabNameMethod(ClassLoader classLoader) throws Exception {
@@ -1271,41 +1264,46 @@ public class Unobfuscator {
     public synchronized static Method loadHomeConversationFragmentMethod(ClassLoader loader) throws Exception {
         return UnobfuscatorCache.getInstance().getMethod(loader, () -> {
             var homeClass = WppCore.getHomeActivityClass(loader);
-            var convFragment = XposedHelpers.findClassIfExists("com.whatsapp.ConversationFragment", loader);
-            if (convFragment == null) {
-                throw new ClassNotFoundException("com.whatsapp.ConversationFragment");
+            // com.whatsapp.ConversationFragment exists in neither audited host (2.26.38.74,
+            // 2.26.46.82); both use com.whatsapp.conversation.ConversationFragment, so this branch
+            // never runs there and the tablet path below is new behaviour on both. It is kept,
+            // guarded by the class lookup, for older supported hosts that were not audited.
+            var oldFragment = XposedHelpers.findClassIfExists("com.whatsapp.ConversationFragment", loader);
+            if (oldFragment != null) {
+                var homeData = dexkit.getClassData(homeClass);
+                if (homeData != null) {
+                    var legacy = homeData.findMethod(FindMethod.create()
+                            .matcher(MethodMatcher.create().returnType(oldFragment)));
+                    if (!legacy.isEmpty()) {
+                        return new HostDexContracts.Candidates("legacy-home-conversation-fragment", legacy)
+                                .unique().getMethodInstance(loader);
+                    }
+                }
             }
-            MethodData method = dexkit.findMethod(FindMethod.create()
-                    .searchInClass(
-                            Collections.singletonList(
-                                    dexkit.getClassData(homeClass)))
-                    .matcher(MethodMatcher.create().returnType(convFragment))).singleOrNull();
-            if (method == null)
-                throw new Exception("HomeConversationFragmentMethod not found");
-            return method.getMethodInstance(loader);
+            return HostDexContracts.homeConversation(dexkit).unique().getMethodInstance(loader);
         });
     }
 
-    public synchronized static Field loadAntiRevokeConvFragmentField(ClassLoader loader) throws Exception {
-        return UnobfuscatorCache.getInstance().getField(loader, () -> {
-            String[] anchors = {"conversation/createconversation", "conversation/create", "conversation/refresh"};
-            Class<?> conversation = XposedHelpers.findClassIfExists("com.whatsapp.ConversationFragment", loader);
-            if (conversation == null) {
-                throw new ClassNotFoundException("com.whatsapp.ConversationFragment");
-            }
-
-            for (String anchor : anchors) {
-                Class<?>[] classes = findAllClassUsingStrings(loader, StringMatchType.Contains, anchor);
-                if (classes == null) continue;
-
-                for (Class<?> clazz : classes) {
-                    Field field = ReflectionUtils.getFieldByType(conversation, clazz);
-                    if (field != null) return field;
-                    field = ReflectionUtils.getFieldByExtendType(conversation, clazz);
-                    if (field != null) return field;
+    public synchronized static Field[] loadHomeConversationDelegateFields(ClassLoader loader) throws Exception {
+        return UnobfuscatorCache.getInstance().getFields(loader, () -> {
+            Class<?> fragment = loadHomeConversationFragmentMethod(loader).getReturnType();
+            if ("com.whatsapp.ConversationFragment".equals(fragment.getName())) {
+                var classes = findAllClassUsingStrings(loader, StringMatchType.Contains,
+                        "conversation/createconversation");
+                if (classes != null && classes.length == 1) {
+                    var matches = Arrays.stream(fragment.getDeclaredFields())
+                            .filter(field -> !Modifier.isStatic(field.getModifiers())
+                                    && field.getType() != Object.class
+                                    && field.getType().isAssignableFrom(classes[0])).collect(Collectors.toList());
+                    if (matches.size() == 1) return new Field[]{matches.get(0)};
                 }
             }
-            throw new Exception("AntiRevokeConvChat field not found");
+            var paths = HostDexContracts.homeDelegatePaths(dexkit);
+            if (paths.size() != 1) throw new NoSuchFieldException("Home delegate paths=" + paths.size());
+            var path = paths.get(0);
+            Field[] fields = new Field[path.size()];
+            for (int i = 0; i < fields.length; i++) fields[i] = path.get(i).getFieldInstance(loader);
+            return fields;
         });
     }
 
@@ -1487,19 +1485,19 @@ public class Unobfuscator {
 
     public synchronized static Field loadMessageKeyField(ClassLoader loader) throws Exception {
         return UnobfuscatorCache.getInstance().getField(loader, () -> {
-            var classList = dexkit.findClass(new FindClass().matcher(new ClassMatcher().fieldCount(3)
-                    .addMethod(new MethodMatcher().addUsingString("Key").name("toString"))));
-            if (classList.isEmpty())
-                throw new Exception("MessageKey class not found");
-            for (ClassData classData : classList) {
-                Class<?> keyMessageClass = classData.getInstance(loader);
-                var classMessage = loadFMessageClass(loader);
-                var fields = ReflectionUtils.getFieldsByExtendType(classMessage, keyMessageClass);
-                if (fields.isEmpty())
-                    continue;
-                return fields.get(fields.size() - 1);
+            var classMessage = loadFMessageClass(loader);
+            var evidence = HostDexContracts.messageKey(dexkit);
+            if (evidence.size() > 1) throw new NoSuchFieldException("Ambiguous primary message key");
+            if (evidence.size() == 1) {
+                Field field = evidence.get(0).getFieldInstance(loader);
+                return MessageKeyContract.requireIdentityField(field, classMessage);
             }
-            throw new Exception("MessageKey field not found");
+            // Hosts without the sender read pattern: accept only a single final field of the key
+            // type. Field order is never evidence; two mutable/final candidates fail closed.
+            Class<?> keyMessageClass = HostDexContracts.messageKeyType(dexkit, classMessage.getName())
+                    .unique().getInstance(loader);
+            return MessageKeyContract.selectFinalField(
+                    ReflectionUtils.getFieldsByExtendType(classMessage, keyMessageClass), classMessage);
         });
     }
 
@@ -2293,6 +2291,17 @@ public class Unobfuscator {
         });
     }
 
+    /** Concrete implementations of a NavigationBarView method in the base and every subclass. */
+    public synchronized static List<Method> loadTabFrameOverrides(ClassLoader loader, String name, int paramCount)
+            throws Exception {
+        Class<?> base = loadTabFrameClass(loader);
+        var methods = new java.util.ArrayList<Method>();
+        for (var data : HostDexContracts.concreteOverrides(dexkit, base.getName(), name, paramCount).methods()) {
+            methods.add(data.getMethodInstance(loader));
+        }
+        return methods;
+    }
+
     public synchronized static Class loadRemoveChannelRecClass(ClassLoader loader) throws Exception {
         return UnobfuscatorCache.getInstance().getClass(loader, () -> {
             var clazz = findFirstClassUsingStrings(loader, StringMatchType.Contains, "hasNewsletterSubscriptions");
@@ -2540,13 +2549,8 @@ public class Unobfuscator {
     }
 
     public synchronized static Constructor loadStartPrefsConfig(ClassLoader loader) throws Exception {
-        return UnobfuscatorCache.getInstance().getConstructor(loader, () -> {
-            var results = dexkit.findMethod(
-                    new FindMethod().matcher(new MethodMatcher().addUsingString("startup_migrated_version")));
-            if (results.isEmpty())
-                throw new RuntimeException("StartPrefsConfig constructor not found");
-            return results.get(0).getConstructorInstance(loader);
-        });
+        return UnobfuscatorCache.getInstance().getConstructor(loader, () ->
+                HostDexContracts.startupPreferences(dexkit).unique().getConstructorInstance(loader));
     }
 
     public synchronized static Method loadCheckOnlineMethod(ClassLoader loader) throws Exception {
@@ -2619,10 +2623,10 @@ public class Unobfuscator {
 
     public synchronized static Class loadVideoViewContainerClass(ClassLoader loader) throws Exception {
         return UnobfuscatorCache.getInstance().getClass(loader, () -> {
-            var clazz = findFirstClassUsingStrings(loader, StringMatchType.Contains, "frame_visibility_serial_worker");
-            if (clazz == null)
-                throw new RuntimeException("VideoViewContainer class not found");
-            return clazz;
+            // The conversation video row. 2.26.46.82 removed the worker-name string; the
+            // accessor's assertion message is present once in both supported hosts.
+            var accessors = HostDexContracts.videoRowContainer(dexkit).unique();
+            return loader.loadClass(accessors.getClassName());
         });
     }
 
@@ -3243,13 +3247,8 @@ public class Unobfuscator {
     }
 
     public static synchronized Method loadCachedMessageStoreKey(ClassLoader loader) throws Exception {
-        return UnobfuscatorCache.getInstance().getMethod(loader, () -> {
-            var method = findFirstMethodUsingStrings(loader, StringMatchType.Contains,
-                    "CachedMessageStore/getAvailableMessage/key");
-            if (method == null)
-                throw new RuntimeException("CachedMessageStore class not found");
-            return method;
-        });
+        return UnobfuscatorCache.getInstance().getMethod(loader, () ->
+                HostDexContracts.cachedMessage(dexkit).unique().getMethodInstance(loader));
     }
 
     public static synchronized Class loadAbstractMediaMessageClass(ClassLoader loader) throws Exception {
@@ -3605,13 +3604,13 @@ public class Unobfuscator {
     }
 
     public static Method loadConvertLidToJid(ClassLoader loader) throws Exception {
-        return UnobfuscatorCache.getInstance().getMethod(loader, () -> findFirstMethodUsingStrings(loader,
-                StringMatchType.Contains, "WaJidMapRepository/getPhoneJidByAccountUserJid"));
+        return UnobfuscatorCache.getInstance().getMethod(loader, () ->
+                HostDexContracts.convertLidToJid(dexkit).unique().getMethodInstance(loader));
     }
 
     public static Method loadConvertJidToLid(ClassLoader loader) throws Exception {
-        return UnobfuscatorCache.getInstance().getMethod(loader, () -> findFirstMethodUsingStrings(loader,
-                StringMatchType.Contains, "WaJidMapRepository/getAccountUserJidByPhoneJid"));
+        return UnobfuscatorCache.getInstance().getMethod(loader, () ->
+                HostDexContracts.convertJidToLid(dexkit).unique().getMethodInstance(loader));
     }
 
     public static Class loadWaContactData(ClassLoader classLoader) throws Exception {
@@ -3790,6 +3789,11 @@ public class Unobfuscator {
      * scanned. Only a getter also reachable from the notification method and filtering by a
      * (Jid) -> boolean check is accepted; ambiguity returns null and the legacy route runs.
      */
+    static boolean isPlatformClass(String name) {
+        return name.startsWith("java.") || name.startsWith("javax.") || name.startsWith("android.")
+                || name.startsWith("androidx.") || name.startsWith("kotlin.");
+    }
+
     private static Method findLockedChatsGetterFromFragment(ClassLoader classLoader) throws Exception {
         var fragment = dexkit.getClassData("com.whatsapp.conversation.conversationslist.LockedConversationsFragment");
         if (fragment == null) return null;
@@ -3813,8 +3817,13 @@ public class Unobfuscator {
                     if (!seen.add(invoke.getDescriptor()) || !reachable.contains(invoke.getDescriptor())) continue;
                     boolean filtersByJid = false;
                     for (var inner : invoke.getInvokes()) {
+                        // A host predicate on the chat JID. Collection.add(Object) is also a
+                        // one-argument boolean call, and it made the filtered locked-chats getter
+                        // indistinguishable from the unfiltered sibling on both audited hosts
+                        // (0WL.A0O/A0N in 2.26.38.74, 0Wo.A0Q/A0P in 2.26.46.82).
                         if (inner.isMethod() && inner.getParamCount() == 1 && inner.getReturnType() != null
-                                && "boolean".equals(inner.getReturnType().getName())) {
+                                && "boolean".equals(inner.getReturnType().getName())
+                                && !isPlatformClass(inner.getClassName())) {
                             filtersByJid = true;
                             break;
                         }
@@ -3862,11 +3871,6 @@ public class Unobfuscator {
                             .addUsingNumber(8726).paramCount(1)));
             return scoped.size() == 1 ? scoped.get(0).getMethodInstance(classLoader) : null;
         });
-    }
-
-    public static Method loadVideoTranscoderStartMethod(ClassLoader classLoader) throws Exception {
-        return UnobfuscatorCache.getInstance().getMethod(classLoader, () -> findFirstMethodUsingStrings(classLoader,
-                StringMatchType.Contains, "VideoTranscoder/transcodeVideoNew/"));
     }
 
     public static Field loadWaContactGetWaNameField(ClassLoader classLoader) throws Exception {
@@ -4194,10 +4198,6 @@ public class Unobfuscator {
             idxFields++;
         }
         return result;
-    }
-
-    public static Class<?> loadMediaDataVideoConfigurationClass(ClassLoader classLoader) throws Exception {
-        return UnobfuscatorCache.getInstance().getClass(classLoader, () -> findFirstClassUsingStrings(classLoader, StringMatchType.Contains, "MediaDataVideoConfiguration("));
     }
 
     public static Method loadStatusStyleMethod(ClassLoader classLoader) throws Exception {

@@ -39,9 +39,22 @@ public final class BubbleSilhouette {
     /** Pure contour logic, shared with the host-JVM tests. Returns null when no body is found. */
     static BubbleSilhouette measure(int width, int height, Sampler sampler, float fallbackRadius) {
         if (width < 2 || height < 2) return null;
-        int[] middle = sampler.row(height / 2);
-        int l = first(middle), r = last(middle);
-        if (l < 0 || r <= l) return null;
+        // The middle row first; a container whose middle row crosses a transparent part (the
+        // view-once NinePatch: a hollow centre behind its media/label) is probed at other rows
+        // before the rectangular fallback is used.
+        int[] middle = null;
+        int l = -1, r = -1;
+        for (int y : probeRows(height)) {
+            int[] row = sampler.row(y);
+            int left = first(row), right = last(row);
+            if (left >= 0 && right > left) {
+                middle = row;
+                l = left;
+                r = right;
+                break;
+            }
+        }
+        if (middle == null) return null;
         int cx = (l + r) / 2;
         int[] centre = sampler.column(cx);
         int t = first(centre), b = last(centre);
@@ -63,6 +76,12 @@ public final class BubbleSilhouette {
         int fill = middle[cx];
         int color = (fill >>> 24) >= OPAQUE ? (fill | 0xFF000000) : 0;
         return new BubbleSilhouette(l, t, right, bottom, radius, color);
+    }
+
+    /** Middle row, then thirds and quarters: at most five strips are rasterized. */
+    static int[] probeRows(int height) {
+        return java.util.stream.IntStream.of(height / 2, height / 3, (2 * height) / 3, height / 4, (3 * height) / 4)
+                .map(y -> Math.max(0, Math.min(height - 1, y))).distinct().toArray();
     }
 
     private static int first(int[] strip) {

@@ -79,6 +79,26 @@ public final class RevokeSql {
         return new RevokeSql(table, row, verb.startsWith("DELETE"), !verb.startsWith("DELETE"), null, -1, Map.of());
     }
 
+    private static final Pattern STRING_LITERAL = Pattern.compile("'(?:[^']|'')*'");
+    private static final Pattern BLOB_LITERAL = Pattern.compile("(?i)\\bx'[0-9a-f]*'");
+    private static final Pattern NUMBER = Pattern.compile("(?<![A-Za-z_0-9])-?[0-9]+(?:\\.[0-9]+)?(?![A-Za-z_0-9])");
+    static final int MAX_SHAPE = 200;
+
+    /**
+     * The statement's structure without any value: keywords, table and column names and
+     * operators are kept; every literal and every bound value is {@code ?}. Column and table
+     * names are WhatsApp's schema, not user data, so the shape can be logged to identify a
+     * statement the parser does not support.
+     */
+    static String shape(String sql) {
+        if (sql == null) return "";
+        String out = BLOB_LITERAL.matcher(sql).replaceAll("?");
+        out = STRING_LITERAL.matcher(out).replaceAll("?");
+        out = NUMBER.matcher(out).replaceAll("?");
+        out = out.replaceAll("\\s+", " ").trim();
+        return out.length() > MAX_SHAPE ? out.substring(0, MAX_SHAPE) + "…" : out;
+    }
+
     boolean acceptsOriginalKey(long candidate, String actualKey, boolean identifiedCallback) {
         // INSERT/REPLACE placeholder values can carry a new key. The row being overwritten,
         // or an identified callback, still names the original; WHERE predicates are separately

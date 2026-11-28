@@ -34,7 +34,6 @@ import de.robv.android.xposed.XposedHelpers;
  * Injects BOTH a Tile (row) and a Toolbar menu item as a backup.
  */
 public class SettingsInjector extends Feature {
-    private static final String SETTINGS_TAB_ACTIVITY = "com.whatsapp.settings.ui.SettingsTabActivity";
     private static final int VIEW_ID_WAEX_SETTINGS = 10001;
     private static final int VIEW_ID_WAEX_TEST_SWITCH = 10003;
     private final Set<Integer> processedActivities = new HashSet<>();
@@ -49,13 +48,13 @@ public class SettingsInjector extends Feature {
     public void doHook() throws Throwable {
         final Class<?> settingsActivityClass;
         try {
-            Class<?> directClass = XposedHelpers.findClassIfExists(SETTINGS_TAB_ACTIVITY, classLoader);
+            Class<?> directClass = com.waenhancer.xposed.core.HostClassNames.first(
+                    com.waenhancer.xposed.core.HostClassNames.SETTINGS_TAB, classLoader);
             settingsActivityClass = directClass != null ? directClass : Unobfuscator.loadSettingsActivityClass(classLoader);
         } catch (Throwable t) {
-            // XposedBridge.log("[WaEnhancer Community] SettingsInjector disabled: unable to resolve settings activity");
-            return;
+            throw new IllegalStateException("SettingsInjector: settings activity not found", t);
         }
-        if (settingsActivityClass == null) return;
+        if (settingsActivityClass == null) throw new IllegalStateException("SettingsInjector: settings activity not found");
 
         XC_MethodHook menuHook = new XC_MethodHook() {
             @Override

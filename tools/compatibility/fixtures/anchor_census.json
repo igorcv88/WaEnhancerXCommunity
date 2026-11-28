@@ -1,0 +1,3455 @@
+{
+ "apks": {
+  "2.26.38.74": {
+   "anchors": {
+    ",": {
+     "contains": [
+      12797,
+      10959
+     ],
+     "equals": [
+      607,
+      533
+     ]
+    },
+    ".j": {
+     "contains": [
+      733,
+      596
+     ],
+     "equals": [
+      2,
+      2
+     ]
+    },
+    "/system/bin/su": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      2,
+      2
+     ]
+    },
+    "Android SDK built for x86": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      2,
+      2
+     ]
+    },
+    "Avatars": {
+     "contains": [
+      8,
+      7
+     ],
+     "equals": [
+      5,
+      4
+     ]
+    },
+    "BottomBarConfig(": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "CONTACTS_FILTER": {
+     "contains": [
+      18,
+      13
+     ],
+     "equals": [
+      18,
+      13
+     ]
+    },
+    "ChatSettingsStore/setPin": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Chatscache/": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Compatibility shadow requested": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ContactManager/getContactFromCacheOrDbByJid": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ContactManagerDatabase/updateContactWAName": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ContactManagerDatabase/updateGroupInfo": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ContactPickerFragment/onContactsLoaded": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ContactStatusDataItem": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ConversationPinHelper/pinSelectedJids max=": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "ConversationPinHelper/trimExcessPinnedChats": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ConversationRow/setupUserNameInGroupView": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ConversationRow/setupUserNameInGroupView/": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ConversationViewFiller/setParentGroupProfilePhoto": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "CoreMessageStore/updateCheckoutMessageWithTransactionInfo": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "DialerProfilePictureLoader/syncFetchProfilePhoto/onPhotoReceived": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "FMessage/getSenderUserJid/key.id": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "FMessageFactory/newFMessageForForward/thumbnail": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "FMessageUtil/getOriginalMessageKeyIfEdited": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "FStatus state": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "FStatusMedia/mediaDataV2": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "GET_RECEIVED_TOKEN_AND_TIMESTAMP_BY_JID": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "HandleMeComposing/sendComposing": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "INSERT_RECEIPT_USER": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "INSERT_TABLE_MESSAGE_QUOTED": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "INSERT_VIEW_ONCE_SQL": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "Instantiated fragment": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Key": {
+     "contains": [
+      3192,
+      2811
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Key(id=": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "KeyValue{key=": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "LastMessageStore/getLastMessagesForNotificationAfterReply": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "Maximum number of items supported by": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "MenuPopupHelper cannot be used without an anchor": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      2,
+      2
+     ]
+    },
+    "MessageEditInfoStore/insertEditInfo/missing": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "MessageHandler/handleConnectionThreadReady connectionready": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "MessageHandler/start": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "MessageSelectionDropDownRecyclerView": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "MultiSelectionLimitInfo": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "NewsletterHeaderDataItem(enableExploreButton=": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Non-forwardable message(": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "None": {
+     "contains": [
+      94,
+      90
+     ],
+     "equals": [
+      48,
+      48
+     ]
+    },
+    "Only set a valid status distribution mode": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "PLAYBACK_PAGE_ITEM_ON_CREATE_VIEW_END": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "PinChatHandler/setArchive": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "PlaybackSpeed": {
+     "contains": [
+      8,
+      7
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ProcessImageQuality(": {
+     "contains": [
+      3,
+      3
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ProcessVideoQuality(": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Profile Pictures": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      2,
+      2
+     ]
+    },
+    "ProfilePhotoManager/sendGetProfilePhoto": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ProtocolTreeNode/getAttributeJid": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ReadReceiptUtils/buildReadReceiptHandler malformed": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ReadReceipts/sendReceiptForIncomingMessage": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "RevokeStatusManager/failed": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Running diff util, updates list size": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "SendE2EMessageJob/onRun": {
+     "contains": [
+      2,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "StatusListUpdates": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "StatusPlaybackPage/onViewCreated": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "StatusReceiptStore/insertOrUpdateSeenReceiptForStatus": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "StatusStore/GET_STATUS_BY_KEY": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "StickerGridViewItem.StickerLocal": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "TextData;": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "TranscriptionSegment(": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Tried to set badge for invalid": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "UPDATE_MESSAGE_ADD_ON_FLAGS_MAIN_SQL": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "UPDATE_MESSAGE_MAIN_BROADCAST_SCAN_SQL": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "Unknown BooleanField": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Unknown IntField": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Unknown JsonField": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Unreachable code: direction=": {
+     "contains": [
+      2,
+      1
+     ],
+     "equals": [
+      2,
+      1
+     ]
+    },
+    "Unsupported language": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "UpdatesViewModel/": {
+     "contains": [
+      9,
+      4
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "UpdatesViewModel/Scheduled updates list refresh": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "WaContactData": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "WaJobManager/start": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "WamoAccountSettingManager": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "android:menu:presenters": {
+     "contains": [
+      2,
+      1
+     ],
+     "equals": [
+      2,
+      1
+     ]
+    },
+    "app/send-presence-subscription jid=": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "app/time server update processed": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "app/xmpp/recv/handle_available": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "archive/Unsupported mode in ArchivePreviewView:": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "archive/set-content-indicator-to-empty": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "broadcast": {
+     "contains": [
+      333,
+      267
+     ],
+     "equals": [
+      36,
+      32
+     ]
+    },
+    "callCreatorJid": {
+     "contains": [
+      5,
+      5
+     ],
+     "equals": [
+      3,
+      3
+     ]
+    },
+    "chatInfo/incrementUnseenImportantMessageCount": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "class": {
+     "contains": [
+      504,
+      423
+     ],
+     "equals": [
+      45,
+      42
+     ]
+    },
+    "conversation/copymessage": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "conversation/createconversation": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "conversation/refresh": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "conversations/filter/performFiltering": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "conversationsmgr/replacecontact": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "cyanogen": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "delete": {
+     "contains": [
+      1057,
+      863
+     ],
+     "equals": [
+      36,
+      35
+     ]
+    },
+    "deviceidentityverifier/verify Primary": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "dialog/delete": {
+     "contains": [
+      8,
+      8
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "dialog/delete no messages": {
+     "contains": [
+      6,
+      6
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "dimensions_are_zero": {
+     "contains": [
+      3,
+      3
+     ],
+     "equals": [
+      3,
+      3
+     ]
+    },
+    "emojis.oba": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "enable_media_quality_tool": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ephemeral_initiated_by_me": {
+     "contains": [
+      10,
+      9
+     ],
+     "equals": [
+      9,
+      8
+     ]
+    },
+    "ephemeral_trigger": {
+     "contains": [
+      11,
+      10
+     ],
+     "equals": [
+      10,
+      9
+     ]
+    },
+    "expandableWidgetHelper": {
+     "contains": [
+      2,
+      1
+     ],
+     "equals": [
+      2,
+      1
+     ]
+    },
+    "expire_timestamp": {
+     "contains": [
+      46,
+      32
+     ],
+     "equals": [
+      5,
+      3
+     ]
+    },
+    "extra_payment_note": {
+     "contains": [
+      17,
+      17
+     ],
+     "equals": [
+      17,
+      17
+     ]
+    },
+    "forwardable": {
+     "contains": [
+      4,
+      4
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "frame_visibility_serial_worker": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "getCorrectedResolution": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "getPinnedJids/QUERY_CHAT_SETTINGS": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "hasNewsletterSubscriptions": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "heroaudioplayer/setPlaybackSpeed": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "invalid metadata (country calling code was mapped to the non-geo entity as well as specific region(s))": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "isMuteIndicatorEnabled": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "lid_me": {
+     "contains": [
+      26,
+      23
+     ],
+     "equals": [
+      3,
+      3
+     ]
+    },
+    "mFragmentId=#": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "mapFStatusToFMessageForForwarding": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "me.jpg": {
+     "contains": [
+      9,
+      8
+     ],
+     "equals": [
+      8,
+      7
+     ]
+    },
+    "mediaHash and fileType not both present for upload URL generation": {
+     "contains": [
+      3,
+      3
+     ],
+     "equals": [
+      3,
+      3
+     ]
+    },
+    "media_quality": {
+     "contains": [
+      51,
+      42
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "memanager/": {
+     "contains": [
+      15,
+      4
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "message": {
+     "contains": [
+      5728,
+      4111
+     ],
+     "equals": [
+      229,
+      195
+     ]
+    },
+    "message_add_on": {
+     "contains": [
+      199,
+      111
+     ],
+     "equals": [
+      28,
+      21
+     ]
+    },
+    "messageaudioplayer/onearproximity": {
+     "contains": [
+      4,
+      3
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "min_bandwidth": {
+     "contains": [
+      7,
+      5
+     ],
+     "equals": [
+      5,
+      3
+     ]
+    },
+    "network_types": {
+     "contains": [
+      4,
+      4
+     ],
+     "equals": [
+      2,
+      2
+     ]
+    },
+    "not associated with a fragment manager.": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "not recyclable": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "outgoing-launch/cm-null-contact": {
+     "contains": [
+      3,
+      2
+     ],
+     "equals": [
+      3,
+      2
+     ]
+    },
+    "participant_hash": {
+     "contains": [
+      111,
+      74
+     ],
+     "equals": [
+      5,
+      4
+     ]
+    },
+    "pinSelectedJids": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "playMiddleTone": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "playbackFragment/refreshCurrentPageSubTitle message is empty": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "playbackFragment/setPageActive": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "playbackFragment/setPageActive no-messages ": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "playbackPage/onPlaybackContentFinished": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "playbackPage/pausePlayback page=": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "playbackPage/reply page=": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "playbackPage/resumePlayback page=": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "played": {
+     "contains": [
+      133,
+      108
+     ],
+     "equals": [
+      10,
+      9
+     ]
+    },
+    "pref_revoke_admin_nux": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "presencestatemanager/setAvailable/new-state": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "presencestatemanager/startTransitionToUnavailable/new-state": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "problematic contact:": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "read": {
+     "contains": [
+      3823,
+      2740
+     ],
+     "equals": [
+      15,
+      13
+     ]
+    },
+    "receipt": {
+     "contains": [
+      428,
+      264
+     ],
+     "equals": [
+      40,
+      32
+     ]
+    },
+    "received_timestamp": {
+     "contains": [
+      144,
+      91
+     ],
+     "equals": [
+      19,
+      14
+     ]
+    },
+    "reject": {
+     "contains": [
+      265,
+      234
+     ],
+     "equals": [
+      11,
+      11
+     ]
+    },
+    "required free space should be > 0": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "revoke_admin": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "s.whatsapp.net": {
+     "contains": [
+      43,
+      41
+     ],
+     "equals": [
+      17,
+      16
+     ]
+    },
+    "saveGroupParticipants/INSERT_GROUP_PARTICIPANT_USER": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "search_bar_render_start": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "send_max_video_duration": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "sender": {
+     "contains": [
+      794,
+      600
+     ],
+     "equals": [
+      27,
+      22
+     ]
+    },
+    "senderJid": {
+     "contains": [
+      63,
+      61
+     ],
+     "equals": [
+      5,
+      5
+     ]
+    },
+    "sendmethods/sendClearDirty": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "setPlaybackSpeed": {
+     "contains": [
+      5,
+      4
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "setupUserNameInGroupView": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "show_media_quality_toggle": {
+     "contains": [
+      9,
+      9
+     ],
+     "equals": [
+      9,
+      9
+     ]
+    },
+    "smb_eu_tos_update_url": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "software_forced_expiration": {
+     "contains": [
+      3,
+      3
+     ],
+     "equals": [
+      3,
+      3
+     ]
+    },
+    "statusTilesEnabled": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "status_me": {
+     "contains": [
+      88,
+      68
+     ],
+     "equals": [
+      3,
+      3
+     ]
+    },
+    "this was called before onCreateView()": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "thumb view type is not correct": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "transcribe: starting transcription": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "view_mode": {
+     "contains": [
+      150,
+      105
+     ],
+     "equals": [
+      7,
+      5
+     ]
+    },
+    "voip/callStateChangedOnUIThread": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    }
+   },
+   "versionCode": 263807433
+  },
+  "2.26.46.82": {
+   "anchors": {
+    ",": {
+     "contains": [
+      15677,
+      13519
+     ],
+     "equals": [
+      719,
+      623
+     ]
+    },
+    ".j": {
+     "contains": [
+      885,
+      732
+     ],
+     "equals": [
+      2,
+      2
+     ]
+    },
+    "/system/bin/su": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      2,
+      2
+     ]
+    },
+    "Android SDK built for x86": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      2,
+      2
+     ]
+    },
+    "Avatars": {
+     "contains": [
+      9,
+      8
+     ],
+     "equals": [
+      6,
+      5
+     ]
+    },
+    "BottomBarConfig(": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "CONTACTS_FILTER": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "ChatSettingsStore/setPin": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Chatscache/": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Compatibility shadow requested": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ContactManager/getContactFromCacheOrDbByJid": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ContactManagerDatabase/updateContactWAName": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ContactManagerDatabase/updateGroupInfo": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ContactPickerFragment/onContactsLoaded": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ContactStatusDataItem": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ConversationPinHelper/pinSelectedJids max=": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "ConversationPinHelper/trimExcessPinnedChats": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ConversationRow/setupUserNameInGroupView": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ConversationRow/setupUserNameInGroupView/": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ConversationViewFiller/setParentGroupProfilePhoto": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "CoreMessageStore/updateCheckoutMessageWithTransactionInfo": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "DialerProfilePictureLoader/syncFetchProfilePhoto/onPhotoReceived": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "FMessage/getSenderUserJid/key.id": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "FMessageFactory/newFMessageForForward/thumbnail": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "FMessageUtil/getOriginalMessageKeyIfEdited": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "FStatus state": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "FStatusMedia/mediaDataV2": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "GET_RECEIVED_TOKEN_AND_TIMESTAMP_BY_JID": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "HandleMeComposing/sendComposing": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "INSERT_RECEIPT_USER": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "INSERT_TABLE_MESSAGE_QUOTED": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "INSERT_VIEW_ONCE_SQL": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "Instantiated fragment": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Key": {
+     "contains": [
+      3563,
+      3133
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Key(id=": {
+     "contains": [
+      3,
+      3
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "KeyValue{key=": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "LastMessageStore/getLastMessagesForNotificationAfterReply": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "Maximum number of items supported by": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "MenuPopupHelper cannot be used without an anchor": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      2,
+      2
+     ]
+    },
+    "MessageEditInfoStore/insertEditInfo/missing": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "MessageHandler/handleConnectionThreadReady connectionready": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "MessageHandler/start": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "MessageSelectionDropDownRecyclerView": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "MultiSelectionLimitInfo": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "NewsletterHeaderDataItem(enableExploreButton=": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "Non-forwardable message(": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "None": {
+     "contains": [
+      115,
+      111
+     ],
+     "equals": [
+      67,
+      67
+     ]
+    },
+    "Only set a valid status distribution mode": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "PLAYBACK_PAGE_ITEM_ON_CREATE_VIEW_END": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "PinChatHandler/setArchive": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "PlaybackSpeed": {
+     "contains": [
+      13,
+      12
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ProcessImageQuality(": {
+     "contains": [
+      3,
+      3
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ProcessVideoQuality(": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Profile Pictures": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      2,
+      2
+     ]
+    },
+    "ProfilePhotoManager/sendGetProfilePhoto": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ProtocolTreeNode/getAttributeJid": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ReadReceiptUtils/buildReadReceiptHandler malformed": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ReadReceipts/sendReceiptForIncomingMessage": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "RevokeStatusManager/failed": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Running diff util, updates list size": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "SendE2EMessageJob/onRun": {
+     "contains": [
+      2,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "StatusListUpdates": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "StatusPlaybackPage/onViewCreated": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "StatusReceiptStore/insertOrUpdateSeenReceiptForStatus": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "StatusStore/GET_STATUS_BY_KEY": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "StickerGridViewItem.StickerLocal": {
+     "contains": [
+      3,
+      3
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "TextData;": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "TranscriptionSegment(": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Tried to set badge for invalid": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "UPDATE_MESSAGE_ADD_ON_FLAGS_MAIN_SQL": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "UPDATE_MESSAGE_MAIN_BROADCAST_SCAN_SQL": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "Unknown BooleanField": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Unknown IntField": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Unknown JsonField": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "Unreachable code: direction=": {
+     "contains": [
+      2,
+      1
+     ],
+     "equals": [
+      2,
+      1
+     ]
+    },
+    "Unsupported language": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "UpdatesViewModel/": {
+     "contains": [
+      9,
+      3
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "UpdatesViewModel/Scheduled updates list refresh": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "WaContactData": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "WaJobManager/start": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "WamoAccountSettingManager": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "android:menu:presenters": {
+     "contains": [
+      2,
+      1
+     ],
+     "equals": [
+      2,
+      1
+     ]
+    },
+    "app/send-presence-subscription jid=": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "app/time server update processed": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "app/xmpp/recv/handle_available": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "archive/Unsupported mode in ArchivePreviewView:": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "archive/set-content-indicator-to-empty": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "broadcast": {
+     "contains": [
+      363,
+      300
+     ],
+     "equals": [
+      40,
+      35
+     ]
+    },
+    "callCreatorJid": {
+     "contains": [
+      5,
+      4
+     ],
+     "equals": [
+      3,
+      2
+     ]
+    },
+    "chatInfo/incrementUnseenImportantMessageCount": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "class": {
+     "contains": [
+      618,
+      516
+     ],
+     "equals": [
+      53,
+      48
+     ]
+    },
+    "conversation/copymessage": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "conversation/createconversation": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "conversation/refresh": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "conversations/filter/performFiltering": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "conversationsmgr/replacecontact": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "cyanogen": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "delete": {
+     "contains": [
+      1284,
+      1051
+     ],
+     "equals": [
+      41,
+      40
+     ]
+    },
+    "deviceidentityverifier/verify Primary": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "dialog/delete": {
+     "contains": [
+      8,
+      8
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "dialog/delete no messages": {
+     "contains": [
+      6,
+      6
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "dimensions_are_zero": {
+     "contains": [
+      3,
+      3
+     ],
+     "equals": [
+      3,
+      3
+     ]
+    },
+    "emojis.oba": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "enable_media_quality_tool": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "ephemeral_initiated_by_me": {
+     "contains": [
+      11,
+      9
+     ],
+     "equals": [
+      10,
+      9
+     ]
+    },
+    "ephemeral_trigger": {
+     "contains": [
+      12,
+      10
+     ],
+     "equals": [
+      11,
+      10
+     ]
+    },
+    "expandableWidgetHelper": {
+     "contains": [
+      2,
+      1
+     ],
+     "equals": [
+      2,
+      1
+     ]
+    },
+    "expire_timestamp": {
+     "contains": [
+      91,
+      60
+     ],
+     "equals": [
+      13,
+      7
+     ]
+    },
+    "extra_payment_note": {
+     "contains": [
+      17,
+      17
+     ],
+     "equals": [
+      17,
+      17
+     ]
+    },
+    "forwardable": {
+     "contains": [
+      3,
+      3
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "frame_visibility_serial_worker": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "getCorrectedResolution": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "getPinnedJids/QUERY_CHAT_SETTINGS": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "hasNewsletterSubscriptions": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "heroaudioplayer/setPlaybackSpeed": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "invalid metadata (country calling code was mapped to the non-geo entity as well as specific region(s))": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "isMuteIndicatorEnabled": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "lid_me": {
+     "contains": [
+      30,
+      26
+     ],
+     "equals": [
+      3,
+      3
+     ]
+    },
+    "mFragmentId=#": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "mapFStatusToFMessageForForwarding": {
+     "contains": [
+      2,
+      2
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "me.jpg": {
+     "contains": [
+      9,
+      8
+     ],
+     "equals": [
+      8,
+      7
+     ]
+    },
+    "mediaHash and fileType not both present for upload URL generation": {
+     "contains": [
+      3,
+      3
+     ],
+     "equals": [
+      3,
+      3
+     ]
+    },
+    "media_quality": {
+     "contains": [
+      49,
+      40
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "memanager/": {
+     "contains": [
+      10,
+      4
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "message": {
+     "contains": [
+      6392,
+      4583
+     ],
+     "equals": [
+      254,
+      217
+     ]
+    },
+    "message_add_on": {
+     "contains": [
+      214,
+      127
+     ],
+     "equals": [
+      28,
+      21
+     ]
+    },
+    "messageaudioplayer/onearproximity": {
+     "contains": [
+      5,
+      3
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "min_bandwidth": {
+     "contains": [
+      7,
+      6
+     ],
+     "equals": [
+      5,
+      4
+     ]
+    },
+    "network_types": {
+     "contains": [
+      4,
+      4
+     ],
+     "equals": [
+      2,
+      2
+     ]
+    },
+    "not associated with a fragment manager.": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "not recyclable": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "outgoing-launch/cm-null-contact": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "participant_hash": {
+     "contains": [
+      120,
+      86
+     ],
+     "equals": [
+      6,
+      4
+     ]
+    },
+    "pinSelectedJids": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "playMiddleTone": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "playbackFragment/refreshCurrentPageSubTitle message is empty": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "playbackFragment/setPageActive": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "playbackFragment/setPageActive no-messages ": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "playbackPage/onPlaybackContentFinished": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "playbackPage/pausePlayback page=": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "playbackPage/reply page=": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "playbackPage/resumePlayback page=": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "played": {
+     "contains": [
+      159,
+      129
+     ],
+     "equals": [
+      10,
+      9
+     ]
+    },
+    "pref_revoke_admin_nux": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "presencestatemanager/setAvailable/new-state": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "presencestatemanager/startTransitionToUnavailable/new-state": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "problematic contact:": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "read": {
+     "contains": [
+      4661,
+      3411
+     ],
+     "equals": [
+      21,
+      19
+     ]
+    },
+    "receipt": {
+     "contains": [
+      489,
+      322
+     ],
+     "equals": [
+      36,
+      27
+     ]
+    },
+    "received_timestamp": {
+     "contains": [
+      157,
+      105
+     ],
+     "equals": [
+      21,
+      14
+     ]
+    },
+    "reject": {
+     "contains": [
+      455,
+      403
+     ],
+     "equals": [
+      15,
+      15
+     ]
+    },
+    "required free space should be > 0": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "revoke_admin": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "s.whatsapp.net": {
+     "contains": [
+      44,
+      41
+     ],
+     "equals": [
+      17,
+      16
+     ]
+    },
+    "saveGroupParticipants/INSERT_GROUP_PARTICIPANT_USER": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "search_bar_render_start": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "send_max_video_duration": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "sender": {
+     "contains": [
+      943,
+      726
+     ],
+     "equals": [
+      34,
+      29
+     ]
+    },
+    "senderJid": {
+     "contains": [
+      68,
+      67
+     ],
+     "equals": [
+      5,
+      5
+     ]
+    },
+    "sendmethods/sendClearDirty": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "setPlaybackSpeed": {
+     "contains": [
+      8,
+      7
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "setupUserNameInGroupView": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "show_media_quality_toggle": {
+     "contains": [
+      9,
+      9
+     ],
+     "equals": [
+      9,
+      9
+     ]
+    },
+    "smb_eu_tos_update_url": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "software_forced_expiration": {
+     "contains": [
+      3,
+      3
+     ],
+     "equals": [
+      3,
+      3
+     ]
+    },
+    "statusTilesEnabled": {
+     "contains": [
+      0,
+      0
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "status_me": {
+     "contains": [
+      73,
+      59
+     ],
+     "equals": [
+      3,
+      3
+     ]
+    },
+    "this was called before onCreateView()": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "thumb view type is not correct": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      1,
+      1
+     ]
+    },
+    "transcribe: starting transcription": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    },
+    "view_mode": {
+     "contains": [
+      201,
+      145
+     ],
+     "equals": [
+      12,
+      9
+     ]
+    },
+    "voip/callStateChangedOnUIThread": {
+     "contains": [
+      1,
+      1
+     ],
+     "equals": [
+      0,
+      0
+     ]
+    }
+   },
+   "versionCode": 264608200
+  }
+ },
+ "schema": 1
+}

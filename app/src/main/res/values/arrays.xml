@@ -175,6 +175,7 @@
         <item>2.26.36.xx</item>
         <item>2.26.37.xx</item>
         <item>2.26.38.xx</item>
+        <item>2.26.46.xx</item>
     </string-array>
 
     <string-array name="supported_versions_business">

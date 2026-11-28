@@ -13,18 +13,28 @@ public final class ViewProbe {
     private ViewProbe() {
     }
 
+    /**
+     * The topmost view with content under the point. Among overlapping candidates (drawing
+     * order, last first), a hit that shows and handles nothing — an empty overlay covering the
+     * screen — is passed over for the next candidate beneath it; it is chosen only when nothing
+     * under the point has content. The rule is structural; no view is excluded by name.
+     */
     public static ProbeNode hit(ProbeNode root, int x, int y) {
         if (root == null) return null;
         if (!isEligible(root) || !contains(root, x, y)) return null;
 
+        ProbeNode emptyHit = null;
         List<ProbeNode> children = root.children();
         if (children != null) {
             for (int i = children.size() - 1; i >= 0; i--) {
                 ProbeNode found = hit(children.get(i), x, y);
-                if (found != null) return found;
+                if (found == null) continue;
+                if (found.hasContent()) return found;
+                if (emptyHit == null) emptyHit = found;
             }
         }
-        return root;
+        if (root.hasContent() || emptyHit == null) return root;
+        return emptyHit;
     }
 
     private static boolean isEligible(ProbeNode node) {

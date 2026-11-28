@@ -211,7 +211,10 @@ public final class KyantLens {
             // glint, while the opposite segment retains its own lower luminance. Only the live
             // backdrop pixel is sampled; this is never a fixed decorative stroke.
             + "        float whiteEdge = smoothstep(0.42, 0.98, luminance);\n"
+            // The exponential tail never reaches zero; it is faded out between one and two
+            // band widths so the body inside the rim stays exactly the material colour.
             + "        float glint = whiteEdge * whiteEdge * exp(-depth / max(uBloom * 1.6, 1.0))\n"
+            + "                    * (1.0 - smoothstep(band, band * 2.0, depth))\n"
             + "                    * 0.14 * uContourGain;\n"
             + "        if (uAppChrome > 0.5) {\n"
             // Screen app-chrome rims towards white, tinted slightly by the local backdrop.

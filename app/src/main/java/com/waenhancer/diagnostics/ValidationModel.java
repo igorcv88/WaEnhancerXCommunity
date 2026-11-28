@@ -2,64 +2,110 @@ package com.waenhancer.diagnostics;
 
 import java.util.Collection;
 
-/** Pure compatibility/session state aggregation, kept Android-free for unit testing. */
+/** Compatibility and per-case evidence have different scopes. */
 public final class ValidationModel {
     private ValidationModel() {}
 
-    public enum Compatibility { INCOMPATIBLE, RUNTIME_COMPATIBLE, DEGRADED, VALIDATED }
-    public enum FeatureState { DISABLED, NOT_LOADED, RESOLVER_FAILED, INSTALLED, TRIGGERED, ERROR, NOT_EXERCISED }
+    public enum Compatibility { UNKNOWN, INCOMPATIBLE, RUNTIME_COMPATIBLE, DEGRADED }
 
-    public static boolean occurredDuringSession(long eventAt, long sessionStartedAt) {
-        return eventAt > 0L && eventAt >= sessionStartedAt;
+    /** Loader completion as reported by the host; absent means the snapshot is incomplete. */
+    public enum Loader { ABSENT, COMPLETE, TIMED_OUT }
+
+    /** Whether the feature's own preference gate is open; UNKNOWN when it is not modelled. */
+    public enum Enablement { ENABLED, DISABLED, UNKNOWN }
+
+    public enum Status {
+        NOT_TESTED, UNKNOWN, DISABLED,
+        /** doHook returned; nothing shows that a hook was registered or reached. */
+        INSTALLER_COMPLETED,
+        /** The installer counted its hooks and registered at least one; no callback seen yet. */
+        HOOKS_REGISTERED,
+        /** The installer completed without registering any hook. */
+        INSTALLED_NO_HOOKS,
+        NOT_EXERCISED, AMBIGUOUS,
+        RESOLVER_FAILED, INSTALL_FAILED, INSTALL_INCOMPLETE, DEGRADED_INSTALL, ENABLEMENT_UNKNOWN,
+        REACHED_NOT_ACTED, TRIGGERED_UNVERIFIED, BEHAVIOR_PASS, BEHAVIOR_FAIL, SERVER_UNAVAILABLE, BLOCKED
+    }
+
+    public static boolean occurredDuringSession(long eventAt, long sessionStartedAt, long capturedAt) {
+        return sessionStartedAt > 0 && eventAt >= sessionStartedAt && eventAt <= capturedAt;
+    }
+
+    public static boolean sameRun(String session, String process, String config,
+            String eventSession, String eventProcess, String eventConfig) {
+        return !session.isEmpty() && !process.isEmpty() && !config.isEmpty()
+                && session.equals(eventSession) && process.equals(eventProcess) && config.equals(eventConfig);
+    }
+
+    static boolean matchesOfficialRecord(String exactBuild, String recordedBuild, String scope,
+            String prerequisites) {
+        return exactBuild.matches("[0-9a-f]{64}") && exactBuild.equals(recordedBuild)
+                && !scope.isBlank() && !prerequisites.isBlank();
     }
 
     public static final class FeatureEvidence {
-        public boolean enabled = true;
+        public Enablement enablement = Enablement.UNKNOWN;
+        /** A hooked callback of this feature reports {@code reached}/{@code acted}. */
+        public boolean instrumented;
         public boolean loaded;
-        public boolean resolverPassed;
-        public boolean resolverFailed;
         public boolean installed;
-        public boolean opportunity;
-        public boolean triggered;
         public boolean error;
+        public boolean degraded;
+        /** The installer counted one or more registered hooks. */
+        public boolean registered;
+        /** The installer counted its hooks and registered none. */
+        public boolean inert;
+        public boolean resolverFailed;
+        /** A callback ran after the relevant start (session, or the armed exercise). */
+        public boolean reached;
+        /** The feature acted on the path its case requires, after the relevant start. */
+        public boolean acted;
         public boolean required;
-        public boolean manualRequired;
         public boolean manualConfirmed;
 
-        public FeatureState state() {
-            if (!enabled) return FeatureState.DISABLED;
-            if (error) return FeatureState.ERROR;
+        public Status state() {
+            if (enablement == Enablement.DISABLED) return Status.DISABLED;
+            if (error) return resolverFailed ? Status.RESOLVER_FAILED : Status.INSTALL_FAILED;
+            if (!loaded && !installed) return Status.NOT_TESTED;
+            // Constructed but doHook never returned within the loader's wait.
+            if (!installed) return Status.INSTALL_INCOMPLETE;
+            if (degraded) return Status.DEGRADED_INSTALL;
+            // A callback that ran proves a live hook whatever the installer counted.
+            if (inert && !reached && !acted) return Status.INSTALLED_NO_HOOKS;
+            if (!instrumented) return registered ? Status.HOOKS_REGISTERED : Status.INSTALLER_COMPLETED;
+            if (acted) return Status.TRIGGERED_UNVERIFIED;
+            if (reached) return Status.REACHED_NOT_ACTED;
+            if (enablement == Enablement.UNKNOWN) return Status.ENABLEMENT_UNKNOWN;
+            return Status.NOT_EXERCISED;
+        }
 
-            // A callback can only execute if the class was loaded and a hook actually reached the
-            // host method. It is therefore stronger runtime evidence than the optional installation
-            // bookkeeping flags and must not be hidden behind a missing resolverPassed marker.
-            if (triggered) return FeatureState.TRIGGERED;
-
-            if (!loaded) return opportunity ? FeatureState.NOT_LOADED : FeatureState.NOT_EXERCISED;
-            if (resolverFailed) return FeatureState.RESOLVER_FAILED;
-            if (installed && opportunity) return FeatureState.INSTALLED; // installed, but apparently dead
-            return FeatureState.NOT_EXERCISED;
+        /** A failure that applies whenever the feature may be in use. */
+        boolean failed() {
+            if (enablement == Enablement.DISABLED) return false;
+            return error || degraded || (loaded && !installed);
         }
     }
 
-    public static Compatibility aggregate(boolean corePassed, boolean optionalFailed,
-            boolean knownValidatedBuild, boolean sessionActive, Collection<FeatureEvidence> features) {
+    public static Compatibility aggregate(boolean currentSnapshot, boolean corePassed,
+            boolean optionalFailed, Loader loader, Collection<FeatureEvidence> features) {
+        if (!currentSnapshot) return Compatibility.UNKNOWN;
         if (!corePassed) return Compatibility.INCOMPATIBLE;
-        boolean errors = optionalFailed;
-        boolean complete = sessionActive;
+        // Without the loader's completion marker the snapshot may predate failing features.
+        if (loader == Loader.ABSENT) return Compatibility.UNKNOWN;
+        optionalFailed |= loader == Loader.TIMED_OUT;
+        for (FeatureEvidence feature : features) optionalFailed |= feature.failed();
+        return optionalFailed ? Compatibility.DEGRADED : Compatibility.RUNTIME_COMPATIBLE;
+    }
+
+    /** Confirmation covers only the enabled diagnostic smoke cases for which controls exist. */
+    public static boolean smokeConfirmed(Collection<FeatureEvidence> features) {
+        boolean requiredSeen = false;
         for (FeatureEvidence feature : features) {
-            if (!feature.enabled) continue;
-            errors |= feature.error || feature.resolverFailed;
-            if (feature.required) {
-                // A real callback trigger proves the feature was loaded, its resolver reached a
-                // hookable member and the installed hook executed. Requiring separate bookkeeping
-                // flags made validation impossible for the normal (non-lazy) loader even when the
-                // feature was visibly working on-device.
-                complete &= feature.triggered;
-                if (feature.manualRequired) complete &= feature.manualConfirmed;
-            }
+            if (!feature.required) continue;
+            requiredSeen = true;
+            if (feature.enablement != Enablement.ENABLED
+                    || feature.state() != Status.TRIGGERED_UNVERIFIED || !feature.manualConfirmed) return false;
         }
-        if (!errors && (knownValidatedBuild || complete)) return Compatibility.VALIDATED;
-        return errors ? Compatibility.DEGRADED : Compatibility.RUNTIME_COMPATIBLE;
+        return requiredSeen;
     }
 }

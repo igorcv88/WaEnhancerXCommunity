@@ -23,6 +23,7 @@ import androidx.annotation.NonNull;
 
 import com.waenhancer.xposed.compat.HostArgCompat;
 import com.waenhancer.xposed.core.Feature;
+import com.waenhancer.xposed.core.HostProps;
 import com.waenhancer.xposed.core.WppCore;
 import com.waenhancer.xposed.core.components.FMessageWpp;
 import com.waenhancer.xposed.core.db.MessageDeviceSourceStore;
@@ -120,8 +121,9 @@ public class Others extends Feature {
         }
     }
 
-    public static ConcurrentHashMap<Integer, Boolean> propsBoolean = new ConcurrentHashMap<>();
-    public static ConcurrentHashMap<Integer, Integer> propsInteger = new ConcurrentHashMap<>();
+    /** Aliases of {@link HostProps}: every feature writes the same override maps. */
+    public static final ConcurrentHashMap<Integer, Boolean> propsBoolean = HostProps.BOOLEAN;
+    public static final ConcurrentHashMap<Integer, Integer> propsInteger = HostProps.INTEGER;
     private Properties properties;
 
     public Others(ClassLoader loader, SharedPreferences preferences) {
@@ -272,6 +274,11 @@ public class Others extends Feature {
             Others.propsBoolean.put(13949, true);
         }
 
+        // Install both override getters before resolvers whose failure would otherwise skip them.
+        // Each is independent: one missing getter degrades only the overrides of its own kind.
+        hostPropsOrDegraded();
+        hostIntegerPropsOrDegraded();
+
         // Whatsapp Status Style
         var retStatusStyle = Unobfuscator.loadStatusStyleMethod(classLoader);
         XposedBridge.hookMethod(retStatusStyle, XC_MethodReplacement.returnConstant(status_style));
@@ -281,7 +288,6 @@ public class Others extends Feature {
         propsInteger.put(8522, status_style);
         propsInteger.put(8521, status_style);
 
-        hookProps();
         if (!Objects.equals(filterChats, "2")) {
             hookSearchbar(filterChats);
         }
@@ -1761,53 +1767,6 @@ public class Others extends Feature {
         });
     }
 
-    private void hookProps() throws Exception {
-        Method methodPropsBoolean = Unobfuscator.loadPropsBooleanMethod(classLoader);
-        var dataUsageActivityClass = WppCore.getDataUsageActivityClass(classLoader);
-        final int boolArgIdx = HostArgCompat.findPreferredIntParameterIndex(methodPropsBoolean.getParameterTypes());
-
-        if (boolArgIdx < 0) {
-            XposedBridge.log("[WAEX] hookProps boolean skipped: ambiguous/no int property key in "
-                    + Unobfuscator.getMethodDescriptor(methodPropsBoolean));
-        } else {
-            XposedBridge.hookMethod(methodPropsBoolean, new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    Integer key = HostArgCompat.integerAt(param.args, boolArgIdx);
-                    if (key == null) return;
-
-                    var propValue = propsBoolean.get(key);
-                    if (propValue != null) {
-                        if (key == 4023) {
-                            if (ReflectionUtils.isCalledFromClass(dataUsageActivityClass)) return;
-                        }
-                        param.setResult(propValue);
-                    }
-                }
-            });
-        }
-
-        Method methodPropsInteger = Unobfuscator.loadPropsIntegerMethod(classLoader);
-        final int intArgIdx = HostArgCompat.findPreferredIntParameterIndex(methodPropsInteger.getParameterTypes());
-
-        if (intArgIdx < 0) {
-            XposedBridge.log("[WAEX] hookProps integer skipped: ambiguous/no int property key in "
-                    + Unobfuscator.getMethodDescriptor(methodPropsInteger));
-        } else {
-            XposedBridge.hookMethod(methodPropsInteger, new XC_MethodHook() {
-                @Override
-                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                    Integer key = HostArgCompat.integerAt(param.args, intArgIdx);
-                    if (key == null) return;
-
-                    var propValue = propsInteger.get(key);
-                    if (propValue == null) return;
-                    param.setResult(propValue);
-                }
-            });
-        }
-    }
-
     private void hookSearchbar(String filterChats) throws Exception {
         if ("1".equals(filterChats)) {
             try {
@@ -1886,7 +1845,7 @@ public class Others extends Feature {
         } catch (Throwable ignored) {
         }
 
-        XposedHelpers.findAndHookMethod(WppCore.getHomeActivityClass(classLoader), "onPrepareOptionsMenu", Menu.class, new XC_MethodHook() {
+        com.waenhancer.xposed.core.HostHooks.hookNearest(WppCore.getHomeActivityClass(classLoader), "onPrepareOptionsMenu", Menu.class, new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 var menu = (Menu) param.args[0];

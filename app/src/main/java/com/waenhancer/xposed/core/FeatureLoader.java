@@ -20,12 +20,14 @@ import androidx.core.content.ContextCompat;
 
 import com.waenhancer.App;
 import com.waenhancer.BuildConfig;
+import com.waenhancer.diagnostics.RuntimeDiagnostics;
 import com.waenhancer.UpdateChecker;
 import com.waenhancer.xposed.core.components.AlertDialogWpp;
 import com.waenhancer.utils.ApkMirrorFeedHelper;
 import com.waenhancer.xposed.core.components.FMessageWpp;
 import com.waenhancer.xposed.core.components.SharedPreferencesWrapper;
 import com.waenhancer.xposed.core.components.WaContactWpp;
+import com.waenhancer.xposed.core.devkit.DescriptorCache;
 import com.waenhancer.xposed.core.devkit.Unobfuscator;
 import com.waenhancer.xposed.core.devkit.UnobfuscatorCache;
 import com.waenhancer.xposed.core.db.MessageHistory;
@@ -320,9 +322,11 @@ public class FeatureLoader {
                                         String target = s.endsWith(".xx") ? s.replace(".xx", ".") : s + ".";
                                         return (packageInfo.versionName + ".").startsWith(target);
                                     });
-                            if (Feature.DEBUG) {
-                                ;
-                            }
+                            // This consumer build is a preview target with its own static audit.
+                            // It follows the ordinary resolver path and feature failure handling.
+                            isSupported |= PACKAGE_WPP.equals(packageInfo.packageName)
+                                    && "2.26.46.82".equals(packageInfo.versionName)
+                                    && packageInfo.getLongVersionCode() == 264608200L;
                             if (!isSupported) {
                                 disableExpirationVersion(mApp.getClassLoader());
                                 if (pref.getBoolean("bypass_version_check", false)) {
@@ -1032,6 +1036,11 @@ public class FeatureLoader {
         if (Feature.DEBUG) {
             ;
         }
+        // Bind the diagnostic session (if any) before any feature runs, on this thread, so no
+        // feature event can precede it. A start without a session costs one provider call.
+        RuntimeDiagnostics.begin(mApp, pref);
+        DescriptorCache.setFailureListener(RuntimeDiagnostics::resolverFailed);
+        var submitted = new java.util.concurrent.atomic.AtomicInteger();
         var executorService = Executors.newWorkStealingPool(Math.min(Runtime.getRuntime().availableProcessors(), 4));
         var times = java.util.Collections.synchronizedList(new ArrayList<String>());
 
@@ -1046,13 +1055,18 @@ public class FeatureLoader {
                 continue;
             }
 
+            submitted.incrementAndGet();
             CompletableFuture.runAsync(() -> {
                 var timemillis = System.currentTimeMillis();
+                String featureName = classe.getSimpleName();
+                RuntimeDiagnostics.enter(featureName);
                 try {
                     var constructor = classe.getConstructor(ClassLoader.class, android.content.SharedPreferences.class);
                     Object pluginObj = constructor.newInstance(loader, pref);
+                    RuntimeDiagnostics.feature(featureName, "loaded");
                     if (pluginObj instanceof Feature) {
                         ((Feature) pluginObj).doHook();
+                        RuntimeDiagnostics.feature(featureName, "installed");
                     } else {
                         try {
                             var doHookMethod = pluginObj.getClass().getMethod("doHook");
@@ -1062,6 +1076,7 @@ public class FeatureLoader {
                         }
                     }
                 } catch (Throwable e) {
+                    RuntimeDiagnostics.feature(classe.getSimpleName(), "error");
                     XposedBridge.log(e);
                     var error = new ErrorItem();
                     error.setPluginName(classe.getSimpleName());
@@ -1072,6 +1087,8 @@ public class FeatureLoader {
                             s -> !s.getClassName().startsWith("android") && !s.getClassName().startsWith("com.android"))
                             .map(StackTraceElement::toString).toArray()));
                     list.add(error);
+                } finally {
+                    RuntimeDiagnostics.leave();
                 }
                 var timemillis2 = System.currentTimeMillis() - timemillis;
                 times.add("* Loaded Plugin " + classe.getSimpleName() + " in " + timemillis2 + "ms");
@@ -1079,10 +1096,33 @@ public class FeatureLoader {
         }
 
         executorService.shutdown();
+        boolean finished = false;
         try {
-            executorService.awaitTermination(15, TimeUnit.SECONDS);
+            finished = executorService.awaitTermination(15, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             XposedBridge.log(e);
+        }
+        RuntimeDiagnostics.loaderFinished(submitted.get(), !finished);
+        if (RuntimeDiagnostics.bound()) {
+            // The core resolver probe runs only during a session and after installation, so it
+            // neither competes with features for the resolver lock nor delays their hooks. After
+            // the loader's 15 s wait timed out, features are still resolving: the probe waits
+            // for them (bounded) and is skipped, and says so, if they never finish.
+            final boolean loaderFinished = finished;
+            Thread probe = new Thread(() -> {
+                try {
+                    if (!ProbeGate.mayProbe(loaderFinished, () -> executorService.awaitTermination(
+                            ProbeGate.LATE_WAIT_SECONDS, TimeUnit.SECONDS))) {
+                        RuntimeDiagnostics.probeSkipped();
+                        return;
+                    }
+                    HostCompatibility.probe(loader);
+                } catch (Throwable failure) {
+                    RuntimeDiagnostics.probeFailure();
+                }
+            }, "WaEnhancerProbe");
+            probe.setDaemon(true);
+            probe.start();
         }
     }
 

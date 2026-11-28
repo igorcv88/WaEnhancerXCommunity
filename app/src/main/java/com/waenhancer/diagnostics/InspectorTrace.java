@@ -79,6 +79,59 @@ public final class InspectorTrace {
         } catch (Exception ignored) { /* Telemetry must not affect touch handling. */ }
     }
 
+    static final int MAX_SUBTREE_NODES = 220;
+
+    /**
+     * The complete subtree of a view the user picked, unfiltered (the activity snapshot keeps
+     * only the top of the screen and named candidates). Same metadata as the snapshot: class,
+     * id, depth, bounds, alpha, background class; never text or pixels. Bounded in nodes, and
+     * the batch limit applies.
+     */
+    public static void subtree(Activity activity, View picked) {
+        if (!armed || picked == null) return;
+        try {
+            JSONArray nodes = new JSONArray();
+            ArrayDeque<Node> stack = new ArrayDeque<>();
+            stack.push(new Node(picked, 0));
+            boolean truncated = false;
+            while (!stack.isEmpty()) {
+                if (nodes.length() >= MAX_SUBTREE_NODES) {
+                    truncated = true;
+                    break;
+                }
+                Node item = stack.pop();
+                View view = item.view;
+                int[] location = new int[2];
+                view.getLocationOnScreen(location);
+                JSONObject node = new JSONObject();
+                node.put("depth", item.depth);
+                node.put("class", shortValue(view.getClass().getName(), 120));
+                node.put("id", shortValue(resourceName(view), 100));
+                node.put("bounds", location[0] + "," + location[1] + "," + view.getWidth() + "," + view.getHeight());
+                node.put("vis", view.getVisibility());
+                node.put("alpha", Math.round(view.getAlpha() * 100f));
+                node.put("bg", view.getBackground() == null ? "none"
+                        : shortValue(view.getBackground().getClass().getSimpleName(), 60));
+                nodes.put(node);
+                if (view instanceof ViewGroup) {
+                    ViewGroup group = (ViewGroup) view;
+                    for (int i = group.getChildCount() - 1; i >= 0; i--)
+                        stack.push(new Node(group.getChildAt(i), item.depth + 1));
+                }
+            }
+            JSONObject event = base("subtree", activity);
+            event.put("root", shortValue(resourceName(picked), 100));
+            event.put("truncated", truncated);
+            event.put("nodes", nodes);
+            // A subtree too large for one batch is cut to what fits, and says so.
+            while (event.toString().length() > MAX_BATCH_CHARS - 64 && nodes.length() > 1) {
+                nodes.remove(nodes.length() - 1);
+                event.put("truncated", true);
+            }
+            enqueue(event);
+        } catch (Exception | LinkageError ignored) { /* Never break WhatsApp. */ }
+    }
+
     /**
      * Samples structural metadata around the top of the screen, plus views whose resource names
      * suggest a player. No View#getText(), getContentDescription() or bitmap capture is performed.
@@ -297,11 +350,12 @@ public final class InspectorTrace {
             for (int i = 0; i < batch.length(); i++) {
                 JSONObject entry = batch.optJSONObject(i);
                 if (entry == null) return false;
-                String kind = entry.optString("kind");
-                if (!("activity".equals(kind) || "selection".equals(kind)
-                        || "glass".equals(kind))) return false;
-                history.put(entry);
+                if (!TraceHistory.knownKind(entry.optString("kind"))) return false;
             }
+            // Each purpose has its own quota: glass telemetry can no longer evict snapshots or
+            // the user's selections, and a repeated glass event is counted, not stored again.
+            for (int i = 0; i < batch.length(); i++) TraceHistory.append(history, batch.getJSONObject(i));
+            // Overall safety net for histories written by an older version (one shared bound).
             while (history.length() > MAX_ENTRIES || history.toString().length() > MAX_STORED_CHARS)
                 history.remove(0);
             return privateStore.edit().putString(key, history.toString()).commit();

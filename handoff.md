@@ -2,6 +2,49 @@
 
 This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent agents. Read `AGENTS.md` and `ARCHITECTURE.md` first. Update this document after each task; preserve decisions and evidence instead of treating earlier plans as completed work.
 
+## WhatsApp consumer 2.26.46.82 preview (2026-11-27)
+
+- Draft PR [#177](https://github.com/igorcv88/WaEnhancerXCommunity/pull/177), branch `port/whatsapp-2.26.46.82`, based on master `5bf501ce2bb21235a110fc21f1f3611c52ec0dcb`. PR #175 and #176 were merged before this task. The owner explicitly superseded the ready-for-review preference in AGENTS.md. Keep this PR in draft pending physical validation. Merge is blocked by the owner instruction.
+- Pinned upstreams WaEnhancerX `9afc43d9582eb7afa84f9ce45eed746252332241`, legacy Mubashar-dev `0b2f729e91aa1b773cf38ead91ba7bdb3ad2392c`, Dev4Mod `1f581f4b76618a810a2ebfd0863c719a3cddaee7`. Adaptations, exclusions, actual tool versions, measured contracts, and physical steps are in [the compatibility report](docs/compatibility/whatsapp-2.26.46.82.md).
+- Exact consumer preview target with the ordinary resolver path, unique shared DexKit lookups, and guarded publication of the Groups tab. Preserved the control and existing module data paths.
+- Diagnostics now uses an authenticated session-specific provider write. The private snapshot that previously attempted generic put_preference could not reach the private store. Missing/legacy evidence is unknown. Diagnostic exercise state is scoped by the process/session, installed variant and allowed settings fingerprint. Report core misses and optional misses independently.
+- Recomputed both input JSONs. Verified 14 APK signatures and manifest/resource identities. Nine L1 queries returned one candidate on each host. Source inventory and physical matrix cover a larger scope, with unmeasured contracts explicitly pending. Android/LSPosed reflection, device L2–L5, and two-endpoint outcomes remain pending. Retain the existing signed-preview CI path.
+- First published commit `fa267b5e1cdc8572432387a6a1a2aa2677e02aa1`. The follow-up corrects the SDK PackageInfo field access and reports the exact official-record key and scope. The registry remains empty pending physical evidence.
+- Run `python3 tools/compatibility/inventory.py --check` for source-only upstream audits. Use the private CLI workflow for authorized APKs. The APKs, decompiled source and private logs stay outside Git.
+- **2026-11-27, consolidated review round** (triage: `docs/compatibility/pr177-triage.md`, `git add -f`): both reviews checked against the code and the two APKs (dexdump/aapt2, not DexKit). Fixed: message-key fallback (positional pick → unique final field, `MessageKeyContract`); tablet stale JID (per-activity intent JIDs, no hash/global delegate cache, Home fails closed); Separate Groups row JID (`A00` is chat info → `getJid()`, `ChatListClassifier`) and all-or-nothing install (`HookTransaction`); MediaPreview video row (assertion anchor unique in both hosts); MediaQuality transcoder removed (inert on control, fatal on target), image/video independent; shared `HostProps`; AntiRevoke install failures reported degraded; Media Library opens the tapped message's chat; CallType launcher by signature shape (log string ambiguous on control, absent on target); cache keyed on host install identity, schema 3, resource ids from the table.
+- Diagnostics rewritten: session bound before features with a replayed buffer; loader records loaded/installed/error and a completion marker (absent → UNKNOWN, timeout → DEGRADED); resolver misses attributed per feature; `reached` vs `acted:<path>`; catalog = all 70 loader features (`FeatureManifest`), probes, gates and required paths pinned to sources by tests; list settings in the config fingerprint; official-record key uses a module code digest excluding the catalog (catalog schema 3).
+- New L0 census of all 172 string anchors for both APKs (`tools/compatibility/anchor_census.py`, fixture, parameterized tests, CI). `OfflineDexAudit` gained the video-row contract but the DexKit L1 run was **not repeated** this round.
+- Local validation (Windows): `:app:testWhatsappDebugUnitTest` 857 tests, 8 failures, all `OUTSIDE_ROOTS` path-root checks in `SecondReviewFixesTest`/`WhatsAppRestoreAndAlbumsTest` (Windows `C:\` roots; untouched files; Linux CI is the reference). Python: census 13 tests (1 live skipped), audit 3, inventory check OK; `tools/test_app_only_runtime.py` fails identically on the pre-change commit under Windows; `test_glass_rim_contrast.py` needs numpy (not in CI).
+- **2026-11-27, physical-test round** (owner report and LSPosed log of 2.26.46.82 used as technical input only; details in `docs/compatibility/pr177-triage.md`, "Physical test round"). Each fix below has its cause confirmed in the log and in both DEX files.
+  - **Solved and verified offline:**
+    - Inherited Activity callbacks: `HostHooks` hooks the nearest declaration, scoped to the requested class (MenuHome, Channels, Others, HomeInlineSearch).
+    - Moved About and SettingsTabActivity (`HostClassNames`); SettingsInjector no longer returns silently.
+    - Separate Groups and Floating Bottom Bar on the navigation base's concrete implementations (`HostDexContracts.concreteOverrides`). The bar's `setVisibility` was never hooked on either host and now is.
+    - Locked-chats getter rule.
+    - Message-key type, image-row and prop-getter contracts made unique.
+    - HostProps boolean and integer slots are independent.
+    - Install states: `INSTALLER_COMPLETED`, `HOOKS_REGISTERED`, `INSTALLED_NO_HOOKS`, degraded, failed and disabled. Separate Groups and MediaQuality report their hook count.
+    - The probe waits for the workers after a loader timeout.
+    - `HookTransaction` callbacks are gated until commit; an adopted part follows its owner.
+    - Inspector PICK uses a generic content rule. The Inspector history has per-purpose quotas, aggregation and subtree export.
+    - `test_glass_rim_contrast.py` runs with numpy and executes the branched shader. A real defect was fixed: the glint tail lifted the body.
+    - DexKit 2.2.0 L1: 22 contracts on both base APKs, 20 unique and 2 implementation sets.
+  - **Changed, effect needs the device:**
+    - Media Library bubbles: the conversation adapter is tracked before listeners register, with late adoption. Stage counters: `ConversationItems`, `MediaLibraryRows`.
+    - View-once gallery chip: retry, both JID forms, stage codes in `ViewOnceGalleryTab`.
+    - Glass silhouette row probing.
+    - AntiRevoke unsupported statements are logged as value-free shapes. The parser is unchanged until a shape is seen.
+  - **Follow-up (device log after `5ac3ea63`):** the floating bar and top-bar button are confirmed working. The view-once bubble and gallery chip stopped at the own-account identity: on 2.26.46.82 MeManager keeps the `PhoneUserJid` inside its `Me` record. `SelfJidPath` resolves this by type on both hosts (dexdump: unique). The conversation chain itself reached `row_dispatched` on the device.
+  - **Owner decision:** the APP profile contour is 1.49× the bar's on dark backdrops, below the test's 1.6× (the test reports it). The app-chrome rim adds nothing on pure white.
+  - **Not changed by design:** persistence and msgstore. The view-once capture triggers stay as they are (row bind with the file present, viewer open, 10-minute sweep). The 1,262 `without_file` candidates in the device log are messages whose media WhatsApp no longer has; they cannot be recovered offline.
+  - **Validation:**
+    - Windows unit tests: 885 run, 877 pass; the 8 failures are the known Windows `OUTSIDE_ROOTS` cases.
+    - Python: audit 4 tests, census 13 tests, inventory check after `--update`, CI glass tests pass.
+    - `test_app_only_runtime` fails on Windows as before.
+    - The rim test fails only the owner-decision check.
+- **2026-11-28, approved and merged on the owner's instruction.** The owner tested 2.26.46.82 physically and approved the port: view once, the media-library bubble injection, the view-once media category, Liquid Glass, the bar and the top-bar button all match 2.26.38.74. Hide Seen was not exercised and is still to be tested. `2.26.46.xx` was added to `supported_versions_wpp` (consumer only). The owner then asked for PR #177 to be merged and a stable release, marked latest, to be dispatched. This supersedes the draft/no-merge constraint below for this PR.
+- Still pending, not PASS: device L2–L5 on both hosts, tablet pane switches on control and target, runtime read of flag 19148, out-of-chat strip frame cancel, `loadOriginalMessageKey` structural fallback on the target (core probe), two-endpoint receipts. Full 2.26.46.82 compatibility is **not** declared. Draft, no merge.
+
 ## CONTINUATION BRIEF — media library, PR #176 (read this first) — 2026-11-26
 
 A previous session became too long; this section is the complete handoff for the next one.

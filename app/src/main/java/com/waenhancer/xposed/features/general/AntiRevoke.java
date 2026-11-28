@@ -260,12 +260,19 @@ public class AntiRevoke extends Feature {
                         if (blocked != RevokeResultPolicy.UNSUPPORTED) param.setResult(blocked);
                         else sqlGuard.warn(sqlGuard.isInstalled() ? "return-type-delegated-to-sql"
                                 : "unsupported-return-without-sql-guard", null);
+                        // Blocked here, or by the SQL guard when the return type is delegated.
+                        if (blocked != RevokeResultPolicy.UNSUPPORTED || sqlGuard.isInstalled()) {
+                            diagnosticActed("message-revoke-blocked");
+                        }
                     }
                 }
                 @Override protected void afterHookedMethod(MethodHookParam param) { sqlGuard.leaveCall(); }
             });
 
-        } catch (Throwable failure) { sqlGuard.warn("message-hook-unavailable", failure); }
+        } catch (Throwable failure) {
+            sqlGuard.warn("message-hook-unavailable", failure);
+            diagnosticDegraded();
+        }
     }
 
     private void installStatusHooks() {
@@ -291,12 +298,18 @@ public class AntiRevoke extends Feature {
                         if (blocked != RevokeResultPolicy.UNSUPPORTED) param.setResult(blocked);
                         else sqlGuard.warn(sqlGuard.isInstalled() ? "return-type-delegated-to-sql"
                                 : "unsupported-return-without-sql-guard", null);
+                        if (blocked != RevokeResultPolicy.UNSUPPORTED || sqlGuard.isInstalled()) {
+                            diagnosticActed("status-revoke-blocked");
+                        }
                     }
                 }
                 @Override protected void afterHookedMethod(MethodHookParam param) { sqlGuard.leaveCall(); }
             });
 
-        } catch (Throwable failure) { sqlGuard.warn("status-hook-unavailable", failure); }
+        } catch (Throwable failure) {
+            sqlGuard.warn("status-hook-unavailable", failure);
+            diagnosticDegraded();
+        }
         try {
             var unknownStatusPlaybackMethod = Unobfuscator.loadUnknownStatusPlaybackMethod(classLoader);
             Class<?> statusPlaybackClass = Unobfuscator.loadStatusPlaybackViewClass(classLoader);

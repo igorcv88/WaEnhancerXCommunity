@@ -76,7 +76,7 @@ public class Channels extends Feature {
             });
 
             if (channels) {
-                XposedHelpers.findAndHookMethod(WppCore.getHomeActivityClass(classLoader), "onCreateOptionsMenu", Menu.class, new XC_MethodHook() {
+                com.waenhancer.xposed.core.HostHooks.hookNearest(WppCore.getHomeActivityClass(classLoader), "onCreateOptionsMenu", Menu.class, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                         var menu = (Menu) param.args[0];
