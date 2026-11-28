@@ -89,7 +89,7 @@ Official public binaries are distributed only through this repository. **If the 
 
 WhatsApp changes its internal classes, methods, and layouts frequently. A feature that works on one build may need to be disabled or updated on the next one.
 
-The exact WhatsApp consumer build **2.26.46.82 (264608200)** is a preview target. **2.26.38.74 (263807433)** remains the control build. The preview uses the original host and its required splits. A sound-sticker control depends on the host and account rollout. The companion app reports observed core resolver results from opt-in diagnostics, with the behavior scope shown separately. See the [static evidence and device test matrix](docs/compatibility/whatsapp-2.26.46.82.md).
+WhatsApp consumer **2.26.46.82 (264608200)** is supported, approved by the owner after physical testing on 2026-11-28 (Hide Seen not yet exercised). **2.26.38.74 (263807433)** remains the control build. The preview uses the original host and its required splits. A sound-sticker control depends on the host and account rollout. The companion app reports observed core resolver results from opt-in diagnostics, with the behavior scope shown separately. See the [static evidence and device test matrix](docs/compatibility/whatsapp-2.26.46.82.md).
 
 When reporting a compatibility problem, include the Android version, WhatsApp version, LSPosed version, and the relevant WaEnhancer diagnostics. Do not include message contents, phone numbers, tokens, or other personal data.
 

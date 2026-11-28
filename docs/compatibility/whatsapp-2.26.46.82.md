@@ -63,3 +63,13 @@ Use the existing signed module artifact for the exact PR head once its CI comple
 5. If resolver or callback evidence is needed, open **Diagnostics**, start a 30-minute session, then force-stop and relaunch the test host. Wait until the report shows the feature loader as COMPLETE; a snapshot without that marker is UNKNOWN. Arm the individual smoke exercise before performing it. A required case passes only on its own behaviour path after arming (HideSeen: a suppressed direct read receipt; AntiRevoke: a blocked message revoke), plus user observation; reaching the hook is reported separately. That describes the instrumented exercise. It cannot certify the physical checks above. Changing the observed configuration or restarting the host invalidates the old process evidence. Business remains outside this matrix.
 
 The official validated-build list stays empty. A future scoped record must match the report’s exact build key and declare its prerequisites. A report with partial resolver, callback or manual smoke evidence does not establish a validated build. Remaining work includes full resolver coverage, installed-resource and reflection checks, device L2–L5 and native account availability.
+
+## Owner approval (2026-11-28)
+
+After the follow-up builds `5ac3ea63` and `ff5d8e21`, the owner tested 2.26.46.82 on their device and approved the port. Confirmed working, the same as on 2.26.38.74:
+- View once and its media-library bubble injection.
+- The view-once category in the contact's media.
+- Liquid Glass, the Floating Bottom Bar and the top-bar button.
+- The other features exercised.
+
+Hide Seen was not exercised and remains untested. `2.26.46.xx` is now in the consumer supported-versions list (`supported_versions_wpp`). The Business list is unchanged, because no Business build was tested. The diagnostics validated-build registry stays empty: it needs an exact build key and code digest from an exported diagnostics report.

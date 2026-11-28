@@ -42,6 +42,7 @@ This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent
     - Python: audit 4 tests, census 13 tests, inventory check after `--update`, CI glass tests pass.
     - `test_app_only_runtime` fails on Windows as before.
     - The rim test fails only the owner-decision check.
+- **2026-11-28, approved and merged on the owner's instruction.** The owner tested 2.26.46.82 physically and approved the port: view once, the media-library bubble injection, the view-once media category, Liquid Glass, the bar and the top-bar button all match 2.26.38.74. Hide Seen was not exercised and is still to be tested. `2.26.46.xx` was added to `supported_versions_wpp` (consumer only). The owner then asked for PR #177 to be merged and a stable release, marked latest, to be dispatched. This supersedes the draft/no-merge constraint below for this PR.
 - Still pending, not PASS: device L2–L5 on both hosts, tablet pane switches on control and target, runtime read of flag 19148, out-of-chat strip frame cancel, `loadOriginalMessageKey` structural fallback on the target (core probe), two-endpoint receipts. Full 2.26.46.82 compatibility is **not** declared. Draft, no merge.
 
 ## CONTINUATION BRIEF — media library, PR #176 (read this first) — 2026-11-26
