@@ -34,6 +34,7 @@ This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent
     - View-once gallery chip: retry, both JID forms, stage codes in `ViewOnceGalleryTab`.
     - Glass silhouette row probing.
     - AntiRevoke unsupported statements are logged as value-free shapes. The parser is unchanged until a shape is seen.
+  - **Follow-up (device log after `5ac3ea63`):** the floating bar and top-bar button are confirmed working. The view-once bubble and gallery chip stopped at the own-account identity: on 2.26.46.82 MeManager keeps the `PhoneUserJid` inside its `Me` record. `SelfJidPath` resolves this by type on both hosts (dexdump: unique). The conversation chain itself reached `row_dispatched` on the device.
   - **Owner decision:** the APP profile contour is 1.49× the bar's on dark backdrops, below the test's 1.6× (the test reports it). The app-chrome rim adds nothing on pure white.
   - **Not changed by design:** persistence and msgstore. The view-once capture triggers stay as they are (row bind with the file present, viewer open, 10-minute sweep). The 1,262 `without_file` candidates in the device log are messages whose media WhatsApp no longer has; they cannot be recovered offline.
   - **Validation:**

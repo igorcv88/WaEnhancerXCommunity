@@ -77,7 +77,7 @@ public class WppCore {
     private static Method cachedMessageStoreKey;
     private static Field conversationDelegateField;
     private static Field conversationJidField;
-    private static Field meManagerPhoneJidField;
+    private static SelfJidPath meManagerPhoneJidPath;
     private static Object meManagerInstance;
     private static Method statusToMessageMethod;
     private static Object statusToMessageMapper;
@@ -133,7 +133,10 @@ public class WppCore {
         // load me current PhoneJid
 
         Class<?> meManagerClass = Unobfuscator.loadMeManagerClass(loader);
-        meManagerPhoneJidField = ReflectionUtils.getFieldByType(meManagerClass, FMessageWpp.UserJid.TYPE_PHONEUSERJID);
+        // 2.26.38 keeps the PhoneUserJid in MeManager; 2.26.46 keeps it in the Me record it holds.
+        meManagerPhoneJidPath = SelfJidPath.resolve(meManagerClass, FMessageWpp.UserJid.TYPE_PHONEUSERJID);
+        XposedBridge.log("[WAEX] own JID path " + (meManagerPhoneJidPath == null
+                ? "not found in " + meManagerClass.getName() : "depth " + meManagerPhoneJidPath.depth()));
         XposedBridge.hookAllConstructors(meManagerClass, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
@@ -1181,11 +1184,18 @@ public class WppCore {
         return service != null && service.asBinder().isBinderAlive() && service.asBinder().pingBinder();
     }
 
+    private static final java.util.Set<String> OWN_JID_MISSES = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** Each reason the account's own JID is unavailable is logged once per process. */
+    private static void ownJidMiss(String reason) {
+        if (OWN_JID_MISSES.add(reason)) XposedBridge.log("[WAEX] " + reason);
+    }
+
     public static FMessageWpp.UserJid getMyUserJid() {
         try {
             Object instance = meManagerInstance;
-            if (instance == null && meManagerPhoneJidField != null) {
-                Class<?> meManagerClass = meManagerPhoneJidField.getDeclaringClass();
+            if (instance == null && meManagerPhoneJidPath != null) {
+                Class<?> meManagerClass = meManagerPhoneJidPath.owner();
                 for (java.lang.reflect.Field f : meManagerClass.getDeclaredFields()) {
                     if (java.lang.reflect.Modifier.isStatic(f.getModifiers()) && f.getType() == meManagerClass) {
                         try {
@@ -1199,9 +1209,12 @@ public class WppCore {
                     }
                 }
             }
-            if (instance != null && meManagerPhoneJidField != null) {
-                return new FMessageWpp.UserJid(meManagerPhoneJidField.get(instance));
+            if (instance != null && meManagerPhoneJidPath != null) {
+                Object jid = meManagerPhoneJidPath.read(instance);
+                if (jid == null) ownJidMiss("own JID not set yet");
+                return jid == null ? null : new FMessageWpp.UserJid(jid);
             }
+            ownJidMiss(meManagerPhoneJidPath == null ? "own JID path unresolved" : "MeManager instance not captured");
         } catch (Exception e) {
             XposedBridge.log(e);
         }
