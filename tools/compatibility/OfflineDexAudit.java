@@ -45,6 +45,7 @@ public final class OfflineDexAudit {
             emitProps(HostDexContracts.PROPS_BOOLEAN, HostDexContracts.propsBoolean(bridge));
             emitProps(HostDexContracts.PROPS_INTEGER, HostDexContracts.propsInteger(bridge));
             types(HostDexContracts.IMAGE_ROW, HostDexContracts.imageRowContainer(bridge, hdInvisibleTouch, controlButton));
+            navigation(bridge);
             var paths = HostDexContracts.homeDelegatePaths(bridge);
             String contract = "tablet-conversation-delegate";
             result(contract, "fragment-field-reads-and-delegate-interface", paths.size());
@@ -58,7 +59,8 @@ public final class OfflineDexAudit {
     /** Message class, key type, legacy final key and the original-key lookup (edits). */
     private static void identity(DexKitBridge bridge, List<FieldData> primaryKeys) throws Exception {
         var message = types(HostDexContracts.MESSAGE_CLASS, HostDexContracts.messageClass(bridge));
-        var keyType = types(HostDexContracts.MESSAGE_KEY_TYPE, HostDexContracts.messageKeyType(bridge));
+        var keyType = message == null ? null
+                : types(HostDexContracts.MESSAGE_KEY_TYPE, HostDexContracts.messageKeyType(bridge, message.getName()));
         if (message == null || keyType == null) {
             result(HostDexContracts.MESSAGE_KEY_LEGACY, "needs-unique-message-and-key-type", 0);
             result(HostDexContracts.ORIGINAL_MESSAGE_KEY, "needs-unique-message-and-key-type", 0);
@@ -131,6 +133,38 @@ public final class OfflineDexAudit {
     private static String dexName(BaseData member) {
         long index = member.getEncodeId() >>> 32;
         return index == 0 ? "classes.dex" : "classes" + (index + 1) + ".dex";
+    }
+
+    /**
+     * The navigation-bar base and every concrete implementation the runtime hooks (bar, rail and
+     * their subclasses). A set of implementations is the expected result, not an ambiguity.
+     */
+    private static void navigation(DexKitBridge bridge) throws Exception {
+        var base = types(HostDexContracts.TAB_FRAME, HostDexContracts.tabFrame(bridge));
+        if (base == null) {
+            result(HostDexContracts.NAVIGATION_MAX_ITEMS, "needs-unique-navigation-base", 0);
+            result(HostDexContracts.NAVIGATION_LISTENER, "needs-unique-navigation-base", 0);
+            return;
+        }
+        emitSet(HostDexContracts.NAVIGATION_MAX_ITEMS,
+                HostDexContracts.concreteOverrides(bridge, base.getName(), "getMaxItemCount", 0));
+        var listener = HostDexContracts.concreteOverrides(bridge, base.getName(), "setOnItemSelectedListener", 1);
+        if (listener.methods().isEmpty()) {
+            listener = HostDexContracts.concreteOverrides(bridge, base.getName(), "setOnNavigationItemSelectedListener", 1);
+        }
+        emitSet(HostDexContracts.NAVIGATION_LISTENER, listener);
+    }
+
+    /** Like {@link #emit}, for contracts whose every candidate is used: one or more is resolved. */
+    private static void emitSet(String contract, HostDexContracts.Candidates candidates) throws Exception {
+        int count = candidates.methods().size();
+        row("result", contract, candidates.strategy(), String.valueOf(count), count == 0 ? "RESOLVER_FAILED" : "L1_SET");
+        for (MethodData method : candidates.methods()) {
+            String shape = method.getModifiers() + "|" + typeShape(method.getMethodSign()) + "|" + method.getOpCodes();
+            String fingerprint = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(shape.getBytes(StandardCharsets.UTF_8)));
+            row("method", contract, method.getDescriptor(), dexName(method), fingerprint);
+        }
     }
 
     private static void result(String contract, String strategy, int count) {

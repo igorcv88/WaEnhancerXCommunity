@@ -15,7 +15,14 @@ public final class ValidationModel {
     public enum Enablement { ENABLED, DISABLED, UNKNOWN }
 
     public enum Status {
-        NOT_TESTED, UNKNOWN, DISABLED, NOT_INSTRUMENTED, NOT_EXERCISED, AMBIGUOUS,
+        NOT_TESTED, UNKNOWN, DISABLED,
+        /** doHook returned; nothing shows that a hook was registered or reached. */
+        INSTALLER_COMPLETED,
+        /** The installer counted its hooks and registered at least one; no callback seen yet. */
+        HOOKS_REGISTERED,
+        /** The installer completed without registering any hook. */
+        INSTALLED_NO_HOOKS,
+        NOT_EXERCISED, AMBIGUOUS,
         RESOLVER_FAILED, INSTALL_FAILED, INSTALL_INCOMPLETE, DEGRADED_INSTALL, ENABLEMENT_UNKNOWN,
         REACHED_NOT_ACTED, TRIGGERED_UNVERIFIED, BEHAVIOR_PASS, BEHAVIOR_FAIL, SERVER_UNAVAILABLE, BLOCKED
     }
@@ -44,6 +51,10 @@ public final class ValidationModel {
         public boolean installed;
         public boolean error;
         public boolean degraded;
+        /** The installer counted one or more registered hooks. */
+        public boolean registered;
+        /** The installer counted its hooks and registered none. */
+        public boolean inert;
         public boolean resolverFailed;
         /** A callback ran after the relevant start (session, or the armed exercise). */
         public boolean reached;
@@ -59,7 +70,9 @@ public final class ValidationModel {
             // Constructed but doHook never returned within the loader's wait.
             if (!installed) return Status.INSTALL_INCOMPLETE;
             if (degraded) return Status.DEGRADED_INSTALL;
-            if (!instrumented) return Status.NOT_INSTRUMENTED;
+            // A callback that ran proves a live hook whatever the installer counted.
+            if (inert && !reached && !acted) return Status.INSTALLED_NO_HOOKS;
+            if (!instrumented) return registered ? Status.HOOKS_REGISTERED : Status.INSTALLER_COMPLETED;
             if (acted) return Status.TRIGGERED_UNVERIFIED;
             if (reached) return Status.REACHED_NOT_ACTED;
             if (enablement == Enablement.UNKNOWN) return Status.ENABLEMENT_UNKNOWN;

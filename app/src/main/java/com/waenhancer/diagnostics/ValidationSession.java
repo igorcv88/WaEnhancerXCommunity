@@ -188,6 +188,8 @@ public final class ValidationSession {
             e.installed = observed(f, "installed", started, captured);
             e.error = observed(f, "error", started, captured);
             e.degraded = observed(f, "degraded", started, captured);
+            e.registered = observed(f, "registered", started, captured);
+            e.inert = observed(f, "inert", started, captured);
             e.resolverFailed = observed(f, "resolverFailed", started, captured);
             // A required case counts only what happened after it was armed, on its own path.
             long from = e.required
@@ -236,6 +238,9 @@ public final class ValidationSession {
             appendOfficialScope(context, out, report, identity);
         }
         if (report.optBoolean("probeError")) out.append("Core probe execution failed\n");
+        if (report.optBoolean("probeSkipped")) {
+            out.append("Core probe not run: features were still loading after the loader timeout\n");
+        }
         JSONArray contracts = report.optJSONArray("contracts");
         if (contracts != null) for (int i = 0; i < contracts.length(); i++) {
             out.append(contracts.optJSONObject(i)).append('\n');
@@ -252,7 +257,9 @@ public final class ValidationSession {
             var e = item.getValue();
             out.append("- ").append(item.getKey()).append(": ").append(e.state());
             if (e.enablement == ValidationModel.Enablement.UNKNOWN) out.append(" · enablement not modelled");
-            if (e.installed) out.append(" · L2 installed");
+            if (e.installed) out.append(" · installer completed");
+            if (e.registered) out.append(" · hooks registered");
+            if (e.reached) out.append(" · callback reached");
             String path = FeatureCatalog.requiredPath(item.getKey());
             if (e.required && path != null) out.append(" · case path ").append(path);
             if (e.acted && e.required) out.append(" · acted after arming");

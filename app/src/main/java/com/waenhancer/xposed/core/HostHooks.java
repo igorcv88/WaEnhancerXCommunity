@@ -1,6 +1,5 @@
 package com.waenhancer.xposed.core;
 
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
@@ -82,43 +81,17 @@ public final class HostHooks {
     }
 
     /** Forwards to the wrapped callback for instances of {@code scope} only. */
-    static final class Scoped extends XC_MethodHook {
-        private static final Method BEFORE = callbackMethod("beforeHookedMethod");
-        private static final Method AFTER = callbackMethod("afterHookedMethod");
+    static final class Scoped extends ForwardingHook {
         final Class<?> scope;
-        final XC_MethodHook delegate;
 
         Scoped(Class<?> scope, XC_MethodHook delegate) {
+            super(delegate);
             this.scope = scope;
-            this.delegate = delegate;
         }
 
         @Override
-        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-            if (appliesTo(scope, param.thisObject)) forward(BEFORE, param);
-        }
-
-        @Override
-        protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-            if (appliesTo(scope, param.thisObject)) forward(AFTER, param);
-        }
-
-        private void forward(Method callback, MethodHookParam param) throws Throwable {
-            try {
-                callback.invoke(delegate, param);
-            } catch (InvocationTargetException e) {
-                throw e.getCause();
-            }
-        }
-
-        private static Method callbackMethod(String name) {
-            try {
-                Method method = XC_MethodHook.class.getDeclaredMethod(name, XC_MethodHook.MethodHookParam.class);
-                method.setAccessible(true);
-                return method;
-            } catch (NoSuchMethodException e) {
-                throw new IllegalStateException(e);
-            }
+        boolean applies(MethodHookParam param) {
+            return appliesTo(scope, param.thisObject);
         }
     }
 }

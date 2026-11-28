@@ -1105,9 +1105,17 @@ public class FeatureLoader {
         RuntimeDiagnostics.loaderFinished(submitted.get(), !finished);
         if (RuntimeDiagnostics.bound()) {
             // The core resolver probe runs only during a session and after installation, so it
-            // neither competes with features for the resolver lock nor delays their hooks.
+            // neither competes with features for the resolver lock nor delays their hooks. After
+            // the loader's 15 s wait timed out, features are still resolving: the probe waits
+            // for them (bounded) and is skipped, and says so, if they never finish.
+            final boolean loaderFinished = finished;
             Thread probe = new Thread(() -> {
                 try {
+                    if (!ProbeGate.mayProbe(loaderFinished, () -> executorService.awaitTermination(
+                            ProbeGate.LATE_WAIT_SECONDS, TimeUnit.SECONDS))) {
+                        RuntimeDiagnostics.probeSkipped();
+                        return;
+                    }
                     HostCompatibility.probe(loader);
                 } catch (Throwable failure) {
                     RuntimeDiagnostics.probeFailure();

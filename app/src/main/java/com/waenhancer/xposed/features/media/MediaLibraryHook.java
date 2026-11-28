@@ -111,6 +111,9 @@ public class MediaLibraryHook extends Feature {
     static final Handler MAIN = new Handler(Looper.getMainLooper());
     /** Row tokens + account-scoped, state-keyed lookup cache (see {@link InlineBinder}). */
     private static final InlineBinder<ViewGroup> BINDER = new InlineBinder<>();
+    /** Per-stage result codes of the bubble pipeline (row -> ref -> lookup -> thumbnail -> shown). */
+    static final com.waenhancer.xposed.core.StageCounter STAGES =
+            com.waenhancer.xposed.core.StageCounter.xposed("MediaLibraryRows");
     /** Keyed by package + account + item + content hash ({@link InlineBinder#thumbnailKey}). */
     /** Decoded copies; an eighth of the heap (at least 12 MiB), so rows can be presented again synchronously. */
     private static final LruCache<String, Bitmap> THUMBNAILS = new LruCache<String, Bitmap>(
@@ -614,7 +617,8 @@ public class MediaLibraryHook extends Feature {
         // Every bind issues a new token, even for a message without media, so work started for
         // the row's previous message can never decorate it.
         InlineBinder.Task<ViewGroup> task = BINDER.bind(row, refFor(message));
-        if (task == null) return;
+        if (task == null) return; // refFor counted why
+        STAGES.hit(message.isViewOnce() ? "row_view_once" : "row_media");
         // A message shown before is presented again within this bind, before WhatsApp measures
         // the row: the row keeps its media size instead of shrinking to the native pill and
         // growing again after the lookup, which moved the list (scroll-to-bottom after sending
@@ -644,10 +648,12 @@ public class MediaLibraryHook extends Feature {
             if (nativeAvailable && receivedViewOnce) autoKeep(message);
             // Normal media: native first. View-once: the kept copy is shown whenever it exists.
             if (!InlinePresentation.lookUpKeptCopy(viewOnce, nativeAvailable)) {
+                STAGES.hit("native_shown");
                 withdraw(task, row);
                 return;
             }
             InlineBinder.Answer answer = BINDER.resolve(task, source(context), System.currentTimeMillis());
+            if (answer == null) STAGES.hit(viewOnce ? "view_once_not_kept" : "media_not_kept");
             if (!InlinePresentation.presentKeptCopy(viewOnce, nativeAvailable, answer != null)
                     || !BINDER.isCurrent(task)) {
                 withdraw(task, row);
@@ -662,6 +668,7 @@ public class MediaLibraryHook extends Feature {
             }
             Bitmap bitmap = thumbnail(context, task.ref, answer);
             if (bitmap == null) {
+                STAGES.hit("thumbnail_unavailable");
                 withdraw(task, row);
                 return;
             }
@@ -672,6 +679,7 @@ public class MediaLibraryHook extends Feature {
                 clearOverlay(row);
                 attachOverlay(row, bitmap, answer.uuid, viewOnce, task.ref,
                         InlineBinder.thumbnailKey(task.ref, answer), true);
+                STAGES.hit(viewOnce ? "view_once_presented" : "media_presented");
             });
         });
     }
@@ -706,13 +714,22 @@ public class MediaLibraryHook extends Feature {
     /** The scoped identity of an eligible media message, or {@code null} (row stays native). */
     private static InlineBinder.Ref refFor(FMessageWpp message) {
         try {
-            if (message == null || !message.isMediaFile()) return null;
+            if (message == null || !message.isMediaFile()) return null; // text rows: not counted
             FMessageWpp.Key key = message.getKey();
-            if (key == null || key.messageID == null) return null;
+            if (key == null || key.messageID == null) {
+                STAGES.hit("ref_no_key");
+                return null;
+            }
             if (!key.isFromMe && key.remoteJid != null && key.remoteJid.isStatus()) return null;
-            if (isReceivedViewOnce(message, key) && !keepViewOnce) return null;
-            return refOf(key);
+            if (isReceivedViewOnce(message, key) && !keepViewOnce) {
+                STAGES.hit("ref_view_once_disabled");
+                return null;
+            }
+            InlineBinder.Ref ref = refOf(key);
+            if (ref == null) STAGES.hit("ref_no_identity");
+            return ref;
         } catch (Throwable failure) {
+            STAGES.hit("ref_failed_" + failure.getClass().getSimpleName());
             return null;
         }
     }
@@ -740,8 +757,11 @@ public class MediaLibraryHook extends Feature {
             public String stateToken() {
                 try {
                     Bundle result = context.getContentResolver().call(PROVIDER, "state", null, new Bundle());
-                    return result == null ? null : result.getString("state");
+                    String state = result == null ? null : result.getString("state");
+                    if (state == null) STAGES.hit("library_state_unavailable");
+                    return state;
                 } catch (Throwable failure) {
+                    STAGES.hit("library_unreachable_" + failure.getClass().getSimpleName());
                     return null;
                 }
             }
@@ -758,9 +778,13 @@ public class MediaLibraryHook extends Feature {
                     Bundle result = context.getContentResolver().call(PROVIDER, "lookup", null, extras);
                     String[] uuids = result == null ? null : result.getStringArray("uuids");
                     String[] hashes = result == null ? null : result.getStringArray("sha256");
-                    if (uuids == null || hashes == null || uuids.length != 1 || hashes.length != 1) return null;
+                    if (uuids == null || hashes == null || uuids.length != 1 || hashes.length != 1) {
+                        STAGES.hit("lookup_malformed");
+                        return null;
+                    }
                     return new InlineBinder.Answer(uuids[0], hashes[0]);
                 } catch (Throwable failure) {
+                    STAGES.hit("lookup_failed_" + failure.getClass().getSimpleName());
                     return null;
                 }
             }

@@ -42,7 +42,7 @@ public final class RuntimeDiagnostics {
     static final int MAX_BEGIN_ATTEMPTS = 2;
     static final int MAX_RESOLVER_KEYS = 16;
     static final int MAX_FEATURES = 160;
-    static final Set<String> FIRST_EVENTS = Set.of("loaded", "installed", "error", "degraded");
+    static final Set<String> FIRST_EVENTS = Set.of("loaded", "installed", "error", "degraded", "registered", "inert");
     private static final Object LOCK = new Object();
     private static final ThreadLocal<String> CURRENT = new ThreadLocal<>();
     private static final ScheduledExecutorService WRITER = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -154,6 +154,11 @@ public final class RuntimeDiagnostics {
 
     public static void probeFailure() {
         update(root -> root.put("probeError", true));
+    }
+
+    /** The loader's features never finished, so the probe did not run beside their resolvers. */
+    public static void probeSkipped() {
+        update(root -> root.put("probeSkipped", true));
     }
 
     private static void record(Event event) {

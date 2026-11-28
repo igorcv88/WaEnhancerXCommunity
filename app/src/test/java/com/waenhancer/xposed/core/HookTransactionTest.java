@@ -88,4 +88,51 @@ public class HookTransactionTest {
         }
         assertEquals(List.of(), installed);
     }
+
+    /** Hooks are live once registered; their callbacks act only after the commit. */
+    @Test
+    public void callbacksActOnlyAfterCommit() {
+        HookGate gate = new HookGate();
+        assertEquals(false, gate.isOpen());
+        gate.open();
+        assertEquals(true, gate.isOpen());
+    }
+
+    @Test
+    public void transactionReportsCommitThroughItsGate() {
+        HookTransaction tx = new HookTransaction();
+        tx.onRollback(() -> {});
+        assertEquals(false, tx.committed());
+        tx.commit();
+        assertEquals(true, tx.committed());
+    }
+
+    @Test
+    public void rolledBackTransactionNeverActs() {
+        HookTransaction tx = new HookTransaction();
+        tx.onRollback(() -> {});
+        tx.rollback();
+        assertEquals(false, tx.committed());
+    }
+
+    /** An adopted part (the badge hooks) acts with the whole, not on its own. */
+    @Test
+    public void adoptedPartFollowsTheAdoptingCommit() {
+        HookTransaction whole = new HookTransaction();
+        HookTransaction badge = new HookTransaction();
+        badge.onRollback(() -> {});
+        whole.adopt(badge);
+        assertEquals(false, badge.committed());
+        whole.commit();
+        assertEquals(true, badge.committed());
+    }
+
+    @Test
+    public void adoptedPartOfARolledBackWholeNeverActs() {
+        HookTransaction whole = new HookTransaction();
+        HookTransaction badge = new HookTransaction();
+        whole.adopt(badge);
+        whole.rollback();
+        assertEquals(false, badge.committed());
+    }
 }

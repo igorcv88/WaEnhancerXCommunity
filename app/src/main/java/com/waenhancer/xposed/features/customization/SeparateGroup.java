@@ -80,7 +80,9 @@ public class SeparateGroup extends Feature {
             }
             // Publishing the tab is the last step, after its fragment factory and UI hooks exist.
             hookTabList(tx);
+            int hooks = tx.size();
             tx.commit();
+            diagnosticRegistered(hooks);
         } catch (Throwable failure) {
             tx.rollback();
             throw failure;

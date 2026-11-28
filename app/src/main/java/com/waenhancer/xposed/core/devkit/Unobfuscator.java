@@ -1494,11 +1494,8 @@ public class Unobfuscator {
             }
             // Hosts without the sender read pattern: accept only a single final field of the key
             // type. Field order is never evidence; two mutable/final candidates fail closed.
-            var classList = dexkit.findClass(new FindClass().matcher(new ClassMatcher().fieldCount(3)
-                    .addMethod(new MethodMatcher().addUsingString("Key").name("toString"))));
-            if (classList.size() != 1)
-                throw new NoSuchFieldException("MessageKey class not unique: " + classList.size());
-            Class<?> keyMessageClass = classList.get(0).getInstance(loader);
+            Class<?> keyMessageClass = HostDexContracts.messageKeyType(dexkit, classMessage.getName())
+                    .unique().getInstance(loader);
             return MessageKeyContract.selectFinalField(
                     ReflectionUtils.getFieldsByExtendType(classMessage, keyMessageClass), classMessage);
         });

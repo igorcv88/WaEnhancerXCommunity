@@ -83,7 +83,7 @@ final class AntiRevokeSqlGuard {
             if (mutation == null) mutation = calls.fallback(scope, query);
             if (mutation == null) {
                 // Do not log SQL, bind args, paths or exception messages.
-                if (RevokeSql.scopedMutation(query, 1) != null) warn("unsupported-sql-shape", null);
+                if (RevokeSql.scopedMutation(query, 1) != null) unsupportedShape(query);
                 return;
             }
             long original = -1;
@@ -161,6 +161,16 @@ final class AntiRevokeSqlGuard {
         }
         try { return Integer.parseInt(prefs.getString(status ? "antirevokestatus" : "antirevoke", "0")) != 0; }
         catch (RuntimeException invalidPreference) { return false; }
+    }
+
+    private static final int MAX_SHAPES = 16;
+    private final java.util.Set<String> shapes = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** Each distinct unsupported statement once, as its value-free shape (see RevokeSql.shape). */
+    private void unsupportedShape(String query) {
+        String shape = RevokeSql.shape(query);
+        if (shapes.size() >= MAX_SHAPES || !shapes.add(shape)) return;
+        XposedBridge.log("[WAEX] AntiRevoke unsupported-sql-shape shape=" + shape);
     }
 
     void warn(String reason, Throwable failure) {

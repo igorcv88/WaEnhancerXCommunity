@@ -12,6 +12,7 @@ import android.widget.ListView;
 import androidx.annotation.NonNull;
 
 import com.waenhancer.xposed.core.Feature;
+import com.waenhancer.xposed.core.StageCounter;
 import com.waenhancer.xposed.core.WppCore;
 import com.waenhancer.xposed.core.components.FMessageWpp;
 
@@ -75,76 +76,100 @@ public class ConversationItemListener extends Feature {
         });
     }
 
+    /** The conversation list's class in both audited hosts (layout of the Conversation screen). */
+    static final String CONVERSATION_LIST_CLASS = "com.whatsapp.conversation.ConversationListViewImpl";
+    static final StageCounter STAGES = StageCounter.xposed("ConversationItems");
+
+    /**
+     * Whether a ListView is the conversation's message list. The class name is decisive; the
+     * former check (current activity named "Conversation" and id android.R.id.list) is kept as a
+     * fallback for a renamed list class.
+     */
+    static boolean isConversationList(String listClassName, boolean conversationActivity, boolean listId) {
+        if (CONVERSATION_LIST_CLASS.equals(listClassName)) return true;
+        return conversationActivity && listId;
+    }
+
     @Override
     public void doHook() throws Throwable {
+        // The adapter is tracked whether or not a listener is registered yet: features register
+        // from the parallel loader, and a conversation opened before that used to be skipped for
+        // good (setAdapter is called once per screen). Listeners are checked per bound row.
         XposedHelpers.findAndHookMethod(ListView.class, "setAdapter", ListAdapter.class, new XC_MethodHook() {
             @Override
-            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                if (conversationListeners.isEmpty()) return;
-
-                var currentActivity = WppCore.getCurrentActivity();
-                if (currentActivity == null
-                        || !currentActivity.getClass().getSimpleName().equals("Conversation")) {
-                    return;
-                }
-                if (!(param.thisObject instanceof ListView)
-                        || ((ListView) param.thisObject).getId() != android.R.id.list) {
-                    return;
-                }
-                if (param.args == null || param.args.length == 0
-                        || !(param.args[0] instanceof ListAdapter)) {
-                    return;
-                }
-
-                ListAdapter adapter = unwrapBaseAdapter((ListAdapter) param.args[0]);
-                if (adapter == null) return;
-                if (adapter == mAdapter && hooked != null) return;
-
-                // getView may be declared on a superclass of the concrete adapter.
-                Method method = findGetView(adapter.getClass());
-                if (method == null) {
-                    XposedBridge.log("[WAEX] Conversation adapter exposes no getView: "
-                            + adapter.getClass().getName());
-                    return;
-                }
-
-                mAdapter = adapter;
-                if (hooked != null) hooked.unhook();
-                hooked = XposedBridge.hookMethod(method, new XC_MethodHook() {
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                        if (conversationListeners.isEmpty() || param.thisObject != mAdapter) return;
-                        if (param.args == null || param.args.length == 0
-                                || !(param.args[0] instanceof Number)) {
-                            return;
-                        }
-
-                        int position = ((Number) param.args[0]).intValue();
-                        if (position < 0 || position >= mAdapter.getCount()) return;
-
-                        Object result = param.getResult();
-                        if (!(result instanceof ViewGroup)) return;
-                        ViewGroup viewGroup = (ViewGroup) result;
-
-                        Object fMessageObj = mAdapter.getItem(position);
-                        if (fMessageObj == null || FMessageWpp.TYPE == null
-                                || !FMessageWpp.TYPE.isInstance(fMessageObj)) {
-                            return;
-                        }
-
-                        var fMessage = new FMessageWpp(fMessageObj);
-                        for (OnConversationItemListener listener : conversationListeners) {
-                            try {
-                                listener.onItemBind(fMessage, viewGroup);
-                            } catch (Throwable t) {
-                                logListenerFailureOnce(listener, t);
-                            }
-                        }
-                        XposedHelpers.setAdditionalInstanceField(viewGroup, "fMessage", fMessage);
-                    }
-                });
+            protected void beforeHookedMethod(MethodHookParam param) {
+                if (param.args == null || param.args.length == 0 || !(param.args[0] instanceof ListAdapter)) return;
+                track((ListView) param.thisObject, (ListAdapter) param.args[0], "set_adapter");
             }
         });
+        // A conversation whose adapter was set before this hook existed is adopted at its next
+        // layout pass (scroll, new message, resume), which every visible list goes through.
+        XposedHelpers.findAndHookMethod(ListView.class, "layoutChildren", new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) {
+                ListView list = (ListView) param.thisObject;
+                ListAdapter current = list.getAdapter();
+                if (current == null || hooked != null && unwrapBaseAdapter(current) == mAdapter) return;
+                if (!CONVERSATION_LIST_CLASS.equals(list.getClass().getName())) return;
+                track(list, current, "late_adopt");
+            }
+        });
+    }
+
+    private static synchronized void track(ListView list, ListAdapter given, String origin) {
+        var currentActivity = WppCore.getCurrentActivity();
+        boolean conversationActivity = currentActivity != null
+                && currentActivity.getClass().getSimpleName().equals("Conversation");
+        if (!isConversationList(list.getClass().getName(), conversationActivity, list.getId() == android.R.id.list)) {
+            return;
+        }
+        STAGES.hit(origin);
+        BaseAdapter adapter = unwrapBaseAdapter(given);
+        if (adapter == null) {
+            STAGES.hit("adapter_unwrap_failed");
+            return;
+        }
+        if (adapter == mAdapter && hooked != null) return;
+        // getView may be declared on a superclass of the concrete adapter.
+        Method method = findGetView(adapter.getClass());
+        if (method == null) {
+            STAGES.hit("getview_missing");
+            XposedBridge.log("[WAEX] Conversation adapter exposes no getView: " + adapter.getClass().getName());
+            return;
+        }
+        mAdapter = adapter;
+        if (hooked != null) hooked.unhook();
+        hooked = XposedBridge.hookMethod(method, new XC_MethodHook() {
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) {
+                if (conversationListeners.isEmpty() || param.thisObject != mAdapter) return;
+                if (param.args == null || param.args.length == 0 || !(param.args[0] instanceof Number)) return;
+                int position = ((Number) param.args[0]).intValue();
+                if (position < 0 || position >= mAdapter.getCount()) return;
+                Object result = param.getResult();
+                if (!(result instanceof ViewGroup)) {
+                    STAGES.hit("row_not_viewgroup");
+                    return;
+                }
+                ViewGroup viewGroup = (ViewGroup) result;
+                Object fMessageObj = mAdapter.getItem(position);
+                if (fMessageObj == null || FMessageWpp.TYPE == null || !FMessageWpp.TYPE.isInstance(fMessageObj)) {
+                    STAGES.hit("item_not_fmessage");
+                    return;
+                }
+                var fMessage = new FMessageWpp(fMessageObj);
+                STAGES.hit("row_dispatched");
+                for (OnConversationItemListener listener : conversationListeners) {
+                    try {
+                        listener.onItemBind(fMessage, viewGroup);
+                    } catch (Throwable t) {
+                        logListenerFailureOnce(listener, t);
+                    }
+                }
+                XposedHelpers.setAdditionalInstanceField(viewGroup, "fMessage", fMessage);
+            }
+        });
+        STAGES.hit("getview_hooked");
     }
 
     private static Method findGetView(Class<?> adapterClass) {

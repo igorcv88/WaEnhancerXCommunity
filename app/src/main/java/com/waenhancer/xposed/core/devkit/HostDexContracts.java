@@ -275,11 +275,24 @@ public final class HostDexContracts {
         return new Types("sender-jid-log-anchor", anchoredClasses(dexkit, MESSAGE_ANCHOR));
     }
 
-    /** The key value type: three fields and a toString that names "Key". */
-    public static Types messageKeyType(DexKitBridge dexkit) {
-        return new Types("three-fields-key-tostring", dexkit.findClass(FindClass.create().matcher(
-                ClassMatcher.create().fieldCount(3)
-                        .addMethod(MethodMatcher.create().addUsingString("Key").name("toString")))));
+    /**
+     * The key value type: three fields, a toString that names "Key", and held by an instance
+     * field of the message class or a superclass. The first two alone match 182 classes in
+     * 2.26.38.74 and 190 in 2.26.46.82, so the legacy key path could never resolve.
+     */
+    public static Types messageKeyType(DexKitBridge dexkit, String messageClass) {
+        Set<String> held = new LinkedHashSet<>();
+        for (ClassData owner = dexkit.getClassData(messageClass); owner != null; owner = owner.getSuperClass()) {
+            for (FieldData field : owner.getFields()) {
+                if (!Modifier.isStatic(field.getModifiers())) held.add(field.getTypeName());
+            }
+        }
+        List<ClassData> out = new ArrayList<>();
+        for (ClassData type : dexkit.findClass(FindClass.create().matcher(ClassMatcher.create().fieldCount(3)
+                .addMethod(MethodMatcher.create().addUsingString("Key").name("toString"))))) {
+            if (held.contains(type.getName())) out.add(type);
+        }
+        return new Types("three-fields-key-tostring-held-by-message", out);
     }
 
     /**
@@ -402,9 +415,13 @@ public final class HostDexContracts {
      */
     public static Types imageRowContainer(DexKitBridge dexkit, int hdInvisibleTouchId, int controlButtonId) {
         if (hdInvisibleTouchId == 0 || controlButtonId == 0) return new Types("resource-ids-missing", List.of());
-        return new Types("hd-overlay-and-control-button-ids", dexkit.findClass(FindClass.create().matcher(
+        // Listeners and helpers using the same ids extend Object; the row is the view among them.
+        return new Types("hd-overlay-and-control-button-ids-view", dexkit.findClass(FindClass.create().matcher(
                 ClassMatcher.create().addMethod(MethodMatcher.create()
-                        .addUsingNumber(hdInvisibleTouchId).addUsingNumber(controlButtonId)))));
+                        .addUsingNumber(hdInvisibleTouchId).addUsingNumber(controlButtonId))))
+                .stream().filter(type -> type.getSuperClass() != null
+                        && !"java.lang.Object".equals(type.getSuperClass().getName()))
+                .collect(Collectors.toList()));
     }
 
     public static final String TAB_FRAME = "navigation-bar-base";

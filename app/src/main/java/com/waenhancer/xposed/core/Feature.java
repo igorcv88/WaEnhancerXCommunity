@@ -44,6 +44,16 @@ public abstract class Feature {
         RuntimeDiagnostics.acted(getClass().getSimpleName(), path);
     }
 
+    /**
+     * How many hooks this feature's installer registered. A normal {@code doHook} return only
+     * proves the installer ran to completion (it may have returned early); a feature that counts
+     * its hooks (for example through {@link HookTransaction#size()}) reports {@code registered}
+     * for one or more, or {@code inert} when it registered none.
+     */
+    protected final void diagnosticRegistered(int hooks) {
+        RuntimeDiagnostics.feature(getClass().getSimpleName(), hooks > 0 ? "registered" : "inert");
+    }
+
     /** The feature installed, but an optional part of it did not (reported, not fatal). */
     protected final void diagnosticDegraded() {
         RuntimeDiagnostics.feature(getClass().getSimpleName(), "degraded");

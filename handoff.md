@@ -15,6 +15,32 @@ This is shared working state for Codex, Claude, GPT, Antigravity, and subsequent
 - Diagnostics rewritten: session bound before features with a replayed buffer; loader records loaded/installed/error and a completion marker (absent → UNKNOWN, timeout → DEGRADED); resolver misses attributed per feature; `reached` vs `acted:<path>`; catalog = all 70 loader features (`FeatureManifest`), probes, gates and required paths pinned to sources by tests; list settings in the config fingerprint; official-record key uses a module code digest excluding the catalog (catalog schema 3).
 - New L0 census of all 172 string anchors for both APKs (`tools/compatibility/anchor_census.py`, fixture, parameterized tests, CI). `OfflineDexAudit` gained the video-row contract but the DexKit L1 run was **not repeated** this round.
 - Local validation (Windows): `:app:testWhatsappDebugUnitTest` 857 tests, 8 failures, all `OUTSIDE_ROOTS` path-root checks in `SecondReviewFixesTest`/`WhatsAppRestoreAndAlbumsTest` (Windows `C:\` roots; untouched files; Linux CI is the reference). Python: census 13 tests (1 live skipped), audit 3, inventory check OK; `tools/test_app_only_runtime.py` fails identically on the pre-change commit under Windows; `test_glass_rim_contrast.py` needs numpy (not in CI).
+- **2026-11-27, physical-test round** (owner report and LSPosed log of 2.26.46.82 used as technical input only; details in `docs/compatibility/pr177-triage.md`, "Physical test round"). Each fix below has its cause confirmed in the log and in both DEX files.
+  - **Solved and verified offline:**
+    - Inherited Activity callbacks: `HostHooks` hooks the nearest declaration, scoped to the requested class (MenuHome, Channels, Others, HomeInlineSearch).
+    - Moved About and SettingsTabActivity (`HostClassNames`); SettingsInjector no longer returns silently.
+    - Separate Groups and Floating Bottom Bar on the navigation base's concrete implementations (`HostDexContracts.concreteOverrides`). The bar's `setVisibility` was never hooked on either host and now is.
+    - Locked-chats getter rule.
+    - Message-key type, image-row and prop-getter contracts made unique.
+    - HostProps boolean and integer slots are independent.
+    - Install states: `INSTALLER_COMPLETED`, `HOOKS_REGISTERED`, `INSTALLED_NO_HOOKS`, degraded, failed and disabled. Separate Groups and MediaQuality report their hook count.
+    - The probe waits for the workers after a loader timeout.
+    - `HookTransaction` callbacks are gated until commit; an adopted part follows its owner.
+    - Inspector PICK uses a generic content rule. The Inspector history has per-purpose quotas, aggregation and subtree export.
+    - `test_glass_rim_contrast.py` runs with numpy and executes the branched shader. A real defect was fixed: the glint tail lifted the body.
+    - DexKit 2.2.0 L1: 22 contracts on both base APKs, 20 unique and 2 implementation sets.
+  - **Changed, effect needs the device:**
+    - Media Library bubbles: the conversation adapter is tracked before listeners register, with late adoption. Stage counters: `ConversationItems`, `MediaLibraryRows`.
+    - View-once gallery chip: retry, both JID forms, stage codes in `ViewOnceGalleryTab`.
+    - Glass silhouette row probing.
+    - AntiRevoke unsupported statements are logged as value-free shapes. The parser is unchanged until a shape is seen.
+  - **Owner decision:** the APP profile contour is 1.49× the bar's on dark backdrops, below the test's 1.6× (the test reports it). The app-chrome rim adds nothing on pure white.
+  - **Not changed by design:** persistence and msgstore. The view-once capture triggers stay as they are (row bind with the file present, viewer open, 10-minute sweep). The 1,262 `without_file` candidates in the device log are messages whose media WhatsApp no longer has; they cannot be recovered offline.
+  - **Validation:**
+    - Windows unit tests: 885 run, 877 pass; the 8 failures are the known Windows `OUTSIDE_ROOTS` cases.
+    - Python: audit 4 tests, census 13 tests, inventory check after `--update`, CI glass tests pass.
+    - `test_app_only_runtime` fails on Windows as before.
+    - The rim test fails only the owner-decision check.
 - Still pending, not PASS: device L2–L5 on both hosts, tablet pane switches on control and target, runtime read of flag 19148, out-of-chat strip frame cancel, `loadOriginalMessageKey` structural fallback on the target (core probe), two-endpoint receipts. Full 2.26.46.82 compatibility is **not** declared. Draft, no merge.
 
 ## CONTINUATION BRIEF — media library, PR #176 (read this first) — 2026-11-26

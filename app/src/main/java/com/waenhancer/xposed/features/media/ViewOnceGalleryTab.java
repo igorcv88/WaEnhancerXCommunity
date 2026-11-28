@@ -67,53 +67,90 @@ final class ViewOnceGalleryTab {
                 Activity activity = (Activity) param.thisObject;
                 if (!ACTIVITY.equals(activity.getClass().getName())) return;
                 View decor = activity.getWindow().getDecorView();
-                decor.post(() -> attach(activity));
+                STAGES.hit("activity_resumed");
+                decor.post(() -> attach(activity, 0));
             }
         });
     }
 
-    private static void attach(Activity activity) {
+    static final com.waenhancer.xposed.core.StageCounter STAGES =
+            com.waenhancer.xposed.core.StageCounter.xposed("ViewOnceGalleryTab");
+
+    private static void attach(Activity activity, int attempt) {
         try {
+            if (activity.isFinishing()) return;
             View root = activity.getWindow().getDecorView();
             ViewGroup chips = find(root, "chip_layout");
             ViewGroup content = find(root, "media_hub_fragment_container");
-            if (chips == null || content == null || chips.getChildCount() == 0) return;
+            if (chips == null || content == null || chips.getChildCount() == 0) {
+                // The media hub fills its chip row after the first frame: retry for a while
+                // instead of leaving the screen without the tab after a single early look.
+                if (GalleryAttach.retry(attempt)) {
+                    root.postDelayed(() -> attach(activity, attempt + 1), GalleryAttach.RETRY_MS);
+                } else {
+                    STAGES.hit(chips == null ? "chips_missing" : content == null ? "content_missing" : "chips_empty");
+                }
+                return;
+            }
             if (chips.findViewWithTag(TAG_CHIP) != null) return;
-            String chat = chatJid(activity);
+            String[] chat = chatJids(activity);
             String own = MediaLibraryHook.ownJid();
-            if (chat == null || own == null) return;
+            if (chat == null) {
+                STAGES.hit("chat_unknown");
+                return;
+            }
+            if (own == null) {
+                STAGES.hit("account_unknown");
+                return;
+            }
             Context context = activity;
             MediaLibraryHook.WORKER.execute(() -> {
-                List<Entry> entries = load(context, own, chat);
-                if (entries == null || entries.isEmpty()) return; // no tab without items
-                MediaLibraryHook.MAIN.post(() -> addChip(activity, chips, content, own, chat, entries));
+                List<Entry> entries = load(context, own, chat[0], chat[1]);
+                if (entries == null) {
+                    STAGES.hit("list_failed");
+                    return;
+                }
+                if (entries.isEmpty()) {
+                    STAGES.hit("list_empty"); // no tab without items
+                    return;
+                }
+                MediaLibraryHook.MAIN.post(() -> {
+                    addChip(activity, chips, content, own, chat[0], chat[1], entries);
+                    STAGES.hit("chip_added");
+                });
             });
-        } catch (Throwable ignored) {
-            // Fail closed: the screen stays native.
+        } catch (Throwable failure) {
+            STAGES.hit("attach_failed_" + failure.getClass().getSimpleName());
         }
     }
 
-    /** The contact of this media screen: a JID in the intent, else the open conversation. */
-    private static String chatJid(Activity activity) {
+    /**
+     * The contact of this media screen as {primary, alternative or null}: a JID in the intent,
+     * else the open conversation. Both forms (LID and phone JID) of the same chat are passed, so
+     * items kept under either form are listed.
+     */
+    private static String[] chatJids(Activity activity) {
+        String user = null;
+        String phone = null;
+        try {
+            var current = WppCore.getCurrentUserJid();
+            if (current != null && !current.isNull()) {
+                user = current.getUserRawString();
+                phone = current.getPhoneRawString();
+            }
+        } catch (Throwable ignored) {
+        }
+        String fromIntent = null;
         try {
             Bundle extras = activity.getIntent() == null ? null : activity.getIntent().getExtras();
             if (extras != null) {
                 List<Object> values = new ArrayList<>();
                 for (String key : extras.keySet()) values.add(extras.get(key));
-                String found = ChatJids.first(values);
-                if (found != null) return found;
+                fromIntent = ChatJids.first(values);
             }
         } catch (Throwable ignored) {
         }
-        try {
-            var current = WppCore.getCurrentUserJid();
-            if (current != null && !current.isNull()) {
-                String user = current.getUserRawString();
-                return user != null ? user : current.getPhoneRawString();
-            }
-        } catch (Throwable ignored) {
-        }
-        return null;
+        return GalleryAttach.pair(fromIntent, user, phone);
     }
 
     private static final class Entry {
@@ -128,10 +165,11 @@ final class ViewOnceGalleryTab {
         }
     }
 
-    private static List<Entry> load(Context context, String own, String chat) {
+    private static List<Entry> load(Context context, String own, String chat, String alt) {
         Bundle extras = new Bundle();
         extras.putString("own_jid", own);
         extras.putString("chat_jid", chat);
+        if (alt != null) extras.putString("chat_alt_jid", alt);
         extras.putBoolean("view_once", true);
         Bundle result;
         try {
@@ -145,7 +183,7 @@ final class ViewOnceGalleryTab {
         ArrayList<String> kinds = result.getStringArrayList("kinds");
         if (uuids == null || hashes == null || kinds == null || uuids.size() != hashes.size()) return null;
         List<Entry> entries = new ArrayList<>();
-        InlineBinder.Ref ref = new InlineBinder.Ref(context.getPackageName(), own, chat, null, "tab", false);
+        InlineBinder.Ref ref = new InlineBinder.Ref(context.getPackageName(), own, chat, alt, "tab", false);
         for (int i = 0; i < uuids.size(); i++) {
             entries.add(new Entry(ref, new InlineBinder.Answer(uuids.get(i), hashes.get(i)), "video".equals(kinds.get(i))));
         }
@@ -153,7 +191,7 @@ final class ViewOnceGalleryTab {
     }
 
     private static void addChip(Activity activity, ViewGroup chips, ViewGroup content, String own, String chat,
-                                List<Entry> entries) {
+                                String alt, List<Entry> entries) {
         if (activity.isFinishing() || chips.findViewWithTag(TAG_CHIP) != null) return;
         // Read the look from an unchecked native chip, and the selected look from a checked one.
         View template = null;
@@ -182,7 +220,7 @@ final class ViewOnceGalleryTab {
         grid.setVisibility(View.GONE);
         grid.setAdapter(new Adapter(activity, entries));
         grid.setOnItemClickListener((parent, view, position, id) -> MediaLibraryHook.WORKER.execute(() ->
-                MediaLibraryHook.openGallery(activity, chat, null, null, entries.get(position).answer.uuid)));
+                MediaLibraryHook.openGallery(activity, chat, alt, null, entries.get(position).answer.uuid)));
         content.addView(grid, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
 

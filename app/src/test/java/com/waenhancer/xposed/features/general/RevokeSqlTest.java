@@ -98,4 +98,21 @@ public class RevokeSqlTest {
         assertNull(RevokeSql.parse("DELETE FROM message WHERE _id=?", new Object[]{"not-a-row"}));
         assertNull(RevokeSql.parse("DELETE FROM message WHERE _id=?", new Object[]{-1}));
     }
+
+    /** The logged shape keeps structure only: no key, text, number or blob survives. */
+    @Test public void shapeDropsEveryValue() {
+        String shape = RevokeSql.shape("UPDATE message SET text_data='secret ''quoted''', key_id='3EB0ABC', "
+                + "raw=x'0A0B', sort_id=12345 WHERE chat_row_id=7 AND from_me=0 AND key_id=?");
+        assertEquals("UPDATE message SET text_data=?, key_id=?, raw=?, sort_id=? WHERE chat_row_id=? "
+                + "AND from_me=? AND key_id=?", shape);
+        assertFalse(shape.contains("secret"));
+        assertFalse(shape.contains("3EB0"));
+        assertFalse(shape.contains("12345"));
+    }
+    @Test public void shapeKeepsIdentifiersWithDigitsAndIsBounded() {
+        assertEquals("DELETE FROM message_v2 WHERE _id IN (?, ?)",
+                RevokeSql.shape("DELETE   FROM message_v2\n WHERE _id IN (12, 13)"));
+        String longSql = "DELETE FROM message WHERE " + "a=1 AND ".repeat(100) + "b=2";
+        assertTrue(RevokeSql.shape(longSql).length() <= RevokeSql.MAX_SHAPE + 1);
+    }
 }

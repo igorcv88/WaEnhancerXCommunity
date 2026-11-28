@@ -85,6 +85,21 @@ def parse_dexkit(output):
         elif kind == "path":
             descriptors, dex = fields
             records[name]["candidates"].append({"fields": descriptors.split(","), "dex": dex.split(",")})
+        elif kind == "class":
+            descriptor, dex, parent = fields
+            records[name]["candidates"].append({"descriptor": descriptor, "dex": dex,
+                                                "superclass": parent.removeprefix("super=")})
+        elif kind == "field":
+            descriptor, dex = fields
+            records[name]["candidates"].append({"descriptor": descriptor, "dex": dex})
+        elif kind in {"count", "agreement"}:
+            label, value = fields
+            records[name].setdefault("evidence", {})[label] = (
+                int(value) if kind == "count" else value == "true")
+        elif kind == "key-index":
+            descriptor, index = fields
+            candidate = next(c for c in records[name]["candidates"] if c["descriptor"] == descriptor)
+            candidate["keyParameterIndex"] = int(index)
         else:
             descriptor, ref = fields
             candidate = next(c for c in records[name]["candidates"] if c["descriptor"] == descriptor)
@@ -122,7 +137,8 @@ def main():
                 interesting.add(f"{typ}/{name}")
     # Include the native widget and view IDs used by layout and media interactions.
     interesting.update(("drawable/ic_viewonce", "id/conversation_contact_status",
-                        "id/date_wrapper", "id/view_once_media_container_large"))
+                        "id/date_wrapper", "id/view_once_media_container_large",
+                        "id/hd_invisible_touch", "id/control_btn"))
     apks = [inspect_apk(path, apksigner, aapt2, interesting) for path in [args.base, *args.split]]
     base, *splits = apks
     if base["split"] or base["package"] != "com.whatsapp":
@@ -133,12 +149,13 @@ def main():
         p.error("Split identity differs or split carries DEX requiring a multi-APK resolver adapter")
     if len({split["split"] for split in splits}) != len(splits):
         p.error("Repeated split name")
+    row_ids = [base["resources"].get(name) for name in ("id/hd_invisible_touch", "id/control_btn")]
     with tempfile.TemporaryDirectory() as classes:
         run(javac, "-cp", args.dexkit_classpath, "-d", classes,
             str(HERE / "OfflineDexAudit.java"), str(RESOLVERS))
         contracts = parse_dexkit(run(java, f"-Djava.library.path={args.dexkit_native.resolve()}",
                                      "-cp", f"{classes}{os.pathsep}{args.dexkit_classpath}", "OfflineDexAudit",
-                                     str(args.base.resolve())))
+                                     str(args.base.resolve()), *(row_ids if all(row_ids) else [])))
     report = {
         "schema": 1,
         "capturedAt": datetime.now(timezone.utc).isoformat(),

@@ -1,6 +1,6 @@
 {
   "androidClassLoaderAndResources": "NOT_TESTED",
-  "capturedAt": "2026-11-27T03:20:10.450579+00:00",
+  "capturedAt": "2026-11-28T00:09:11.445157+00:00",
   "l0": {
     "base": {
       "dex": [
@@ -306,6 +306,95 @@
     ]
   },
   "l1": {
+    "ab-props-boolean-getter": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/00E;",
+          "descriptor": "LX/00E;->A0E(LX/00G;LX/00E;Ljava/lang/Boolean;I)Z",
+          "dex": "classes.dex",
+          "keyParameterIndex": 3,
+          "references": {
+            "caller": [
+              "LX/00E;->A0t()V",
+              "LX/00E;->A0w()V",
+              "LX/1S3;->invoke(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
+            ],
+            "caller-count": 6,
+            "invoke": [
+              "LX/00E;->A0C(LX/00G;LX/00E;Ljava/lang/String;)V",
+              "LX/00E;->A0G(LX/00E;I)Z",
+              "LX/00E;->A0i(LX/00G;I)Ljava/lang/Object;",
+              "LX/00E;->A10(IZ)V",
+              "LX/00E;->A1B()Lcom/google/common/collect/ImmutableMap;",
+              "Landroid/content/SharedPreferences;->getBoolean(Ljava/lang/String;Z)Z",
+              "Lcom/google/common/collect/ImmutableMap;->get(Ljava/lang/Object;)Ljava/lang/Object;",
+              "Ljava/lang/Boolean;->booleanValue()Z",
+              "Ljava/lang/Boolean;->valueOf(Z)Ljava/lang/Boolean;",
+              "Ljava/lang/IllegalArgumentException;-><init>(Ljava/lang/String;)V",
+              "Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;",
+              "Ljava/lang/Object;->toString()Ljava/lang/String;",
+              "Ljava/lang/String;->valueOf(I)Ljava/lang/String;",
+              "Ljava/lang/StringBuilder;-><init>()V",
+              "Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V",
+              "Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;",
+              "Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;",
+              "Ljava/util/AbstractMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
+            ],
+            "invoke-count": 23
+          },
+          "structuralSha256": "b10497d47df9d4321bfc2652b051ad09291d6460014d60b69f5c1ec561574f59"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "unknown-boolean-field-anchor"
+    },
+    "ab-props-integer-getter": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/00E;",
+          "descriptor": "LX/00E;->A01(LX/00G;LX/00E;Ljava/lang/Integer;I)I",
+          "dex": "classes.dex",
+          "keyParameterIndex": 3,
+          "references": {
+            "caller": [
+              "LX/00E;->A0D(LX/E88;Ljava/lang/Integer;Ljava/lang/Object;IZ)V",
+              "LX/00E;->A0w()V",
+              "LX/1S3;->invoke(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
+            ],
+            "caller-count": 3,
+            "invoke": [
+              "LX/00E;->A0C(LX/00G;LX/00E;Ljava/lang/String;)V",
+              "LX/00E;->A0G(LX/00E;I)Z",
+              "LX/00E;->A0i(LX/00G;I)Ljava/lang/Object;",
+              "LX/00E;->A0y(II)V",
+              "LX/00E;->A1D()Lcom/google/common/collect/ImmutableMap;",
+              "Landroid/content/SharedPreferences;->getInt(Ljava/lang/String;I)I",
+              "Lcom/google/common/collect/ImmutableMap;->get(Ljava/lang/Object;)Ljava/lang/Object;",
+              "Ljava/lang/IllegalArgumentException;-><init>(Ljava/lang/String;)V",
+              "Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;",
+              "Ljava/lang/Number;->intValue()I",
+              "Ljava/lang/Object;->toString()Ljava/lang/String;",
+              "Ljava/lang/String;->valueOf(I)Ljava/lang/String;",
+              "Ljava/lang/StringBuilder;-><init>()V",
+              "Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V",
+              "Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;",
+              "Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;",
+              "Ljava/util/AbstractMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
+            ],
+            "invoke-count": 23
+          },
+          "structuralSha256": "00326bef8e592ce8cc2a3cf83ffd7a8f2842c85d9fd79d646d9aca166fe4f0ec"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "unknown-int-field-anchor"
+    },
     "cached-message-store": {
       "candidateCount": 1,
       "candidates": [
@@ -422,6 +511,51 @@
       "source": "DEXKIT_DEFINITION_QUERY",
       "status": "L1_UNIQUE",
       "strategy": "kotlin-list-invokes-hidden-chat-filter"
+    },
+    "conversation-image-row": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "descriptor": "LX/KzM;",
+          "dex": "classes11.dex",
+          "superclass": "X.KYZ"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "hd-overlay-and-control-button-ids-view"
+    },
+    "conversation-video-row": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/Kza;",
+          "descriptor": "LX/Kza;->getAnimatedMediaViewContainer()LX/LqX;",
+          "dex": "classes11.dex",
+          "references": {
+            "caller-count": 0,
+            "invoke": [
+              "LX/00p;->getValue()Ljava/lang/Object;",
+              "LX/1SY;->A1a(Ljava/lang/Object;)Z",
+              "LX/2AM;->A12(Ljava/lang/String;)Ljava/lang/IllegalStateException;",
+              "LX/2AN;->A03(LX/00p;)I",
+              "LX/2AO;->A0K(LX/00p;)Landroid/widget/ImageView;",
+              "LX/2AP;->A11(LX/00x;)Ljava/lang/Object;",
+              "LX/6js;-><init>(Landroid/view/animation/Interpolator;IZZ)V",
+              "LX/Kza;->getMediaContainer()Landroid/widget/FrameLayout;",
+              "LX/Kza;->getVideoImageViewController()LX/Kzg;",
+              "LX/LqX;-><init>(Landroid/view/View;Landroid/view/View;LX/6js;)V"
+            ],
+            "invoke-count": 12
+          },
+          "structuralSha256": "071cb8a64f0121925e0446af2656920d038ca64ff8aafa6edc5c6e5c70b6430e"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "animated-container-accessor-assertion"
     },
     "convert-jid-to-lid": {
       "candidateCount": 1,
@@ -636,6 +770,20 @@
       "status": "L1_UNIQUE",
       "strategy": "incoming-receipt-anchor-instance-void"
     },
+    "message-class": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "descriptor": "LX/1D4;",
+          "dex": "classes.dex",
+          "superclass": "java.lang.Object"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "sender-jid-log-anchor"
+    },
     "message-key": {
       "candidateCount": 1,
       "candidates": [
@@ -652,6 +800,154 @@
       "source": "DEXKIT_DEFINITION_QUERY",
       "status": "L1_UNIQUE",
       "strategy": "sender-read-of-final-key-written-by-owner-constructor"
+    },
+    "message-key-legacy-final-field": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "descriptor": "LX/1D4;->A0j:LX/1cj;",
+          "dex": "classes.dex"
+        }
+      ],
+      "evidence": {
+        "instance-fields-of-key-type": 2,
+        "primary-equals-legacy": true
+      },
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "final-instance-field-of-key-type"
+    },
+    "message-key-type": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "descriptor": "LX/1cj;",
+          "dex": "classes2.dex",
+          "superclass": "java.lang.Object"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "three-fields-key-tostring-held-by-message"
+    },
+    "navigation-bar-base": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "descriptor": "LX/18l;",
+          "dex": "classes.dex",
+          "superclass": "android.widget.FrameLayout"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "menu-presenters-state-key"
+    },
+    "navigation-bar-item-selected-listener": {
+      "candidateCount": 3,
+      "candidates": [
+        {
+          "declaringClass": "Lcom/whatsapp/home/ui/HomeLegacyBottomNavigationView;",
+          "descriptor": "Lcom/whatsapp/home/ui/HomeLegacyBottomNavigationView;->setOnItemSelectedListener(LX/17t;)V",
+          "dex": "classes14.dex",
+          "references": {},
+          "structuralSha256": "e843939161a5fbe2e2d97115835b6aed0582cdb03a24c661ea80739f19d68a3d"
+        },
+        {
+          "declaringClass": "Lcom/whatsapp/ui/wds/components/bottombar/WDSBottomBar;",
+          "descriptor": "Lcom/whatsapp/ui/wds/components/bottombar/WDSBottomBar;->setOnItemSelectedListener(LX/17t;)V",
+          "dex": "classes.dex",
+          "references": {},
+          "structuralSha256": "e843939161a5fbe2e2d97115835b6aed0582cdb03a24c661ea80739f19d68a3d"
+        },
+        {
+          "declaringClass": "Lcom/whatsapp/ui/wds/components/navigationrail/WDSNavigationRail;",
+          "descriptor": "Lcom/whatsapp/ui/wds/components/navigationrail/WDSNavigationRail;->setOnItemSelectedListener(LX/17t;)V",
+          "dex": "classes14.dex",
+          "references": {},
+          "structuralSha256": "e843939161a5fbe2e2d97115835b6aed0582cdb03a24c661ea80739f19d68a3d"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_SET",
+      "strategy": "concrete-overrides-in-hierarchy"
+    },
+    "navigation-bar-max-item-count": {
+      "candidateCount": 2,
+      "candidates": [
+        {
+          "declaringClass": "LX/18q;",
+          "descriptor": "LX/18q;->getMaxItemCount()I",
+          "dex": "classes.dex",
+          "references": {},
+          "structuralSha256": "ee89bfafdfac0522c39ddd83b6c2c4fb796e2eb719fe4b930cf9b970d5edb524"
+        },
+        {
+          "declaringClass": "LX/Trm;",
+          "descriptor": "LX/Trm;->getMaxItemCount()I",
+          "dex": "classes14.dex",
+          "references": {},
+          "structuralSha256": "ee89bfafdfac0522c39ddd83b6c2c4fb796e2eb719fe4b930cf9b970d5edb524"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_SET",
+      "strategy": "concrete-overrides-in-hierarchy"
+    },
+    "original-message-key": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/1BO;",
+          "descriptor": "LX/1BO;->A00(LX/1D4;)LX/1cj;",
+          "dex": "classes.dex",
+          "references": {
+            "caller": [
+              "LX/1AC;->A00(LX/1AC;LX/1D4;LX/GSw;Z)LX/Gb4;"
+            ],
+            "caller-count": 5,
+            "invoke": [
+              "LX/1D4;->A0W()Z",
+              "LX/Gjh;->A00(LX/1D4;)LX/HGF;"
+            ],
+            "invoke-count": 3
+          },
+          "structuralSha256": "340c93b0bb8fbc6ebbd0dd743510f602153a81508f306842bc0a330c39990b7c"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "static-key-lookup-with-edit-check"
+    },
+    "outgoing-call-launcher": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "declaringClass": "LX/F8L;",
+          "descriptor": "LX/F8L;->DLZ(Landroid/content/Context;LX/0w9;IZ)LX/G24;",
+          "dex": "classes9.dex",
+          "references": {
+            "caller-count": 0,
+            "invoke": [
+              "LX/F8L;->A04(Landroid/content/Context;LX/H0B;LX/F8L;Ljava/util/List;)LX/G24;",
+              "LX/H0B;-><init>(Lcom/whatsapp/infra/core/jid/GroupJid;Lcom/whatsapp/infra/core/jid/GroupJid;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IIZZZZZ)V",
+              "Ljava/util/Collections;->singletonList(Ljava/lang/Object;)Ljava/util/List;"
+            ],
+            "invoke-count": 3
+          },
+          "structuralSha256": "f61e2827f8622dc351531563c0cc5f16133b867581552e28627ab04d8f47ef39"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "contact-launcher-singleton-list"
     },
     "startup-preferences": {
       "candidateCount": 1,
@@ -760,15 +1056,30 @@
       "source": "DEXKIT_DEFINITION_QUERY",
       "status": "L1_UNIQUE",
       "strategy": "fragment-field-reads-and-delegate-interface"
+    },
+    "wa-contact-class": {
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "descriptor": "LX/0w9;",
+          "dex": "classes.dex",
+          "superclass": "java.lang.Object"
+        }
+      ],
+      "requiresRuntime": true,
+      "source": "DEXKIT_DEFINITION_QUERY",
+      "status": "L1_UNIQUE",
+      "strategy": "contact-lookup-return-type"
     }
   },
+  "l1Source": "OfflineDexAudit over the same base APK as l0 (L0 not re-captured: identical file)",
   "l2_l3_l4_l5": "NOT_TESTED",
   "schema": 1,
   "source": "OFFLINE_LOCAL_FIXTURES",
   "tools": {
     "aapt2": "Android Asset Packaging Tool (aapt) 2.20-13193326",
     "apksigner": "0.9",
-    "dexkit": "2.2.0 (provide matching JVM classes and native library)",
+    "dexkit": "2.2.0 (ffa6c51c, built from source; JVM classes from the 2.2.0 AAR)",
     "sdkBuildTools": "36.0.0"
   },
   "unobservedResources": [

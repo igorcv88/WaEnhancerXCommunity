@@ -20,6 +20,7 @@ public class ViewProbeTest {
         final int l, t, r, b;
         boolean visible = true;
         float alpha = 1f;
+        boolean content = true;
         String entry;
         final List<ProbeNode> kids = new ArrayList<>();
         ProbeNode parent;
@@ -39,6 +40,7 @@ public class ViewProbeTest {
 
         Node hidden() { this.visible = false; return this; }
         Node transparent() { this.alpha = 0f; return this; }
+        Node empty() { this.content = false; return this; }
 
         @Override public int left() { return l; }
         @Override public int top() { return t; }
@@ -53,6 +55,7 @@ public class ViewProbeTest {
         @Override public int id() { return entry == null ? -1 : entry.hashCode(); }
         @Override public String className() { return "android.view.View"; }
         @Override public String contentDescription() { return null; }
+        @Override public boolean hasContent() { return content; }
     }
 
     private static String entryOf(ProbeNode node) {
@@ -135,5 +138,53 @@ public class ViewProbeTest {
         assertEquals("left", entryOf(ViewProbe.hit(root, 10, 50)));
         assertEquals("right", entryOf(ViewProbe.hit(root, 90, 50)));
         assertEquals(Arrays.asList(left, right), root.children());
+    }
+
+    /** A full-screen overlay that draws and handles nothing yields to the bubble beneath it. */
+    @Test
+    public void anEmptyOverlayYieldsToTheContentBeneath() {
+        Node bubble = new Node("bubble", 10, 10, 90, 40);
+        Node list = new Node("list", 0, 0, 100, 100).empty().with(bubble);
+        Node overlay = new Node("any_overlay_name", 0, 0, 100, 100).empty();
+        Node root = new Node("root", 0, 0, 100, 100).empty().with(list, overlay);
+        assertEquals("bubble", entryOf(ViewProbe.hit(root, 50, 20)));
+    }
+
+    /** The rule is structural: the same overlay with content (a scrim, a dialog) is chosen. */
+    @Test
+    public void anOverlayWithContentStillWins() {
+        Node bubble = new Node("bubble", 10, 10, 90, 40);
+        Node list = new Node("list", 0, 0, 100, 100).empty().with(bubble);
+        Node overlay = new Node("any_overlay_name", 0, 0, 100, 100);
+        Node root = new Node("root", 0, 0, 100, 100).empty().with(list, overlay);
+        assertEquals("any_overlay_name", entryOf(ViewProbe.hit(root, 50, 20)));
+    }
+
+    /** An empty overlay inside a container is passed over too, not only at the top level. */
+    @Test
+    public void aNestedEmptyOverlayIsPassedOver() {
+        Node text = new Node("message_text", 10, 10, 90, 40);
+        Node row = new Node("row", 0, 0, 100, 50).empty().with(text);
+        Node interceptor = new Node("touch_layer", 0, 0, 100, 100).empty().with(new Node("inner", 0, 0, 100, 100).empty());
+        Node root = new Node("root", 0, 0, 100, 100).empty().with(row, interceptor);
+        assertEquals("message_text", entryOf(ViewProbe.hit(root, 50, 20)));
+    }
+
+    /** Nothing under the point has content: the deepest empty view is still reported. */
+    @Test
+    public void withoutContentTheTopmostEmptyViewIsReported() {
+        Node under = new Node("under", 0, 0, 100, 100).empty();
+        Node over = new Node("over", 0, 0, 100, 100).empty();
+        Node root = new Node("root", 0, 0, 100, 100).empty().with(under, over);
+        assertEquals("over", entryOf(ViewProbe.hit(root, 50, 50)));
+    }
+
+    /** Empty space of a row (padding) next to a bubble does not jump to an unrelated view. */
+    @Test
+    public void aContainerWithContentKeepsItsOwnHit() {
+        Node bubble = new Node("bubble", 10, 10, 50, 40);
+        Node row = new Node("row", 0, 0, 100, 50).with(bubble);
+        Node root = new Node("root", 0, 0, 100, 100).empty().with(row);
+        assertEquals("row", entryOf(ViewProbe.hit(root, 80, 20)));
     }
 }

@@ -59,14 +59,47 @@ the control and 14 in the target. Each anchor that changed class between the bui
 | `CONTACTS_FILTER`, `Unknown JsonField` | count changes | No action | Counts changed, but both still resolve. |
 | 11 anchors absent in both | — | Out of scope | Fallbacks for older hosts; they are not a regression between control and target. |
 
+## Physical test round on 2.26.46.82 (2026-11-27)
+
+The owner's physical test report and LSPosed log of 2.26.46.82 were used as technical input
+only. Every cause below was confirmed in the log and in the DEX of both hosts (dexdump, and
+DexKit 2.2.0 for the contracts) before it was changed. The control's behaviour is kept.
+
+| Area | Evidence | Class | Resolution |
+|---|---|---|---|
+| MenuHome, Channels, Others, HomeInlineSearch | Log `NoSuchMethodError HomeActivity#onCreateOptionsMenu`. Target `HomeActivity` declares only `onCreate`/`onResume`; the rest is in `HomeActivityKt` | Confirmed | `HostHooks` hooks the nearest non-abstract declaration, scoped to the requested class |
+| CustomToolbar, ActivityController | Log `ClassNotFoundException settings.ui.About`; target has `settings.ui.help.About` | Confirmed | `HostClassNames` lists all names |
+| SettingsInjector | `SettingsTabActivity` moved to `settings.ui.main` (the old name is a manifest alias); a miss returned silently | Confirmed | Same lookup; a miss now fails the install |
+| Separate Groups | Log `.BottomNavigationView` not found; the class name is gone | Confirmed | Every concrete `getMaxItemCount` of the navigation base (control 2, target 2) is raised to at least 6; the rail keeps 7 |
+| Floating Bottom Bar | Log `Cannot hook abstract methods: 18l.setOnItemSelectedListener` | Confirmed | Every concrete setter is hooked (control 2, target 3) |
+| Floating Bottom Bar visibility | `setVisibility` is `View`'s; the bar declares none in either host, so `hookAllMethods` registered nothing | Confirmed (both hosts) | Hooked at `View.setVisibility`, scoped to the bar class |
+| Locked chats | Log `LockedChats method not found`. The JID-filter test also accepted `Collection.add`, so the filtered and unfiltered getters were ambiguous; the legacy anchor moved class | Confirmed | A host (non-platform) predicate is required: `0WL.A0O` (the control's previous result) and `0Wo.A0Q` |
+| Message key type | DexKit: `fieldCount(3)` + `toString("Key")` matches 182/190 classes, so the legacy path never resolved | Confirmed | The type must also be held by the message class: unique on both |
+| Image row contract | 4/5 classes use both ids | Confirmed (offline) | Only the view (non-`Object` superclass): unique on both |
+| Conversation rows (Media Library bubbles) | `setAdapter` was ignored while no listener was registered; features register from the parallel loader | Confirmed (code) | The adapter is tracked whatever is registered; a list set before the hook is adopted at its next layout. Per-stage counters added. Device effect pending |
+| View-once gallery chip | The target's media hub fills `chip_layout` after the first frame; one early look returned silently. Only one JID form was listed | Confirmed (snapshot) | Bounded retry (3 s), both JID forms, stage codes. Device effect pending |
+| Liquid Glass `no-opaque-body` | The middle row can cross a hollow centre | Partially confirmed | Five rows are probed before the fallback. Device effect pending |
+| AntiRevoke `unsupported-sql-shape` | The statement is not logged (privacy), so it cannot be identified | Needs evidence | Each distinct statement is logged once as a value-free shape; parser unchanged until the shape is known |
+| Element Inspector PICK | The topmost child always won, so an empty full-screen overlay hid the bubbles | Confirmed (code) | Generic rule: a view without content yields to the candidate beneath; no name list. JVM tests |
+| Inspector history | One bound of 120 entries; glass events evicted snapshots and selections | Confirmed (code) | A quota per purpose, aggregation of repeated glass events, subtree export of a pick |
+| Install diagnostics | A normal `doHook` return was reported as installed | Confirmed | `INSTALLER_COMPLETED`, `HOOKS_REGISTERED`, `INSTALLED_NO_HOOKS`, degraded, failed and disabled are separate states |
+| Probe after loader timeout | The probe started while features still resolved | Confirmed | It waits (bounded 60 s) for the workers, or is skipped and reported |
+| Separate Groups atomicity | `HookTransaction` hooks were live before `commit()` | Confirmed | Callbacks are gated until commit; an adopted part follows its owner |
+| `test_glass_rim_contrast.py` | Run with numpy: the anchor broke after d93e3734 added the app-chrome branch | Confirmed | The test now translates the branches and runs every production statement |
+| Glass body tint | The test then showed the `glint` term lifting the body past the rim band | Confirmed | Glint is faded out between one and two band widths |
+| APP profile contour 1.6× | On dark backdrops the approved app-chrome branch gives 1.49× | Owner decision | The check is kept unchanged and fails with this explanation. On pure white the app-chrome contour adds nothing (screen toward white) |
+
 ## Evidence levels (what is and is not claimed)
 
 - **L0, independent census** (both APKs, committed fixture, parameterized tests, a live re-run
   when `WAE_DEXDUMP`/`WAE_APK_*` are set): anchor presence and uniqueness only. It does not run
   the resolvers.
-- **L1, DexKit offline** (`OfflineDexAudit`): the HostDexContracts queries, now including the
-  video row. This needs DexKit 2.2.0 JVM classes and the native library. It was **not re-run in
-  this round**; the `offline-*.json` reports are the earlier run.
+- **L1, DexKit offline** (`OfflineDexAudit`, DexKit 2.2.0 built from tag `2.2.0`): 22 contracts
+  re-run on 2026-11-27 on both original base APKs. 20 return exactly one candidate on each host;
+  the two navigation-bar contracts return the set of implementations that is hooked (L1_SET).
+  This covers message identity (class, key type, legacy key, original key), the AB prop getters
+  and their key index, the contact class and call launcher, the image and video rows and the
+  navigation bar. Results are in `offline-*.json`.
 - **Runtime**: a per-feature loaded/installed/error/degraded record, resolver misses attributed
   to the loading feature, the loader marker, the core probe, and `acted` paths. The behaviour
   does not depend on this instrumentation. Recording is off when there is no session, and

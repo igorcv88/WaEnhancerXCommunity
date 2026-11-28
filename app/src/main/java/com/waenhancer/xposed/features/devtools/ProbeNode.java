@@ -40,4 +40,13 @@ public interface ProbeNode {
     String className();
 
     String contentDescription();
+
+    /**
+     * Whether the view itself shows or handles anything: a background, an image or text, or a
+     * touch handler. A full-size empty overlay (drag-and-drop target, touch interceptor, scrim at
+     * alpha 0 content) returns false and yields to what is drawn beneath it.
+     */
+    default boolean hasContent() {
+        return true;
+    }
 }

@@ -12,22 +12,27 @@ import de.robv.android.xposed.XposedBridge;
  * through installation removes the hooks already installed, instead of leaving the host with a
  * partial modification. Undo actions run in reverse installation order.
  *
+ * <p>Callbacks are gated: until {@link #commit()} a hooked method runs unchanged, so no callback
+ * acts while installation is incomplete or after a rollback. Side effects that must exist before
+ * the commit are registered explicitly ({@link #onRollback}).</p>
+ *
  * <p>Not thread-safe: one transaction belongs to one installing thread.</p>
  */
 public final class HookTransaction {
     private final Deque<Runnable> undo = new ArrayDeque<>();
+    private final HookGate gate = new HookGate();
     private boolean closed;
 
     public XC_MethodHook.Unhook hook(Member method, XC_MethodHook callback) {
         ensureOpen();
-        XC_MethodHook.Unhook unhook = XposedBridge.hookMethod(method, callback);
+        XC_MethodHook.Unhook unhook = XposedBridge.hookMethod(method, gated(callback));
         undo.push(unhook::unhook);
         return unhook;
     }
 
     public void hookAllConstructors(Class<?> type, XC_MethodHook callback) {
         ensureOpen();
-        for (XC_MethodHook.Unhook unhook : XposedBridge.hookAllConstructors(type, callback)) {
+        for (XC_MethodHook.Unhook unhook : XposedBridge.hookAllConstructors(type, gated(callback))) {
             undo.push(unhook::unhook);
         }
     }
@@ -48,12 +53,29 @@ public final class HookTransaction {
         for (Runnable action : reversed) undo.push(action);
         part.undo.clear();
         part.closed = true;
+        part.gate.follow(gate);
     }
 
     public void commit() {
         ensureOpen();
         undo.clear();
         closed = true;
+        gate.open();
+    }
+
+    /** Whether this transaction's callbacks act (after commit, or the adopting one's commit). */
+    public boolean committed() {
+        return gate.isOpen();
+    }
+
+    private XC_MethodHook gated(XC_MethodHook callback) {
+        HookGate own = gate;
+        return new ForwardingHook(callback) {
+            @Override
+            boolean applies(MethodHookParam param) {
+                return own.isOpen();
+            }
+        };
     }
 
     /** Removes everything installed so far; every undo action runs even if an earlier one fails. */

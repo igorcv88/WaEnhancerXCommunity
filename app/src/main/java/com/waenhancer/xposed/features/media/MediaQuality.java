@@ -60,6 +60,7 @@ public class MediaQuality extends Feature {
         enableMediaQualityForStories();
 
         java.util.List<Throwable> failures = new java.util.ArrayList<>();
+        int registeredHooks = 0;
         if (videoQuality) {
             HookTransaction video = new HookTransaction();
             try {
@@ -181,6 +182,7 @@ public class MediaQuality extends Feature {
                         }
                     }
                 });
+                registeredHooks += video.size();
                 video.commit();
             } catch (Throwable failure) {
                 // Video quality is independent of image quality: remove only its own hooks.
@@ -221,6 +223,7 @@ public class MediaQuality extends Feature {
                             XC_MethodReplacement.DO_NOTHING);
                 }
 
+                registeredHooks += image.size();
                 image.commit();
             } catch (Throwable failure) {
                 image.rollback();
@@ -228,6 +231,7 @@ public class MediaQuality extends Feature {
             }
         }
 
+        if (failures.isEmpty()) diagnosticRegistered(registeredHooks);
         if (!failures.isEmpty()) {
             Throwable first = failures.get(0);
             for (int i = 1; i < failures.size(); i++) first.addSuppressed(failures.get(i));

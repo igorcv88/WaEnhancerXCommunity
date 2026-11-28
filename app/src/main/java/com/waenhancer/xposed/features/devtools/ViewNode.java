@@ -43,6 +43,19 @@ public final class ViewNode implements ProbeNode {
 
     @Override public float alpha() { return view.getAlpha(); }
 
+    @Override public boolean hasContent() {
+        if (view.isClickable() || view.isLongClickable() || view.hasOnClickListeners()) return true;
+        android.graphics.drawable.Drawable background = view.getBackground();
+        if (background != null && background.isVisible() && background.getAlpha() > 0) return true;
+        if (view instanceof android.widget.ImageView && ((android.widget.ImageView) view).getDrawable() != null) return true;
+        if (view instanceof android.widget.TextView) {
+            CharSequence text = ((android.widget.TextView) view).getText();
+            if (text != null && text.length() > 0) return true;
+        }
+        // A leaf that draws itself (custom views); groups draw only through their children.
+        return !(view instanceof ViewGroup) && !view.willNotDraw();
+    }
+
     @Override public List<ProbeNode> children() {
         if (!(view instanceof ViewGroup)) return Collections.emptyList();
         ViewGroup group = (ViewGroup) view;

@@ -303,6 +303,9 @@ public class InspectorOverlay {
         InspectorTrace.selection(activity, inspected.className(), inspected.entryName(),
                 String.join(" > ", inspected.parentChain()),
                 node.left(), node.top(), node.right(), node.bottom());
+        // The picked view's whole subtree, unfiltered (metadata only); picking a screen's root
+        // container exports the full tree within the same bound.
+        if (node instanceof ViewNode) InspectorTrace.subtree(activity, ((ViewNode) node).view());
         populatePanel(inspected);
         panelView.setVisibility(View.VISIBLE);
     }

@@ -157,7 +157,10 @@ public class FloatingBottomBar extends Feature {
 
         // Hook the tab frame container
         Class<?> loadTabFrameClass = Unobfuscator.loadTabFrameClass(classLoader);
-        XposedBridge.hookAllMethods(loadTabFrameClass, "setVisibility", new XC_MethodHook() {
+        // setVisibility is View's own method, not declared by the navigation bar in either audited
+        // host, so hookAllMethods on the bar class registered nothing. Hook the declaration and
+        // run only for navigation-bar instances.
+        com.waenhancer.xposed.core.HostHooks.hookNearest(loadTabFrameClass, "setVisibility", int.class, new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 try {

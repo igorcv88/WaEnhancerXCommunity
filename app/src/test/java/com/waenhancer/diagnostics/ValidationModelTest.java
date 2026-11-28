@@ -89,7 +89,7 @@ public class ValidationModelTest {
         assertFalse(smokeConfirmed(List.of(e)));
         e.enablement = Enablement.ENABLED;
         e.instrumented = false;
-        assertEquals(Status.NOT_INSTRUMENTED, e.state());
+        assertEquals(Status.INSTALLER_COMPLETED, e.state());
         assertFalse(smokeConfirmed(List.of(e)));
         e.instrumented = true;
         e.acted = false;
@@ -165,5 +165,32 @@ public class ValidationModelTest {
         e.acted = true;
         e.manualConfirmed = true;
         return e;
+    }
+
+    /** A normal doHook return proves only that the installer completed. */
+    @Test
+    public void installStatesAreDistinguished() {
+        var e = installed();
+        e.enablement = Enablement.ENABLED;
+        e.instrumented = false;
+        assertEquals(Status.INSTALLER_COMPLETED, e.state());
+        e.registered = true;
+        assertEquals(Status.HOOKS_REGISTERED, e.state());
+        e.registered = false;
+        e.inert = true;
+        assertEquals(Status.INSTALLED_NO_HOOKS, e.state());
+        // A callback that ran is stronger evidence than the installer's own count.
+        e.instrumented = true;
+        e.reached = true;
+        assertEquals(Status.REACHED_NOT_ACTED, e.state());
+        e.reached = false;
+        e.inert = false;
+        e.degraded = true;
+        assertEquals(Status.DEGRADED_INSTALL, e.state());
+        e.degraded = false;
+        e.error = true;
+        assertEquals(Status.INSTALL_FAILED, e.state());
+        e.enablement = Enablement.DISABLED;
+        assertEquals(Status.DISABLED, e.state());
     }
 }
